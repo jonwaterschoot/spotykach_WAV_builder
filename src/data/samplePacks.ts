@@ -8,6 +8,8 @@ export interface SamplePack {
     id: string;
     name: string;
     description: string;
+    license?: string;
+    links?: { label: string; url: string }[];
     coverImage?: string;
     samples: Sample[];
 }
@@ -16,15 +18,15 @@ export const SAMPLE_PACKS: SamplePack[] = [
     {
         id: 'synthux-horror',
         name: 'Synthux Horror Sample Pack 2025',
-        description: `A community collection of eerie soundscapes, drones, and textures created with, or with the help of the Synthux Audrey II synths.
-        
-CC-BY 4.0
+        description: 'A community collection of eerie soundscapes, drones, and textures created with, or with the help of the Synthux Audrey II synths.',
+        license: `CC-BY 4.0
 The author keeps full ownership of the recordings.
 Synthux Academy and others can share, remix, or use these sounds — including commercially — as long as they give credit.
 Crediting can be done by linking to author or mentioning the name.
-Nobody else can claim this work as their own.
-        
-https://github.com/jonwaterschoot/spotykach_WAV_builder/tree/main/public/samples/horror/p1`,
+Nobody else can claim this work as their own.`,
+        links: [
+            { label: "View Full Credits & Source", url: "https://github.com/jonwaterschoot/spotykach_WAV_builder/tree/main/public/samples/horror/p1" }
+        ],
         coverImage: '/samples/horror/p1/Audrey-II-Horror-Sample-Pack-2026-Synthux-Academy.png',
         samples: [
             // KHAGE

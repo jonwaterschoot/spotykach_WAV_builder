@@ -88,7 +88,30 @@ export const SamplePackModal = ({ isOpen, onClose, onImport }: SamplePackModalPr
                             <>
                                 <div className="mb-6">
                                     <h1 className="text-2xl font-bold text-white mb-2">{selectedPack.name}</h1>
-                                    <p className="text-gray-400 text-sm max-w-xl">{selectedPack.description}</p>
+                                    <p className="text-gray-400 text-sm max-w-xl mb-4 leading-relaxed font-body">{selectedPack.description}</p>
+
+                                    {selectedPack.license && (
+                                        <div className="bg-black/20 p-3 rounded-lg border border-gray-800 text-xs text-gray-400 font-mono whitespace-pre-wrap mb-4 max-w-xl">
+                                            <strong className="block text-gray-500 mb-1 uppercase tracking-wider">License</strong>
+                                            {selectedPack.license}
+                                        </div>
+                                    )}
+
+                                    {selectedPack.links && selectedPack.links.length > 0 && (
+                                        <div className="flex gap-2 mb-4 flex-wrap text-sm">
+                                            {selectedPack.links.map((link, i) => (
+                                                <a
+                                                    key={i}
+                                                    href={link.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-synthux-blue rounded border border-gray-700 transition-colors"
+                                                >
+                                                    {link.label}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="space-y-6">
