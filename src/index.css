@@ -77,15 +77,7 @@
     .animate-slow-spin {
         animation: slow-spin 60s linear infinite;
     }
-}
-
-@layer base {
-    /* ... existing content ... */
-    /* Add to end of base or just globally */
-}
-
-/* Or better, just inside base but clean */
-@layer utilities {
+    
     .animate-pulse-glow {
         animation: pulse-ring 2s infinite;
     }
@@ -107,5 +99,26 @@
     h5,
     h6 {
         font-family: var(--font-header);
+    }
+}
+
+/* Scrollbar Styling */
+@layer base {
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: var(--color-synthux-browsebg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: #444;
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #555;
     }
 }

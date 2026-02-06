@@ -1150,8 +1150,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                             // Loop is ALWAYS a new version (dirty=true implied essentially, but we force it)
                                             onSave(newBlob, normalized.duration, `Normalized`, true);
                                             showToast("Normalized Saved!", "success");
-                                            // setShowNormalizePanel(false); // This variable doesn't exist in the current code
-                                            onClose();
+                                            // onClose(); // Removed to keep editor open
                                         } catch (e) {
                                             console.error(e);
                                             showToast("Normalization Failed", "error");
