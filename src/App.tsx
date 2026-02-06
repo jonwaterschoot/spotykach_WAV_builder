@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import logoImg from '/public/img/Spotykach_Logo.webp';
 import { TapeSelector } from './components/TapeSelector';
 import { SlotGrid } from './components/SlotGrid';
 import { WaveformEditor } from './components/WaveformEditor';
@@ -378,7 +379,7 @@ function App() {
         {/* Header */}
         <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-synthux-panel">
           <div className="flex items-center gap-4">
-            <img src="/img/Spotykach_Logo.webp" alt="Spotykach Logo" className="h-10 w-auto object-contain" />
+            <img src={logoImg} alt="Spotykach Logo" className="h-10 w-auto object-contain" />
             <span className="text-[2rem] font-bold tracking-tight bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent hidden md:block font-header leading-none pt-2">
               Spotykach .WAV builder
             </span>

@@ -28,7 +28,8 @@ export const SamplePackModal = ({ isOpen, onClose, onImport }: SamplePackModalPr
             // Play new
             if (audioRef.current) {
                 audioRef.current.pause();
-                audioRef.current.src = sample.path; // Use public path
+                const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+                audioRef.current.src = `${baseUrl}${sample.path}`;
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
                 setPlayingSample(sample.path);
             }
@@ -38,7 +39,8 @@ export const SamplePackModal = ({ isOpen, onClose, onImport }: SamplePackModalPr
     const handleImport = async (sample: Sample) => {
         setImportingSample(sample.path);
         try {
-            await onImport(sample.path, sample.name);
+            const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+            await onImport(`${baseUrl}${sample.path}`, sample.name);
             setAddedSamples(prev => new Set(prev).add(sample.path));
         } catch (error) {
             console.error("Import failed", error);

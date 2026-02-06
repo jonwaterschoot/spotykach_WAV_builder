@@ -35,7 +35,7 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                             Purpose
                         </h3>
                         <p className="text-gray-300 leading-relaxed">
-                            This application is specifically designed to prepare audio files for the <strong className="text-white">Spotykach sampler</strong>.
+                            This application is specifically designed to prepare audio files for the <strong className="text-white">Synthux Spotykach - the looper playground</strong>.
                             It automatically handles the strict format requirements needed by the firmware, ensuring your samples assume the correct
                             <span className="text-synthux-blue font-mono text-xs mx-1 px-1.5 py-0.5 bg-synthux-blue/20 rounded">48kHz Stereo WAV</span>
                             format and folder structure.
