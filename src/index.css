@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+:root {
+    --color-synthux-green: #23E073;
+    --color-synthux-orange: #F58B44;
+    --color-synthux-red: #f00f13;
+    --color-synthux-blue: #4771F9;
+    --color-synthux-pink: #f24a93;
+    --color-synthux-yellow: #ffb900;
+    --color-synthux-yellow-light: #FFDF9B;
+    --color-synthux-black: #000000;
+    --color-synthux-panel: #1a1a1a;
+    --color-synthux-main: #131314;
+    --color-synthux-browsebg: #1b1b1b;
+    --color-synthux-tapebg: #444746;
+    --color-synthux-turquoise: #2dd4bf;
+
+    --font-sans: "Funnel Display", sans-serif;
+    --font-mono: "Space Mono", monospace;
+    --font-header: "Syne Mono", monospace;
+    --font-body: "Funnel Display", sans-serif;
+}
+
+@theme {
+    --color-synthux-green: var(--color-synthux-green);
+    --color-synthux-orange: var(--color-synthux-orange);
+    --color-synthux-red: var(--color-synthux-red);
+    --color-synthux-blue: var(--color-synthux-blue);
+    --color-synthux-pink: var(--color-synthux-pink);
+    --color-synthux-yellow: var(--color-synthux-yellow);
+    --color-synthux-yellow-light: var(--color-synthux-yellow-light);
+    --color-synthux-black: var(--color-synthux-black);
+    --color-synthux-panel: var(--color-synthux-panel);
+    --color-synthux-main: var(--color-synthux-main);
+    --color-synthux-browsebg: var(--color-synthux-browsebg);
+    --color-synthux-tapebg: var(--color-synthux-tapebg);
+    --color-synthux-turquoise: var(--color-synthux-turquoise);
+
+    --font-sans: var(--font-sans);
+    --font-mono: var(--font-mono);
+    --font-header: var(--font-header);
+    --font-body: var(--font-body);
+}
+
+@keyframes pulse-glow-anim {
+    0% {
+        transform: scale(1.15);
+        opacity: 0.5;
+    }
+
+    50% {
+        transform: scale(1.35);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(1.15);
+        opacity: 0.5;
+    }
+}
+
+@keyframes slow-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@layer utilities {
+    .animate-pulse-halo {
+        animation: pulse-glow-anim 3s ease-in-out infinite;
+    }
+
+    .animate-slow-spin {
+        animation: slow-spin 60s linear infinite;
+    }
+}
+
+@layer base {
+    /* ... existing content ... */
+    /* Add to end of base or just globally */
+}
+
+/* Or better, just inside base but clean */
+@layer utilities {
+    .animate-pulse-glow {
+        animation: pulse-ring 2s infinite;
+    }
+}
+
+@layer base {
+
+    html,
+    body {
+        font-family: var(--font-sans);
+        background-color: var(--color-synthux-black);
+        color: white;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: var(--font-header);
+    }
+}
