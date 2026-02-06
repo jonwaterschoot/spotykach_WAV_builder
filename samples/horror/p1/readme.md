@@ -26,12 +26,12 @@ Share your creepiest, most cinematic sounds made with Audrey II or any of your h
 
 This overview links to each subfolder README and provides a short one-line summary.
 
-- **Machine Oil:** [MachineOil/readme.md](MachineOil/readme.md) — Screech/Texture: noisy, gritty feedback-heavy sounds (CC-BY 4.0).
-- **KHAGE:** [KHAGE/readme.md](KHAGE/readme.md) — Drone / Atmosphere: empirical generative soundscapes (CC-BY 4.0).
-- **The Pedalboard Orchestra:** [ThePedalboardOrchestra/readme.md](ThePedalboardOrchestra/readme.md) — Long experimental drone with spooky feedback and eerie ambience (CC-BY 4.0).
-- **enkaytee:** [enkaytee/readme.md](enkaytee/readme.md) — Resonant, discordant chiming drones and evolving textures (CC-BY 4.0).
-- **jonwtr:** [jonwtr/readme.md](jonwtr/readme.md) — 10-minute dark uneasy soundscape jam using Audrey Touch (CC-BY 4.0).
-- **Neuromorph:** [Neuromorph/readme.md](Neuromorph/readme.md) — FX / Transition risers, swells and wooshes; short clips (CC-BY 4.0).
+- **Machine Oil:** [MO/readme.md](MO/readme.md) — Screech/Texture: noisy, gritty feedback-heavy sounds (CC-BY 4.0).
+- **KHAGE:** [KG/readme.md](KG/readme.md) — Drone / Atmosphere: empirical generative soundscapes (CC-BY 4.0).
+- **The Pedalboard Orchestra:** [TPO/readme.md](TPO/readme.md) — Long experimental drone with spooky feedback and eerie ambience (CC-BY 4.0).
+- **enkaytee:** [NKT/readme.md](NKT/readme.md) — Resonant, discordant chiming drones and evolving textures (CC-BY 4.0).
+- **jonwtr:** [JW/readme.md](JW/readme.md) — 10-minute dark uneasy soundscape jam using Audrey Touch (CC-BY 4.0).
+- **Neuromorph:** [NM/readme.md](NM/readme.md) — FX / Transition risers, swells and wooshes; short clips (CC-BY 4.0).
 - **TravellingSynths:** [TravellingSynths/readme.md](TravellingSynths/readme.md) — TODO (CC-BY 4.0).
 
 ---
