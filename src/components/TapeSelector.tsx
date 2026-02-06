@@ -1,5 +1,6 @@
 import { TAPE_COLORS } from '../types';
 import type { TapeColor } from '../types';
+import spotyTapeIcon from '/public/spotytape.svg';
 
 interface TapeSelectorProps {
     currentTape: TapeColor;
@@ -61,11 +62,11 @@ export const TapeSelector = ({ currentTape, onSelect, onDropOnTape }: TapeSelect
                                 <div
                                     className="w-full h-full"
                                     style={{
-                                        maskImage: 'url(/spotytape.svg)',
+                                        maskImage: `url(${spotyTapeIcon})`,
                                         maskSize: 'contain',
                                         maskPosition: 'center',
                                         maskRepeat: 'no-repeat',
-                                        WebkitMaskImage: 'url(/spotytape.svg)',
+                                        WebkitMaskImage: `url(${spotyTapeIcon})`,
                                         WebkitMaskSize: 'contain',
                                         WebkitMaskPosition: 'center',
                                         WebkitMaskRepeat: 'no-repeat',

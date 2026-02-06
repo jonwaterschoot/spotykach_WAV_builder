@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import logoImg from '/public/img/Spotykach_Logo.webp';
+import tapeIcon from '/public/img/spotykachtapeicon.svg';
 import { TapeSelector } from './components/TapeSelector';
 import { SlotGrid } from './components/SlotGrid';
 import { WaveformEditor } from './components/WaveformEditor';
@@ -484,11 +485,11 @@ function App() {
                   width: '120%',
                   aspectRatio: '1/1',
                   transform: 'translate(50%, 50%)', // Center on bottom-right corner
-                  maskImage: 'url(/img/spotykachtapeicon.svg)',
+                  maskImage: `url(${tapeIcon})`,
                   maskSize: 'contain',
                   maskPosition: 'center',
                   maskRepeat: 'no-repeat',
-                  WebkitMaskImage: 'url(/img/spotykachtapeicon.svg)',
+                  WebkitMaskImage: `url(${tapeIcon})`,
                   WebkitMaskSize: 'contain',
                   WebkitMaskPosition: 'center',
                   WebkitMaskRepeat: 'no-repeat',
