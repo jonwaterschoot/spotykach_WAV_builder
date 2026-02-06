@@ -1,6 +1,7 @@
 import { TAPE_COLORS } from '../types';
 import type { TapeColor } from '../types';
-import spotyTapeIcon from '/public/spotytape.svg';
+
+const spotyTapeIcon = new URL('../assets/img/spotytape.svg', import.meta.url).href;
 
 interface TapeSelectorProps {
     currentTape: TapeColor;

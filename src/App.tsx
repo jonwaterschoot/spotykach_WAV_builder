@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import logoImg from '/public/img/Spotykach_Logo.webp';
-import tapeIcon from '/public/img/spotykachtapeicon.svg';
 import { TapeSelector } from './components/TapeSelector';
+
+const logoImg = new URL('./assets/img/Spotykach_Logo.webp', import.meta.url).href;
+const tapeIcon = new URL('./assets/img/spotykachtapeicon.svg', import.meta.url).href;
 import { SlotGrid } from './components/SlotGrid';
 import { WaveformEditor } from './components/WaveformEditor';
 import { FileBrowser } from './components/FileBrowser';
