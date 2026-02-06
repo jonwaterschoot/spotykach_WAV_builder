@@ -1,7 +1,7 @@
 import { TAPE_COLORS } from '../types';
 import type { TapeColor } from '../types';
 
-import spotyTapeIcon from '../assets/img/spotytape.svg?url';
+import { TapeIcon } from './TapeIcon';
 
 interface TapeSelectorProps {
     currentTape: TapeColor;
@@ -48,52 +48,33 @@ export const TapeSelector = ({ currentTape, onSelect, onDropOnTape }: TapeSelect
                         `}
                         title={`Tape ${color}`}
                     >
-                        {/* Glow Layer (Blur Wrapper Strategy) */}
+                        {/* Glow Layer */}
                         {isActive && (
                             <div
-                                className="absolute inset-0 w-full h-full flex items-center justify-center"
+                                className="absolute inset-0 w-full h-full flex items-center justify-center pointer-events-none"
                                 style={{
-                                    // Apply effects to the WRAPPER, so the inner masked shape blurs outwards
                                     filter: 'blur(6px)',
-                                    opacity: 0.8, // Base opacity
+                                    opacity: 0.8,
                                     animation: 'pulse-glow-anim 3s ease-in-out infinite',
                                     '--pulse-color': colorVar,
                                 } as React.CSSProperties}
                             >
-                                <div
+                                <TapeIcon
+                                    color={colorVar}
                                     className="w-full h-full"
-                                    style={{
-                                        maskImage: `url(${spotyTapeIcon})`,
-                                        maskSize: 'contain',
-                                        maskPosition: 'center',
-                                        maskRepeat: 'no-repeat',
-                                        WebkitMaskImage: `url(${spotyTapeIcon})`,
-                                        WebkitMaskSize: 'contain',
-                                        WebkitMaskPosition: 'center',
-                                        WebkitMaskRepeat: 'no-repeat',
-                                        backgroundColor: colorVar,
-                                        transform: 'scale(1.25)', // Ensure base size is larger
-                                    }}
+                                    style={{ transform: 'scale(1.25)' }}
                                 />
                             </div>
                         )}
 
                         {/* Top Sharp Layer */}
-                        <div
-                            className="w-full h-full transition-all duration-300 relative z-20"
-                            style={{
-                                maskImage: `url(${spotyTapeIcon})`,
-                                maskSize: 'contain',
-                                maskPosition: 'center',
-                                maskRepeat: 'no-repeat',
-                                WebkitMaskImage: `url(${spotyTapeIcon})`,
-                                WebkitMaskSize: 'contain',
-                                WebkitMaskPosition: 'center',
-                                WebkitMaskRepeat: 'no-repeat',
-                                backgroundColor: colorVar,
-                                transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                            }}
-                        />
+                        <div className="w-full h-full relative z-20 flex items-center justify-center transition-all duration-300">
+                            <TapeIcon
+                                color={colorVar}
+                                className="w-full h-full"
+                                style={{ transform: isActive ? 'scale(1.1)' : 'scale(1)' }}
+                            />
+                        </div>
                     </button>
                 );
             })}
