@@ -93,74 +93,65 @@ export const exportSaveState = async (state: AppState) => {
 
 // SD Card Export via File System Access API
 // Note: browser support is limited (Chrome/Edge/Opera only)
+// SD Card Export via File System Access API
+// Note: browser support is limited (Chrome/Edge/Opera only)
 export const exportToSDCard = async (state: AppState) => {
     if (!('showDirectoryPicker' in window)) {
-        alert("Your browser does not support writing directly to folders. Please use Export ZIP instead.");
-        return;
+        throw new Error("Your browser does not support writing directly to folders. Please use Export ZIP instead.");
     }
 
-    try {
-        // 1. Pick Root (SD Card)
-        const rootHandle = await (window as any).showDirectoryPicker({
-            mode: 'readwrite',
-            startIn: 'documents'
-        });
+    // 1. Pick Root (SD Card)
+    // This will throw AbortError if user cancels, which is fine to catch.
+    const rootHandle = await (window as any).showDirectoryPicker({
+        mode: 'readwrite',
+        startIn: 'documents'
+    });
 
-        // 2. Alert/Confirm
-        if (!confirm(`WARNING: This will overwrite files in the select folder. Are you sure?`)) {
-            return;
-        }
+    // 2. Alert/Confirm handled by UI before calling this.
 
-        // 3. Get/Create SK folder
-        const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
+    // 3. Get/Create SK folder
+    const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
 
-        // 4. Write Tapes
-        for (const color of TAPE_COLORS) {
-            const tape = state.tapes[color];
-            const folderName = color.charAt(0).toUpperCase();
-            const tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
+    // 4. Write Tapes
+    for (const color of TAPE_COLORS) {
+        const tape = state.tapes[color];
+        const folderName = color.charAt(0).toUpperCase();
+        const tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
 
-            // Clear existing files?
-            // "overwrite the actual files" - implues we just overwrite if collision, 
-            // but the user might want a clean slate. 
-            // Ideally we iterate slots 1-6 and write them. If slot is empty, we delete?
-            // For safety let's just write what is assigned.
+        // Clear existing files?
+        // "overwrite the actual files" - implues we just overwrite if collision, 
+        // but the user might want a clean slate. 
+        // Ideally we iterate slots 1-6 and write them. If slot is empty, we delete?
+        // For safety let's just write what is assigned.
 
-            for (const slot of tape.slots) {
-                if (slot.fileId) {
-                    const fileRecord = state.files[slot.fileId];
-                    if (fileRecord) {
-                        const currentVersion = fileRecord.versions.find(v => v.id === fileRecord.currentVersionId);
-                        if (currentVersion) {
-                            const fileHandle = await tapeHandle.getFileHandle(`${slot.id}.WAV`, { create: true });
-                            const writable = await fileHandle.createWritable();
-                            await writable.write(currentVersion.blob);
-                            await writable.close();
-                        }
+        for (const slot of tape.slots) {
+            if (slot.fileId) {
+                const fileRecord = state.files[slot.fileId];
+                if (fileRecord) {
+                    const currentVersion = fileRecord.versions.find(v => v.id === fileRecord.currentVersionId);
+                    if (currentVersion) {
+                        const fileHandle = await tapeHandle.getFileHandle(`${slot.id}.WAV`, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(currentVersion.blob);
+                        await writable.close();
                     }
                 }
             }
         }
+    }
 
-        // 5. Write Extras?
-        const extrasHandle = await skHandle.getDirectoryHandle('EXTRAS', { create: true });
-        for (const file of Object.values(state.files)) {
-            if (file.isParked) {
-                const currentVersion = file.versions.find(v => v.id === file.currentVersionId);
-                if (currentVersion) {
-                    const fileHandle = await extrasHandle.getFileHandle(`${file.name}.WAV`, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(currentVersion.blob);
-                    await writable.close();
-                }
+    // 5. Write Extras?
+    const extrasHandle = await skHandle.getDirectoryHandle('EXTRAS', { create: true });
+    for (const file of Object.values(state.files)) {
+        if (file.isParked) {
+            const currentVersion = file.versions.find(v => v.id === file.currentVersionId);
+            if (currentVersion) {
+                const fileHandle = await extrasHandle.getFileHandle(`${file.name}.WAV`, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(currentVersion.blob);
+                await writable.close();
             }
         }
-
-        alert("Export successful!");
-
-    } catch (err) {
-        console.error("SD Card Export Error", err);
-        alert("Failed to write to folder. See console for details.");
     }
 };
 
@@ -171,7 +162,7 @@ export const exportSingleFile = (fileRecord: any) => {
     if (currentVersion && currentVersion.blob) {
         downloadBlob(currentVersion.blob, `${fileRecord.name}.wav`);
     } else {
-        alert("File data not available.");
+        throw new Error("File data not available.");
     }
 };
 
@@ -182,8 +173,7 @@ export const exportSingleTape = async (color: string, tape: any, files: Record<s
     const tapeFolder = zip.folder(folderName);
 
     if (!tapeFolder) {
-        alert("Failed to create zip folder.");
-        return;
+        throw new Error("Failed to create zip folder.");
     }
 
     let count = 0;
@@ -199,8 +189,7 @@ export const exportSingleTape = async (color: string, tape: any, files: Record<s
     });
 
     if (count === 0) {
-        alert("Tape is empty. Nothing to export.");
-        return;
+        throw new Error("Tape is empty. Nothing to export.");
     }
 
     const content = await zip.generateAsync({ type: "blob" });

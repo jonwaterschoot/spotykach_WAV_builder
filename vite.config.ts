@@ -2,10 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: '/spotykach_WAV_builder/',
+  base: command === 'build' ? '/spotykach_WAV_builder/' : '/',
   build: {
     assetsInlineLimit: 0,
   },
-})
+}))

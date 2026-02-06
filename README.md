@@ -1,5 +1,9 @@
 # Spotykach WAV Builder
 
+[![Live Application](https://img.shields.io/badge/Live_App-Open-23E073?style=for-the-badge)](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
+
+> **⚠️ Desktop Only:** This application is optimized for **Desktop Chrome/Edge** browsers. It is **not supported on mobile devices** due to the complex audio processing and file system interactions.
+
 A specialized tool for preparing audio files for the **Spotykach sampler**. It streamlines the process of converting, trimming, and organizing samples to meet the strict firmware requirements (48kHz Stereo WAV).
 
 ## Features
@@ -53,6 +57,19 @@ This project is built using:
 ## Live Demo
 
 Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV_builder/](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
+
+## Roadmap
+
+Future ideas and planned features:
+-   **Multi-Project Support**: Save and load multiple projects within the app with version history.
+-   **Shared Sample Pool**: A centralized pool of samples shared across different projects.
+-   **Project Manager**: A dedicated interface for managing your local projects.
+
+## Contributing
+
+We welcome contributions!
+-   **Found a bug?** Open an issue on [GitHub](https://github.com/jonwaterschoot/spotykach_WAV_builder/issues).
+-   **Have an idea?** Discuss it with us on the **Synthux Academy Discord**.
 
 ## License
 

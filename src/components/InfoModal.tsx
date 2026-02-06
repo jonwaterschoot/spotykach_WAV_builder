@@ -28,6 +28,16 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                 {/* Content */}
                 <div className="p-8 overflow-y-auto max-h-[70vh] space-y-8 font-body">
 
+                    {/* Compatibility Notice */}
+                    <div className="bg-synthux-yellow/10 border border-synthux-yellow/30 p-4 rounded-lg flex items-start gap-3">
+                        <div className="text-synthux-yellow mt-0.5">⚠️</div>
+                        <div className="text-sm text-gray-300">
+                            <strong className="text-synthux-yellow block mb-1">Desktop Computer Required</strong>
+                            This application is designed for use on a <strong>Desktop Computer</strong> (Chrome/Edge recommended) with a mouse/trackpad.
+                            It relies on advanced browser audio features that are not available on mobile devices.
+                        </div>
+                    </div>
+
                     {/* Mission */}
                     <div className="space-y-3">
                         <h3 className="text-lg font-semibold text-white flex items-center gap-2 font-header">
@@ -70,6 +80,22 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                         </div>
                     </div>
 
+                    {/* Roadmap & Contributing */}
+                    <div className="space-y-3">
+                        <h3 className="text-lg font-semibold text-white flex items-center gap-2 font-header">
+                            <Cpu size={20} className="text-synthux-yellow" />
+                            Roadmap & Contributing
+                        </h3>
+                        <div className="bg-black/20 p-4 rounded-lg border border-gray-800 text-sm text-gray-300 space-y-2">
+                            <p>
+                                Future versions will include <strong>Multi-Project Support</strong>, a <strong>Shared Sample Pool</strong>, and a <strong>Project Manager</strong>.
+                            </p>
+                            <p>
+                                Want to help? Join the discussion on the <a href="https://synthux.academy" target="_blank" rel="noreferrer" className="text-synthux-yellow hover:underline">Synthux Discord</a> or open an issue on GitHub.
+                            </p>
+                        </div>
+                    </div>
+
                     {/* Resources */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder" target="_blank" rel="noreferrer"
@@ -77,9 +103,9 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                             <span className="font-medium text-white group-hover:text-synthux-blue transition-colors">GitHub Repository</span>
                             <ExternalLink size={16} className="text-gray-500 group-hover:text-white transition-colors" />
                         </a>
-                        <a href="https://synthux.academy" target="_blank" rel="noreferrer"
+                        <a href="https://discord.gg/synthux" target="_blank" rel="noreferrer"
                             className="flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-800 rounded-xl border border-gray-700 transition-all group">
-                            <span className="font-medium text-synthux-yellow group-hover:text-synthux-yellow-light transition-colors">Synthux Academy</span>
+                            <span className="font-medium text-synthux-yellow group-hover:text-synthux-yellow-light transition-colors">Synthux Discord</span>
                             <ExternalLink size={16} className="text-gray-500 group-hover:text-white transition-colors" />
                         </a>
                     </div>

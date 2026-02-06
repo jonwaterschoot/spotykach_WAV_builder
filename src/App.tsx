@@ -12,6 +12,7 @@ import { audioEngine } from './lib/audio/audioEngine';
 import { exportZip, exportSaveState, exportToSDCard, exportSingleTape } from './utils/exportUtils';
 import { parseImportFiles } from './utils/importUtils';
 import { InfoModal } from './components/InfoModal';
+import { ConfirmModal } from './components/ConfirmModal';
 import { SamplePackModal } from './components/SamplePackModal';
 import { Toast, type ToastType } from './components/Toast';
 import { Info, Upload, Download, FileJson, HardDrive } from 'lucide-react';
@@ -31,6 +32,66 @@ function App() {
   const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
+  const [showSDConfirm, setShowSDConfirm] = useState(false);
+  const [showProjectSaveConfirm, setShowProjectSaveConfirm] = useState(false);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+
+  // Import Handler Wrapper
+  const handleImportClick = () => {
+    setShowImportConfirm(true);
+  };
+
+  const handleImportConfirm = () => {
+    setShowImportConfirm(false);
+    fileInputRef.current?.click();
+  };
+
+  // Wrapper for Zip Export
+  const handleZipExport = async () => {
+    setIsProcessing(true);
+    setProgressMsg('Zipping files...');
+    try {
+      await exportZip(state);
+      setToast({ msg: "Zip created successfully!", type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: "Failed to create Zip.", type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Wrapper for Project Export
+  const handleProjectExport = async () => {
+    setIsProcessing(true);
+    setProgressMsg('Saving project...');
+    try {
+      await exportSaveState(state);
+      setToast({ msg: "Project saved successfully!", type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: "Failed to save project.", type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Wrapper for SD Export (The actual action)
+  const handleSDExport = async () => {
+    setShowSDConfirm(false);
+    setIsProcessing(true);
+    setProgressMsg('Writing to SD Card...');
+    try {
+      await exportToSDCard(state);
+      setToast({ msg: "Export to SD successful!", type: 'success' });
+    } catch (e) {
+      console.error(e);
+      const msg = e instanceof Error ? e.message : "Failed to write to SD.";
+      setToast({ msg, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   // Persistence Loading
   useEffect(() => {
@@ -423,7 +484,7 @@ function App() {
 
             {/* Import */}
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleImportClick}
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors text-sm font-bold border border-gray-700"
               title="Import SK folder or project folder"
             >
@@ -434,7 +495,7 @@ function App() {
 
             {/* Save Project */}
             <button
-              onClick={() => exportSaveState(state)}
+              onClick={() => setShowProjectSaveConfirm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors text-sm font-bold border border-gray-700"
               title="Save Project (JSON)"
             >
@@ -443,7 +504,7 @@ function App() {
 
             {/* Export All (SK Zip) */}
             <button
-              onClick={() => exportZip(state)}
+              onClick={handleZipExport}
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors text-sm font-bold border border-gray-700"
               title="Save SK Zip"
             >
@@ -452,7 +513,7 @@ function App() {
 
             {/* Export SD */}
             <button
-              onClick={() => exportToSDCard(state)}
+              onClick={() => setShowSDConfirm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-synthux-blue hover:bg-blue-500 text-white rounded-lg transition-colors text-sm font-bold shadow-lg shadow-blue-900/20"
               title="Save to SD Card"
             >
@@ -692,6 +753,76 @@ function App() {
           isOpen={showSampleBrowser}
           onClose={() => setShowSampleBrowser(false)}
           onImport={handleSampleImport}
+        />
+
+        {/* Project Save Confirm */}
+        <ConfirmModal
+          isOpen={showProjectSaveConfirm}
+          onClose={() => setShowProjectSaveConfirm(false)}
+          onConfirm={handleProjectExport}
+          title="Save Project Backup"
+          confirmLabel="Download Backup"
+          message={
+            <div className="space-y-4">
+              <p>
+                This will download a <code>.zip</code> file containing your entire project state (JSON) and all source audio files.
+              </p>
+              <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg text-sm text-gray-300">
+                <strong className="text-blue-400 block mb-1">Why save?</strong>
+                Browser storage is temporary. If you clear your cache or change computers, your work will be lost unless you save this backup file.
+              </div>
+            </div>
+          }
+        />
+
+        {/* Import Confirm */}
+        <ConfirmModal
+          isOpen={showImportConfirm}
+          onClose={() => setShowImportConfirm(false)}
+          onConfirm={handleImportConfirm}
+          title="Import Project or Folder"
+          confirmLabel="Select File/Folder"
+          message={
+            <div className="space-y-4">
+              <p>
+                You can import a previously saved <code>spotykach_project.zip</code> to restore your session, or any folder containing audio files.
+              </p>
+              <div className="bg-synthux-blue/10 border border-synthux-blue/30 p-4 rounded-lg text-sm text-gray-300">
+                <strong className="text-synthux-blue block mb-1 flex items-center gap-2">
+                  <HardDrive size={14} /> Edit Existing SD Card
+                </strong>
+                <p className="mb-2">
+                  You can select an existing <strong>Spotykach SD Card folder</strong> (e.g. the <code>SK</code> folder) to load your tapes, tweak them, and rearrange slots.
+                </p>
+                <p className="text-xs text-gray-400 italic">
+                  Note: Changes are NOT saved automatically back to the folder. You must use "Export to SD" when you are finished.
+                </p>
+              </div>
+            </div>
+          }
+        />
+
+        <ConfirmModal
+          isOpen={showSDConfirm}
+          onClose={() => setShowSDConfirm(false)}
+          onConfirm={handleSDExport}
+          title="Export to SD Card"
+          confirmLabel="Select Folder & Write"
+          message={
+            <div className="space-y-4">
+              <p>
+                You are about to write files directly to a folder on your computer (or SD card).
+              </p>
+              <div className="bg-synthux-yellow/10 border border-synthux-yellow/30 p-4 rounded-lg text-sm text-gray-300">
+                <strong className="text-synthux-yellow block mb-1">Important:</strong>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Please select the <strong>Root Directory</strong> of your SD Card.</li>
+                  <li>Existing files in <code>SK/BLUE</code>, <code>SK/RED</code> etc. will be <strong>overwritten</strong>.</li>
+                  <li>The browser will ask for permission to view/edit files.</li>
+                </ul>
+              </div>
+            </div>
+          }
         />
 
         {toast && (

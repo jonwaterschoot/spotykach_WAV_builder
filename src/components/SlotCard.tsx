@@ -143,7 +143,6 @@ export const SlotCard = ({ slot, fileRecord, isActive, onClick, onDrop, onDropIn
                         >
                             {isThisPlaying ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                             <span className="text-[10px] font-bold uppercase">{isThisPlaying ? 'STOP' : 'PLAY'}</span>
-                            <span className="text-[10px] font-bold uppercase">{isThisPlaying ? 'STOP' : 'PLAY'}</span>
                         </button>
 
                         <div className="w-px h-4 bg-gray-800 mx-2"></div>
