@@ -82,11 +82,11 @@ export const TapeSelector = ({ currentTape, onSelect, onDropOnTape }: TapeSelect
                         <div
                             className="w-full h-full transition-all duration-300 relative z-20"
                             style={{
-                                maskImage: 'url(/spotytape.svg)',
+                                maskImage: `url(${spotyTapeIcon})`,
                                 maskSize: 'contain',
                                 maskPosition: 'center',
                                 maskRepeat: 'no-repeat',
-                                WebkitMaskImage: 'url(/spotytape.svg)',
+                                WebkitMaskImage: `url(${spotyTapeIcon})`,
                                 WebkitMaskSize: 'contain',
                                 WebkitMaskPosition: 'center',
                                 WebkitMaskRepeat: 'no-repeat',
