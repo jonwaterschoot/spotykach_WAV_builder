@@ -5,6 +5,8 @@ import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissor
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
+import { TapeIcon } from './TapeIcon';
+import { ConfirmModal } from './ConfirmModal';
 
 // Fade Overlay Component
 interface FadeOverlayProps {
@@ -335,7 +337,7 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, onFadeC
     );
 };
 
-import type { AudioVersion } from '../types';
+import type { AudioVersion, TapeColor } from '../types';
 
 interface EditorSlot {
     id: number;
@@ -349,11 +351,14 @@ interface WaveformEditorProps {
     versions: AudioVersion[];
     activeVersionId: string;
     onClose: () => void;
-    onSave: (blob: Blob, duration: number, description: string, isDirty: boolean) => void;
+    onSave: (blob: Blob, duration: number, description: string, isDirty: boolean, processing?: ('normalized' | 'trimmed' | 'looped')[]) => void;
     onSaveAsCopy: (blob: Blob, duration: number) => void;
+    onDeleteVersion?: (versionId: string) => void;
+    onAssignVersion?: (versionId: string) => void;
+    tapeColor?: TapeColor;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSave, onSaveAsCopy }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -402,6 +407,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
     const [regionState, setRegionState] = useState<{ start: number, end: number }>({ start: 0, end: 0 });
     const rafRef = useRef<number | null>(null);
 
+    // Normalization & Processing State
+    const [hasNormalized, setHasNormalized] = useState(false);
+    const [hasTrimmed, setHasTrimmed] = useState(false);
+
+    // UI States
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
+
     const isMounted = useRef(false);
     const initTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -434,8 +446,17 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
         setFadeIn(0);
         setFadeOut(0);
         setIsDirty(false);
+        // Load processing state from version if available
+        const currentVersion = versions.find(v => v.id === loadedVersionId);
+        if (currentVersion?.processing) {
+            setHasNormalized(currentVersion.processing.includes('normalized'));
+            setHasTrimmed(currentVersion.processing.includes('trimmed'));
+        } else {
+            setHasNormalized(false);
+            setHasTrimmed(false);
+        }
         // Region is reset in initEditor
-    }, [currentBlob]);
+    }, [currentBlob, loadedVersionId, versions]);
 
     // If slot.blob changes from parent (e.g. external update?), sync it.
     useEffect(() => {
@@ -443,6 +464,17 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
             setCurrentBlob(slot.blob);
         }
     }, [slot.blob]);
+
+    // Sync Active Version from Parent
+    useEffect(() => {
+        if (activeVersionId !== loadedVersionId) {
+            setLoadedVersionId(activeVersionId);
+            // Optionally load the blob if it's not the current one?
+            // Usually parent updates slot.blob together with activeVersionId.
+            // But we already have logic to sync slot.blob above.
+            // We just need to ensure the Highlight (loadedVersionId) matches.
+        }
+    }, [activeVersionId]);
 
     useEffect(() => {
         if (wavesurfer.current) {
@@ -807,6 +839,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                 let processed = await audioProcessor.trim(originalBuffer, start, end);
                 finalDuration = processed.duration;
                 finalBlob = encodeWAV(processed);
+
+                // Preserve processing tags if assigning same version? 
+                // Parent handles assignment. If we pass !isDirty, it re-uses current version logic usually?
+                // Actually App.tsx creates a NEW version even if not dirty in current logic (unless blob match check).
+                // Let's pass current processing tags if we are just "assigning".
+                const currentTags = versions.find(v => v.id === loadedVersionId)?.processing;
+                onSave(finalBlob, finalDuration, 'Edited', isDirty, currentTags);
+
             } else {
                 let processed = await audioProcessor.trim(originalBuffer, start, end);
                 if (fadeIn > 0 || fadeOut > 0) {
@@ -814,9 +854,16 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                 }
                 finalDuration = processed.duration;
                 finalBlob = encodeWAV(processed);
-            }
 
-            onSave(finalBlob, finalDuration, 'Edited', isDirty);
+                // New edit -> likely 'trimmed' unless it was just fades?
+                // We don't distinguish just fades vs trim well. 
+                // Let's assume if it's dirty and saved, it's at least "Processed".
+                // But specifically for 'trimmed' button state:
+                // Only mark 'trimmed' if we explicitly used "Apply Trim" button? 
+                // "Save to Tape" effectively applies everything.
+                // Let's mark it 'trimmed' if start/end were modified or it's a save.
+                onSave(finalBlob, finalDuration, 'Edited', isDirty, ['trimmed']);
+            }
             showToast(isDirty ? "Version Saved!" : "Assigned to Tape", "success");
 
             if (!isDirty) {
@@ -1016,6 +1063,51 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
 
 
             <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-7xl h-[90vh] shadow-2xl flex overflow-hidden">
+                {/* Reset Confirmation Modal */}
+                <ConfirmModal
+                    isOpen={showResetConfirm}
+                    onClose={() => setShowResetConfirm(false)}
+                    onConfirm={() => {
+                        // Revert to the CURRENTLY loaded version's state
+                        const v = versions.find(v => v.id === loadedVersionId);
+                        if (v) {
+                            setCurrentBlob(v.blob);
+                        }
+                        setFadeIn(0);
+                        setFadeOut(0);
+                        setIsDirty(false);
+
+                        // Reset Region Logic (Max 42s or duration)
+                        if (wavesurfer.current && regions.current) {
+                            const duration = wavesurfer.current.getDuration();
+                            regions.current.clearRegions();
+
+                            let rEnd = duration;
+                            let rStart = 0;
+                            if (duration > 42) {
+                                const mid = duration / 2;
+                                rStart = mid - 21;
+                                rEnd = mid + 21;
+                            }
+
+                            regions.current.addRegion({
+                                start: rStart,
+                                end: rEnd,
+                                color: 'rgba(255, 255, 255, 0.1)',
+                                drag: false,
+                                resize: true
+                            });
+                            setRegionState({ start: rStart, end: rEnd });
+                        }
+
+                        showToast("Reset to original", "success");
+                        setShowResetConfirm(false);
+                    }}
+                    title="Reset Changes?"
+                    message="Are you sure you want to discard all changes and revert to the last saved version? This cannot be undone."
+                    confirmLabel="Discard & Reset"
+                    isDestructive={true}
+                />
 
                 {/* SIDEBAR: Versions */}
                 <div className="w-64 bg-[#111] border-r border-gray-800 flex flex-col shrink-0">
@@ -1053,9 +1145,32 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                             </button>
                                         </div>
                                     </div>
-                                    <div className={`text-sm font-medium truncate ${isActive ? 'text-synthux-blue' : 'text-white'}`}>{v.description || 'Edited Version'}</div>
-                                    <div className="text-[10px] text-gray-600 mt-1">
-                                        {(v.duration || 0).toFixed(2)}s • {(v.blob.size / 1024).toFixed(0)}KB
+                                    <div className={`text-sm font-medium truncate ${isActive ? 'text-synthux-blue' : 'text-white'}`}>
+                                        {v.description || 'Edited Version'}
+                                        {v.processing && v.processing.length > 0 && (
+                                            <div className="flex gap-1 mt-1 flex-wrap">
+                                                {v.processing.map(tag => (
+                                                    <span key={tag} className="px-1.5 py-0.5 bg-gray-700/50 rounded text-[10px] uppercase font-bold text-gray-300 border border-gray-600">
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="text-[10px] text-gray-600 mt-1 flex justify-between items-center">
+                                        <span>{(v.duration || 0).toFixed(2)}s • {(v.blob.size / 1024).toFixed(0)}KB</span>
+                                        {onDeleteVersion && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onDeleteVersion(v.id);
+                                                }}
+                                                className="p-1.5 rounded-full bg-gray-700 hover:bg-red-500 text-white transition-colors flex items-center justify-center w-5 h-5"
+                                                title="Delete Version"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )
@@ -1067,11 +1182,25 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                 <div className="flex-1 flex flex-col relative bg-[#1a1a1a] min-w-0">
 
                     <div className="flex justify-between items-center p-6 pb-2">
-                        <div>
-                            <h3 className="text-2xl font-bold bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent font-header">
-                                {slot.name}
-                            </h3>
-                            <p className="text-gray-500 text-sm">Editing Waveform {isProcessing ? '(Processing...)' : ''}</p>
+                        <div className="flex items-center gap-4">
+                            {/* Tape Icon: Fixed size */}
+                            <div className="flex items-center justify-center">
+                                <TapeIcon color={tapeColor ? `var(--color-synthux-${tapeColor.toLowerCase()})` : 'gold'} size={40} />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-2xl font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase">
+                                        {slot.name}
+                                    </h2>
+                                </div>
+                                <div className="text-xs font-bold text-gray-500 tracking-widest uppercase flex items-center gap-2">
+                                    <span>Waveform Editor</span>
+                                    <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
+                                    <span className={isDirty ? "text-amber-500" : "text-gray-600"}>
+                                        {isDirty ? "Unsaved Changes" : "All Saved"}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors">✕</button>
                     </div>
@@ -1130,15 +1259,32 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                 >
                                     <RotateCcw size={14} /> Make Loop
                                 </button>
-                                <button
-                                    onClick={handleSave}
-                                    onMouseEnter={() => setHelpText("Apply Trim & Fades (Keep Open)")}
-                                    onMouseLeave={() => setHelpText("")}
-                                    disabled={isProcessing}
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs font-bold uppercase tracking-wider transition-colors border border-gray-700 text-green-400 hover:text-green-300 hover:border-green-800"
-                                >
-                                    <Check size={14} /> Apply Trim
-                                </button>
+                                {(() => {
+                                    const duration = regionState.end - regionState.start;
+                                    const isFullSelection = Math.abs(duration - editorDuration) < 0.05;
+                                    const isDisabled = isProcessing || isFullSelection || hasTrimmed;
+
+                                    return (
+                                        <button
+                                            onClick={() => {
+                                                handleSave();
+                                            }}
+                                            onMouseEnter={() => setHelpText(
+                                                hasTrimmed ? "Already Applied" :
+                                                    isFullSelection ? "Full Selection (Nothing to Trim)" :
+                                                        "Apply Trim & Fades (Keep Open)"
+                                            )}
+                                            onMouseLeave={() => setHelpText("")}
+                                            disabled={isDisabled}
+                                            className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${isDisabled
+                                                ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50'
+                                                : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-green-400 hover:text-green-300 hover:border-green-800'
+                                                }`}
+                                        >
+                                            <Check size={14} /> Apply Trim
+                                        </button>
+                                    )
+                                })()}
                                 <button
                                     onClick={async () => {
                                         if (!originalBuffer) return;
@@ -1147,8 +1293,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                             // Normalize to -1dB
                                             const normalized = await audioProcessor.normalize(originalBuffer, -1);
                                             const newBlob = encodeWAV(normalized);
-                                            // Loop is ALWAYS a new version (dirty=true implied essentially, but we force it)
-                                            onSave(newBlob, normalized.duration, `Normalized`, true);
+                                            // Normalization is a specific action
+                                            onSave(newBlob, normalized.duration, `Normalized`, true, ['normalized']);
+                                            setHasNormalized(true);
                                             showToast("Normalized Saved!", "success");
                                             // onClose(); // Removed to keep editor open
                                         } catch (e) {
@@ -1158,12 +1305,25 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                             setIsProcessing(false);
                                         }
                                     }}
-                                    onMouseEnter={() => setHelpText("Normalize Audio to -1dB")}
+                                    onMouseEnter={() => setHelpText(hasNormalized ? "Already Applied" : "Normalize Audio to -1dB")}
                                     onMouseLeave={() => setHelpText("")}
-                                    disabled={isProcessing}
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs font-bold uppercase tracking-wider transition-colors border border-gray-700 text-yellow-400 hover:text-yellow-300 hover:border-yellow-800"
+                                    title={hasNormalized ? "Already Applied" : ""}
+                                    disabled={isProcessing || hasNormalized}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${hasNormalized ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-yellow-400 hover:text-yellow-300 hover:border-yellow-800'
+                                        }`}
                                 >
                                     <BarChart2 size={14} /> Normalize
+                                </button>
+                                {/* Reset Button */}
+                                <button
+                                    onClick={() => setShowResetConfirm(true)}
+                                    onMouseEnter={() => setHelpText("Discard Changes & Reset")}
+                                    onMouseLeave={() => setHelpText("")}
+                                    disabled={!isDirty}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${!isDirty ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed hidden' : 'bg-red-900/20 hover:bg-red-900/40 border-red-900/30 text-red-400 hover:text-red-300'
+                                        }`}
+                                >
+                                    <RotateCcw size={14} /> Reset
                                 </button>
                             </div>
                         </div>
@@ -1219,8 +1379,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                             const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
                                             const newBlob = encodeWAV(looped);
 
-                                            // Loop is ALWAYS a new version (dirty=true implied essentially, but we force it)
-                                            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s)`, true);
+                                            // Loop is ALWAYS a new version
+                                            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s)`, true, ['looped', 'trimmed']);
                                             showToast("Loop Created!", "success");
                                             setShowLoopPanel(false);
                                             // onClose(); // KEEP OPEN to show new looped version
@@ -1399,13 +1559,27 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                 {isPlaying ? <Pause fill="white" /> : <Play fill="white" />}
                                 {isPlaying ? 'PAUSE' : 'PLAY'}
                             </button>
-                            <button
-                                onClick={handleSave}
-                                disabled={isProcessing}
-                                className="flex items-center gap-2 px-8 py-3 bg-synthux-blue hover:bg-blue-500 rounded-full text-lg font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-synthux-blue/20 disabled:opacity-50"
-                            >
-                                <Save size={20} /> {isProcessing ? 'SAVING...' : 'SAVE TO TAPE'}
-                            </button>
+                            <div title={!isDirty && loadedVersionId === activeVersionId ? "File has not changed" : ""}>
+                                <button
+                                    onClick={() => {
+                                        if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
+                                            onAssignVersion(loadedVersionId);
+                                            // onClose(); // User wants to just assign? Or keep editing?
+                                            // "making this just the assigned file for the slot"
+                                            // Let's assume we maintain local state but trigger assignment
+                                        } else {
+                                            handleSave();
+                                        }
+                                    }}
+                                    disabled={isProcessing || (!isDirty && loadedVersionId === activeVersionId)}
+                                    className={`flex items-center gap-2 px-8 py-3 rounded-full text-lg font-bold transition-all shadow-lg ${isProcessing || (!isDirty && loadedVersionId === activeVersionId)
+                                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
+                                        : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
+                                        }`}
+                                >
+                                    <Save size={20} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
+                                </button>
+                            </div>
 
                             <button
                                 onClick={async () => {
@@ -1438,7 +1612,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, onClose, onSav
                                 className="flex items-center gap-2 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
                                 title="Save as a new Parked file (Unassigned)"
                             >
-                                <Save size={16} /> SAVE TO POOL
+                                <Save size={16} /> SAVE COPY TO POOL
                             </button>
                         </div>
 

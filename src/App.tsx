@@ -4,6 +4,7 @@ import { TapeSelector } from './components/TapeSelector';
 import logoImg from './assets/img/Spotykach_Logo.webp?url';
 import tapeIcon from './assets/img/spotykachtapeicon.svg?url';
 import { SlotGrid } from './components/SlotGrid';
+import { AllViewGrid } from './components/AllViewGrid';
 import { WaveformEditor } from './components/WaveformEditor';
 import { FileBrowser } from './components/FileBrowser';
 import type { AppState, TapeColor, FileRecord, AudioVersion } from './types';
@@ -15,7 +16,8 @@ import { InfoModal } from './components/InfoModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SamplePackModal } from './components/SamplePackModal';
 import { Toast, type ToastType } from './components/Toast';
-import { Info, Upload, Download, FileJson, HardDrive } from 'lucide-react';
+import { Info, Upload, Download, FileJson, HardDrive, Play, Pause } from 'lucide-react';
+import { TapeIcon } from './components/TapeIcon';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { loadStateFromDB, saveStateToDB } from './utils/persistence';
@@ -26,6 +28,7 @@ import { loadStateFromDB, saveStateToDB } from './utils/persistence';
 function App() {
   const [state, setState] = useState<AppState>(getInitialState());
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
+  const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
@@ -124,7 +127,7 @@ function App() {
   const generateId = () => crypto.randomUUID();
 
   // Handle external file drop (New Upload)
-  const handleSlotDrop = async (slotId: number, files: FileList) => {
+  const handleSlotDrop = async (slotId: number, files: FileList, targetColor: TapeColor = currentTapeColor) => {
     if (files.length === 0) return;
     const file = files[0];
 
@@ -163,9 +166,9 @@ function App() {
         files: { ...prev.files, [fileId]: newFile },
         tapes: {
           ...prev.tapes,
-          [currentTapeColor]: {
-            ...prev.tapes[currentTapeColor],
-            slots: prev.tapes[currentTapeColor].slots.map(s =>
+          [targetColor]: {
+            ...prev.tapes[targetColor],
+            slots: prev.tapes[targetColor].slots.map(s =>
               s.id === slotId ? { ...s, fileId: fileId } : s
             )
           }
@@ -182,7 +185,7 @@ function App() {
   };
 
   // Handle internal drag drop (Move/Swap/Assign)
-  const handleSlotDropInternal = (targetSlotId: number, fileId: string, source: string, isDuplicate: boolean = false) => {
+  const handleSlotDropInternal = (targetSlotId: number, fileId: string, source: string, isDuplicate: boolean = false, targetColor: TapeColor = currentTapeColor) => {
     // source is 'browser' or 'slot'
 
     setState(prev => {
@@ -196,7 +199,8 @@ function App() {
 
       // 2. Assign to new slot
       // We need to check if target slot is occupied
-      const targetSlot = nextTapes[currentTapeColor].slots.find(s => s.id === targetSlotId);
+      const targetTape = nextTapes[targetColor];
+      const targetSlot = targetTape.slots.find(s => s.id === targetSlotId);
       const previousFileId = targetSlot?.fileId;
 
       // If occupied, what do we do? Swap? Park the old one?
@@ -207,9 +211,9 @@ function App() {
       }
 
       // Assign new file
-      nextTapes[currentTapeColor] = {
-        ...nextTapes[currentTapeColor],
-        slots: nextTapes[currentTapeColor].slots.map(s =>
+      nextTapes[targetColor] = {
+        ...nextTapes[targetColor],
+        slots: nextTapes[targetColor].slots.map(s =>
           s.id === targetSlotId ? { ...s, fileId } : s
         )
       };
@@ -232,7 +236,11 @@ function App() {
             slots: nextTapes[c].slots.map(s => {
               // If this slot had the file we just moved, AND it's not the target slot
               // (Cross-tape moves or same-tape moves)
-              if (s.fileId === fileId && (c !== currentTapeColor || s.id !== targetSlotId)) {
+              // NOTE: If we move to a different tape, we definitely clear the old one.
+              // If same tape, we check slot id.
+              const isTargetLocation = c === targetColor && s.id === targetSlotId;
+
+              if (s.fileId === fileId && !isTargetLocation) {
                 return { ...s, fileId: null };
               }
               return s;
@@ -314,6 +322,71 @@ function App() {
     });
   };
 
+  // Handle Drop on "View All" Icon (Auto-Fill first free slot)
+  const handleDropOnViewAll = (fileId: string, source: string, isDuplicate: boolean) => {
+    setState(prev => {
+      const nextFiles = { ...prev.files };
+      const nextTapes = { ...prev.tapes };
+
+      // 1. Find First Free Slot across all tapes (Order: TAPE_COLORS)
+      let targetSlotId: number | null = null;
+      let targetColor: TapeColor | null = null;
+
+      // Helper: get TAPE_COLORS from types (we need to import or re-declare if not available, but we can iterate keys or use the constant if imported)
+      // TAPE_COLORS is imported from types in line 9
+      // We need TAPE_COLORS array. It is imported in line 9? Let's check imports.
+      // Yes line 9: import type { ... } from './types'. Wait, TAPE_COLORS is a const, not type.
+      // Check imports first. If not imported, we need to add it to imports.
+
+      // Assuming TAPE_COLORS is imported or we use Object.keys (but keys order is not guaranteed).
+      // Let's assume we need to add it to imports or use a hardcoded list for order validity.
+      const colors: TapeColor[] = ['Blue', 'Green', 'Pink', 'Red', 'Turquoise', 'Yellow'];
+
+      for (const color of colors) {
+        const tape = nextTapes[color];
+        const freeSlot = tape.slots.find(s => s.fileId === null);
+        if (freeSlot) {
+          targetSlotId = freeSlot.id;
+          targetColor = color;
+          break;
+        }
+      }
+
+      if (targetSlotId === null || !targetColor) {
+        alert("All tapes are full!");
+        return prev;
+      }
+
+      // 2. Unpark if from browser
+      if (source === 'browser') {
+        nextFiles[fileId] = { ...nextFiles[fileId], isParked: false };
+      }
+
+      // 3. Move Logic (Clear old slot if not duplicate)
+      if (!isDuplicate && source === 'slot') {
+        Object.keys(nextTapes).forEach(cKey => {
+          const c = cKey as TapeColor;
+          nextTapes[c] = {
+            ...nextTapes[c],
+            slots: nextTapes[c].slots.map(s =>
+              s.fileId === fileId ? { ...s, fileId: null } : s
+            )
+          }
+        });
+      }
+
+      // 4. Assign to new slot
+      nextTapes[targetColor] = {
+        ...nextTapes[targetColor],
+        slots: nextTapes[targetColor].slots.map(s =>
+          s.id === targetSlotId ? { ...s, fileId: fileId } : s
+        )
+      };
+
+      return { files: nextFiles, tapes: nextTapes };
+    });
+  };
+
   const handleRemoveFromTape = (slotId: number) => {
     setState(prev => {
       const nextTapes = { ...prev.tapes };
@@ -325,9 +398,42 @@ function App() {
           s.id === slotId ? { ...s, fileId: null } : s
         )
       };
-
       return { ...prev, tapes: nextTapes };
     });
+  };
+
+  const handleAllViewSlotClick = (slotId: number, color: TapeColor) => {
+    // 1. Switch Context
+    setCurrentTapeColor(color);
+
+    // 2. Check content
+    const tape = state.tapes[color];
+    const slot = tape.slots.find(s => s.id === slotId);
+
+    if (slot && slot.fileId) {
+      // 3a. Open Editor
+      setActiveSlotId(slotId);
+      // We ALSO need to set viewMode to 'single' IF we want the spinning backdrop color to match immediately?
+      // Or does Editor overlay everything? Editor is a modal.
+      // However, user might expect to be in that tape's view if they close the editor?
+      // Let's switch viewMode to 'single' so when they close the editor, they are on that tape.
+      // Let's switch viewMode to 'single' so when they close the editor, they are on that tape.
+      // USER REQUEST: Stay in All View (removed setViewMode)
+      // setViewMode('single');
+    } else {
+      // 3b. Open Upload
+      // We must track which tape this upload is for!
+      // currently setTargetSlotForUpload stores ID.
+      setTargetSlotForUpload(slotId);
+      // IMPORTANT: Single File Input handler (line 546) uses `currentTapeColor`.
+      // Since we just set setCurrentTapeColor(color) above, React state update might not be immediate 
+      // inside the event handler if we triggered click immediately.
+      // However, setState is async.
+      // By the time `onChange` fires on the input, re-render will have happened with new `currentTapeColor`.
+      // So this is safe!
+      // USER REQUEST: Stay in All View (removed setViewMode)
+      singleFileInputRef.current?.click();
+    }
   };
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -433,8 +539,14 @@ function App() {
       {/* Sidebar Tape Selector */}
       <TapeSelector
         currentTape={currentTapeColor}
-        onSelect={setCurrentTapeColor}
+        isAllView={viewMode === 'all'}
+        onSelect={(color) => {
+          setCurrentTapeColor(color);
+          setViewMode('single');
+        }}
+        onToggleAllView={() => setViewMode('all')}
         onDropOnTape={handleTapeDrop}
+        onDropOnViewAll={handleDropOnViewAll}
       />
 
       {/* Main Content */}
@@ -463,7 +575,15 @@ function App() {
             ref={singleFileInputRef}
             onChange={(e) => {
               if (e.target.files && targetSlotForUpload !== null) {
-                handleSlotDrop(targetSlotForUpload, e.target.files);
+                // Determine color? Single file input is only used by SlotGrid (currentTape) or maybe AllView?
+                // Currently setTargetSlotForUpload is only called in SlotGrid (Single View) and AllView.
+                // We need to know which tape too if we support upload in AllView.
+                // For now, let's assume currentTapeColor for Single View.
+                // If AllView calls this, we need to track targetColorForUpload.
+                // Let's defer exact AllView upload "click to upload" support or assume it uses currentTapeColor?
+                // Actually AllView upload isn't fully wired for "click empty slot", simpler to just support D&D for now in AllView.
+                // Fixing for Single View:
+                handleSlotDrop(targetSlotForUpload, e.target.files, currentTapeColor);
               }
               setTargetSlotForUpload(null);
               if (singleFileInputRef.current) singleFileInputRef.current.value = '';
@@ -555,7 +675,7 @@ function App() {
                   WebkitMaskSize: 'contain',
                   WebkitMaskPosition: 'center',
                   WebkitMaskRepeat: 'no-repeat',
-                  backgroundColor: `var(--color-synthux-${
+                  backgroundColor: viewMode === 'all' ? '#ffffff' : `var(--color-synthux-${
                     // Helper to map Color to Var Name (Need to duplicate logic or import?)
                     // Simple inline map for now to avoid refactor overhead
                     (currentTapeColor === 'Red' ? 'red' :
@@ -565,52 +685,78 @@ function App() {
                             currentTapeColor === 'Yellow' ? 'yellow' :
                               currentTapeColor === 'Turquoise' ? 'turquoise' : 'blue')
                     })`,
+                  opacity: viewMode === 'all' ? 0.05 : undefined
                 }}
               />
             </div>
 
             <div className="w-full max-w-5xl py-8 relative z-10">
-              {(() => {
-                return (
-                  <div className="flex items-center gap-3 mb-6">
-                    <h2 style={{ color: tapeMetadata[currentTapeColor as TapeColor].hex }} className="text-4xl font-bold font-header tracking-tight uppercase drop-shadow-md">
-                      Tape {currentTapeColor}
-                    </h2>
+              {viewMode === 'single' ? (
+                <>
+                  <div className="flex items-center gap-4 mb-6 w-full">
+                    {/* Tape Icon */}
+                    <div className="flex items-center justify-center">
+                      <TapeIcon color={`var(--color-synthux-${currentTapeColor.toLowerCase()})`} size={40} />
+                    </div>
+                    {/* Title */}
+                    <div className="flex-1">
+                      <h2
+                        style={{ color: `var(--color-synthux-${currentTapeColor.toLowerCase()})` }}
+                        className="text-4xl font-bold font-header tracking-tight uppercase drop-shadow-md shrink-0"
+                      >
+                        Tape {currentTapeColor}
+                      </h2>
+                    </div>
+
+                    {/* Actions */}
                     <button
                       onClick={() => exportSingleTape(currentTapeColor, currentTape, state.files)}
-                      className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                      className="p-3 rounded-full bg-gray-800 hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-500"
                       title={`Download ${currentTapeColor} Tape (Zip)`}
                     >
                       <Download size={20} />
                     </button>
                   </div>
-                );
-              })()}
 
-              <SlotGrid
-                slots={currentTape.slots}
-                files={state.files}
-                tapeColor={currentTapeColor}
-                activeSlotId={activeSlotId}
-                onSlotClick={(id) => {
-                  const slot = currentTape.slots.find(s => s.id === id);
-                  if (slot && slot.fileId) {
-                    setActiveSlotId(id);
-                  } else {
-                    // Empty slot -> Trigger Upload
-                    setTargetSlotForUpload(id);
-                    singleFileInputRef.current?.click();
-                  }
-                }}
-                onSlotDrop={handleSlotDrop}
-                onSlotDropInternal={(slotId, fileId, source) => {
-                  // If moving from another slot -> clear old slot logic?
-                  // Currently we rely on "unique assignment logic" in handleSlotDropInternal
-                  // which clears previous slot if needed.
-                  handleSlotDropInternal(slotId, fileId, source);
-                }}
-                onRemoveSlot={handleRemoveFromTape}
-              />
+                  <SlotGrid
+                    slots={currentTape.slots}
+                    files={state.files}
+                    tapeColor={currentTapeColor}
+                    activeSlotId={activeSlotId}
+                    onSlotClick={(id) => {
+                      const slot = currentTape.slots.find(s => s.id === id);
+                      if (slot && slot.fileId) {
+                        setActiveSlotId(id);
+                      } else {
+                        // Empty slot -> Trigger Upload
+                        setTargetSlotForUpload(id);
+                        singleFileInputRef.current?.click();
+                      }
+                    }}
+                    onSlotDrop={(id, files) => handleSlotDrop(id, files, currentTapeColor)}
+                    onSlotDropInternal={(slotId, fileId, source) => {
+                      handleSlotDropInternal(slotId, fileId, source, false, currentTapeColor);
+                    }}
+                    onRemoveSlot={handleRemoveFromTape}
+                  />
+                </>
+              ) : (
+                <div className="bg-black/40 rounded-3xl p-4 border border-white/5 backdrop-blur-md">
+                  <div className="flex items-center gap-3 mb-6 px-4">
+                    <h2 className="text-4xl font-bold font-header tracking-tight uppercase text-white drop-shadow-md">
+                      All Tapes
+                    </h2>
+                  </div>
+                  <AllViewGrid
+                    tapes={state.tapes}
+                    files={state.files}
+                    onRemoveSlot={(slotId) => handleRemoveFromTape(slotId)}
+                    onSlotDrop={handleSlotDrop} // AllViewGrid will pass color
+                    onSlotDropInternal={handleSlotDropInternal} // AllViewGrid will pass color
+                    onSlotClick={handleAllViewSlotClick}
+                  />
+                </div>
+              )}
             </div>
           </main>
         </div>
@@ -648,8 +794,9 @@ function App() {
                   slot={{ ...activeSlot!, name: activeFile.name, blob } as any}
                   versions={activeFile.versions}
                   activeVersionId={activeFile.currentVersionId}
+                  tapeColor={currentTapeColor}
                   onClose={() => setActiveSlotId(null)}
-                  onSave={(newBlob, duration, description, isDirty) => {
+                  onSave={(newBlob, duration, description, isDirty, processing) => {
                     if (!activeFileId) return;
 
                     // SMART SAVE LOGIC
@@ -671,7 +818,8 @@ function App() {
                       timestamp: Date.now(),
                       description: description || 'Edited',
                       blob: newBlob,
-                      duration
+                      duration,
+                      processing
                     };
 
                     setState(prev => ({
@@ -730,6 +878,50 @@ function App() {
                         }
                       }
                     }));
+                  }}
+                  onDeleteVersion={(versionId) => {
+                    if (!activeFileId) return;
+
+                    setState(prev => {
+                      const file = prev.files[activeFileId];
+                      if (!file) return prev;
+                      if (file.versions.length <= 1) return prev; // Keep at least one
+
+                      const newVersions = file.versions.filter(v => v.id !== versionId);
+                      let newCurrentId = file.currentVersionId;
+
+                      // If current version is deleted, switch to the first available one
+                      // (Which will be the previous one since we prepend new ones)
+                      if (file.currentVersionId === versionId) {
+                        newCurrentId = newVersions[0].id; // New newest version
+                      }
+
+                      return {
+                        ...prev,
+                        files: {
+                          ...prev.files,
+                          [activeFileId]: {
+                            ...file,
+                            versions: newVersions,
+                            currentVersionId: newCurrentId
+                          }
+                        }
+                      };
+                    });
+                  }}
+                  onAssignVersion={(versionId) => {
+                    if (!activeFileId) return;
+                    setState(prev => ({
+                      ...prev,
+                      files: {
+                        ...prev.files,
+                        [activeFileId]: {
+                          ...prev.files[activeFileId],
+                          currentVersionId: versionId
+                        }
+                      }
+                    }));
+                    setToast({ msg: "Version Assigned to Slot 🫡", type: "success" });
                   }}
                 />
               );

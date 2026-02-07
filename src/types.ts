@@ -17,6 +17,7 @@ export interface AudioVersion {
     description: string; // "Original", "Trimmed", "Faded", etc.
     blob: Blob;
     duration: number;
+    processing?: ('normalized' | 'trimmed' | 'looped')[];
 }
 
 export interface FileRecord {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 
 interface MiniWaveformProps {
     blob?: Blob;
@@ -7,10 +7,14 @@ interface MiniWaveformProps {
     height?: number;
     color?: string;
     className?: string; // Add className prop
+    progress?: number; // 0 to 1
+    onSeek?: (progress: number) => void;
 }
 
-export const MiniWaveform = ({ blob, buffer: propBuffer, width = 100, height = 40, color = "#4ade80", className = "" }: MiniWaveformProps) => {
+export const MiniWaveform = ({ blob, buffer: propBuffer, width = 100, height = 40, color = "#4ade80", className = "", progress = 0, onSeek }: MiniWaveformProps) => {
     const [peaks, setPeaks] = useState<number[]>([]);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const isScrubbing = React.useRef(false);
 
     useEffect(() => {
         let mounted = true;
@@ -107,12 +111,57 @@ export const MiniWaveform = ({ blob, buffer: propBuffer, width = 100, height = 4
 
     }, [peaks, width, height]);
 
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (!onSeek || !containerRef.current) return;
+        e.stopPropagation(); // Prevent parent drag/click interference
+        isScrubbing.current = true;
+        (e.target as Element).setPointerCapture(e.pointerId);
+        handleScrub(e);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isScrubbing.current) return;
+        handleScrub(e);
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        if (isScrubbing.current) {
+            isScrubbing.current = false;
+            (e.target as Element).releasePointerCapture(e.pointerId);
+        }
+    };
+
+    const handleScrub = (e: React.PointerEvent) => {
+        if (!containerRef.current || !onSeek) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const p = Math.max(0, Math.min(1, x / rect.width));
+        onSeek(p);
+    };
+
     return (
-        <div className={`flex items-center justify-center opacity-80 ${className}`} style={{ width, height }}>
+        <div
+            ref={containerRef}
+            className={`flex items-center justify-center opacity-80 relative ${className} ${onSeek ? 'cursor-ew-resize' : ''}`}
+            style={{ width, height }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onClick={(e) => e.stopPropagation()} // Prevent opening editor on click
+        >
             {peaks.length > 0 ? (
-                <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-                    <path d={pathData} fill={color} />
-                </svg>
+                <>
+                    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="pointer-events-none">
+                        <path d={pathData} fill={color} />
+                    </svg>
+                    {/* Playhead */}
+                    {progress > 0 && (
+                        <div
+                            className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_4px_rgba(0,0,0,0.5)] pointer-events-none transition-all duration-75"
+                            style={{ left: `${progress * 100}%` }}
+                        />
+                    )}
+                </>
             ) : (
                 <div className="w-full h-[1px] bg-gray-700 animate-pulse"></div>
             )}

@@ -70,5 +70,42 @@ Nobody else can claim this work as their own.`,
             { name: "Model Cycles Audrey Touch Pt 1", path: "/samples/horror/p1/JW/ModelCycles_Pt1.wav", category: "jonwtr" },
             { name: "Model Cycles Audrey Touch Pt 2", path: "/samples/horror/p1/JW/ModelCycles_Pt2.wav", category: "jonwtr" }
         ]
+    },
+    {
+        id: 'jonwtr-explorations',
+        name: 'Jonwtr Explorations',
+        description: 'A collection of noisy textures, field recordings, and voice sounds explored during the development of Spotykach.',
+        license: `DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+Version 2, December 2004
+
+Copyright (C) 2026 @jonwtr
+
+Everyone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.`,
+        links: [
+            { label: "Read Documentation", url: "https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/samples/jonwtr/README.md" },
+            { label: "Instagram (@jonwtr)", url: "https://instagram.com/jonwtr" },
+            { label: "YouTube (@jonwtr)", url: "https://youtube.com/@jonwtr" }
+        ],
+        coverImage: '/samples/jonwtr/og-image.png',
+        samples: [
+            // Voice
+            { name: "Tractatus Logico Robovoice", path: "/samples/jonwtr/Tractatus_logico_robovoice.wav", category: "Voice" },
+            { name: "Voice Glitch Raw", path: "/samples/jonwtr/voice_prrrrttttsktsk_rawCut.wav", category: "Voice" },
+
+            // Textures & Drone
+            { name: "Noise Trickle Distorted 1", path: "/samples/jonwtr/noise_trickle_distorted1.wav", category: "Textures" },
+            { name: "Noise Trickle Distorted 2", path: "/samples/jonwtr/noise_trickle_distorted2.wav", category: "Textures" },
+            { name: "Noise Drone", path: "/samples/jonwtr/noisedrone.wav", category: "Textures" },
+            { name: "Noisy Bass Pad", path: "/samples/jonwtr/noisybasspadC2G1.wav", category: "Textures" },
+
+            // Field Recordings
+            { name: "Drainpipe UZ", path: "/samples/jonwtr/drainpipeUZ.wav", category: "Field Recordings" },
+            { name: "Trickling Stones Dense", path: "/samples/jonwtr/tricklingstones_dense.wav", category: "Field Recordings" },
+            { name: "Trickling Stones Sparse", path: "/samples/jonwtr/tricklingstones_lessdense.wav", category: "Field Recordings" },
+
+            // Instruments
+            { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C#_E_G#.wav", category: "Instruments" },
+            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C#_E_G#_distorted.wav", category: "Instruments" }
+        ]
     }
 ];

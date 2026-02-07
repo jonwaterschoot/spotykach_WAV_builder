@@ -1,15 +1,19 @@
 import { TAPE_COLORS } from '../types';
 import type { TapeColor } from '../types';
+import { LayoutGrid } from 'lucide-react';
 
 import { TapeIcon } from './TapeIcon';
 
 interface TapeSelectorProps {
     currentTape: TapeColor;
+    isAllView: boolean;
     onSelect: (color: TapeColor) => void;
+    onToggleAllView: () => void;
     onDropOnTape: (color: TapeColor, fileId: string, source: string, isDuplicate: boolean) => void;
+    onDropOnViewAll: (fileId: string, source: string, isDuplicate: boolean) => void;
 }
 
-export const TapeSelector = ({ currentTape, onSelect, onDropOnTape }: TapeSelectorProps) => {
+export const TapeSelector = ({ currentTape, isAllView, onSelect, onToggleAllView, onDropOnTape, onDropOnViewAll }: TapeSelectorProps) => {
 
     // Drag Handlers
     const handleDragOver = (e: React.DragEvent) => {
@@ -33,7 +37,7 @@ export const TapeSelector = ({ currentTape, onSelect, onDropOnTape }: TapeSelect
     return (
         <div className="flex flex-col gap-4 p-4 bg-synthux-tapebg h-full border-r border-gray-800 w-24 items-center">
             {TAPE_COLORS.map((color) => {
-                const isActive = currentTape === color;
+                const isActive = !isAllView && currentTape === color;
                 const colorVar = `var(--color-synthux-${getColorVar(color)})`;
 
                 return (
@@ -78,6 +82,33 @@ export const TapeSelector = ({ currentTape, onSelect, onDropOnTape }: TapeSelect
                     </button>
                 );
             })}
+
+            {/* View All Toggle */}
+            <div className="w-full border-t border-gray-800 my-2 pt-2 flex justify-center">
+                <button
+                    onClick={onToggleAllView}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        const fileId = e.dataTransfer.getData('application/x-spotykach-file-id');
+                        const source = e.dataTransfer.getData('application/x-spotykach-source');
+                        const isDuplicate = e.ctrlKey || e.altKey;
+                        if (fileId) onDropOnViewAll(fileId, source, isDuplicate);
+                    }}
+                    className={`
+                        w-12 h-12 relative group transition-all duration-300 rounded-xl flex items-center justify-center
+                         ${isAllView ? 'bg-white text-black z-10' : 'text-gray-500 hover:text-white hover:bg-white/10'}
+                    `}
+                    title="View All Tapes"
+                >
+                    <LayoutGrid size={24} />
+
+                    {/* Tooltip-ish help text */}
+                    <span className="absolute left-full ml-4 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                        View All
+                    </span>
+                </button>
+            </div>
 
             <div className="mt-auto text-[10px] text-synthux-yellow font-mono text-center uppercase tracking-widest pt-4 border-t border-gray-800 w-full">
                 Select Tape

@@ -3,15 +3,18 @@ import React from 'react';
 
 interface TapeIconProps {
     color?: string;
+    size?: number;
     className?: string;
     style?: React.CSSProperties;
 }
 
-export const TapeIcon: React.FC<TapeIconProps> = ({ color = 'currentColor', className, style }) => {
+export const TapeIcon: React.FC<TapeIconProps> = ({ color = 'currentColor', size, className, style }) => {
     return (
         <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 66.73 64.39"
+            width={size}
+            height={size}
             className={className}
             style={style}
             fill={color}

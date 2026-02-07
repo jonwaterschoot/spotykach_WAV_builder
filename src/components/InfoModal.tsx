@@ -1,4 +1,5 @@
 import { X, ExternalLink, Cpu, FileAudio, Bot } from 'lucide-react';
+import { version } from '../../package.json';
 
 interface InfoModalProps {
     onClose: () => void;
@@ -15,7 +16,7 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                         <h2 className="text-2xl font-bold bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent font-header">
                             About Spotykach WAV Builder
                         </h2>
-                        <p className="text-gray-500 text-sm mt-1 font-body">Version 2.0</p>
+                        <p className="text-gray-500 text-sm mt-1 font-body">Version {version}</p>
                     </div>
                     <button
                         onClick={onClose}

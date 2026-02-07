@@ -64,6 +64,11 @@ Future ideas and planned features:
 -   **Multi-Project Support**: Save and load multiple projects within the app with version history.
 -   **Shared Sample Pool**: A centralized pool of samples shared across different projects.
 -   **Project Manager**: A dedicated interface for managing your local projects.
+-   **Standalone Application**: Make the app installable (PWA or Electron wrapper) for offline/desktop use.
+-   **Mobile Optimization**: Improve touch targets and layout for tablet/phone usage.
+-   **Cloud Sync**: Optional integration with cloud storage (Google Drive/Dropbox) for project backup.
+-   **Advanced Sequencing**: Add a simple step sequencer for the "Play Tape" functionality.
+-   **MIDI Support**: Trigger slots via MIDI controller.
 
 ## Contributing
 
