@@ -74,6 +74,8 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
     // Helper to check for "Loop" in description
     const isLooped = currentVersion?.description?.toLowerCase().includes('loop');
 
+    const tapeColorVar = `var(--color-synthux-${tapeColor.toLowerCase()})`;
+
     return (
         <div
             onClick={onClick}
@@ -85,9 +87,12 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
             className={`
                 relative aspect-square rounded-xl border-2 cursor-pointer transition-all duration-200
                 flex flex-col overflow-hidden group
-                ${isDragOver ? 'border-synthux-blue bg-synthux-blue/10 scale-105 z-20' : isActive ? 'border-synthux-blue bg-[#1a1a1a] shadow-xl scale-[1.02]' : 'border-gray-700 bg-[#151515] hover:border-gray-500'}
+                ${isDragOver ? 'bg-white/10 scale-105 z-20' : isActive ? 'bg-[#1a1a1a] shadow-xl scale-[1.02]' : 'border-gray-700 bg-[#151515] hover:border-gray-500'}
                 ${fileRecord ? 'shadow-lg' : ''}
             `}
+            style={{
+                borderColor: (isActive || isDragOver) ? tapeColorVar : undefined
+            }}
         >
             {/* Slot ID Badge */}
             <div className="absolute top-2 left-3 text-xs font-bold text-gray-600 z-10 pointer-events-none">

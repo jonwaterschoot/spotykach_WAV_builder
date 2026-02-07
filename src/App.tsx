@@ -16,7 +16,7 @@ import { InfoModal } from './components/InfoModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SamplePackModal } from './components/SamplePackModal';
 import { Toast, type ToastType } from './components/Toast';
-import { Info, Upload, Download, FileJson, HardDrive, Play, Pause } from 'lucide-react';
+import { Upload, Download, Info, FileJson, HardDrive } from 'lucide-react';
 import { TapeIcon } from './components/TapeIcon';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -522,15 +522,6 @@ function App() {
       setIsProcessing(false);
       setProgressMsg('');
     }
-  };
-
-  const tapeMetadata: Record<TapeColor, { hex: string }> = {
-    Blue: { hex: '#00aaff' },
-    Green: { hex: '#00ff00' },
-    Pink: { hex: '#ff00ff' },
-    Red: { hex: '#f00f13' },
-    Turquoise: { hex: '#00ffff' },
-    Yellow: { hex: '#ffff00' },
   };
 
   return (

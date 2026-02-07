@@ -12,7 +12,7 @@ interface SlotGridProps {
     onRemoveSlot: (slotId: number) => void;
 }
 
-export const SlotGrid = ({ slots, files, activeSlotId, onSlotClick, onSlotDrop, onSlotDropInternal, onRemoveSlot }: SlotGridProps) => {
+export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, onSlotDrop, onSlotDropInternal, onRemoveSlot }: SlotGridProps) => {
     return (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-6 p-6 w-full max-w-4xl mx-auto">
             {slots.map((slot) => {
@@ -22,6 +22,7 @@ export const SlotGrid = ({ slots, files, activeSlotId, onSlotClick, onSlotDrop, 
                         key={slot.id}
                         slot={slot}
                         fileRecord={fileRecord}
+                        tapeColor={tapeColor}
                         isActive={activeSlotId === slot.id}
                         onClick={() => onSlotClick(slot.id)}
                         onDrop={(files) => onSlotDrop(slot.id, files)}

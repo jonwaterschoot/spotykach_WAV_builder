@@ -2,22 +2,21 @@
 
 
 
-## new sample pack by jonwtr
-- the sample pack should be added to the filebrowser, make a new readme.md file describing the sounds, a series of noisy textures, field recording, voice sounds, ... the links for the creator of this pack should point to the readme in the github repo of this project. plus a link to IG and YT @jonwtr
-
-
-## create a changelog file and prepare a setup for versioning 
-
-- for now we can just write up a changelog.md file in the root of the project
-- we should prepare a setup for versioning and then perhaps display the version in our actual app
-
-## add to future ideas / roadmap
-- make the app standalone / installable?
-
 
 -----------------------------------------------------------
 -- vvvvvvvvvvv !!done / changed / reviewed!! vvvvvvvvvvv --
 -----------------------------------------------------------
+## new sample pack by jonwtr
+v - the sample pack should be added to the filebrowser, make a new readme.md file describing the sounds, a series of noisy textures, field recording, voice sounds, ... the links for the creator of this pack should point to the readme in the github repo of this project. plus a link to IG and YT @jonwtr
+
+
+## create a changelog file and prepare a setup for versioning 
+
+v - for now we can just write up a changelog.md file in the root of the project
+- we should prepare a setup for versioning and then perhaps display the version in our actual app
+
+## add to future ideas / roadmap
+v - make the app standalone / installable?
 
 ## Color and looks
 v - Tape Blue, Yellow etc, ... > title of the tape view should use the var synthux colors, now they're just generic colors, the titles color should be based on the same colors as we're applying to the tape icons in the left bar
