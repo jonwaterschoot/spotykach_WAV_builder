@@ -60,6 +60,8 @@ Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV
 
 ## Roadmap
 
+For now I'm keeping a text file with the roadmap / feature ideas, and a bugtracking: [roadmap-bugs.md](roadmap-bugs.md)
+
 Future ideas and planned features:
 -   **Multi-Project Support**: Save and load multiple projects within the app with version history.
 -   **Shared Sample Pool**: A centralized pool of samples shared across different projects.
@@ -67,8 +69,6 @@ Future ideas and planned features:
 -   **Standalone Application**: Make the app installable (PWA or Electron wrapper) for offline/desktop use.
 -   **Mobile Optimization**: Improve touch targets and layout for tablet/phone usage.
 -   **Cloud Sync**: Optional integration with cloud storage (Google Drive/Dropbox) for project backup.
--   **Advanced Sequencing**: Add a simple step sequencer for the "Play Tape" functionality.
--   **MIDI Support**: Trigger slots via MIDI controller.
 
 ## Contributing
 
