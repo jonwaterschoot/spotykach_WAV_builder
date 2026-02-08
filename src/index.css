@@ -1,6 +1,11 @@
 @import 'mobile-drag-drop/default.css';
 @import "tailwindcss";
 
+/* mobile-drag-drop polyfill override */
+.dnd-drag-image-translate-override {
+    transform: translate(-50%, -50%) !important; 
+}
+
 :root {
     --color-synthux-green: #23E073;
     --color-synthux-orange: #F58B44;

@@ -12,7 +12,7 @@ interface SlotGridProps {
     onRemoveSlot: (slotId: number) => void;
     duplicates: Set<string>;
     onDeleteFile: (fileId: string) => void;
-    onBulkAssign: (targetSlotId: number, fileIds: string[], targetColor?: TapeColor) => void;
+    onBulkAssign: (targetSlotId: number, fileIds: string[], targetColor: TapeColor, sourceSlotKeys?: string[]) => void;
     // Selection
     selectedSlots: Set<string>;
     onSlotSelectionClick: (color: TapeColor, slotId: number, e: React.MouseEvent) => void;

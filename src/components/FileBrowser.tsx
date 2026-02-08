@@ -573,6 +573,7 @@ const FileItem = ({
             ${isDuplicate ? '!border-orange-500' : ''}
             ${isSelected ? 'bg-synthux-yellow/10 border-synthux-yellow/50' : ''}
         `}
+            style={{ touchAction: 'none' }}
         >
             {/* Left Controls Group: Checkbox + Play + Download */}
             <div className={`flex shrink-0 ${isMinified ? 'flex-row items-center gap-2' : 'flex-col items-center gap-1'}`}>

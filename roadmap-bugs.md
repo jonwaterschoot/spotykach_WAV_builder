@@ -4,6 +4,15 @@ For now I'm keeping a text file with the roadmap / feature ideas, and a bugtrack
 
 ## bugs
 
+Touch support
+
+adding touch support added conflicts: 
+- the cards new select yellow border box prevents clicking on the card's plus sign to load an import 
+- the yellow select box should only activate upon selecting the circle selector in the top left corner
+- if a slot is empty, the select option should not be there
+- on Win touchscreen dragging works, yet on android it doesn't seem to work. when dragging one or multiple selected files nothing happens, no highlighting of the drop zone, no nothing. 
+
+
 - import issue loading on deck A failed, problem dissapeared on reboot
 
 >Report by @Naenyn:
@@ -13,15 +22,6 @@ For now I'm keeping a text file with the roadmap / feature ideas, and a bugtrack
 ---
 
 ## new feature / functions ideas:
-
-project maintenance features, starting with removing of items. There is removing from slots and there is perma removing. 
-- **remove files from the project** > trashcan is permanent remove, just an X to remove from tape slots and thus move to pool.
-- This should apply to all current locations:
-  - browser in edit and main browser should list both icons
-  - all tapes view and single tape view cards
-  - main browser: remove from unassigned is perma delete trashcan
-  - trashcan icon colores red, X colors synthux yellow (use syntux red tape color for trashcan)
-
 
 - keep a temporary trashcan for removed files, with a button to restore them, this should be a separate feature from the project cleanup feature
 
@@ -55,12 +55,7 @@ project maintenance features, starting with removing of items. There is removing
 
 ## tablet Android and iPad support
 
-- the app should be optimized for tablet use with mobile browsers:
-    - Android Chrome seemed to work well, but it did not allow drag and drop of files, not responsive to touch
-    - adding drag and drop support for tablets, touch is not working yet
-    - file support handling: to research how to handle files on android and ios devices
-       - what happens with the local file system when the app is "installed" on a device?
-       - 
+...
 
 ## Roadmap readme - keep a short list of thease in the README.md
 

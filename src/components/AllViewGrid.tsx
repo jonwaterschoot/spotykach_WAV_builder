@@ -13,7 +13,7 @@ interface AllViewGridProps {
     onTapeHeaderClick: (color: typeof TAPE_COLORS[number]) => void;
     duplicates: Map<string, any[]>;
     onDeleteFile: (fileId: string) => void;
-    onBulkAssign: (targetSlotId: number, fileIds: string[], targetColor?: TapeColor) => void;
+    onBulkAssign: (targetSlotId: number, fileIds: string[], targetColor: TapeColor, sourceSlotKeys?: string[]) => void;
     // Selection
     selectedSlots: Set<string>;
     onSlotSelectionClick: (slotId: number, color: TapeColor, e: React.MouseEvent) => void;

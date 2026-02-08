@@ -1,4 +1,4 @@
-import { Play, Square, Trash2, AlertTriangle, X } from 'lucide-react';
+import { Play, Square, Trash2, AlertTriangle, X, Edit3 } from 'lucide-react';
 import { useState } from 'react';
 import { MiniWaveform } from './MiniWaveform';
 import type { Slot, FileRecord, TapeColor } from '../types';
@@ -14,7 +14,7 @@ interface MiniSlotCardProps {
     onDropInternal: (fileId: string, source: string, isDuplicate: boolean, sourceSlotId?: number, sourceSlotColor?: TapeColor) => void;
     onClick: () => void;
     isDuplicate?: boolean;
-    onBulkAssign?: (targetSlotId: number, fileIds: string[], targetColor?: TapeColor) => void;
+    onBulkAssign?: (targetSlotId: number, fileIds: string[], targetColor: TapeColor, sourceSlotKeys?: string[]) => void;
     isSelected: boolean;
     onSlotSelectionClick: (e: React.MouseEvent) => void;
     onToggleSlotSelection: () => void;
@@ -73,12 +73,15 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
 
         const internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
         const bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
+        const bulkSourceData = e.dataTransfer.getData('application/x-spotykach-bulk-source-slots');
 
         if (bulkData && onBulkAssign) {
             try {
                 const fileIds = JSON.parse(bulkData) as string[];
+                const sourceKeys = bulkSourceData ? JSON.parse(bulkSourceData) as string[] : undefined;
+
                 if (Array.isArray(fileIds) && fileIds.length > 0) {
-                    onBulkAssign(slot.id, fileIds, tapeColor);
+                    onBulkAssign(slot.id, fileIds, tapeColor, sourceKeys);
                     return;
                 }
             } catch (e) {
@@ -119,10 +122,8 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
 
     return (
         <div
-            onClick={(e) => {
-                if (onSlotSelectionClick) onSlotSelectionClick(e);
-                else onClick();
-            }}
+            onClick={onClick}
+            onDoubleClick={onClick}
             draggable={!!fileRecord}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
@@ -135,17 +136,23 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
             ${fileRecord ? 'cursor-grab active:cursor-grabbing' : 'opacity-80 hover:opacity-100 cursor-pointer'}
             ${fileRecord && isDuplicate ? '!border-orange-500/50' : ''}
             ${selectionClass}
-        `}>
-            {/* Selection Checkbox (Touch Target) */}
-            <div
-                className={`absolute -top-1 -left-1 w-4 h-4 z-20 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-synthux-yellow border-white text-black' : 'bg-gray-800 border-gray-600 text-transparent hover:border-gray-400'}`}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleSlotSelection();
-                }}
-            >
-                <div className="w-1.5 h-1.5 bg-current rounded-full" />
-            </div>
+        `}
+            style={{
+                touchAction: 'none' // Important for touch drag
+            }}
+        >
+            {/* Selection Checkbox (Touch Target) - Only show if file exists */}
+            {fileRecord && (
+                <div
+                    className={`absolute -top-1 -left-1 w-4 h-4 z-20 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-synthux-yellow border-white text-black' : 'bg-gray-800 border-gray-600 text-transparent hover:border-gray-400'}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSlotSelection();
+                    }}
+                >
+                    <div className="w-1.5 h-1.5 bg-current rounded-full" />
+                </div>
+            )}
             {fileRecord && currentVersion ? (
                 <>
                     {/* Duplicate Icon */}
@@ -183,6 +190,17 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                             </button>
 
                             <div className="flex items-center gap-1">
+                                {/* Edit */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onClick();
+                                    }}
+                                    className="p-1 rounded-full bg-black/60 hover:bg-white text-white hover:text-black transition-colors"
+                                    title="Edit"
+                                >
+                                    <Edit3 size={10} />
+                                </button>
                                 {/* Unassign */}
                                 <button
                                     onClick={(e) => {

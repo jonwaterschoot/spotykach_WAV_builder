@@ -58,6 +58,7 @@ function App() {
     fileIds: string[];
     conflicts: number;
     targetColor?: TapeColor;
+    sourceSlotKeys?: string[]; // "Color-Id"
   } | null>(null);
 
   // Advanced Selection State (Tape Slots)
@@ -741,15 +742,11 @@ function App() {
     targetSlotId: number,
     fileIds: string[],
     mode: 'check' | 'overwrite' | 'fill',
-    targetColorHint?: TapeColor
+    targetColorHint?: TapeColor,
+    sourceSlotKeys?: string[]
   ): { conflicts: number } | void => {
 
     // For 'check' mode, we don't update state, just return conflict count.
-    // For 'exec' modes, we call setState.
-
-    // If check mode, we work with current state.
-    // If exec mode, we invoke setState and work with prev.
-
     if (mode === 'check') {
       const tapes = state.tapes;
       let conflictCount = 0;
@@ -781,9 +778,6 @@ function App() {
       let currentSlotIdx = startIdx;
 
       // Simulate assignment
-      // Default behavior (overwrite) checks for conflicts in the *target* slots.
-      // If we were doing 'fill', there would be NO conflicts by definition, so 'check' implies checking for 'overwrite' scenario.
-
       for (const fileId of fileIds) {
         // Find slot
         let assigned = false;
@@ -838,6 +832,7 @@ function App() {
       let currentSlotIdx = startIdx;
       const leftovers: string[] = [];
       let assignCount = 0;
+      const assignedSlots = new Set<string>(); // Track assigned slots to avoid clearing them
 
       for (const fileId of fileIds) {
         let assigned = false;
@@ -875,6 +870,9 @@ function App() {
             tape.slots[currentSlotIdx] = { ...slot, fileId };
             nextFiles[fileId] = { ...nextFiles[fileId], isParked: false };
 
+            // Track assignment
+            assignedSlots.add(`${color}-${slot.id}`);
+
             assigned = true;
             assignCount++;
             currentSlotIdx++;
@@ -889,6 +887,34 @@ function App() {
         }
 
         if (!assigned) leftovers.push(fileId);
+      }
+
+      // Cleanup Source Slots (Move Logic)
+      if (sourceSlotKeys && sourceSlotKeys.length > 0) {
+        sourceSlotKeys.forEach(key => {
+          // Only clear if NOT in the set of newly assigned slots
+          if (!assignedSlots.has(key)) {
+            const [c, sIdStr] = key.split('-');
+            const color = c as TapeColor;
+            const sId = parseInt(sIdStr);
+
+            let tape = nextTapes[color];
+            // Clone if not already clone of prev (check referential equality)
+            // Note: We might have cloned it in the loop above.
+            // If nextTapes[color] === prev.tapes[color], we MUST clone before mutating.
+            // But wait, if we are in this block, we might interact with a tape we haven't touched yet.
+            if (tape === prev.tapes[color]) {
+              tape = { ...tape, slots: [...tape.slots] };
+              nextTapes[color] = tape;
+            }
+
+            // Clear the slot
+            nextTapes[color].slots = nextTapes[color].slots.map(s => s.id === sId ? { ...s, fileId: null } : s);
+          }
+        });
+
+        // Clear selection after successful move to remove visual borders
+        setSelectedSlots(new Set());
       }
 
       if (leftovers.length > 0) {
@@ -907,7 +933,7 @@ function App() {
     });
   };
 
-  const handleBulkAssign = (targetSlotId: number, fileIds: string[], targetColor?: TapeColor) => {
+  const handleBulkAssign = (targetSlotId: number, fileIds: string[], targetColor?: TapeColor, sourceSlotKeys?: string[]) => {
     // 1. Check conflicts
     const result = processBulkAssign(targetSlotId, fileIds, 'check', targetColor);
     const conflicts = (result as { conflicts: number }).conflicts;
@@ -917,23 +943,24 @@ function App() {
         targetSlotId,
         fileIds,
         conflicts,
-        targetColor // Save color for execution
+        targetColor, // Save color for execution
+        sourceSlotKeys
       });
     } else {
-      processBulkAssign(targetSlotId, fileIds, 'overwrite', targetColor);
+      processBulkAssign(targetSlotId, fileIds, 'overwrite', targetColor, sourceSlotKeys);
     }
   };
 
   const handleBulkOverwrite = () => {
     if (bulkConflictState) {
-      processBulkAssign(bulkConflictState.targetSlotId, bulkConflictState.fileIds, 'overwrite', bulkConflictState.targetColor);
+      processBulkAssign(bulkConflictState.targetSlotId, bulkConflictState.fileIds, 'overwrite', bulkConflictState.targetColor, bulkConflictState.sourceSlotKeys);
       setBulkConflictState(null);
     }
   };
 
   const handleBulkFillEmpty = () => {
     if (bulkConflictState) {
-      processBulkAssign(bulkConflictState.targetSlotId, bulkConflictState.fileIds, 'fill', bulkConflictState.targetColor);
+      processBulkAssign(bulkConflictState.targetSlotId, bulkConflictState.fileIds, 'fill', bulkConflictState.targetColor, bulkConflictState.sourceSlotKeys);
       setBulkConflictState(null);
     }
   };
@@ -1230,19 +1257,23 @@ function App() {
 
     // Check if dragging a selected slot
     if (selectedSlots.has(slotKey)) {
-      // Collect all file IDs from selected slots
+      // Collect all file IDs and Slot Keys from selected slots
       const fileIds: string[] = [];
+      const sourceKeys: string[] = [];
+
       selectedSlots.forEach(key => {
         const [c, sIdStr] = key.split('-');
         const sId = parseInt(sIdStr);
         const s = state.tapes[c as TapeColor]?.slots.find(sl => sl.id === sId);
         if (s && s.fileId) {
           fileIds.push(s.fileId);
+          sourceKeys.push(key);
         }
       });
 
       if (fileIds.length > 0) {
         e.dataTransfer.setData('application/x-spotykach-bulk-ids', JSON.stringify(fileIds));
+        e.dataTransfer.setData('application/x-spotykach-bulk-source-slots', JSON.stringify(sourceKeys));
       }
     }
 

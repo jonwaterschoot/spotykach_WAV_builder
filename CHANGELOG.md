@@ -1,6 +1,21 @@
 # Changelog
 
-## [0.1.1] - 2026-02-08
+## [0.2.1] - 2026-02-08
+
+### Added
+- **Selection Workflow**:
+    - **Exclusive Selection**: Selection is now exclusively triggered by clicking the dedicated circle/checkbox on the card, separating it from the "Open Editor" action.
+    - **Clear on Move**: Selection state is automatically cleared after a successful bulk move operation.
+
+- **Editor Access**:
+    - **Direct Open**: Clicking the main body of a file card (Single or Double Click/Tap) now opens the Audio Editor immediately.
+    - **Edit Icon**: Added a specific "Edit" (pencil) button to both Tape and All views for explicit editor access.
+
+- **Bulk Interaction**:
+    - **Move vs Copy**: Dragging multiple files slots now defaults to "Move" (clearing source) instead of "Copy".
+    - **Touch Improvements (Trial)**: Enhanced touch event handling for better drag-and-drop and tap responsiveness on mobile devices.
+
+## [0.2.0] - 2026-02-08
 
 ### Added
 **Duplicate Management**:

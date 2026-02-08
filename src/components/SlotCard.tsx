@@ -1,4 +1,4 @@
-import { Play, Square, Trash2, Repeat, Download, AlertTriangle, X } from 'lucide-react';
+import { Play, Square, Trash2, Repeat, Download, AlertTriangle, X, Edit3 } from 'lucide-react';
 import { useState } from 'react';
 import { MiniWaveform } from './MiniWaveform';
 import type { Slot, FileRecord, TapeColor } from '../types';
@@ -15,7 +15,7 @@ interface SlotCardProps {
     onRemove: () => void;
     onDelete?: () => void;
     isDuplicate: boolean;
-    onBulkAssign?: (targetSlotId: number, fileIds: string[], targetColor?: TapeColor) => void;
+    onBulkAssign?: (targetSlotId: number, fileIds: string[], targetColor: TapeColor, sourceSlotKeys?: string[]) => void;
     isSelected: boolean;
     onSlotSelectionClick: (e: React.MouseEvent) => void;
     onToggleSlotSelection: () => void;
@@ -69,12 +69,15 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
 
         const internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
         const bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
+        const bulkSourceData = e.dataTransfer.getData('application/x-spotykach-bulk-source-slots');
 
         if (bulkData && onBulkAssign) {
             try {
                 const fileIds = JSON.parse(bulkData) as string[];
+                const sourceKeys = bulkSourceData ? JSON.parse(bulkSourceData) as string[] : undefined;
+
                 if (Array.isArray(fileIds) && fileIds.length > 0) {
-                    onBulkAssign(slot.id, fileIds, tapeColor);
+                    onBulkAssign(slot.id, fileIds, tapeColor, sourceKeys);
                     return;
                 }
             } catch (e) {
@@ -107,10 +110,8 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
 
     return (
         <div
-            onClick={(e) => {
-                if (onSlotSelectionClick) onSlotSelectionClick(e);
-                else onClick();
-            }}
+            onClick={onClick}
+            onDoubleClick={onClick}
             draggable={!!fileRecord}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
@@ -125,19 +126,22 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                 ${isSelected ? 'ring-2 ring-synthux-yellow' : ''}
             `}
             style={{
-                borderColor: (isActive || isDragOver) ? tapeColorVar : (isSelected ? 'var(--color-synthux-yellow)' : undefined)
+                borderColor: (isActive || isDragOver) ? tapeColorVar : (isSelected ? 'var(--color-synthux-yellow)' : undefined),
+                touchAction: 'none' // Important for touch drag
             }}
         >
-            {/* Selection Checkbox */}
-            <div
-                className={`absolute -top-3 -left-3 w-6 h-6 z-50 rounded-full border-2 flex items-center justify-center cursor-pointer transition-colors shadow-md ${isSelected ? 'bg-synthux-yellow border-white text-black' : 'bg-gray-800 border-gray-500 text-transparent hover:border-white'}`}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleSlotSelection();
-                }}
-            >
-                <div className="w-2 h-2 bg-current rounded-full" />
-            </div>
+            {/* Selection Checkbox - Only show if file exists */}
+            {fileRecord && (
+                <div
+                    className={`absolute -top-3 -left-3 w-6 h-6 z-50 rounded-full border-2 flex items-center justify-center cursor-pointer transition-colors shadow-md ${isSelected ? 'bg-synthux-yellow border-white text-black' : 'bg-gray-800 border-gray-500 text-transparent hover:border-white'}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSlotSelection();
+                    }}
+                >
+                    <div className="w-2 h-2 bg-current rounded-full" />
+                </div>
+            )}
             {/* Duplicate Badge */}
             {isDuplicate && (
                 <div className="absolute -top-2 -right-2 text-orange-400/80 z-40 bg-black/80 rounded-full p-1 border border-orange-500/30 shadow-sm" title="Duplicate File">
@@ -242,6 +246,17 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
 
 
 
+
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onClick();
+                            }}
+                            className="p-2 hover:bg-white/10 text-gray-500 hover:text-white rounded transition-colors"
+                            title="Open Editor"
+                        >
+                            <Edit3 size={14} />
+                        </button>
 
                         {/* Unassign (Move to Pool) */}
                         <button
