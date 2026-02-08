@@ -1183,7 +1183,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             return (
                                 <div
                                     key={v.id}
-                                    onClick={(e) => {
+                                    onClick={() => {
                                         // If Ctrl/Cmd key is pressed OR in selection mode (at least one selected), toggle selection
                                         // User request: "selection boxes always visible".
                                         // Let's allow clicking the checkbox specifically to toggle, or main body to load?
@@ -1258,8 +1258,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             {/* Delete (Trash) */}
                                             {onDeleteVersion && (
                                                 <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
+                                                    onClick={(_e) => {
+                                                        _e.stopPropagation();
                                                         onDeleteVersion(v.id);
                                                     }}
                                                     className="p-1.5 rounded-full bg-gray-700 hover:bg-red-500 text-gray-400 hover:text-white transition-colors"

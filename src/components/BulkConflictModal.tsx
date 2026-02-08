@@ -1,5 +1,4 @@
-import React from 'react';
-import { AlertTriangle, Disc, ArrowRight, CornerDownRight, X } from 'lucide-react';
+import { AlertTriangle, X, CornerDownRight } from 'lucide-react';
 
 interface BulkConflictModalProps {
     count: number;
@@ -35,7 +34,13 @@ export const BulkConflictModal = ({ count, onOverwrite, onFillEmpty, onCancel }:
                         className="group flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-orange-500/10 hover:border-orange-500/30 transition-all text-left"
                     >
                         <div className="p-2 bg-white/5 rounded-lg group-hover:bg-orange-500/20 transition-colors">
-                            <Disc className="text-gray-400 group-hover:text-orange-500" size={20} />
+                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white">
+                                <span>•</span>
+                            </div>
+                            <div className="w-0.5 h-8 bg-white/20 my-1 self-center" />
+                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white">
+                                <span>L</span>
+                            </div>
                         </div>
                         <div className="flex-1">
                             <div className="text-white font-bold text-sm mb-0.5">Overwrite Existing</div>
