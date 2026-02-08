@@ -76,6 +76,7 @@ Future ideas and planned features:
 We welcome contributions!
 -   **Found a bug?** Open an issue on [GitHub](https://github.com/jonwaterschoot/spotykach_WAV_builder/issues).
 -   **Have an idea?** Discuss it with us on the **Synthux Academy Discord**.
+-   **Want to build locally?** Check out our [Contribution Guide](CONTRIBUTING.md).
 
 ## License
 

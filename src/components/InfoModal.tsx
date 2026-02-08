@@ -92,7 +92,7 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                                 Future versions will include <strong>Multi-Project Support</strong>, a <strong>Shared Sample Pool</strong>, and a <strong>Project Manager</strong>.
                             </p>
                             <p>
-                                Want to help? Join the discussion on the <a href="https://synthux.academy" target="_blank" rel="noreferrer" className="text-synthux-yellow hover:underline">Synthux Discord</a> or open an issue on GitHub.
+                                Want to help? Join the discussion on the <a href="https://synthux.academy" target="_blank" rel="noreferrer" className="text-synthux-yellow hover:underline">Synthux Discord</a>, open an issue on GitHub, or check out our <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer" className="text-synthux-yellow hover:underline">Contribution Guide</a>.
                             </p>
                         </div>
                     </div>
