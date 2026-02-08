@@ -44,7 +44,8 @@ export const exportZip = async (state: AppState) => {
     }
 
     const content = await zip.generateAsync({ type: "blob" });
-    downloadBlob(content, "SPOTYKACH_SD.zip");
+    const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    downloadBlob(content, `Spotykach_SD_${dateStr}.zip`);
 };
 
 // Save State Export (Project JSON + Source Files)
@@ -81,13 +82,19 @@ export const exportSaveState = async (state: AppState) => {
 
     const serializedState = {
         files: serializedFiles,
-        tapes: state.tapes
+        tapes: state.tapes,
+        metadata: {
+            appName: "Spotykach WAV Builder",
+            version: "0.1.2", // Current App Version
+            exportDate: new Date().toISOString()
+        }
     };
 
     zip.file("project.json", JSON.stringify(serializedState, null, 2));
 
     const content = await zip.generateAsync({ type: "blob" });
-    downloadBlob(content, "spotykach_project.zip");
+    const dateStr = new Date().toISOString().split('T')[0];
+    downloadBlob(content, `Spotykach_Project_${dateStr}.zip`);
 };
 
 
@@ -160,7 +167,7 @@ export const exportToSDCard = async (state: AppState) => {
 export const exportSingleFile = (fileRecord: any) => {
     const currentVersion = fileRecord.versions.find((v: any) => v.id === fileRecord.currentVersionId);
     if (currentVersion && currentVersion.blob) {
-        downloadBlob(currentVersion.blob, `${fileRecord.name}.wav`);
+        downloadBlob(currentVersion.blob, `${fileRecord.name}.WAV`);
     } else {
         throw new Error("File data not available.");
     }

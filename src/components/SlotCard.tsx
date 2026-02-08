@@ -1,4 +1,4 @@
-import { Play, Square, Trash2, Repeat, Download } from 'lucide-react';
+import { Play, Square, Trash2, Repeat, Download, AlertTriangle, X } from 'lucide-react';
 import { useState } from 'react';
 import { MiniWaveform } from './MiniWaveform';
 import type { Slot, FileRecord, TapeColor } from '../types';
@@ -11,11 +11,18 @@ interface SlotCardProps {
     isActive: boolean;
     onClick: () => void;
     onDrop: (files: FileList) => void;
-    onDropInternal: (fileId: string, source: string, isDuplicate: boolean) => void;
+    onDropInternal: (fileId: string, source: string, isDuplicate: boolean, sourceSlotId?: number, sourceSlotColor?: TapeColor) => void;
     onRemove: () => void;
+    onDelete?: () => void;
+    isDuplicate: boolean;
+    onBulkAssign?: (targetSlotId: number, fileIds: string[], targetColor?: TapeColor) => void;
+    isSelected: boolean;
+    onSlotSelectionClick: (e: React.MouseEvent) => void;
+    onToggleSlotSelection: () => void;
+    onSlotDragStart?: (e: React.DragEvent) => void;
 }
 
-export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove }: SlotCardProps) => {
+export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart }: SlotCardProps) => {
     const { play, stop, isPlaying, activeFileId, currentTime, duration, seek } = useAudioPlayer();
 
     // Check if this slot's file is currently playing
@@ -23,6 +30,10 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
     const [isDragOver, setIsDragOver] = useState(false);
 
     const handleDragStart = (e: React.DragEvent) => {
+        if (onSlotDragStart) {
+            onSlotDragStart(e);
+            return;
+        }
         if (fileRecord) {
             e.dataTransfer.setData('application/x-spotykach-file-id', fileRecord.id);
             e.dataTransfer.setData('application/x-spotykach-source', 'slot');
@@ -57,11 +68,29 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
         setIsDragOver(false);
 
         const internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
+        const bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
+
+        if (bulkData && onBulkAssign) {
+            try {
+                const fileIds = JSON.parse(bulkData) as string[];
+                if (Array.isArray(fileIds) && fileIds.length > 0) {
+                    onBulkAssign(slot.id, fileIds, tapeColor);
+                    return;
+                }
+            } catch (e) {
+                console.error("Failed to parse bulk drop", e);
+            }
+        }
+
         if (internalId) {
             const source = e.dataTransfer.getData('application/x-spotykach-source');
             const isDuplicate = e.ctrlKey || e.altKey;
 
-            onDropInternal(internalId, source, isDuplicate);
+            const sourceSlotIdStr = e.dataTransfer.getData('application/x-spotykach-slot-id');
+            const sourceSlotId = sourceSlotIdStr ? parseInt(sourceSlotIdStr, 10) : undefined;
+            const sourceSlotColor = e.dataTransfer.getData('application/x-spotykach-slot-color') as TapeColor | '';
+
+            onDropInternal(internalId, source, isDuplicate, sourceSlotId, sourceSlotColor || undefined);
             return;
         }
 
@@ -78,7 +107,10 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
 
     return (
         <div
-            onClick={onClick}
+            onClick={(e) => {
+                if (onSlotSelectionClick) onSlotSelectionClick(e);
+                else onClick();
+            }}
             draggable={!!fileRecord}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
@@ -86,14 +118,33 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
             onDrop={handleDrop}
             className={`
                 relative aspect-square rounded-xl border-2 cursor-pointer transition-all duration-200
-                flex flex-col overflow-hidden group
+                flex flex-col group
                 ${isDragOver ? 'bg-white/10 scale-105 z-20' : isActive ? 'bg-[#1a1a1a] shadow-xl scale-[1.02]' : 'border-gray-700 bg-[#151515] hover:border-gray-500'}
                 ${fileRecord ? 'shadow-lg' : ''}
+                ${isDuplicate ? '!border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : ''}
+                ${isSelected ? 'ring-2 ring-synthux-yellow' : ''}
             `}
             style={{
-                borderColor: (isActive || isDragOver) ? tapeColorVar : undefined
+                borderColor: (isActive || isDragOver) ? tapeColorVar : (isSelected ? 'var(--color-synthux-yellow)' : undefined)
             }}
         >
+            {/* Selection Checkbox */}
+            <div
+                className={`absolute -top-3 -left-3 w-6 h-6 z-50 rounded-full border-2 flex items-center justify-center cursor-pointer transition-colors shadow-md ${isSelected ? 'bg-synthux-yellow border-white text-black' : 'bg-gray-800 border-gray-500 text-transparent hover:border-white'}`}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSlotSelection();
+                }}
+            >
+                <div className="w-2 h-2 bg-current rounded-full" />
+            </div>
+            {/* Duplicate Badge */}
+            {isDuplicate && (
+                <div className="absolute -top-2 -right-2 text-orange-400/80 z-40 bg-black/80 rounded-full p-1 border border-orange-500/30 shadow-sm" title="Duplicate File">
+                    <AlertTriangle size={14} />
+                </div>
+            )}
+
             {/* Slot ID Badge */}
             <div className="absolute top-2 left-3 text-xs font-bold text-gray-600 z-10 pointer-events-none">
                 {slot.id}
@@ -102,7 +153,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
             {fileRecord && currentVersion ? (
                 <>
                     {/* Top: Mini Waveform Area */}
-                    <div className="flex-1 w-full bg-black/20 flex items-center justify-center relative overflow-hidden">
+                    <div className="flex-1 w-full bg-black/20 flex items-center justify-center relative overflow-hidden rounded-t-lg">
                         <MiniWaveform
                             blob={currentVersion.blob}
                             width={200}
@@ -157,7 +208,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                     </div>
 
                     {/* Bottom: Controls */}
-                    <div className="flex items-center justify-between px-2 py-2 bg-[#111] border-t border-gray-800">
+                    <div className="flex items-center justify-between gap-1 px-2 py-2 bg-[#111] border-t border-gray-800 rounded-b-lg">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -174,7 +225,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                             <span className="text-[10px] font-bold uppercase">{isThisPlaying ? 'STOP' : 'PLAY'}</span>
                         </button>
 
-                        <div className="w-px h-4 bg-gray-800 mx-2"></div>
+
 
                         <button
                             onClick={(e) => {
@@ -188,16 +239,32 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                             <Download size={14} />
                         </button>
 
-                        <div className="w-px h-4 bg-gray-800 mx-2"></div>
 
-                        {/* Remove from Slot */}
+
+
+
+                        {/* Unassign (Move to Pool) */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onRemove();
                             }}
+                            className="p-2 hover:bg-synthux-yellow/20 text-gray-500 hover:text-synthux-yellow rounded transition-colors"
+                            title="Remove from Slot (Move to Unassigned)"
+                        >
+                            <X size={14} />
+                        </button>
+
+
+
+                        {/* Perma Delete */}
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete?.();
+                            }}
                             className="p-2 hover:bg-red-500/20 text-gray-500 hover:text-red-500 rounded transition-colors"
-                            title="Remove from Slot"
+                            title="Permanently Delete File"
                         >
                             <Trash2 size={14} />
                         </button>

@@ -19,7 +19,8 @@ A specialized tool for preparing audio files for the **Spotykach sampler**. It s
     -   **Project JSON**: Save your work state.
     -   **SD Card ZIP**: Export the exact folder structure required by the Spotykach SD card (`SK/BLUE`, `SK/RED`, etc.).
     -   **Direct SD Write**: Write directly to a connected SD card (Chrome/Edge only).
--   **Sample Packs**: Browse and import curated samples from the community.
+    -   **Sample Packs**: Browse and import curated samples from the community.
+-   **Touch Support**: Basic drag-and-drop support for touch devices.
 
 ## Technology Stack
 
@@ -67,7 +68,7 @@ Future ideas and planned features:
 -   **Shared Sample Pool**: A centralized pool of samples shared across different projects.
 -   **Project Manager**: A dedicated interface for managing your local projects.
 -   **Standalone Application**: Make the app installable (PWA or Electron wrapper) for offline/desktop use.
--   **Mobile Optimization**: Improve touch targets and layout for tablet/phone usage.
+-   **Mobile Optimization**: Improve touch targets and layout for tablet/phone usage (Partially Implemented).
 -   **Cloud Sync**: Optional integration with cloud storage (Google Drive/Dropbox) for project backup.
 
 ## Contributing

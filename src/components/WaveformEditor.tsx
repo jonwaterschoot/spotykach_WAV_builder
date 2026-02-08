@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X } from 'lucide-react';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
@@ -355,10 +355,13 @@ interface WaveformEditorProps {
     onSaveAsCopy: (blob: Blob, duration: number) => void;
     onDeleteVersion?: (versionId: string) => void;
     onAssignVersion?: (versionId: string) => void;
+    onMoveVersionToPool?: (versionId: string) => void;
     tapeColor?: TapeColor;
+    isDuplicate?: boolean;
+    onSaveUnique?: (blob: Blob, duration: number, processing?: ('normalized' | 'trimmed' | 'looped')[]) => void;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -413,6 +416,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // UI States
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [selectedVersionIds, setSelectedVersionIds] = useState<Set<string>>(new Set());
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showMoveConfirm, setShowMoveConfirm] = useState(false);
 
     const isMounted = useRef(false);
     const initTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -1109,23 +1115,114 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     isDestructive={true}
                 />
 
+                {/* Batch Delete Confirmation */}
+                <ConfirmModal
+                    isOpen={showDeleteConfirm}
+                    onClose={() => setShowDeleteConfirm(false)}
+                    onConfirm={() => {
+                        if (onDeleteVersion) {
+                            selectedVersionIds.forEach(id => onDeleteVersion(id));
+                            setSelectedVersionIds(new Set());
+                            setShowDeleteConfirm(false);
+                            showToast(`Deleted ${selectedVersionIds.size} versions`, "success");
+                        }
+                    }}
+                    title={`Delete ${selectedVersionIds.size} Version${selectedVersionIds.size > 1 ? 's' : ''}?`}
+                    message="This action cannot be undone. These versions will be permanently removed from the history."
+                    confirmLabel="Delete Forever"
+                    isDestructive={true}
+                />
+
+                {/* Batch Move Confirmation */}
+                <ConfirmModal
+                    isOpen={showMoveConfirm}
+                    onClose={() => setShowMoveConfirm(false)}
+                    onConfirm={() => {
+                        if (onMoveVersionToPool) {
+                            selectedVersionIds.forEach(id => onMoveVersionToPool(id));
+                            setSelectedVersionIds(new Set());
+                            setShowMoveConfirm(false);
+                            showToast(`Moved ${selectedVersionIds.size} versions to Pool`, "success");
+                        }
+                    }}
+                    title={`Move ${selectedVersionIds.size} Version${selectedVersionIds.size > 1 ? 's' : ''} to Pool?`}
+                    message="These versions will be removed from this file's history and created as new unassigned files."
+                    confirmLabel="Move to Pool"
+                />
+
                 {/* SIDEBAR: Versions */}
                 <div className="w-64 bg-[#111] border-r border-gray-800 flex flex-col shrink-0">
-                    <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                    <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex flex-wrap gap-2 justify-between items-center">
                         <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">History</h4>
+                        {selectedVersionIds.size > 0 && (
+                            <div className="flex gap-1">
+                                {onMoveVersionToPool && (
+                                    <button
+                                        onClick={() => setShowMoveConfirm(true)}
+                                        className="text-xs font-bold text-synthux-yellow hover:text-white flex items-center gap-1 bg-synthux-yellow/10 px-2 py-1 rounded hover:bg-synthux-yellow/30 transition-colors border border-synthux-yellow/20"
+                                    >
+                                        <X size={12} /> Move
+                                    </button>
+                                )}
+                                {onDeleteVersion && (
+                                    <button
+                                        onClick={() => setShowDeleteConfirm(true)}
+                                        className="text-xs font-bold text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-900/20 px-2 py-1 rounded hover:bg-red-900/40 transition-colors"
+                                    >
+                                        <Trash2 size={12} /> Delete
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-2 history-scroll">
                         {versions.map((v) => {
                             const isActive = v.id === loadedVersionId;
+                            const isSelected = selectedVersionIds.has(v.id);
+
                             return (
                                 <div
                                     key={v.id}
-                                    onClick={() => handleLoadVersion(v)}
-                                    className={`group p-3 rounded-lg border cursor-pointer transition-all hover:bg-gray-800 relative ${isActive ? 'bg-gray-800 border-synthux-blue/50 ring-1 ring-synthux-blue/20' : 'bg-transparent border-gray-800 opacity-60 hover:opacity-100'}`}
+                                    onClick={(e) => {
+                                        // If Ctrl/Cmd key is pressed OR in selection mode (at least one selected), toggle selection
+                                        // User request: "selection boxes always visible".
+                                        // Let's allow clicking the checkbox specifically to toggle, or main body to load?
+                                        // Or main body toggles if select mode is active? 
+                                        // Standard behavior: Click loads, Checkbox toggles.
+                                        handleLoadVersion(v);
+                                    }}
+                                    className={`group p-3 rounded-lg border cursor-pointer transition-all hover:bg-gray-800 relative select-none
+                                        ${isActive ? 'bg-gray-800 border-synthux-blue/50 ring-1 ring-synthux-blue/20' : ''}
+                                        ${isSelected ? 'bg-synthux-yellow/10 border-synthux-yellow/50' : (isActive ? '' : 'bg-transparent border-gray-800 opacity-60 hover:opacity-100')}
+                                    `}
                                 >
                                     <div className="flex justify-between items-start">
-                                        <div className="text-xs text-gray-500 mb-1">{new Date(v.timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            {/* Checkbox Visual - Always Visible */}
+                                            <div
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const newSet = new Set(selectedVersionIds);
+                                                    if (newSet.has(v.id)) newSet.delete(v.id);
+                                                    else newSet.add(v.id);
+                                                    setSelectedVersionIds(newSet);
+                                                }}
+                                                className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-synthux-yellow border-synthux-yellow' : 'border-gray-600 hover:border-gray-400'}`}
+                                            >
+                                                {isSelected && <Check size={8} className="text-black stroke-[4]" />}
+                                            </div>
+                                            <div className="text-xs text-gray-500">{new Date(v.timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</div>
+                                        </div>
+
+                                        {/* Row Actions */}
                                         <div className="flex gap-1">
+                                            {/* Standard Actions (Preview/Download) - Hide on Hover if we want cleanup, or keep? Keeping for now but maybe rearrange? */}
+                                            {/* User requested: "add the option to also choose move to pool" */}
+                                            {/* "add move to pool button (x) and delete (trashcan)" matches browser style. */}
+
+                                            {/* We can group "File Actions" vs "Playback Actions" */}
+
+                                            {/* Preview/Download (Existing) */}
                                             <button
                                                 onClick={(e) => togglePreview(v, e)}
                                                 className="p-1.5 rounded-full bg-gray-700 hover:bg-synthux-blue text-white transition-colors"
@@ -1143,6 +1240,34 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             >
                                                 <Download size={10} />
                                             </button>
+
+                                            {/* Move (X) */}
+                                            {onMoveVersionToPool && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onMoveVersionToPool(v.id);
+                                                    }}
+                                                    className="p-1.5 rounded-full bg-gray-700 hover:bg-synthux-yellow/20 text-gray-400 hover:text-synthux-yellow transition-colors"
+                                                    title="Move to Pool"
+                                                >
+                                                    <X size={10} />
+                                                </button>
+                                            )}
+
+                                            {/* Delete (Trash) */}
+                                            {onDeleteVersion && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onDeleteVersion(v.id);
+                                                    }}
+                                                    className="p-1.5 rounded-full bg-gray-700 hover:bg-red-500 text-gray-400 hover:text-white transition-colors"
+                                                    title="Delete Version"
+                                                >
+                                                    <Trash2 size={10} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     <div className={`text-sm font-medium truncate ${isActive ? 'text-synthux-blue' : 'text-white'}`}>
@@ -1159,18 +1284,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     </div>
                                     <div className="text-[10px] text-gray-600 mt-1 flex justify-between items-center">
                                         <span>{(v.duration || 0).toFixed(2)}s • {(v.blob.size / 1024).toFixed(0)}KB</span>
-                                        {onDeleteVersion && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onDeleteVersion(v.id);
-                                                }}
-                                                className="p-1.5 rounded-full bg-gray-700 hover:bg-red-500 text-white transition-colors flex items-center justify-center w-5 h-5"
-                                                title="Delete Version"
-                                            >
-                                                ✕
-                                            </button>
-                                        )}
                                     </div>
                                 </div>
                             )
@@ -1579,7 +1692,58 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 >
                                     <Save size={20} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
                                 </button>
+
                             </div>
+
+                            {/* Save Unique Button (For Duplicates) */}
+                            {isDuplicate && onSaveUnique && (
+                                <button
+                                    onClick={async () => {
+                                        if (!originalBuffer) return;
+                                        setIsProcessing(true);
+                                        try {
+                                            // 1. Process Audio (Trim & Fade)
+                                            let start = 0;
+                                            let end = originalBuffer.duration;
+                                            if (regions.current) {
+                                                const regionList = regions.current.getRegions();
+                                                if (regionList && regionList.length > 0) {
+                                                    start = regionList[0].start;
+                                                    end = regionList[0].end;
+                                                }
+                                            }
+
+                                            // Determine processing tags
+                                            const processingTags: ('normalized' | 'trimmed' | 'looped')[] = [];
+                                            if (start > 0.01 || end < originalBuffer.duration - 0.01) processingTags.push('trimmed');
+                                            // We don't have normalize state explicit here unless we ran it, but let's stick to trim/loop
+                                            if (isLooping) processingTags.push('looped');
+
+                                            let processed = await audioProcessor.trim(originalBuffer, start, end);
+                                            if (fadeIn > 0 || fadeOut > 0) {
+                                                processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
+                                            }
+
+                                            // 2. Encode
+                                            const newBlob = encodeWAV(processed);
+
+                                            // 3. Callback
+                                            onSaveUnique(newBlob, processed.duration, processingTags);
+                                            showToast("Saved as Unique File!", "success");
+                                        } catch (e) {
+                                            console.error(e);
+                                            showToast("Failed to save unique file", "error");
+                                        } finally {
+                                            setIsProcessing(false);
+                                        }
+                                    }}
+                                    disabled={isProcessing}
+                                    className="flex items-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
+                                    title="Save as a new unique file and assign to this slot, leaving other duplicates unchanged."
+                                >
+                                    <Copy size={16} /> SAVE UNIQUE
+                                </button>
+                            )}
 
                             <button
                                 onClick={async () => {
@@ -1619,7 +1783,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
 
 
     );

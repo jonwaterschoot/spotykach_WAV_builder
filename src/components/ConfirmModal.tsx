@@ -8,6 +8,7 @@ interface ConfirmModalProps {
     message: React.ReactNode;
     confirmLabel?: string;
     isDestructive?: boolean;
+    showCancel?: boolean;
 }
 
 export const ConfirmModal = ({
@@ -17,7 +18,8 @@ export const ConfirmModal = ({
     title,
     message,
     confirmLabel = "Confirm",
-    isDestructive = false
+    isDestructive = false,
+    showCancel = true
 }: ConfirmModalProps) => {
     if (!isOpen) return null;
 
@@ -46,19 +48,21 @@ export const ConfirmModal = ({
 
                 {/* Actions */}
                 <div className="p-6 pt-4 border-t border-gray-800 bg-gray-900/50 flex justify-end gap-3 transition-colors">
-                    <button
-                        onClick={onClose}
-                        className="px-4 py-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white font-bold text-sm transition-colors border border-transparent hover:border-gray-700"
-                    >
-                        Cancel
-                    </button>
+                    {showCancel && (
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white font-bold text-sm transition-colors border border-transparent hover:border-gray-700"
+                        >
+                            Cancel
+                        </button>
+                    )}
                     <button
                         onClick={() => {
                             onConfirm();
                         }}
                         className={`px-6 py-2 rounded-lg text-white font-bold text-sm transition-all shadow-lg hover:scale-105 active:scale-95 ${isDestructive
-                                ? 'bg-synthux-orange hover:bg-orange-600 shadow-orange-900/20'
-                                : 'bg-synthux-blue hover:bg-blue-600 shadow-blue-900/20'
+                            ? 'bg-synthux-orange hover:bg-orange-600 shadow-orange-900/20'
+                            : 'bg-synthux-blue hover:bg-blue-600 shadow-blue-900/20'
                             }`}
                     >
                         {confirmLabel}

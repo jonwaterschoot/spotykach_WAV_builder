@@ -104,8 +104,8 @@ Everyone is permitted to copy and distribute verbatim or modified copies of this
             { name: "Trickling Stones Sparse", path: "/samples/jonwtr/tricklingstones_lessdense.wav", category: "Field Recordings" },
 
             // Instruments
-            { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C#_E_G#.wav", category: "Instruments" },
-            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C#_E_G#_distorted.wav", category: "Instruments" }
+            { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G.wav", category: "Instruments" },
+            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G_distorted.wav", category: "Instruments" }
         ]
     }
 ];

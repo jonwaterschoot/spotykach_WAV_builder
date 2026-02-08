@@ -14,6 +14,20 @@ const FOLDER_MAP: Record<string, TapeColor> = {
 
 const generateId = () => crypto.randomUUID();
 
+// Helper to sanitize filenames (remove special chars)
+export const sanitizeFilename = (name: string): string => {
+    // Keep alpha-numeric, dot, dash, underscore. Replace others with underscore.
+    // Also remove multiple underscores if generated.
+    let sanitized = name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    // Remove duplicate underscores
+    sanitized = sanitized.replace(/__+/g, '_');
+    // Remove leading/trailing underscores (before extension)
+    // We want to preserve extension if present in input (but name here might be just base name depending on usage)
+    // If name has extension, we should be careful.
+    // Let's assume input is full filename.
+    return sanitized;
+};
+
 export const parseImportFiles = async (
     files: FileList,
     onProgress: (current: number, total: number) => void
@@ -183,10 +197,12 @@ export const parseImportFiles = async (
                 duration: buffer.duration
             };
 
+            const safeName = sanitizeFilename(file.name);
+
             const record: FileRecord = {
                 id: fileId,
-                name: file.name.toUpperCase().replace(/\.[^/.]+$/, ""),
-                originalName: file.name,
+                name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
+                originalName: file.name, // Keep original filename for reference? Or sanitize this too? Let's keep original for provenance.
                 versions: [version],
                 currentVersionId: versionId,
                 isParked: !color || !slotId // Park if we couldn't determine a slot
