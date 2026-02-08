@@ -22,7 +22,7 @@ interface SlotCardProps {
     onSlotDragStart?: (e: React.DragEvent) => void;
 }
 
-export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart }: SlotCardProps) => {
+export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart }: SlotCardProps) => {
     const { play, stop, isPlaying, activeFileId, currentTime, duration, seek } = useAudioPlayer();
 
     // Check if this slot's file is currently playing

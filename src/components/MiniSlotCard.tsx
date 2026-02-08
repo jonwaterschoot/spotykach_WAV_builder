@@ -21,7 +21,7 @@ interface MiniSlotCardProps {
     onSlotDragStart?: (e: React.DragEvent) => void;
 }
 
-export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart }: MiniSlotCardProps) => {
+export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart }: MiniSlotCardProps) => {
     const { play, stop, isPlaying, activeFileId } = useAudioPlayer();
 
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
