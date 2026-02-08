@@ -7,7 +7,8 @@ import { polyfill } from "mobile-drag-drop";
 import { scrollBehaviourDragImageTranslateOverride } from "mobile-drag-drop/scroll-behaviour";
 
 polyfill({
-  dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
+  dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
+  holdToDrag: 300 // Press and hold to drag (allows scrolling)
 });
 
 // Fix for iOS preventing scrolling when dragging

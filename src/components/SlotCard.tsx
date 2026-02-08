@@ -127,7 +127,6 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
             `}
             style={{
                 borderColor: (isActive || isDragOver) ? tapeColorVar : (isSelected ? 'var(--color-synthux-yellow)' : undefined),
-                touchAction: 'none' // Important for touch drag
             }}
         >
             {/* Selection Checkbox - Only show if file exists */}

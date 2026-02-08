@@ -137,9 +137,6 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
             ${fileRecord && isDuplicate ? '!border-orange-500/50' : ''}
             ${selectionClass}
         `}
-            style={{
-                touchAction: 'none' // Important for touch drag
-            }}
         >
             {/* Selection Checkbox (Touch Target) - Only show if file exists */}
             {fileRecord && (
@@ -176,7 +173,7 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                     <div className="relative z-10 flex flex-col justify-between h-full p-2 bg-gradient-to-t from-black/80 to-transparent">
 
                         {/* Top Row: Play & Trash (Hidden until hover unless playing) */}
-                        <div className={`flex justify-between items-start transition-opacity duration-200 ${isThisPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <div className={`flex justify - between items - start transition - opacity duration - 200 ${isThisPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} `}>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -245,12 +242,12 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                     >
                         {/* We use specific style injection for hover to override opacity and color */}
                         <style>{`
-                            .group:hover .empty-plus {
-                                color: ${getColorHex(tapeColor)} !important;
-                                opacity: 1 !important;
-                                text-shadow: 0 0 8px ${getColorHex(tapeColor)}40;
-                            }
-                        `}</style>
+        .group: hover.empty - plus {
+        color: ${getColorHex(tapeColor)} !important;
+        opacity: 1!important;
+        text - shadow: 0 0 8px ${getColorHex(tapeColor)} 40;
+    }
+    `}</style>
                         <span className="empty-plus transition-all duration-300">+</span>
                     </div>
                 </div>
