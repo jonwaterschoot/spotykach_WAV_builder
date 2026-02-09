@@ -36,6 +36,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
         }
         if (fileRecord) {
             e.dataTransfer.setData('application/x-spotykach-file-id', fileRecord.id);
+            e.dataTransfer.setData('text/plain', fileRecord.id); // Polyfill Fallback
             e.dataTransfer.setData('application/x-spotykach-source', 'slot');
             e.dataTransfer.setData('application/x-spotykach-slot-id', slot.id.toString());
             e.dataTransfer.effectAllowed = 'copyMove';
@@ -47,19 +48,32 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        if (e.dataTransfer.types.includes('application/x-spotykach-file-id')) {
-            // Check modifier keys for copy effect visual
+        // Allow if custom type exists OR if text/plain (polyfill fallback)
+        if (e.dataTransfer.types.includes('application/x-spotykach-file-id') ||
+            e.dataTransfer.types.includes('text/plain')) {
+
             e.dataTransfer.dropEffect = e.ctrlKey || e.altKey ? 'copy' : 'move';
+
+            // Only set highlight if we haven't already (optimization)
+            if (!isDragOver) setIsDragOver(true);
+        }
+    };
+
+    const handleDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.types.includes('application/x-spotykach-file-id') ||
+            e.dataTransfer.types.includes('text/plain')) {
             setIsDragOver(true);
-        } else {
-            e.dataTransfer.dropEffect = 'copy';
-            setIsDragOver(!!e.dataTransfer.types.length);
         }
     };
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragOver(false);
+        // prevent flickering when hovering over children
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDragOver(false);
+        }
     };
 
     const handleDrop = (e: React.DragEvent) => {
@@ -67,9 +81,36 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
         e.stopPropagation();
         setIsDragOver(false);
 
-        const internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
-        const bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
-        const bulkSourceData = e.dataTransfer.getData('application/x-spotykach-bulk-source-slots');
+        // Parse Data
+        let internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
+        let source = e.dataTransfer.getData('application/x-spotykach-source');
+        let bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
+        let bulkSourceData = e.dataTransfer.getData('application/x-spotykach-bulk-source-slots');
+        let sourceSlotIdStr = e.dataTransfer.getData('application/x-spotykach-slot-id');
+        let sourceSlotColor = e.dataTransfer.getData('application/x-spotykach-slot-color') as TapeColor | '';
+
+        // Polyfill Fallback: Try parsing text/plain as JSON
+        if (!internalId) {
+            const textData = e.dataTransfer.getData('text/plain');
+            if (textData) {
+                try {
+                    const json = JSON.parse(textData);
+                    if (json.id) {
+                        internalId = json.id;
+                        source = json.source;
+                        if (json.bulkIds) bulkData = JSON.stringify(json.bulkIds);
+                        if (json.bulkSourceKeys) bulkSourceData = JSON.stringify(json.bulkSourceKeys);
+                        if (json.slotId) sourceSlotIdStr = json.slotId.toString();
+                        if (json.slotColor) sourceSlotColor = json.slotColor;
+                    } else {
+                        // Fallback: Treat text as ID directly (if not JSON or legacy)
+                        internalId = textData;
+                    }
+                } catch (err) {
+                    internalId = textData;
+                }
+            }
+        }
 
         if (bulkData && onBulkAssign) {
             try {
@@ -86,13 +127,8 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
         }
 
         if (internalId) {
-            const source = e.dataTransfer.getData('application/x-spotykach-source');
             const isDuplicate = e.ctrlKey || e.altKey;
-
-            const sourceSlotIdStr = e.dataTransfer.getData('application/x-spotykach-slot-id');
             const sourceSlotId = sourceSlotIdStr ? parseInt(sourceSlotIdStr, 10) : undefined;
-            const sourceSlotColor = e.dataTransfer.getData('application/x-spotykach-slot-color') as TapeColor | '';
-
             onDropInternal(internalId, source, isDuplicate, sourceSlotId, sourceSlotColor || undefined);
             return;
         }
@@ -100,6 +136,16 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             onDrop(e.dataTransfer.files);
         }
+    };
+
+    // Renamed onClick to handleCardClick to avoid conflict with prop
+    const handleCardClick = () => {
+        onClick();
+    };
+
+    // Added handleDoubleClick
+    const handleDoubleClick = () => {
+        onClick(); // Assuming double click also triggers the primary click action
     };
 
     const currentVersion = fileRecord?.versions.find(v => v.id === fileRecord.currentVersionId);
@@ -110,13 +156,14 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
 
     return (
         <div
-            onClick={onClick}
-            onDoubleClick={onClick}
-            draggable={!!fileRecord}
+            draggable={!!fileRecord || isSelected}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            onClick={handleCardClick}
+            onDoubleClick={handleDoubleClick}
             className={`
                 relative aspect-square rounded-xl border-2 cursor-pointer transition-all duration-200
                 flex flex-col group
@@ -127,6 +174,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
             `}
             style={{
                 borderColor: (isActive || isDragOver) ? tapeColorVar : (isSelected ? 'var(--color-synthux-yellow)' : undefined),
+                touchAction: 'none'
             }}
         >
             {/* Selection Checkbox - Only show if file exists */}

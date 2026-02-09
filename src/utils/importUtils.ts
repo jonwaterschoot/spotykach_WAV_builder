@@ -12,7 +12,16 @@ const FOLDER_MAP: Record<string, TapeColor> = {
     Y: 'Yellow'
 };
 
-const generateId = () => crypto.randomUUID();
+const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        try {
+            return crypto.randomUUID();
+        } catch (e) {
+            // Fallback
+        }
+    }
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
 
 // Helper to sanitize filenames (remove special chars)
 export const sanitizeFilename = (name: string): string => {

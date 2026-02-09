@@ -1544,7 +1544,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* WaveSurfer Container */}
                                     <div
                                         ref={containerRef}
-                                        className="absolute inset-0 z-0 bg-black/20 cursor-text"
+                                        className="absolute inset-0 z-0 bg-black/20 cursor-text touch-none"
                                         onPointerDown={handleWaveformPointerDown}
                                         onPointerMove={handleWaveformPointerMove}
                                         onPointerUp={handleWaveformPointerUp}

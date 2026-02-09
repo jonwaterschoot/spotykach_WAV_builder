@@ -263,7 +263,17 @@ function App() {
   const activeFile = activeFileId ? state.files[activeFileId] : null;
   const showEditor = activeFile !== null;
 
-  const generateId = () => crypto.randomUUID();
+  // Helper for IDs (Safe for non-secure contexts like local network dev)
+  const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      try {
+        return crypto.randomUUID();
+      } catch (e) {
+        // Fallback if randomUUID fails
+      }
+    }
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  };
 
   // Handle external file drop (New Upload)
   const handleSlotDrop = async (slotId: number, files: FileList, targetColor: TapeColor = currentTapeColor) => {
@@ -1283,6 +1293,32 @@ function App() {
     e.dataTransfer.setData('application/x-spotykach-slot-id', slot.id.toString());
     e.dataTransfer.setData('application/x-spotykach-slot-color', color);
     e.dataTransfer.effectAllowed = 'copyMove';
+
+    // Polyfill Fallback: Serialize ALL data to JSON
+    // Note: We include bulk info here too if it exists, so the receiver handles it.
+    const fileIds = selectedSlots.has(slotKey) ? (() => {
+      const ids: string[] = [];
+      const keys: string[] = [];
+      selectedSlots.forEach(key => {
+        const [c, sIdStr] = key.split('-');
+        const sId = parseInt(sIdStr);
+        const s = state.tapes[c as TapeColor]?.slots.find(sl => sl.id === sId);
+        if (s && s.fileId) {
+          ids.push(s.fileId);
+          keys.push(key);
+        }
+      });
+      return ids.length > 0 ? { ids, keys } : null;
+    })() : null;
+
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      id: slot.fileId,
+      source: 'slot',
+      slotId: slot.id,
+      slotColor: color,
+      bulkIds: fileIds?.ids,
+      bulkSourceKeys: fileIds?.keys
+    }));
   };
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1400,6 +1436,8 @@ function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-h-0 relative">
+        {/* DEBUGGER REMOVED - See docs/debugging/README.md */}
+
         {/* Header */}
         <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-synthux-panel">
           <div className="flex items-center gap-4">

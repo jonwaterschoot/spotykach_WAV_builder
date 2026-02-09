@@ -225,11 +225,24 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
             e.dataTransfer.effectAllowed = 'copyMove';
             // Also set the single ID for fallback logic if needed
             e.dataTransfer.setData('application/x-spotykach-file-id', fileId);
+
+            // Polyfill Fallback: Serialize ALL data to JSON
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                id: fileId,
+                source: 'browser',
+                bulkIds: ids
+            }));
         } else {
             // Standard single file drag
             e.dataTransfer.setData('application/x-spotykach-file-id', fileId);
             e.dataTransfer.setData('application/x-spotykach-source', 'browser');
             e.dataTransfer.effectAllowed = 'copyMove';
+
+            // Polyfill Fallback: Serialize ALL data to JSON
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                id: fileId,
+                source: 'browser'
+            }));
         }
     };
 

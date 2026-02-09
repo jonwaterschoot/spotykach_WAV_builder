@@ -41,6 +41,7 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
         }
         if (fileRecord) {
             e.dataTransfer.setData('application/x-spotykach-file-id', fileRecord.id);
+            e.dataTransfer.setData('text/plain', fileRecord.id); // Polyfill Fallback
             e.dataTransfer.setData('application/x-spotykach-source', 'slot');
             e.dataTransfer.setData('application/x-spotykach-slot-id', slot.id.toString());
             e.dataTransfer.effectAllowed = 'copyMove';
@@ -52,18 +53,33 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        if (e.dataTransfer.types.includes('application/x-spotykach-file-id')) {
+        // Allow if custom type exists OR if text/plain (polyfill fallback)
+        if (e.dataTransfer.types.includes('application/x-spotykach-file-id') ||
+            e.dataTransfer.types.includes('text/plain')) {
+
             e.dataTransfer.dropEffect = e.ctrlKey || e.altKey ? 'copy' : 'move';
-            setIsDragOver(true);
+            if (!isDragOver) setIsDragOver(true);
         } else {
             e.dataTransfer.dropEffect = 'copy';
             setIsDragOver(!!e.dataTransfer.types.length); // Highlight if file drag
         }
     };
 
+    const handleDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.types.includes('application/x-spotykach-file-id') ||
+            e.dataTransfer.types.includes('text/plain')) {
+            setIsDragOver(true);
+        }
+    };
+
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragOver(false);
+        // prevent flickering when hovering over children
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDragOver(false);
+        }
     }
 
     const handleDrop = (e: React.DragEvent) => {
@@ -71,9 +87,35 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
         e.stopPropagation();
         setIsDragOver(false);
 
-        const internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
-        const bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
-        const bulkSourceData = e.dataTransfer.getData('application/x-spotykach-bulk-source-slots');
+        // Parse Data
+        let internalId = e.dataTransfer.getData('application/x-spotykach-file-id');
+        let source = e.dataTransfer.getData('application/x-spotykach-source');
+        let bulkData = e.dataTransfer.getData('application/x-spotykach-bulk-ids');
+        let bulkSourceData = e.dataTransfer.getData('application/x-spotykach-bulk-source-slots');
+        let sourceSlotIdStr = e.dataTransfer.getData('application/x-spotykach-slot-id');
+        let sourceSlotColor = e.dataTransfer.getData('application/x-spotykach-slot-color') as TapeColor | '';
+
+        // Polyfill Fallback: Try parsing text/plain as JSON
+        if (!internalId) {
+            const textData = e.dataTransfer.getData('text/plain');
+            if (textData) {
+                try {
+                    const json = JSON.parse(textData);
+                    if (json.id) {
+                        internalId = json.id;
+                        source = json.source;
+                        if (json.bulkIds) bulkData = JSON.stringify(json.bulkIds);
+                        if (json.bulkSourceKeys) bulkSourceData = JSON.stringify(json.bulkSourceKeys);
+                        if (json.slotId) sourceSlotIdStr = json.slotId.toString();
+                        if (json.slotColor) sourceSlotColor = json.slotColor;
+                    } else {
+                        internalId = textData;
+                    }
+                } catch (err) {
+                    internalId = textData;
+                }
+            }
+        }
 
         if (bulkData && onBulkAssign) {
             try {
@@ -90,13 +132,8 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
         }
 
         if (internalId) {
-            const source = e.dataTransfer.getData('application/x-spotykach-source');
             const isDuplicate = e.ctrlKey || e.altKey;
-
-            const sourceSlotIdStr = e.dataTransfer.getData('application/x-spotykach-slot-id');
             const sourceSlotId = sourceSlotIdStr ? parseInt(sourceSlotIdStr, 10) : undefined;
-            const sourceSlotColor = e.dataTransfer.getData('application/x-spotykach-slot-color') as TapeColor | '';
-
             onDropInternal(internalId, source, isDuplicate, sourceSlotId, sourceSlotColor || undefined);
             return;
         }
@@ -127,8 +164,10 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
             draggable={!!fileRecord}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            style={{ touchAction: 'none' }}
             className={`
             relative w-full h-full min-h-[50px] rounded-lg border bg-[#151515] 
             flex flex-col group transition-all

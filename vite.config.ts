@@ -8,4 +8,8 @@ export default defineConfig(({ command }) => ({
   build: {
     assetsInlineLimit: 0,
   },
+  server: {
+    host: true,
+    allowedHosts: true
+  }
 }))

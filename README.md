@@ -61,15 +61,23 @@ Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV
 
 ## Roadmap
 
-For now I'm keeping a text file with the roadmap / feature ideas, and a bugtracking: [roadmap-bugs.md](roadmap-bugs.md)
+### Priority Features
+- **Export Improvements**:
+    - Date-based folder naming.
+    - specialized Export Modal (SD Card vs Raw Files vs Project Bundle).
+    - Automatic README generation for exports.
+- **History & Trashcan**:
+    - Dedicated trashcan for deleted files with Restore capability.
+    - Undo/Redo for editor actions (Normalize, etc.).
+- **Right-Click Context Menu**:
+    - For quick actions (Edit, Move, Delete) on cards.
 
-Future ideas and planned features:
--   **Multi-Project Support**: Save and load multiple projects within the app with version history.
--   **Shared Sample Pool**: A centralized pool of samples shared across different projects.
--   **Project Manager**: A dedicated interface for managing your local projects.
--   **Standalone Application**: Make the app installable (PWA or Electron wrapper) for offline/desktop use.
--   **Mobile Optimization**: Improve touch targets and layout for tablet/phone usage (Partially Implemented).
--   **Cloud Sync**: Optional integration with cloud storage (Google Drive/Dropbox) for project backup.
+### Long Term
+- **Multi-Project Support**: Save/Load multiple projects.
+- **Shared Sample Pool**: Central library shared across projects.
+- **Desktop App**: Electron/PWA wrapper for offline use.
+- **Cloud Sync**: Google Drive/Dropbox integration.
+- **Mobile Optimization**: improved layout for tablets/phones.
 
 ## Contributing
 

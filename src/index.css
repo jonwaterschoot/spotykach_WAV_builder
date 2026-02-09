@@ -6,6 +6,30 @@
     transform: translate(-50%, -50%) !important; 
 }
 
+/* Prevent native long-press behavior (context menu / text selection) on draggable items */
+/* Prevent native long-press behavior (context menu / text selection) on draggable items */
+[draggable="true"] {
+    -webkit-touch-callout: none !important;
+    /* -webkit-user-drag: none !important;  <-- REMOVED: This killed the drag functionality */
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    /* touch-action: pan-y; <-- Handled by main.tsx polyfill/logic usually, but let's leave it default or managed by specific components if needed. */
+}
+
+/* Fix for "Drag starts but drop zone doesn't highlight" */
+/* The polyfill creates a drag image that can block the element below it. We must ensure it's transparent to events. */
+.dnd-drag-image-translate-override, 
+.dnd-poly-drag-image { 
+    pointer-events: none !important;
+}
+
+/* Prevent image dragging interactions */
+img {
+    pointer-events: none;
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
 :root {
     --color-synthux-green: #23E073;
     --color-synthux-orange: #F58B44;

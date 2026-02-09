@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.2] - 2026-02-09
+
+### Improved
+- **Touch Support**:
+    - Confirmed working on Windows Touch (Asus ProArt PX13) and Android (OnePlus Pro 10).
+    - Fixed issues with drop zones not highlighting on mobile by implementing a JSON-over-Text payload system.
+    - **Note**: The layout is still optimized for Desktop; phone usage is possible but cramped.
+    - **Android Caveat**: Android OS often dumps exported folder structures into device-specific paths on SD cards rather than the root.
+
+### Fixed
+- **Mobile Drag**: Fixed "Drag starts but drop fails" loop on Android.
+- **Audio Editor**: Fixed touch handles accumulating state and becoming unresponsive.
+
 ## [0.2.1] - 2026-02-08
 
 ### Added

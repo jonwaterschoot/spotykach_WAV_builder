@@ -33,9 +33,12 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                     <div className="bg-synthux-yellow/10 border border-synthux-yellow/30 p-4 rounded-lg flex items-start gap-3">
                         <div className="text-synthux-yellow mt-0.5">⚠️</div>
                         <div className="text-sm text-gray-300">
-                            <strong className="text-synthux-yellow block mb-1">Desktop Computer Required</strong>
-                            This application is designed for use on a <strong>Desktop Computer</strong> (Chrome/Edge recommended) with a mouse/trackpad.
-                            It relies on advanced browser audio features that are not available on mobile devices.
+                            <strong className="text-synthux-yellow block mb-1">Desktop Recommended</strong>
+                            This application is optimized for use on a <strong>Desktop Computer</strong> (Chrome/Edge) with a mouse/trackpad.
+                            <br />
+                            <span className="opacity-80 mt-1 block">
+                                <strong>Mobile/Touch Support:</strong> Functional (Beta). Audio processing works, but the layout is cramped on phones and file management (SD Card) varies by OS.
+                            </span>
                         </div>
                     </div>
 
