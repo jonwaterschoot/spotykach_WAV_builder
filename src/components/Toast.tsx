@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Check, AlertTriangle, Info, X } from 'lucide-react';
 
-export type ToastType = 'success' | 'error' | 'info';
+export type ToastType = 'success' | 'error' | 'info' | 'neutral';
 
 interface ToastProps {
     message: string;
@@ -19,13 +19,15 @@ export const Toast = ({ message, type = 'info', onClose, duration = 3000 }: Toas
     const bgColors = {
         success: 'bg-synthux-main border-synthux-green text-green-400',
         error: 'bg-synthux-main border-red-500 text-red-400',
-        info: 'bg-synthux-main border-synthux-blue text-synthux-blue'
+        info: 'bg-synthux-main border-synthux-blue text-synthux-blue',
+        neutral: 'bg-synthux-panel border-gray-600 text-gray-300'
     };
 
     const icons = {
         success: <Check size={18} />,
         error: <AlertTriangle size={18} />,
-        info: <Info size={18} />
+        info: <Info size={18} />,
+        neutral: <Info size={18} />
     };
 
     return (

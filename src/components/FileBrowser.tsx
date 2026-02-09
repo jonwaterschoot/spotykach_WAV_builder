@@ -505,19 +505,7 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
 
             </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-800">
-                <button
-                    onClick={() => {
-                        if (confirm("Factory Reset: This will delete all imported files and assignments. Are you sure?")) {
-                            import('../utils/persistence').then(p => p.clearState());
-                        }
-                    }}
-                    className="w-full py-2 text-xs font-bold text-red-900 bg-red-900/20 hover:bg-red-900/40 border border-red-900 rounded uppercase transition-colors"
-                >
-                    Reset Application
-                </button>
-            </div>
+
         </div>
     );
 };

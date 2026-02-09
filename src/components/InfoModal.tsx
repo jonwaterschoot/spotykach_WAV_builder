@@ -5,7 +5,7 @@ interface InfoModalProps {
     onClose: () => void;
 }
 
-export const InfoModal = ({ onClose }: InfoModalProps) => {
+export const InfoModal = ({ onClose, onReset }: InfoModalProps & { onReset: () => void }) => {
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
             <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
@@ -130,6 +130,15 @@ export const InfoModal = ({ onClose }: InfoModalProps) => {
                         <div className="flex items-center justify-center gap-2 text-gray-400 text-sm">
                             <Bot size={16} />
                             <span>Built by <a href="https://github.com/jonwaterschoot" target="_blank" rel="noreferrer" className="text-synthux-yellow hover:text-synthux-yellow-light hover:underline">@jonwaterschoot</a></span>
+                        </div>
+
+                        <div className="pt-4">
+                            <button
+                                onClick={onReset}
+                                className="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-wider hover:underline transition-colors"
+                            >
+                                Reset Application
+                            </button>
                         </div>
                     </div>
 

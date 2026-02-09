@@ -5,7 +5,7 @@ import { SAMPLE_PACKS, type Sample } from '../data/samplePacks';
 interface SamplePackModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onImport: (url: string, name: string) => Promise<void>;
+    onImport: (url: string, name: string, origin?: string, license?: string) => Promise<void>;
 }
 
 export const SamplePackModal = ({ isOpen, onClose, onImport }: SamplePackModalProps) => {
@@ -40,7 +40,12 @@ export const SamplePackModal = ({ isOpen, onClose, onImport }: SamplePackModalPr
         setImportingSample(sample.path);
         try {
             const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
-            await onImport(`${baseUrl}${sample.path}`, sample.name);
+            await onImport(
+                `${baseUrl}${sample.path}`,
+                sample.name,
+                selectedPack?.name, // Use Pack Name as Origin
+                selectedPack?.license // Pass License text
+            );
             setAddedSamples(prev => new Set(prev).add(sample.path));
         } catch (error) {
             console.error("Import failed", error);

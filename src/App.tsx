@@ -11,38 +11,61 @@ import type { AppState, TapeColor, FileRecord, AudioVersion } from './types';
 import { TAPE_COLORS } from './types';
 import { getInitialState } from './utils/initialState';
 import { audioEngine } from './lib/audio/audioEngine';
-import { exportZip, exportSaveState, exportToSDCard, exportSingleTape } from './utils/exportUtils';
-import { parseImportFiles, sanitizeFilename } from './utils/importUtils';
+import { exportSaveState, exportSingleTape, exportSDStructure, exportFilesOnly } from './utils/exportUtils';
+import { analyzeImport, type ImportAnalysis } from './utils/importUtils';
 import { InfoModal } from './components/InfoModal';
+import { HelpModal } from './components/HelpModal'; // Manual
+import { ExportModal } from './components/ExportModal';
+import { ExportProgressModal } from './components/ExportProgressModal';
+import { ImportModal } from './components/ImportModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SamplePackModal } from './components/SamplePackModal';
 import { Toast, type ToastType } from './components/Toast';
-import { Upload, Download, Info, FileJson, HardDrive } from 'lucide-react';
+import { Upload, Download, Info, HelpCircle, AlertTriangle } from 'lucide-react';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
-import { AlertTriangle } from 'lucide-react';
-
 
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { loadStateFromDB, saveStateToDB } from './utils/persistence';
 
+// ... (Rest of component)
 
+// Confirm Action Helper
+import { loadStateFromDB, saveStateToDB, clearState } from './utils/persistence';
 
+const sanitizeFilename = (name: string) => {
+  return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+};
 
 function App() {
+  // ==========================================
+  // STATE DEFINITIONS
+  // ==========================================
   const [state, setState] = useState<AppState>(getInitialState());
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
+
+  // Modals & UI State
   const [showInfo, setShowInfo] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [showExportProgress, setShowExportProgress] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
+
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+
+  // Export Logic State
+  const [exportLogs, setExportLogs] = useState<string[]>([]);
+  const [isExportComplete, setIsExportComplete] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // General UI
   const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
-  const [showSDConfirm, setShowSDConfirm] = useState(false);
-  const [showProjectSaveConfirm, setShowProjectSaveConfirm] = useState(false);
-  // Generic Confirm Modal State
+
+  // Confirm Action Helper
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     message: React.ReactNode;
@@ -51,21 +74,96 @@ function App() {
     confirmLabel?: string;
     showCancel?: boolean;
   } | null>(null);
-  const [showImportConfirm, setShowImportConfirm] = useState(false);
-  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+
+  // Import State
+  const [importAnalysis, setImportAnalysis] = useState<ImportAnalysis | null>(null);
+
+  // Bulk Conflict State
   const [bulkConflictState, setBulkConflictState] = useState<{
     targetSlotId: number;
     fileIds: string[];
     conflicts: number;
     targetColor?: TapeColor;
-    sourceSlotKeys?: string[]; // "Color-Id"
+    sourceSlotKeys?: string[];
   } | null>(null);
 
-  // Advanced Selection State (Tape Slots)
-  // Format: `${Color}-${Index}` e.g., "Blue-0"
+  // Advanced Selection
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [lastSelectedSlot, setLastSelectedSlot] = useState<string | null>(null);
   const [anchorSlot, setAnchorSlot] = useState<string | null>(null);
+
+  // Refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const singleFileInputRef = useRef<HTMLInputElement>(null);
+  const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
+
+  // Handle Reset
+  const handleReset = () => {
+    setConfirmAction({
+      title: "Reset Application?",
+      message: (
+        <div className="space-y-2">
+          <p>This will <strong>delete all projects, files, and settings</strong>.</p>
+          <p className="text-sm text-gray-400">The application will reload with a clean state.</p>
+        </div>
+      ),
+      confirmLabel: "Reset Everything",
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await clearState();
+          localStorage.removeItem('spotykach_state');
+          setState(getInitialState());
+          setToast({ msg: "Application Reset", type: "success" });
+          window.location.reload();
+        } catch (e) {
+          console.error(e);
+          setToast({ msg: "Reset Failed", type: "error" });
+        }
+      }
+    });
+  };
+
+  // ==========================================
+  // EFFECTS
+  // ==========================================
+
+  // Initial Load
+  useEffect(() => {
+    // Try loading from DB first (Async), falling back to LocalStorage is handled inside loadStateFromDB logic usually?
+    // Current persistence.ts handles IDB. 
+    loadStateFromDB().then(saved => {
+      if (saved) {
+        setState(saved);
+      } else {
+        // Fallback to localStorage if IDB is empty? 
+        const savedLS = localStorage.getItem('spotykach_state');
+        if (savedLS) {
+          try {
+            const parsed = JSON.parse(savedLS);
+            if (parsed.files && parsed.tapes) setState(parsed);
+          } catch (e) { console.error(e); }
+        }
+      }
+    });
+  }, []);
+
+  // Autosave
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      saveStateToDB(state);
+      localStorage.setItem('spotykach_state', JSON.stringify(state));
+    }, 1000);
+    return () => clearTimeout(handler);
+  }, [state]);
+
+  // ==========================================
+  // HANDLERS
+  // ==========================================
+
+
+
+
 
   // Duplicate Detection
   // Map<FileID, Array<{slotId, color}>>
@@ -156,7 +254,9 @@ function App() {
           originalName: fileToClone.originalName,
           versions: clonedVersions,
           currentVersionId: clonedVersions[0].id, // New file points to its own first version
-          isParked: false // It's assigned immediately
+          isParked: false, // It's assigned immediately
+          origin: fileToClone.origin,
+          license: fileToClone.license
         };
 
         nextFiles[newFileId] = newFile;
@@ -179,83 +279,45 @@ function App() {
   };
 
 
-  const handleImportClick = () => {
-    setShowImportConfirm(true);
-  };
 
-  const handleImportConfirm = () => {
-    setShowImportConfirm(false);
+
+  const handleImportClick = () => {
+    // Direct trigger for now, Import Modal coming in Phase 2
     fileInputRef.current?.click();
   };
 
-  // Wrapper for Zip Export
-  const handleZipExport = async () => {
-    setIsProcessing(true);
-    setProgressMsg('Zipping files...');
+
+
+
+
+  // Export Progress Handler
+  const handleExportProgress = async (
+    actionName: string,
+    action: (log: (msg: string) => void) => Promise<void>
+  ) => {
+    setShowExportProgress(true);
+    setExportLogs([`Starting ${actionName}...`]);
+    setIsExportComplete(false);
+    setExportError(null);
+
+    const log = (msg: string) => {
+      setExportLogs(prev => [...prev, msg]);
+    };
+
     try {
-      await exportZip(state);
-      setToast({ msg: "Zip created successfully!", type: 'success' });
-    } catch (e) {
+      await action(log);
+      setIsExportComplete(true);
+      log('Process finished successfully.');
+    } catch (e: any) {
       console.error(e);
-      setToast({ msg: "Failed to create Zip.", type: 'error' });
-    } finally {
-      setIsProcessing(false);
+      setExportError(e.message || 'Unknown error occurred');
+      setIsExportComplete(true);
+      log(`Error: ${e.message}`);
     }
   };
 
-  // Wrapper for Project Export
-  const handleProjectExport = async () => {
-    setIsProcessing(true);
-    setProgressMsg('Saving project...');
-    try {
-      await exportSaveState(state);
-      setToast({ msg: "Project saved successfully!", type: 'success' });
-    } catch (e) {
-      console.error(e);
-      setToast({ msg: "Failed to save project.", type: 'error' });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
-  // Wrapper for SD Export (The actual action)
-  const handleSDExport = async () => {
-    setShowSDConfirm(false);
-    setIsProcessing(true);
-    setProgressMsg('Writing to SD Card...');
-    try {
-      await exportToSDCard(state);
-      setToast({ msg: "Export to SD successful!", type: 'success' });
-    } catch (e) {
-      console.error(e);
-      const msg = e instanceof Error ? e.message : "Failed to write to SD.";
-      setToast({ msg, type: 'error' });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
-  // Persistence Loading
-  useEffect(() => {
-    loadStateFromDB().then(saved => {
-      if (saved) {
-        setState(saved);
-      }
-    });
-  }, []);
-
-  // Persistence Saving (Debounced slightly or just on change)
-  useEffect(() => {
-    // Small timeout to prevent hammering DB
-    const handler = setTimeout(() => {
-      saveStateToDB(state);
-    }, 1000);
-    return () => clearTimeout(handler);
-  }, [state]);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const singleFileInputRef = useRef<HTMLInputElement>(null);
-  const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
 
   const currentTape = state.tapes[currentTapeColor];
   const activeSlot = activeSlotId ? currentTape.slots.find(s => s.id === activeSlotId) : null;
@@ -1322,47 +1384,25 @@ function App() {
   };
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    setIsProcessing(true);
+    const fileArray = Array.from(files);
+    setToast({ msg: "Analyzing content...", type: "neutral" });
+
     try {
-      const result: any = await parseImportFiles(e.target.files, (curr, total) => {
-        setProgressMsg(`Importing file ${curr} of ${total}...`);
-      });
-
-      const newFiles = result.files;
-      const newAssignments = result.tapes;
-
-      setState(prev => {
-        const nextFiles = { ...prev.files, ...newFiles };
-        const nextTapes = { ...prev.tapes };
-
-        Object.entries(newAssignments).forEach(([color, slots]: [string, any]) => {
-          const c = color as TapeColor;
-          slots.forEach((assignment: any) => {
-            nextTapes[c] = {
-              ...nextTapes[c],
-              slots: nextTapes[c].slots.map(s =>
-                s.id === assignment.slotId ? { ...s, fileId: assignment.fileId } : s
-              )
-            };
-          });
-        });
-
-        return { files: nextFiles, tapes: nextTapes };
-      });
-
-    } catch (err) {
-      console.error(err);
-      alert("Import failed");
-    } finally {
-      setIsProcessing(false);
-      setProgressMsg('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      const analysis = await analyzeImport(fileArray);
+      setImportAnalysis(analysis);
+    } catch (e) {
+      console.error("Import analysis failed", e);
+      setToast({ msg: "Failed to analyze import", type: "error" });
     }
+
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSampleImport = async (url: string, name: string) => {
+  const handleSampleImport = async (url: string, name: string, origin?: string, license?: string) => {
     setIsProcessing(true);
     setProgressMsg(`Downloading ${name}...`);
     try {
@@ -1395,7 +1435,9 @@ function App() {
         originalName: name,
         versions: [version],
         currentVersionId: versionId,
-        isParked: true // Unassigned by default
+        isParked: true, // Unassigned by default
+        origin,
+        license
       };
 
       setState(prev => ({
@@ -1429,6 +1471,7 @@ function App() {
         onToggleAllView={() => setViewMode('all')}
         onDropOnTape={handleTapeDrop}
         onDropOnViewAll={handleDropOnViewAll}
+        onReset={handleReset}
       />
 
       {/* Duplicates Banner */}
@@ -1480,9 +1523,17 @@ function App() {
 
           <div className="flex gap-4">
             <button
+              onClick={() => setShowHelp(true)}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors border border-transparent hover:border-gray-600"
+              title="User Manual & Help"
+            >
+              <HelpCircle size={20} />
+            </button>
+
+            <button
               onClick={() => setShowInfo(true)}
               className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors border border-transparent hover:border-gray-600"
-              title="Information"
+              title="About"
             >
               <Info size={20} />
             </button>
@@ -1500,31 +1551,13 @@ function App() {
 
             <div className="h-6 w-px bg-gray-700 my-auto"></div>
 
-            {/* Save Project */}
+            {/* NEW Export Button */}
             <button
-              onClick={() => setShowProjectSaveConfirm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors text-sm font-bold border border-gray-700"
-              title="Save Project (JSON)"
+              onClick={() => setShowExport(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-300 hover:to-orange-400 text-black rounded-lg transition-all text-sm font-bold shadow-lg shadow-orange-500/20"
+              title="Export / Save"
             >
-              <FileJson size={16} /> <span className="hidden sm:inline">Project</span>
-            </button>
-
-            {/* Export All (SK Zip) */}
-            <button
-              onClick={handleZipExport}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors text-sm font-bold border border-gray-700"
-              title="Save SK Zip"
-            >
-              <Download size={16} /> <span className="hidden sm:inline">SK Zip</span>
-            </button>
-
-            {/* Export SD */}
-            <button
-              onClick={() => setShowSDConfirm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-synthux-blue hover:bg-blue-500 text-white rounded-lg transition-colors text-sm font-bold shadow-lg shadow-blue-900/20"
-              title="Save to SD Card"
-            >
-              <HardDrive size={16} /> <span className="hidden sm:inline">To SD</span>
+              <Download size={16} /> <span className="hidden sm:inline">Export</span>
             </button>
           </div>
         </header>
@@ -2030,7 +2063,81 @@ function App() {
           )
         }
 
-        {showInfo && <InfoModal onClose={() => setShowInfo(false)} />}
+        {showInfo && <InfoModal onClose={() => setShowInfo(false)} onReset={handleReset} />}
+        {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+        {showExport && (
+          <ExportModal
+            files={state.files}
+            onClose={() => setShowExport(false)}
+            onExportSD={async (opts) => {
+              setShowExport(false); // Close settings modal
+              await handleExportProgress('SD Card Export', async (log) => {
+                await exportSDStructure(state, opts, log);
+              });
+            }}
+            onExportFiles={async (opts) => {
+              setShowExport(false);
+              await handleExportProgress('File Export', async (log) => {
+                await exportFilesOnly(state, opts, log);
+              });
+            }}
+            onExportProject={async (_opts) => {
+              setShowExport(false);
+              await handleExportProgress('Project Backup', async (log) => {
+                await exportSaveState(state, false, log);
+              });
+            }}
+          />
+        )}
+
+        <ExportProgressModal
+          isOpen={showExportProgress}
+          onClose={() => setShowExportProgress(false)}
+          logs={exportLogs}
+          isComplete={isExportComplete}
+          error={exportError}
+        />
+
+        {
+          importAnalysis && (
+            <ImportModal
+              analysis={importAnalysis}
+              onClose={() => setImportAnalysis(null)}
+              onRestoreProject={(projectState) => {
+                setState(projectState);
+                setImportAnalysis(null);
+                setToast({ msg: "Project Restored Successfully", type: "success" });
+              }}
+              onImportStructure={async (structureMap) => {
+                setToast({ msg: "Importing Structure...", type: "neutral" });
+
+                import('./utils/importUtils').then(({ processSDStructure }) => {
+                  setState(prev => {
+                    const result = processSDStructure(structureMap, prev.files, prev.tapes);
+                    return { ...prev, files: result.files, tapes: result.tapes };
+                  });
+                  setImportAnalysis(null);
+                  setToast({ msg: "SD Structure Imported", type: "success" });
+                });
+              }}
+              onImportFiles={(files) => {
+                import('./utils/importUtils').then(({ processAudioFiles }) => {
+                  const newFiles = processAudioFiles(files);
+                  const count = Object.keys(newFiles).length;
+
+                  if (count > 0) {
+                    setState(prev => ({
+                      ...prev,
+                      files: { ...prev.files, ...newFiles }
+                    }));
+                    setToast({ msg: `Imported ${count} files to Pool`, type: "success" });
+                  }
+                  setImportAnalysis(null);
+                });
+              }}
+            />
+          )
+        }
 
         <SamplePackModal
           isOpen={showSampleBrowser}
@@ -2038,75 +2145,7 @@ function App() {
           onImport={handleSampleImport}
         />
 
-        {/* Project Save Confirm */}
-        <ConfirmModal
-          isOpen={showProjectSaveConfirm}
-          onClose={() => setShowProjectSaveConfirm(false)}
-          onConfirm={handleProjectExport}
-          title="Save Project Backup"
-          confirmLabel="Download Backup"
-          message={
-            <div className="space-y-4">
-              <p>
-                This will download a <code>.zip</code> file containing your entire project state (JSON) and all source audio files.
-              </p>
-              <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg text-sm text-gray-300">
-                <strong className="text-blue-400 block mb-1">Why save?</strong>
-                Browser storage is temporary. If you clear your cache or change computers, your work will be lost unless you save this backup file.
-              </div>
-            </div>
-          }
-        />
 
-        {/* Import Confirm */}
-        <ConfirmModal
-          isOpen={showImportConfirm}
-          onClose={() => setShowImportConfirm(false)}
-          onConfirm={handleImportConfirm}
-          title="Import Project or Folder"
-          confirmLabel="Select File/Folder"
-          message={
-            <div className="space-y-4">
-              <p>
-                You can import a previously saved <code>spotykach_project.zip</code> to restore your session, or any folder containing audio files.
-              </p>
-              <div className="bg-synthux-blue/10 border border-synthux-blue/30 p-4 rounded-lg text-sm text-gray-300">
-                <strong className="text-synthux-blue block mb-1 flex items-center gap-2">
-                  <HardDrive size={14} /> Edit Existing SD Card
-                </strong>
-                <p className="mb-2">
-                  You can select an existing <strong>Spotykach SD Card folder</strong> (e.g. the <code>SK</code> folder) to load your tapes, tweak them, and rearrange slots.
-                </p>
-                <p className="text-xs text-gray-400 italic">
-                  Note: Changes are NOT saved automatically back to the folder. You must use "Export to SD" when you are finished.
-                </p>
-              </div>
-            </div>
-          }
-        />
-
-        <ConfirmModal
-          isOpen={showSDConfirm}
-          onClose={() => setShowSDConfirm(false)}
-          onConfirm={handleSDExport}
-          title="Export to SD Card"
-          confirmLabel="Select Folder & Write"
-          message={
-            <div className="space-y-4">
-              <p>
-                You are about to write files directly to a folder on your computer (or SD card).
-              </p>
-              <div className="bg-synthux-yellow/10 border border-synthux-yellow/30 p-4 rounded-lg text-sm text-gray-300">
-                <strong className="text-synthux-yellow block mb-1">Important:</strong>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Please select the <strong>Root Directory</strong> of your SD Card.</li>
-                  <li>Existing files in <code>SK/BLUE</code>, <code>SK/RED</code> etc. will be <strong>overwritten</strong>.</li>
-                  <li>The browser will ask for permission to view/edit files.</li>
-                </ul>
-              </div>
-            </div>
-          }
-        />
 
         {
           confirmAction && (

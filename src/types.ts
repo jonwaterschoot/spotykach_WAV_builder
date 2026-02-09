@@ -27,6 +27,8 @@ export interface FileRecord {
     versions: AudioVersion[];
     currentVersionId: string;
     isParked: boolean; // if false, implies it *might* be assigned, or just pending
+    origin?: string; // e.g., "Sample Pack Name"
+    license?: string; // e.g., "CC-BY 4.0"
 }
 
 // Tape Slots now just reference the FileID
@@ -44,4 +46,9 @@ export interface Tape {
 export interface AppState {
     files: Record<string, FileRecord>;
     tapes: Record<TapeColor, Tape>;
+    metadata?: {
+        appName: string;
+        version: string;
+        exportDate: string;
+    };
 }

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0] - 2026-02-09
+
+### Major Release
+- **Import/Export Overhaul**:
+    - Complete restructuring of Import and Export flows.
+    - Support for SD Card Structure imports (drag & drop folders).
+    - Enhanced Export options (Project Backup vs SD Card Structure).
+    - Dedicated Import/Export Modals with clear analysis.
+- **Reset Application**:
+    - Added "Reset Application" functionality (accessible via Tape Selector or Info Modal).
+    - Clears all local data (IndexedDB & LocalStorage) for a fresh state.
+- **Help & Documentation**:
+    - Added comprehensive Help Modal (?) with guides on SD Card Structure, Firmware usage, and Troubleshooting.
+    - Added Info Modal (i) with app details and credits.
+
 ## [0.2.2] - 2026-02-09
 
 ### Improved
@@ -12,6 +27,14 @@
 ### Fixed
 - **Mobile Drag**: Fixed "Drag starts but drop fails" loop on Android.
 - **Audio Editor**: Fixed touch handles accumulating state and becoming unresponsive.
+
+### UI/UX Refinements
+
+- various small tweaks, e.g. color of the highlighted borders of cards following the theme of the tape.
+
+### Documentation
+- **Info Modal**: Updated the "Desktop Only" warning to a softer "Desktop Recommended" message, acknowledging Beta mobile support.
+- **Main README**: Synced the Roadmap section with your latest updates in roadmap-bugs.md, prioritizing Export and Trashcan features.
 
 ## [0.2.1] - 2026-02-08
 

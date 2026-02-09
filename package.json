@@ -1,7 +1,7 @@
 {
   "name": "spotykach-wav-builder",
   "private": true,
-  "version": "0.2.2",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,12 +14,14 @@
   },
   "dependencies": {
     "@types/jszip": "^3.4.0",
+    "@types/uuid": "^10.0.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",
     "mobile-drag-drop": "^3.0.0-rc.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "uuid": "^13.0.0",
     "wavesurfer.js": "^7.12.1"
   },
   "devDependencies": {
