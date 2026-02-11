@@ -2068,6 +2068,7 @@ function App() {
         {showExport && (
           <ExportModal
             files={state.files}
+            tapes={state.tapes}
             onClose={() => setShowExport(false)}
             onExportSD={async (opts) => {
               setShowExport(false); // Close settings modal

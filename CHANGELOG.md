@@ -7,6 +7,7 @@
     - Complete restructuring of Import and Export flows.
     - Support for SD Card Structure imports (drag & drop folders).
     - Enhanced Export options (Project Backup vs SD Card Structure).
+    - **Mobile Support**: Added "Manual Export" mode and Android error handling.
     - Dedicated Import/Export Modals with clear analysis.
 - **Reset Application**:
     - Added "Reset Application" functionality (accessible via Tape Selector or Info Modal).

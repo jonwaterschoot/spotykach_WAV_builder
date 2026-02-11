@@ -242,6 +242,49 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
                             )}
                         </div>
 
+                        {/* 4. Mobile Export (New) */}
+                        <div className="border border-gray-700 rounded-lg overflow-hidden">
+                            <SectionHeader id="mobile" title="Mobile & Tablet Export" icon={Monitor} />
+
+                            {expandedSection === 'mobile' && (
+                                <div className="p-6 bg-black/20 text-gray-300 space-y-6 font-body">
+                                    <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-lg flex gap-3">
+                                        <AlertTriangle className="text-amber-500 shrink-0" />
+                                        <div className="text-sm">
+                                            <strong className="text-amber-500 block mb-1">Android & iOS Limitations</strong>
+                                            <p className="mb-2">
+                                                Mobile operating systems strictly restrict apps from writing directly to SD cards or system folders.
+                                                The "Direct Write" feature is mainly for Desktop browsers (Chrome/Edge).
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-white font-bold mb-2">How to Export on Mobile</h4>
+                                        <ol className="list-decimal list-inside space-y-3 text-sm">
+                                            <li>
+                                                <strong>Option A: Download ZIP</strong>
+                                                <p className="ml-5 text-gray-400 mt-1">
+                                                    Use "Download SD Structure (ZIP)". Save it to your "Files", then unzip it and move the contents to your SD card manually.
+                                                </p>
+                                            </li>
+                                            <li>
+                                                <strong>Option B: Manual File Export</strong>
+                                                <p className="ml-5 text-gray-400 mt-1">
+                                                    Use the <strong>"Manual (Mobile)"</strong> tab in the Export menu.
+                                                </p>
+                                                <ul className="list-disc list-inside ml-5 mt-1 space-y-1 text-gray-400">
+                                                    <li>Select a Tape (Color).</li>
+                                                    <li>Download each file individually (e.g., <code className="bg-gray-800 px-1 rounded">1.WAV</code>).</li>
+                                                    <li>Move these files to the corresponding folder (e.g., <code className="bg-gray-800 px-1 rounded">SK/B</code>) on your card.</li>
+                                                </ul>
+                                            </li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                     </div>
                 </div>
             </div>

@@ -6,7 +6,7 @@ import type { AppState } from '../types';
 // SHARED HELPERS
 // ==========================================
 
-const downloadBlob = (blob: Blob, name: string) => {
+export const downloadBlob = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -156,73 +156,89 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
 
 export const exportSDStructure = async (state: AppState, options: { includeProject: boolean; directWrite: boolean }, onProgress?: (msg: string) => void) => {
 
+
+
+    // ... (rest of file) ...
+
     // A. DIRECT WRITE (FileSystem API)
     if (options.directWrite) {
-        if (!('showDirectoryPicker' in window)) throw new Error("Browser not supported");
+        try {
+            // @ts-ignore
+            if (!('showDirectoryPicker' in window)) throw new Error("Browser not supported");
 
-        onProgress?.("Requesting directory access...");
-        const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+            onProgress?.("Requesting directory access...");
+            // @ts-ignore
+            const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
 
-        onProgress?.("Creating SK folder...");
-        const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
+            onProgress?.("Creating SK folder...");
+            const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
 
-        // Write Readme
-        onProgress?.("Writing README.md...");
-        const readmeHandle = await rootHandle.getFileHandle('README.md', { create: true });
-        const readmeWritable = await readmeHandle.createWritable();
-        await readmeWritable.write(generateReadme(state, options.includeProject));
-        await readmeWritable.close();
+            // Write Readme
+            onProgress?.("Writing README.md...");
+            const readmeHandle = await rootHandle.getFileHandle('README.md', { create: true });
+            const readmeWritable = await readmeHandle.createWritable();
+            await readmeWritable.write(generateReadme(state, options.includeProject));
+            await readmeWritable.close();
 
-        // Write Tapes
-        for (const color of TAPE_COLORS) {
-            const tape = state.tapes[color];
-            const folderName = color.charAt(0).toUpperCase();
+            // Write Tapes
+            for (const color of TAPE_COLORS) {
+                const tape = state.tapes[color];
+                const folderName = color.charAt(0).toUpperCase();
 
-            // Check if tape has content
-            const activeSlots = tape.slots.filter(s => s.fileId);
-            if (activeSlots.length === 0) continue;
+                // Check if tape has content
+                const activeSlots = tape.slots.filter(s => s.fileId);
+                if (activeSlots.length === 0) continue;
 
-            onProgress?.(`Processing Tape ${color}...`);
-            const tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
+                onProgress?.(`Processing Tape ${color}...`);
+                const tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
 
-            for (const slot of tape.slots) {
-                if (slot.fileId && state.files[slot.fileId]) {
-                    const file = state.files[slot.fileId];
-                    const version = file.versions.find(v => v.id === file.currentVersionId);
+                for (const slot of tape.slots) {
+                    if (slot.fileId && state.files[slot.fileId]) {
+                        const file = state.files[slot.fileId];
+                        const version = file.versions.find(v => v.id === file.currentVersionId);
 
-                    if (version?.blob) {
-                        // STRICT NAMING: 1.WAV, 2.WAV...
-                        const fileName = `${slot.id}.WAV`;
-                        onProgress?.(`  -> Writing ${fileName}`);
-                        const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
-                        const writable = await fileHandle.createWritable();
-                        await writable.write(version.blob);
-                        await writable.close();
+                        if (version?.blob) {
+                            // STRICT NAMING: 1.WAV, 2.WAV...
+                            const fileName = `${slot.id}.WAV`;
+                            onProgress?.(`  -> Writing ${fileName}`);
+                            const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(version.blob);
+                            await writable.close();
+                        }
                     }
                 }
             }
+
+            // Write Project Bundle
+            if (options.includeProject) {
+                onProgress?.("Creating Project Backup Bundle...");
+                const backupHandle = await skHandle.getDirectoryHandle('PROJECT_BACKUP', { create: true });
+
+                onProgress?.("Generating Backup ZIP...");
+                // Pass minimal progress or none to avoid spamming the log if recursive?
+                // Actually let's just await it.
+                const zip = await exportSaveState(state, true, (msg) => onProgress?.(`  [Backup] ${msg}`)) as JSZip;
+
+                onProgress?.("Writing Backup ZIP to disk...");
+                const content = await zip.generateAsync({ type: "blob" });
+                const backupFileHandle = await backupHandle.getFileHandle('project_backup.zip', { create: true });
+                const w = await backupFileHandle.createWritable();
+                await w.write(content);
+                await w.close();
+            }
+
+            onProgress?.("SD Card Export Complete.");
+            return;
+
+        } catch (e: any) {
+            console.error("Direct Write Error:", e);
+            // Check for specific error types
+            if (e.name === 'NotAllowedError' || e.message.includes('read-only')) {
+                throw new Error("System blocked write access. Please use Zip Export.");
+            }
+            throw e; // Re-throw other errors
         }
-
-        // Write Project Bundle
-        if (options.includeProject) {
-            onProgress?.("Creating Project Backup Bundle...");
-            const backupHandle = await skHandle.getDirectoryHandle('PROJECT_BACKUP', { create: true });
-
-            onProgress?.("Generating Backup ZIP...");
-            // Pass minimal progress or none to avoid spamming the log if recursive?
-            // Actually let's just await it.
-            const zip = await exportSaveState(state, true, (msg) => onProgress?.(`  [Backup] ${msg}`)) as JSZip;
-
-            onProgress?.("Writing Backup ZIP to disk...");
-            const content = await zip.generateAsync({ type: "blob" });
-            const backupFileHandle = await backupHandle.getFileHandle('project_backup.zip', { create: true });
-            const w = await backupFileHandle.createWritable();
-            await w.write(content);
-            await w.close();
-        }
-
-        onProgress?.("SD Card Export Complete.");
-        return;
     }
 
     // B. DOWNLOAD ZIP
