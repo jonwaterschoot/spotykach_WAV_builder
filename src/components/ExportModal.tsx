@@ -59,10 +59,10 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-            <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
 
                 {/* Header */}
-                <div className="flex justify-between items-center p-6 border-b border-gray-800 bg-black/20">
+                <div className="flex justify-between items-center p-6 border-b border-gray-800 bg-black/20 shrink-0">
                     <h2 className="text-2xl font-bold text-white font-header flex items-center gap-3">
                         <Download className="text-synthux-action" />
                         Export
@@ -73,7 +73,7 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-800 overflow-x-auto">
+                <div className="flex border-b border-gray-800 overflow-x-auto shrink-0">
                     <button
                         onClick={() => setActiveTab('sd')}
                         className={`flex-1 min-w-[100px] p-4 flex items-center justify-center gap-2 transition-colors ${activeTab === 'sd' ? 'bg-synthux-action/10 text-synthux-action border-b-2 border-synthux-action' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
@@ -105,7 +105,7 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                 </div>
 
                 {/* Content */}
-                <div className="p-8 min-h-[300px] flex flex-col">
+                <div className="p-8 min-h-[300px] flex flex-col overflow-y-auto">
 
                     {/* SD CARD TAB */}
                     {activeTab === 'sd' && (
