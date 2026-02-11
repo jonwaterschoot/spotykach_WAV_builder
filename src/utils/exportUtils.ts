@@ -21,7 +21,7 @@ const generateReadme = (state: AppState, includeBundle: boolean): string => {
     const dateStr = new Date().toISOString().split('T')[0];
     let content = `SPOTYKACH WAV BUILDER EXPORT
 Date: ${dateStr}
-App Version: 1.0.0
+App Version: 1.0.1
 
 ========================================================================
 FOLDER STRUCTURE (STRICT MODE)

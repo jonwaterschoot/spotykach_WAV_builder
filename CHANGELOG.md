@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.1] - 2026-02-12
+
+### Added
+- **Export Modal**: Added "Manual Export" mode for mobile devices. Allowing exporting single files but converted to the 1.WAV, 2.WAV, etc. format.
+
+### Fixed
+- **Export Modal**: Added scrollbar and max-height to support smaller screens (UI Overflow).
+
+
 ## [1.0.0] - 2026-02-09
 
 ### Major Release
