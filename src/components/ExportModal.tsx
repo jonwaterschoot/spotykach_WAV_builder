@@ -132,20 +132,24 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                                     </div>
                                 </label>
 
-                                {hasFileSystemAccess && (
-                                    <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 hover:bg-black/30 cursor-pointer transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={sdDirectWrite}
-                                            onChange={(e) => setSdDirectWrite(e.target.checked)}
-                                            className="w-5 h-5 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700"
-                                        />
-                                        <div>
-                                            <div className="font-bold text-white">Write Directly to SD Card (Desktop)</div>
-                                            <div className="text-xs text-gray-400">Select the SD drive to export without creating a ZIP</div>
-                                        </div>
-                                    </label>
-                                )}
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 transition-colors ${!hasFileSystemAccess ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black/30 cursor-pointer'}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={sdDirectWrite}
+                                        disabled={!hasFileSystemAccess}
+                                        onChange={(e) => setSdDirectWrite(e.target.checked)}
+                                        className="w-5 h-5 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700 disabled:opacity-50"
+                                    />
+                                    <div>
+                                        <div className="font-bold text-white">Write Directly to SD Card (Desktop)</div>
+                                        <div className="text-xs text-gray-400">Select the SD drive to export without creating a ZIP</div>
+                                        {!hasFileSystemAccess && (
+                                            <div className="text-xs text-red-400 mt-1 font-bold">
+                                                Requires a Chromium-based browser (Chrome, Edge) on Desktop.
+                                            </div>
+                                        )}
+                                    </div>
+                                </label>
                             </div>
 
                             <div className="mt-auto pt-4">

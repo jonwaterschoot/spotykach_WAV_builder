@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.2] - 2026-02-12
+
+### Changed
+- **About Modal**:
+    - Updated audio specification to **32-bit** (from 16-bit).
+    - Added **Browser Compatibility** section clarifying support for Chromium, Safari, and Firefox.
+- **Export Modal**:
+    - "Write Directly to SD Card" option is now visible but **disabled** on unsupported browsers (Firefox, Safari), with an explanatory warning, instead of being hidden.
+
+### Documentation
+- Updated README within exported ZIPs to reflect version 1.0.2.
+
 ## [1.0.1] - 2026-02-12
 
 ### Added

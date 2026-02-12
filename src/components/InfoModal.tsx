@@ -1,4 +1,4 @@
-import { X, ExternalLink, Cpu, FileAudio, Bot } from 'lucide-react';
+import { X, ExternalLink, Cpu, FileAudio, Bot, Globe } from 'lucide-react';
 import { version } from '../../package.json';
 
 interface InfoModalProps {
@@ -65,8 +65,29 @@ export const InfoModal = ({ onClose, onReset }: InfoModalProps & { onReset: () =
                         <div className="bg-black/20 p-4 rounded-lg border border-gray-800">
                             <ul className="list-disc list-inside text-gray-300 space-y-1">
                                 <li>All standard audio formats (MP3, WAV, AIF, OGG, etc.)</li>
-                                <li>Files are automatically converted to 48kHz / 16-bit / Stereo.</li>
+                                <li>Files are automatically converted to 48kHz / 32-bit / Stereo.</li>
                                 <li> Drag & Drop files directly onto slots or use the Import Folder button.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    {/* Browser Compatibility */}
+                    <div className="space-y-3">
+                        <h3 className="text-lg font-semibold text-white flex items-center gap-2 font-header">
+                            <Globe size={20} className="text-synthux-blue" />
+                            Browser Compatibility
+                        </h3>
+                        <div className="bg-black/20 p-4 rounded-lg border border-gray-800 text-sm text-gray-300">
+                            <ul className="list-disc list-inside space-y-2">
+                                <li>
+                                    <strong className="text-white">Chromium-based (Chrome, Edge):</strong> Recommended. Full support.
+                                </li>
+                                <li>
+                                    <strong className="text-white">Safari:</strong> Reported to work well.
+                                </li>
+                                <li>
+                                    <strong className="text-white">Firefox:</strong> Audio processing is supported. However, touchscreen drag-and-drop (Windows & Android) and direct SD card export with folder structure are not supported. Users must manually unzip the folder and move it to the SD card.
+                                </li>
                             </ul>
                         </div>
                     </div>
