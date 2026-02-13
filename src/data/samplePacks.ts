@@ -105,7 +105,29 @@ Everyone is permitted to copy and distribute verbatim or modified copies of this
 
             // Instruments
             { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G.wav", category: "Instruments" },
-            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G_distorted.wav", category: "Instruments" }
+            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G_distorted.wav", category: "Instruments" },
+
+            // Vinyl Crackle
+            { name: "Vinyl Crackle 12 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle12_densedirty35rpm.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 13 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle13_densedirty35rpm.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 14 (End of Chord)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle14_endofchord.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 15 (Aggressive)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle15_moreagressivestereo.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 17 (Manipulating)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle17_manipulatinghand.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 18", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle18.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 19", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle19.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 20", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle20.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 21", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle21.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 22", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle22.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 23", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle23.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 24", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle24.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 25", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle25.WAV", category: "Vinyl Crackle" },
+
+            // Foley
+            { name: "Dragging Branch", path: "/samples/jonwtr/foley2/draggingbranch.WAV", category: "Foley" },
+            { name: "Kicking Ice 1", path: "/samples/jonwtr/foley2/kicking-ice.WAV", category: "Foley" },
+            { name: "Kicking Ice 2", path: "/samples/jonwtr/foley2/kicking-ice01.wav", category: "Foley" },
+            { name: "Shaker (Bad Timing)", path: "/samples/jonwtr/foley2/shaker_badtiming.wav", category: "Foley" },
+            { name: "Shaker (Bad Timing Edit)", path: "/samples/jonwtr/foley2/shaker_badtiming_edit.wav", category: "Foley" }
         ]
     }
 ];

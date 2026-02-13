@@ -6,6 +6,8 @@ A collection of noisy textures, field recordings, and voice sounds explored duri
 - **Textures**: Granular and distorted noise layers.
 - **Field Recordings**: Captured environments and organic textures.
 - **Voice**: Abstract vocal manipulations.
+- **Vinyl Crackle**: Sampled vinyl surface noise and crackles (Various speeds and densities).
+- **Foley**: Captured physical sounds (Ice, branches, shakers).
 
 ## About the Creator
 **Jonwtr**  

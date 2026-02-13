@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3] - 2026-02-13
+
+### Added
+- **Sample Pack**:
+    - Added **Vinyl Crackle** (11 samples) and **Foley** (5 samples) categories to the **Jonwtr Explorations** pack.
+    - Updated documentation for the Jonwtr sample pack.
+
 ## [1.0.2] - 2026-02-12
 
 ### Changed
