@@ -8,9 +8,10 @@ interface ExportProgressModalProps {
     isComplete: boolean;
     error: string | null;
     successMessage?: string;
+    progress?: number;
 }
 
-export const ExportProgressModal = ({ isOpen, onClose, logs, isComplete, error, successMessage }: ExportProgressModalProps) => {
+export const ExportProgressModal = ({ isOpen, onClose, logs, isComplete, error, successMessage, progress }: ExportProgressModalProps) => {
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom of logs
@@ -34,6 +35,19 @@ export const ExportProgressModal = ({ isOpen, onClose, logs, isComplete, error, 
                         )}
                         {isComplete ? (error ? 'Export Failed' : 'Export Complete') : 'Exporting...'}
                     </h2>
+                    {!isComplete && typeof progress === 'number' && (
+                        <div className="flex-1 ml-4 flex flex-col gap-1">
+                            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-synthux-action transition-all duration-300 ease-out"
+                                    style={{ width: `${Math.round(progress)}%` }}
+                                />
+                            </div>
+                            <div className="text-[10px] text-synthux-action font-mono text-right">
+                                {Math.round(progress)}%
+                            </div>
+                        </div>
+                    )}
                     {isComplete && (
                         <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white">
                             <X size={24} />

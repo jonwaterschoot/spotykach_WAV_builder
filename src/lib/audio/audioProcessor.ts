@@ -81,14 +81,18 @@ export class Processor {
         const sampleRate = buffer.sampleRate;
         const startSample = Math.floor(start * sampleRate);
         const endSample = Math.ceil(end * sampleRate);
-        const length = endSample - startSample;
+
+        // Clamp to valid range to prevent off-by-one errors (trailing zeros)
+        const safeStart = Math.max(0, Math.min(buffer.length, startSample));
+        const safeEnd = Math.max(0, Math.min(buffer.length, endSample));
+        const length = safeEnd - safeStart;
 
         if (length <= 0) return buffer;
 
         const newBuffer = new AudioBuffer({ length, numberOfChannels: buffer.numberOfChannels, sampleRate });
 
         for (let c = 0; c < buffer.numberOfChannels; c++) {
-            const data = buffer.getChannelData(c).subarray(startSample, endSample);
+            const data = buffer.getChannelData(c).subarray(safeStart, safeEnd);
             newBuffer.getChannelData(c).set(data);
         }
 
@@ -127,6 +131,131 @@ export class Processor {
 
         source.start();
         return await offlineCtx.startRendering();
+    }
+
+    // Apply gain to a specific range with smoothing at boundaries
+    async applyGain(buffer: AudioBuffer, start: number, end: number, gainDb: number, smoothingMs: number = 20): Promise<AudioBuffer> {
+        // Convert smoothing to samples
+        const sampleRate = buffer.sampleRate;
+        const smoothSamples = Math.floor((smoothingMs / 1000) * sampleRate);
+        const startSample = Math.floor(start * sampleRate);
+        const endSample = Math.ceil(end * sampleRate);
+        const gainValue = Math.pow(10, gainDb / 20);
+
+        const newBuffer = new AudioBuffer({
+            length: buffer.length,
+            numberOfChannels: buffer.numberOfChannels,
+            sampleRate: buffer.sampleRate
+        });
+
+        for (let c = 0; c < buffer.numberOfChannels; c++) {
+            const oldData = buffer.getChannelData(c);
+            const newData = newBuffer.getChannelData(c);
+            newData.set(oldData);
+
+            // Calculate actual range
+            const safeStart = Math.max(0, startSample);
+            const safeEnd = Math.min(buffer.length, endSample);
+
+            // 1. Full Gain Range
+            for (let i = safeStart; i < safeEnd; i++) {
+                // Determine gain multiplier for this sample
+                let multiplier = gainValue;
+
+                // Apply Ramp UP at Start
+                // If we are within the first 'smoothSamples' of the selection
+                if (i < safeStart + smoothSamples) {
+                    const progress = (i - safeStart) / smoothSamples;
+                    // Interpolate from 1.0 (original) to gainValue
+                    // Linear ramp for now (could be cosine)
+                    multiplier = 1.0 + (gainValue - 1.0) * progress;
+                }
+
+                // Apply Ramp DOWN at End
+                // If we are within the last 'smoothSamples' of the selection
+                if (i > safeEnd - smoothSamples) {
+                    const progress = (safeEnd - i) / smoothSamples; // 1 at end start, 0 at very end
+                    // Interpolate from 1.0 (original) to gainValue (backwards)
+                    multiplier = 1.0 + (gainValue - 1.0) * progress;
+                }
+
+                newData[i] *= multiplier;
+            }
+        }
+        return newBuffer;
+    }
+
+    // Apply complex volume envelope defined by keyframes
+    async applyEnvelope(buffer: AudioBuffer, points: { time: number, value: number }[], smoothing: boolean = true): Promise<AudioBuffer> {
+        const sampleRate = buffer.sampleRate;
+        const length = buffer.length;
+        const channels = buffer.numberOfChannels;
+
+        const newBuffer = new AudioBuffer({ length, numberOfChannels: channels, sampleRate });
+
+        // Sort points by time
+        const sortedPoints = [...points].sort((a, b) => a.time - b.time);
+
+        for (let c = 0; c < channels; c++) {
+            const originalData = buffer.getChannelData(c);
+            const newData = newBuffer.getChannelData(c);
+
+            // If no points, copy original
+            if (sortedPoints.length === 0) {
+                newData.set(originalData);
+                continue;
+            }
+
+            // 1. Before first point: Apply constant gain of first point 
+            let currentSample = 0;
+            const first = sortedPoints[0];
+            const firstSample = Math.floor(first.time * sampleRate);
+            const firstGain = first.value;
+
+            for (let i = 0; i < firstSample && i < length; i++) {
+                newData[i] = originalData[i] * firstGain;
+            }
+            currentSample = firstSample;
+
+            // 2. Between points
+            for (let p = 0; p < sortedPoints.length - 1; p++) {
+                const p1 = sortedPoints[p];
+                const p2 = sortedPoints[p + 1];
+
+                const startSamp = Math.floor(p1.time * sampleRate);
+                const endSamp = Math.floor(p2.time * sampleRate);
+
+                if (endSamp <= startSamp) continue;
+
+                const g1 = p1.value;
+                const g2 = p2.value;
+                const duration = endSamp - startSamp;
+
+                for (let i = startSamp; i < endSamp && i < length; i++) {
+                    const progress = (i - startSamp) / duration;
+                    let gain = 0;
+                    if (smoothing) {
+                        // Cosine interpolation
+                        const mu = (1 - Math.cos(progress * Math.PI)) / 2;
+                        gain = g1 * (1 - mu) + g2 * mu;
+                    } else {
+                        // Linear
+                        gain = g1 + (g2 - g1) * progress;
+                    }
+                    newData[i] = originalData[i] * gain;
+                }
+                currentSample = endSamp;
+            }
+
+            // 3. After last point
+            const last = sortedPoints[sortedPoints.length - 1];
+            const lastGain = last.value;
+            for (let i = currentSample; i < length; i++) {
+                newData[i] = originalData[i] * lastGain;
+            }
+        }
+
+        return newBuffer;
     }
 }
 

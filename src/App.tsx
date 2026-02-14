@@ -59,6 +59,7 @@ function App() {
   const [exportLogs, setExportLogs] = useState<string[]>([]);
   const [isExportComplete, setIsExportComplete] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
 
   // General UI
   const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
@@ -293,20 +294,31 @@ function App() {
   // Export Progress Handler
   const handleExportProgress = async (
     actionName: string,
-    action: (log: (msg: string) => void) => Promise<void>
+    action: (log: (msg: string | undefined, progress?: number) => void) => Promise<void>
   ) => {
     setShowExportProgress(true);
     setExportLogs([`Starting ${actionName}...`]);
     setIsExportComplete(false);
     setExportError(null);
+    setExportProgress(0);
 
-    const log = (msg: string) => {
-      setExportLogs(prev => [...prev, msg]);
+    const log = (msg: string | undefined, progress?: number) => {
+      if (msg) {
+        setExportLogs(prev => {
+          // Debounce logs if same message? No, keep simple.
+          // Don't log if message is just "..."?
+          return [...prev, msg];
+        });
+      }
+      if (progress !== undefined) {
+        setExportProgress(progress);
+      }
     };
 
     try {
       await action(log);
       setIsExportComplete(true);
+      setExportProgress(100);
       log('Process finished successfully.');
     } catch (e: any) {
       console.error(e);
@@ -2072,19 +2084,19 @@ function App() {
             onClose={() => setShowExport(false)}
             onExportSD={async (opts) => {
               setShowExport(false); // Close settings modal
-              await handleExportProgress('SD Card Export', async (log) => {
+              await handleExportProgress('SD Card Export', async (log: (msg: string | undefined, progress?: number) => void) => {
                 await exportSDStructure(state, opts, log);
               });
             }}
             onExportFiles={async (opts) => {
               setShowExport(false);
-              await handleExportProgress('File Export', async (log) => {
+              await handleExportProgress('File Export', async (log: (msg: string | undefined, progress?: number) => void) => {
                 await exportFilesOnly(state, opts, log);
               });
             }}
             onExportProject={async (_opts) => {
               setShowExport(false);
-              await handleExportProgress('Project Backup', async (log) => {
+              await handleExportProgress('Project Backup', async (log: (msg: string | undefined, progress?: number) => void) => {
                 await exportSaveState(state, false, log);
               });
             }}
@@ -2097,6 +2109,7 @@ function App() {
           logs={exportLogs}
           isComplete={isExportComplete}
           error={exportError}
+          progress={exportProgress !== null ? exportProgress : undefined}
         />
 
         {

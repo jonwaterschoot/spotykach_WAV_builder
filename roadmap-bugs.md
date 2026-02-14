@@ -15,9 +15,8 @@ For now I'm keeping a text file with the roadmap / feature ideas, and a bugtrack
 ## new feature / new functions improvements ideas:
 
 
-
-
-
+### add a small ... animation to the export logger
+Can we track the actual progress in percentage? Especially informative when saving the backup file, which can take a while
 
 ### History / Trashcan
 Keep a temporary trashcan for removed files and history list, with a button to restore them, this should be a separate feature from the project cleanup feature.

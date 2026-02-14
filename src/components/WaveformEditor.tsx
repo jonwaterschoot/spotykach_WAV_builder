@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Square, Sliders } from 'lucide-react';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { TapeIcon } from './TapeIcon';
 import { ConfirmModal } from './ConfirmModal';
+import { AutomationOverlay } from './AutomationOverlay';
+import type { AutomationPoint } from './AutomationOverlay';
+import { PlayheadRuler } from './PlayheadRuler';
 
 // Fade Overlay Component
 interface FadeOverlayProps {
@@ -406,6 +409,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const { stop: stopGlobalPlayer } = useAudioPlayer();
 
     const [editorDuration, setEditorDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0); // Added for Ruler
     const [minZoom, setMinZoom] = useState(0.1); // Default low value until loaded
     const [regionState, setRegionState] = useState<{ start: number, end: number }>({ start: 0, end: 0 });
     const rafRef = useRef<number | null>(null);
@@ -414,14 +418,30 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [hasNormalized, setHasNormalized] = useState(false);
     const [hasTrimmed, setHasTrimmed] = useState(false);
 
+    // Automation State (New)
+    const [automationPoints, setAutomationPoints] = useState<AutomationPoint[]>([]);
+    const [smooth, setSmooth] = useState(false);
+    const [showAutomationPanel, setShowAutomationPanel] = useState(false);
+
+
+    // Playhead Seeking State
+    // const [seekHover, setSeekHover] = useState<{ x: number, time: number } | null>(null);
+
+    // Legacy Volume Selection (Removed)
+    // const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+    // const [volumeGain, setVolumeGain] = useState(0); 
+
     // UI States
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [selectedVersionIds, setSelectedVersionIds] = useState<Set<string>>(new Set());
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showMoveConfirm, setShowMoveConfirm] = useState(false);
+    const [isPreviewing, setIsPreviewing] = useState(false);
+    const [isPreviewingLoop, setIsPreviewingLoop] = useState(false);
 
     const isMounted = useRef(false);
     const initTimeout = useRef<NodeJS.Timeout | null>(null);
+    const playbackStartTimeRef = useRef(0);
 
     // Mark dirty on changes
     const handleDirtyChange = () => {
@@ -452,6 +472,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setFadeIn(0);
         setFadeOut(0);
         setIsDirty(false);
+        // Automation reset handled above
         // Load processing state from version if available
         const currentVersion = versions.find(v => v.id === loadedVersionId);
         if (currentVersion?.processing) {
@@ -475,10 +496,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     useEffect(() => {
         if (activeVersionId !== loadedVersionId) {
             setLoadedVersionId(activeVersionId);
-            // Optionally load the blob if it's not the current one?
-            // Usually parent updates slot.blob together with activeVersionId.
-            // But we already have logic to sync slot.blob above.
-            // We just need to ensure the Highlight (loadedVersionId) matches.
         }
     }, [activeVersionId]);
 
@@ -518,8 +535,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 height: 256,
                 minPxPerSec: zoom,
                 interact: true,
-                dragToSeek: true,
-                autoScroll: false, // We handle scrolling via the external container size
+                dragToSeek: true, // Allow seeking on drag, disable region creation via dragging
+                autoScroll: false,
             });
 
             wavesurfer.current = ws;
@@ -527,88 +544,130 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             ws.on('error', (err: any) => {
                 if (!isMounted.current) return;
-                // Filter noise
                 if (typeof err === 'string' && err.includes('not initialized')) return;
                 console.error("WaveSurfer Error:", err);
             });
 
-            try {
-                const wsRegions = ws.registerPlugin(RegionsPlugin.create());
-                regions.current = wsRegions;
-                regionsRef.current = wsRegions;
+            ws.on('timeupdate', (time) => {
+                if (isMounted.current) setCurrentTime(time);
+            });
 
-                ws.on('ready', () => {
-                    if (!isMounted.current) return;
-                    const duration = ws.getDuration();
-                    setEditorDuration(duration);
+            // Disable dragSelection to prevent manual region creation
+            const wsRegions = ws.registerPlugin(RegionsPlugin.create());
+            regions.current = wsRegions;
+            regionsRef.current = wsRegions;
 
-                    // Auto-Fit Initial Zoom
-                    if (containerRef.current) {
-                        const width = containerRef.current.clientWidth;
-                        // Calculate zoom to fit duration in width
-                        // Ensure minPxPerSec is at least something reasonable
-                        const fitZoom = width / duration;
-                        setMinZoom(fitZoom);
-                        setZoom(fitZoom);
-                        ws.zoom(fitZoom);
-                    }
+            ws.on('ready', () => {
+                if (!isMounted.current) return;
+                const duration = ws.getDuration();
+                setEditorDuration(duration);
 
-                    // Calculate Initial Region (Max 42s)
-                    let rStart = 0;
-                    let rEnd = duration;
+                // Auto-Fit Initial Zoom
+                if (containerRef.current) {
+                    const width = containerRef.current.clientWidth;
+                    const fitZoom = width / duration;
+                    setMinZoom(fitZoom);
+                    setZoom(fitZoom);
+                    ws.zoom(fitZoom);
+                }
 
-                    if (duration > 42) {
-                        const mid = duration / 2;
-                        rStart = mid - 21;
-                        rEnd = mid + 21;
-                    }
+                // Calculate Initial Region (Max 42s)
+                let rStart = 0;
+                let rEnd = duration;
 
-                    // Add Region
-                    wsRegions.addRegion({
-                        start: rStart,
-                        end: rEnd,
-                        color: 'rgba(255, 255, 255, 0.1)',
-                        drag: false,
-                        resize: true
-                    } as any);
-                    setRegionState({ start: rStart, end: rEnd });
+                if (duration > 42) {
+                    const mid = duration / 2;
+                    rStart = mid - 21;
+                    rEnd = mid + 21;
+                }
+
+                // Clear any existing regions before adding default
+                wsRegions.clearRegions();
+
+                // Add Trim Region
+                wsRegions.addRegion({
+                    id: 'trim-region',
+                    start: rStart,
+                    end: rEnd,
+                    color: 'rgba(255, 255, 255, 0.1)',
+                    drag: false,
+                    resize: true // Keep resize enabled for the main trim tool
                 });
+                setRegionState({ start: rStart, end: rEnd });
+            });
 
-                // --- ROBUST REGION LOGIC ---
-                // Sync State
-                wsRegions.on('region-update', (r: any) => setRegionState({ start: r.start, end: r.end }));
-                wsRegions.on('region-updated', (r: any) => {
+
+            // --- ROBUST REGION LOGIC ---
+            // Sync State
+            wsRegions.on('region-update', (r: any) => {
+                if (r.id === 'trim-region') {
+                    setRegionState({ start: r.start, end: r.end });
+                }
+            });
+
+            wsRegions.on('region-updated', (r: any) => {
+                if (r.id === 'trim-region') {
                     setRegionState({ start: r.start, end: r.end });
                     if (isMounted.current) handleDirtyChange();
-                });
+                } else {
+                    // Volume Selection Deprecated
+                    // Automation handled via overlay
+                }
+            });
 
-                // GAPLESS LOOPING: Trigger immediately when leaving the region
-                wsRegions.on('region-out', (r: any) => {
-                    if (isLoopingRef.current && isMounted.current) {
-                        // Force seek to start and play range for gapless loop
-                        // r.play() sometimes fails to seek back instantly if not configured
-                        ws.play(r.start, r.end);
-                    }
-                });
+            // Clear selection on background click (handled by interaction handler below or WaveSurfer default?)
+            // WaveSurfer default interaction handles seek.
+            // We need to listen to 'interaction' to clear volume selection if strictly outside.
+            ws.on('interaction', () => {
+                // If we just clicked (not dragged), we might want to clear selection?
+                // Actually, dragging creates a region. Clicking moves playhead.
+                // If we click elsewhere, we should probably deselect volume region?
+                // Let's rely on manual "Cancel" or creating a new one for now to be safe.
+                // But user said: "just clicking in the waveform changes the playhead position."
+                // So we should probably clear selection if they click away.
+                // Implementation: If we start a new region drag, 'region-created' fires.
+            });
 
-            } catch (e) { console.warn(e); }
+            wsRegions.on('region-created', (r: any) => {
+                if (r.id !== 'trim-region') {
+                    // Deprecated: Remove immediately if created by mistake
+                    r.remove();
+                }
+            });
 
-            ws.on('play', () => isMounted.current && setIsPlaying(true));
+
+            // GAPLESS LOOPING: Trigger immediately when leaving the region
+            wsRegions.on('region-out', (r: any) => {
+                if (r.id === 'trim-region' && isLoopingRef.current && isMounted.current) {
+                    // Force seek to start and play range for gapless loop
+                    ws.play(r.start, r.end);
+                }
+            });
+
+
+
+            ws.on('play', () => {
+                if (isMounted.current) {
+                    playbackStartTimeRef.current = performance.now();
+                    setIsPlaying(true);
+                }
+            });
             ws.on('pause', () => {
                 if (!isMounted.current) return;
                 setIsPlaying(false);
-                // Removed manual loop check (handled by region-out)
             });
             // FINISH HANDLER: Check if we need to loop (Edge case where region ends at file end)
             ws.on('finish', () => {
                 if (isLoopingRef.current && isMounted.current) {
                     // Find active region and restart
                     if (regionsRef.current) {
+                        // Find trim region specifically
                         const list = regionsRef.current.getRegions();
-                        if (list.length > 0) {
-                            const r = list[0];
-                            ws.play(r.start, r.end);
-                            return; // Don't set isPlaying(false)
+                        const trimRegion = list.find((r: any) => r.id === 'trim-region');
+
+                        if (trimRegion) {
+                            ws.play(trimRegion.start, trimRegion.end);
+                            return;
                         }
                     }
                     // Fallback for full file loop
@@ -665,6 +724,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             }
         }
 
+        // Micro-Fade In (15ms) to prevent clicks
+        const timeSinceStart = (performance.now() - playbackStartTimeRef.current) / 1000;
+        if (timeSinceStart < 0.015) {
+            volume *= (timeSinceStart / 0.015);
+        }
+
         wavesurfer.current.setVolume(volume);
 
         if (isPlaying) {
@@ -683,6 +748,21 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
     }, [isPlaying, fadeIn, fadeOut]);
+
+
+
+    // Auto-Loop Switch Logic
+    useEffect(() => {
+        if (showLoopPanel && !isLooping) {
+            setIsLooping(true);
+            if (regions.current) {
+                const list = regions.current.getRegions();
+                if (list.length > 0) {
+                    list[0].setOptions({ loop: true });
+                }
+            }
+        }
+    }, [showLoopPanel]);
 
 
     // Keyboard shortcuts
@@ -809,6 +889,177 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
+    // Helper: Add Smart Point
+    const addSmartPoint = () => {
+        if (!editorDuration) return;
+
+        const points = [...automationPoints].sort((a, b) => a.time - b.time);
+        const selected = points.filter(p => p.selected);
+        let newTime = currentTime; // Default fallback
+        let newVal = 1.0;
+
+        if (selected.length === 2) {
+            // 1. Middle of selected segment
+            newTime = (selected[0].time + selected[1].time) / 2;
+            newVal = (selected[0].value + selected[1].value) / 2;
+        } else if (selected.length === 1) {
+            // 2. Middle of segment to the RIGHT
+            const idx = points.findIndex(p => p.id === selected[0].id);
+            if (idx !== -1 && idx < points.length - 1) {
+                const next = points[idx + 1];
+                newTime = (selected[0].time + next.time) / 2;
+                newVal = (selected[0].value + next.value) / 2;
+            } else {
+                // No point to right, add halfway to end?
+                newTime = (selected[0].time + editorDuration) / 2;
+                newVal = selected[0].value;
+            }
+        } else if (points.length > 0) {
+            // 3. No selection: Middle of first segment (or start->first)
+            if (points[0].time > 0) {
+                newTime = points[0].time / 2;
+                newVal = points[0].value;
+            } else if (points.length > 1) {
+                newTime = (points[0].time + points[1].time) / 2;
+                newVal = (points[0].value + points[1].value) / 2;
+            } else {
+                newTime = (points[0].time + editorDuration) / 2;
+            }
+        } else {
+            // Empty: Add at playhead
+            newTime = currentTime;
+        }
+
+        // Clamp
+        newTime = Math.max(0, Math.min(editorDuration, newTime));
+
+        const newPoint = {
+            id: Math.random().toString(36).substr(2, 9),
+            time: newTime,
+            value: newVal,
+            selected: true
+        };
+
+        // Deselect others
+        const newPts = points.map(p => ({ ...p, selected: false })).concat(newPoint);
+        setAutomationPoints(newPts);
+        handleDirtyChange();
+    };
+
+    // Automation Handlers
+    const handleApplyAutomation = async () => {
+        if (!originalBuffer || automationPoints.length === 0) return;
+        setIsProcessing(true);
+        try {
+            // 1. Apply Envelope to the FULL buffer (or we should trim first? No, logic is Apply -> Trim usually, but handleSave does Apply -> Trim)
+            // But if we "Apply" here, we are "Baking it in".
+            // Let's Bake it into the original buffer? Or create new version?
+            // "Apply" implies committing. 
+            // Logic in handleSave: processed = applyEnvelope(original).
+
+            // So here:
+            const processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
+            // Verify: Should we also trim/fade if those are set?
+            // User wants to "Apply Automation". Usually this means "Render loudness" but keep the region?
+            // If we save as new version, we just save the processed buffer.
+
+            const newBlob = encodeWAV(processed);
+            onSave(newBlob, processed.duration, "Automation Applied", true, ['normalized']);
+
+            // Reset points
+            setAutomationPoints([]);
+            setShowAutomationPanel(false);
+            showToast("Automation Applied!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to apply automation", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleStopPreview = async () => {
+        if (!wavesurfer.current || !currentBlob) return;
+        try {
+            await wavesurfer.current.loadBlob(currentBlob);
+            setIsPreviewing(false);
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handlePreviewAutomation = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
+
+        if (isPreviewing) {
+            await handleStopPreview();
+            return;
+        }
+
+        // Generate temp blob
+        try {
+            // Processing...
+            setIsProcessing(true);
+            const processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
+            const newBlob = encodeWAV(processed);
+
+            await wavesurfer.current.loadBlob(newBlob);
+            wavesurfer.current.play();
+            setIsPreviewing(true);
+            showToast("Previewing changes... (Click again to stop)", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to preview", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handlePreviewLoop = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
+
+        if (isPreviewingLoop) {
+            if (currentBlob) await wavesurfer.current.loadBlob(currentBlob);
+            // Disable Loop
+            const media = wavesurfer.current.getMediaElement();
+            if (media) media.loop = false;
+            setIsPreviewingLoop(false);
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            let start = 0;
+            let end = originalBuffer.duration;
+            if (regions.current) {
+                const list = regions.current.getRegions();
+                if (list.length > 0) {
+                    start = list[0].start;
+                    end = list[0].end;
+                }
+            }
+            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
+
+            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+            const newBlob = encodeWAV(looped);
+
+            await wavesurfer.current.loadBlob(newBlob);
+
+            // Enable Gapless Loop
+            const media = wavesurfer.current.getMediaElement();
+            if (media) media.loop = true;
+
+            wavesurfer.current.play();
+            setIsPreviewingLoop(true);
+            showToast("Previewing Loop... (Click again to stop)", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to preview loop", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!originalBuffer) return;
 
@@ -818,6 +1069,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // Default: fades 0, region covers full file
             let isDirty = false;
             if (fadeIn > 0 || fadeOut > 0) isDirty = true;
+            if (automationPoints.length > 0) isDirty = true;
             if (regionState.start > 0.01 || regionState.end < (originalBuffer.duration - 0.01)) isDirty = true;
             // What if content hasn't changed but we just opened it?
             // "Save to Tape" implies assigning this specific edited version.
@@ -837,12 +1089,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // Optimization: If not dirty, we can just pass the original blob back?
             // Prepare blob for saving
 
+            // Apply Volume Automation first (on full buffer)
+            let bufferToProcess = originalBuffer;
+            if (automationPoints.length > 0) {
+                bufferToProcess = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
+            }
+
             let finalBlob: Blob;
             let finalDuration: number;
 
             if (!isDirty) {
                 // Not dirty -> Assign to Tape
-                let processed = await audioProcessor.trim(originalBuffer, start, end);
+                let processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
                 finalBlob = encodeWAV(processed);
 
@@ -854,7 +1112,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 onSave(finalBlob, finalDuration, 'Edited', isDirty, currentTags);
 
             } else {
-                let processed = await audioProcessor.trim(originalBuffer, start, end);
+                let processed = await audioProcessor.trim(bufferToProcess, start, end);
                 if (fadeIn > 0 || fadeOut > 0) {
                     processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                 }
@@ -1082,6 +1340,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         setFadeIn(0);
                         setFadeOut(0);
                         setIsDirty(false);
+                        setAutomationPoints([]);
+                        setIsPreviewing(false);
+                        setIsPreviewingLoop(false);
 
                         // Reset Region Logic (Max 42s or duration)
                         if (wavesurfer.current && regions.current) {
@@ -1241,6 +1502,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 <Download size={10} />
                                             </button>
 
+
+
                                             {/* Move (X) */}
                                             {onMoveVersionToPool && (
                                                 <button
@@ -1318,73 +1581,95 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors">✕</button>
                     </div>
 
+                    {/* Editor Helpers */}
+
                     <div className="p-6 pt-2 flex flex-col h-full overflow-hidden">
                         {/* Toolbar */}
                         <div className="flex gap-6 mb-4 bg-[#111] p-4 rounded-xl border border-gray-800 flex-col text-left shrink-0 max-w-full">
                             <div className="flex items-center gap-6 w-full overflow-x-auto pb-2">
+                                <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap"
+                                    onMouseEnter={() => setHelpText("Global Edit Controls (Step 1)")}
+                                    onMouseLeave={() => setHelpText("")}>
+                                    <Sliders size={12} className="text-gray-500" /> Main Controls
+                                </div>
 
                                 {/* Zoom Controls Moved to Bottom */}
 
-                                {/* Fade Controls */}
-                                <div className="flex items-center gap-4 border-r border-gray-700 pr-6 shrink-0">
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-[10px] uppercase font-bold text-gray-500">Fade In</label>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="5"
-                                            step="0.1"
-                                            value={fadeIn}
-                                            onChange={(e) => {
-                                                setFadeIn(Number(e.target.value));
-                                                handleDirtyChange();
-                                            }}
-                                            onMouseEnter={() => setHelpText("Adjust Fade In Duration")}
-                                            onMouseLeave={() => setHelpText("")}
-                                            className="w-24 h-2 bg-gradient-to-r from-green-900 to-synthux-green rounded-lg appearance-none cursor-pointer"
-                                        />
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-[10px] uppercase font-bold text-gray-500">Fade Out</label>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="5"
-                                            step="0.1"
-                                            value={fadeOut}
-                                            onChange={(e) => {
-                                                setFadeOut(Number(e.target.value));
-                                                handleDirtyChange();
-                                            }}
-                                            onMouseEnter={() => setHelpText("Adjust Fade Out Duration")}
-                                            onMouseLeave={() => setHelpText("")}
-                                            className="w-24 h-2 bg-gradient-to-r from-synthux-orange to-red-900 rounded-lg appearance-none cursor-pointer"
-                                        />
-                                    </div>
-                                </div>
+                                {/* Volume Selection & Fade Controls */}
+                                <div className="flex items-center gap-6 border-r border-gray-700 pr-6 shrink-0 h-full">
 
-                                <button
-                                    onClick={() => setShowLoopPanel(!showLoopPanel)}
-                                    onMouseEnter={() => setHelpText("Create Seamless Loop (Crossfade end/start)")}
-                                    onMouseLeave={() => setHelpText("")}
-                                    disabled={isProcessing}
-                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${showLoopPanel ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 hover:bg-gray-700 border-gray-700'}`}
-                                >
-                                    <RotateCcw size={14} /> Make Loop
-                                </button>
+                                    {/* VOLUME TOOLBAR - Shows when a selection (not trim) is active */}
+                                    {/* VOLUME AUTOMATION TOOLBAR */}
+
+                                    {/* Default Fade Controls (Always Visible) */}
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
+                                                <label>Fade In</label>
+                                                <span className="text-synthux-green">{fadeIn.toFixed(1)}s</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="5"
+                                                step="0.1"
+                                                value={fadeIn}
+                                                onChange={(e) => {
+                                                    setFadeIn(Number(e.target.value));
+                                                    handleDirtyChange();
+                                                }}
+                                                onMouseEnter={() => setHelpText("Adjust Fade In Duration (Step 1)")}
+                                                onMouseLeave={() => setHelpText("")}
+                                                className="w-24 h-2 bg-gradient-to-r from-green-900 to-synthux-green rounded-lg appearance-none cursor-pointer"
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
+                                                <label>Fade Out</label>
+                                                <span className="text-synthux-orange">{fadeOut.toFixed(1)}s</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="5"
+                                                step="0.1"
+                                                value={fadeOut}
+                                                onChange={(e) => {
+                                                    setFadeOut(Number(e.target.value));
+                                                    handleDirtyChange();
+                                                }}
+                                                onMouseEnter={() => setHelpText("Adjust Fade Out Duration (Step 1)")}
+                                                onMouseLeave={() => setHelpText("")}
+                                                className="w-24 h-2 bg-gradient-to-r from-synthux-orange to-red-900 rounded-lg appearance-none cursor-pointer"
+                                            />
+                                        </div>
+                                    </div>
+
+
+                                </div>
                                 {(() => {
                                     const duration = regionState.end - regionState.start;
                                     const isFullSelection = Math.abs(duration - editorDuration) < 0.05;
-                                    const isDisabled = isProcessing || isFullSelection || hasTrimmed;
+                                    const hasFades = fadeIn > 0 || fadeOut > 0;
+                                    // Disable if processing, OR if it's full selection AND no fades. 
+                                    const isDisabled = isProcessing || (isFullSelection && !hasFades) || hasTrimmed;
+
+                                    // Dynamic Button Text
+                                    const buttonText = hasFades ? "Apply Trim / Fade" : "Apply Trim";
 
                                     return (
                                         <button
                                             onClick={() => {
+                                                // STOP PLAYBACK (Safety)
+                                                if (wavesurfer.current && isPlaying) {
+                                                    wavesurfer.current.pause();
+                                                    setIsPlaying(false);
+                                                }
                                                 handleSave();
                                             }}
                                             onMouseEnter={() => setHelpText(
                                                 hasTrimmed ? "Already Applied" :
-                                                    isFullSelection ? "Full Selection (Nothing to Trim)" :
+                                                    (isFullSelection && !hasFades) ? "Full Selection & No Fades (Nothing to Apply)" :
                                                         "Apply Trim & Fades (Keep Open)"
                                             )}
                                             onMouseLeave={() => setHelpText("")}
@@ -1394,13 +1679,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-green-400 hover:text-green-300 hover:border-green-800'
                                                 }`}
                                         >
-                                            <Check size={14} /> Apply Trim
+                                            <Check size={14} /> {buttonText}
                                         </button>
                                     )
                                 })()}
                                 <button
                                     onClick={async () => {
                                         if (!originalBuffer) return;
+                                        // STOP PLAYBACK IMMEDIATELY
+                                        if (wavesurfer.current) {
+                                            wavesurfer.current.pause();
+                                            setIsPlaying(false);
+                                        }
                                         setIsProcessing(true);
                                         try {
                                             // Normalize to -1dB
@@ -1439,86 +1729,333 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     <RotateCcw size={14} /> Reset
                                 </button>
                             </div>
-                        </div>
 
-                        {/* Loop Settings Panel (Inline width full to expand toolbar) */}
-                        {showLoopPanel && (
-                            <div className="mt-4 border-t border-gray-800 pt-4 flex gap-4 items-center animate-[slideIn_0.2s_ease-out]">
-                                <div className="flex flex-col gap-1 grow max-w-xs">
-                                    {(() => {
-                                        const duration = regionState.end - regionState.start;
-                                        // Max is 10s OR 50% of the duration, whichever is smaller
-                                        const maxCrossfade = Math.min(10, duration / 2);
-                                        // Clamp current value if invalid
-                                        const safeValue = Math.min(loopCrossfade, maxCrossfade);
+                            {/* Automation Controls Panel - ALWAYS VISIBLE */}
+                            {/* Unified Panel Container (Automation + Loop) */}
+                            <div className="mb-2 px-4 py-2 border border-gray-800 bg-gray-900/90 rounded-xl flex flex-col gap-4 w-full max-w-full overflow-hidden shrink-0">
 
-                                        return (
-                                            <>
-                                                <div className="flex justify-between items-center text-xs font-bold text-gray-400 uppercase">
-                                                    <span>Loop Crossfade Duration</span>
-                                                    <span className="text-synthux-blue">{safeValue.toFixed(2)}s <span className="text-gray-600">/ {maxCrossfade.toFixed(2)}s</span></span>
+                                {/* Automation Section */}
+                                <div className={`flex flex-row items-center gap-6 w-full transition-all ${showAutomationPanel ? 'opacity-100' : 'opacity-60 grayscale'}`}>
+                                    <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap">
+                                        {/* Toggle Switch */}
+                                        <div
+                                            onClick={() => {
+                                                if (!showAutomationPanel) {
+                                                    // Turning ON
+                                                    if (automationPoints.length === 0) {
+                                                        const points = [
+                                                            { id: 'start', time: 0, value: 1.0, selected: false },
+                                                            { id: 'end', time: editorDuration, value: 1.0, selected: false }
+                                                        ];
+                                                        setAutomationPoints(points);
+                                                        handleDirtyChange();
+                                                    }
+                                                } else {
+                                                    // Turning OFF - Reset
+                                                    setAutomationPoints([]);
+                                                    if (isPreviewing) {
+                                                        handleStopPreview();
+                                                    }
+                                                }
+                                                setShowAutomationPanel(!showAutomationPanel);
+                                            }}
+                                            onMouseEnter={() => setHelpText("Enable Volume Automation (Step 1: Edit Volume)")}
+                                            onMouseLeave={() => setHelpText("")}
+                                            className={`w-8 h-4 rounded-full p-0.5 cursor-pointer transition-colors ${showAutomationPanel ? 'bg-synthux-orange' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                        >
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${showAutomationPanel ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                        </div>
+                                        <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setShowAutomationPanel(!showAutomationPanel)}
+                                            onMouseEnter={() => setHelpText("Enable Volume Automation (Step 1: Edit Volume)")}
+                                            onMouseLeave={() => setHelpText("")}>
+                                            <Activity size={12} className={showAutomationPanel ? "text-synthux-orange" : "text-gray-500"} /> Volume Automation
+                                        </div>
+                                    </div>
+
+
+                                    {/* Controls - Conditional Interaction */}
+                                    <div className={`flex gap-4 items-center flex-wrap justify-start transition-opacity ${showAutomationPanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-40'}`}>
+
+                                        {/* Point Controls Group */}
+                                        <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex flex-col gap-1 min-w-[8rem]">
+                                                <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                    <label>Point Volume</label>
+                                                    {(() => {
+                                                        const selected = automationPoints.filter(p => p.selected);
+                                                        if (selected.length === 0) return <span>-</span>;
+                                                        const val = selected[0].value;
+                                                        const db = val === 0 ? -Infinity : 20 * Math.log10(val);
+                                                        const dbStr = val === 0 ? '-Inf' : (db > 0 ? `+${db.toFixed(1)}` : db.toFixed(1));
+                                                        return (
+                                                            <span className={val > 1 ? "text-green-400" : val < 1 ? "text-red-400" : "text-gray-400"}>
+                                                                {dbStr} dB
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </div>
                                                 <input
                                                     type="range"
-                                                    min="0.01"
-                                                    max={maxCrossfade}
+                                                    min="0"
+                                                    max="2"
                                                     step="0.01"
-                                                    value={safeValue}
-                                                    onChange={(e) => setLoopCrossfade(Number(e.target.value))}
-                                                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                                    disabled={!automationPoints.some(p => p.selected)}
+                                                    value={(() => {
+                                                        const selected = automationPoints.filter(p => p.selected);
+                                                        return selected.length > 0 ? selected[0].value : 1.0;
+                                                    })()}
+                                                    onChange={(e) => {
+                                                        const newVal = Number(e.target.value);
+                                                        const newPoints = automationPoints.map(p =>
+                                                            p.selected ? { ...p, value: newVal } : p
+                                                        );
+                                                        setAutomationPoints(newPoints);
+                                                        handleDirtyChange();
+                                                    }}
+                                                    onMouseEnter={() => setHelpText("Adjust Selected Point Value")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                    className={`w-32 h-2 rounded-lg appearance-none cursor-pointer ${automationPoints.some(p => p.selected) ? 'bg-gray-700 accent-synthux-orange' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
                                                 />
-                                            </>
-                                        )
-                                    })()}
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800 mx-2"></div>
+
+                                            {/* Action Buttons */}
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={addSmartPoint}
+                                                    onMouseEnter={() => setHelpText("Add Automation Point (Click Line)")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                    className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                                                    title="Add Point (Smart)"
+                                                >
+                                                    <PlusCircle size={14} />
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        const newPoints = automationPoints.filter(p => !p.selected);
+                                                        if (newPoints.length < 2) {
+                                                            setAutomationPoints([]); // Reset completely
+                                                        } else {
+                                                            setAutomationPoints(newPoints);
+                                                        }
+                                                        handleDirtyChange();
+                                                    }}
+                                                    disabled={!automationPoints.some(p => p.selected)}
+                                                    className={`p-1.5 rounded hover:bg-red-900/40 text-gray-400 hover:text-red-400 transition-colors ${!automationPoints.some(p => p.selected) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                    title="Delete Selected Points"
+                                                    onMouseEnter={() => setHelpText("Delete Selected Points")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        setSmooth(!smooth);
+                                                    }}
+                                                    className={`p-1.5 rounded transition-colors ml-1 ${smooth ? 'bg-synthux-orange text-white' : 'hover:bg-gray-700 text-gray-500 hover:text-gray-300'}`}
+                                                    title={smooth ? "Switch to Linear" : "Switch to Smooth (Curve)"}
+                                                    onMouseEnter={() => setHelpText(smooth ? "Use Linear Transitions" : "Use Smooth Start/End Curves")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <Activity size={14} />
+                                                </button>
+                                            </div>
+
+                                            {/* Automation Actions */}
+                                            <div className="flex items-center gap-2 border-l border-gray-800 pl-4">
+                                                <button
+                                                    onClick={handlePreviewAutomation}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing
+                                                        ? 'bg-synthux-blue text-white hover:bg-red-500'
+                                                        : 'bg-gray-800 hover:bg-synthux-blue text-white'
+                                                        }`}
+                                                    title={isPreviewing ? "Stop Preview (Revert)" : "Preview Automation Effect"}
+                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Stop Preview (Revert)" : "Hear Automation Effect")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewing ? <Square size={12} fill="currentColor" /> : <Play size={12} />}
+                                                    {isPreviewing ? "Stop" : "Preview"}
+                                                </button>
+                                                <button
+                                                    onClick={handleApplyAutomation}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
+                                                    title="Apply Automation and Reset"
+                                                    onMouseEnter={() => setHelpText("Apply Changes & Bake Audio")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <Check size={12} /> Apply
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setAutomationPoints([]);
+                                                        setShowAutomationPanel(false);
+                                                        handleDirtyChange();
+                                                    }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    title="Clear Automation Points"
+                                                    onMouseEnter={() => setHelpText("Reset All Points")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <RotateCcw size={12} /> Reset
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={async () => {
-                                        if (!originalBuffer) return;
-                                        setIsProcessing(true);
-                                        try {
-                                            // TRIM FIRST to Selection
-                                            let start = 0;
-                                            let end = originalBuffer.duration;
-                                            if (regions.current) {
-                                                const list = regions.current.getRegions();
-                                                if (list.length > 0) {
-                                                    start = list[0].start;
-                                                    end = list[0].end;
+
+                                {/* Loop Settings Section */}
+                                <div className={`flex flex-row items-center gap-6 w-full transition-all ${showLoopPanel ? 'opacity-100' : 'opacity-60 grayscale'}`}>
+                                    <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap">
+                                        {/* Toggle Switch */}
+                                        <div
+                                            onClick={() => {
+                                                if (showLoopPanel) {
+                                                    // Turning OFF - Reset Loop Preview
+                                                    if (isPreviewingLoop) {
+                                                        if (wavesurfer.current && currentBlob) {
+                                                            wavesurfer.current.loadBlob(currentBlob);
+                                                        }
+                                                        setIsPreviewingLoop(false);
+                                                    }
                                                 }
-                                            }
-                                            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
+                                                setShowLoopPanel(!showLoopPanel);
+                                            }}
+                                            onMouseEnter={() => setHelpText("Enable Loop Settings (Step 2: Refine Loop)")}
+                                            onMouseLeave={() => setHelpText("")}
+                                            className={`w-8 h-4 rounded-full p-0.5 cursor-pointer transition-colors ${showLoopPanel ? 'bg-synthux-blue' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                        >
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${showLoopPanel ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                        </div>
+                                        <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setShowLoopPanel(!showLoopPanel)}
+                                            onMouseEnter={() => setHelpText("Enable Loop Settings (Step 2: Refine Loop)")}
+                                            onMouseLeave={() => setHelpText("")}>
+                                            <Repeat size={12} className={showLoopPanel ? "text-synthux-blue" : "text-gray-500"} /> Loop Settings
+                                        </div>
+                                    </div>
 
-                                            // Then Loop
-                                            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-                                            const newBlob = encodeWAV(looped);
 
-                                            // Loop is ALWAYS a new version
-                                            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s)`, true, ['looped', 'trimmed']);
-                                            showToast("Loop Created!", "success");
-                                            setShowLoopPanel(false);
-                                            // onClose(); // KEEP OPEN to show new looped version
-                                            // Ideally we reload the editor with the new version.
-                                            // But for now, closing takes them to grid where they see it.
-                                            // The user request "Created file should be new active file in editor" requires staying open or re-opening.
-                                            // Let's close for now as it's safer, or we need to implement "Reload Editor" logic which is complex here.
-                                            // Re-reading: "created file should be the new active file in the editor"
-                                            // This means we shouldn't call onClose(), but instead switch to the new version.
-                                            // But onSave updates App state. We need App to tell us to switch?
-                                            // For this iteration, let's Stick to closing. Switching in-place is a bigger refactor.
+                                    <div className={`flex gap-4 items-center flex-wrap justify-start transition-opacity ${showLoopPanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-40'}`}>
 
-                                        } catch (e) {
-                                            console.error(e);
-                                            showToast("Failed to make loopable", "error");
-                                        } finally {
-                                            setIsProcessing(false);
-                                        }
-                                    }}
-                                    className="px-6 py-2 bg-synthux-blue hover:bg-blue-500 rounded text-sm font-bold text-white transition-colors h-full self-end"
-                                >
-                                    Create Loop
-                                </button>
+                                        <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex flex-col gap-1 min-w-[12rem]">
+                                                {(() => {
+                                                    const duration = regionState.end - regionState.start;
+                                                    const maxCrossfade = Math.min(10, duration / 2);
+                                                    const safeValue = Math.min(loopCrossfade, maxCrossfade);
+
+                                                    return (
+                                                        <>
+                                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                                <span>Loop Crossfade</span>
+                                                                <span className="text-synthux-blue">{safeValue.toFixed(2)}s <span className="text-gray-600">/ {maxCrossfade.toFixed(2)}s</span></span>
+                                                            </div>
+                                                            <input
+                                                                type="range"
+                                                                min="0.01"
+                                                                max={maxCrossfade}
+                                                                step="0.01"
+                                                                value={safeValue}
+                                                                onChange={(e) => setLoopCrossfade(Number(e.target.value))}
+                                                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
+                                                                onMouseEnter={() => setHelpText("Adjust Crossfade Duration (Smooth Loop)")}
+                                                                onMouseLeave={() => setHelpText("")}
+                                                            />
+                                                        </>
+                                                    )
+                                                })()}
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800 mx-2"></div>
+
+                                            {/* Loop Actions (Preview, Apply, Reset) */}
+                                            <div className="flex items-center gap-2">
+                                                {/* Preview */}
+                                                <button
+                                                    onClick={handlePreviewLoop}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLoop
+                                                        ? 'bg-synthux-blue text-white hover:bg-red-500'
+                                                        : 'bg-gray-800 hover:bg-synthux-blue text-white'
+                                                        }`}
+                                                    title={isPreviewingLoop ? "Stop Loop Preview" : "Preview Loop (Gapless)"}
+                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Stop Loop Preview" : "Hear Loop with Crossfade")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewingLoop ? <Square size={12} fill="currentColor" /> : <Play size={12} />}
+                                                    {isPreviewingLoop ? "Stop" : "Preview"}
+                                                </button>
+
+                                                {/* Apply */}
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!originalBuffer) return;
+                                                        if (wavesurfer.current) {
+                                                            wavesurfer.current.pause();
+                                                            setIsPlaying(false);
+                                                        }
+                                                        setIsProcessing(true);
+                                                        try {
+                                                            // Logic duplicated from original "Make Loop"
+                                                            let start = 0;
+                                                            let end = originalBuffer.duration;
+                                                            if (regions.current) {
+                                                                const list = regions.current.getRegions();
+                                                                if (list.length > 0) {
+                                                                    start = list[0].start;
+                                                                    end = list[0].end;
+                                                                }
+                                                            }
+                                                            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
+                                                            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+                                                            const newBlob = encodeWAV(looped);
+
+                                                            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s)`, true, ['looped', 'trimmed']);
+                                                            showToast("Loop Created!", "success");
+                                                            setShowLoopPanel(false);
+
+                                                        } catch (e) {
+                                                            console.error(e);
+                                                            showToast("Failed to make loopable", "error");
+                                                        } finally {
+                                                            setIsProcessing(false);
+                                                        }
+                                                    }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
+                                                    title="Create/Apply Loop"
+                                                    onMouseEnter={() => setHelpText("Apply Loop Crossfade & Settings")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <Check size={12} /> Apply
+                                                </button>
+
+                                                {/* Reset (Cancel) */}
+                                                <button
+                                                    onClick={() => {
+                                                        // If previewing, stop preview?
+                                                        if (isPreviewingLoop && wavesurfer.current && currentBlob) {
+                                                            wavesurfer.current.loadBlob(currentBlob);
+                                                            setIsPreviewingLoop(false);
+                                                        }
+                                                        setShowLoopPanel(false);
+                                                    }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    title="Close Loop Settings"
+                                                    onMouseEnter={() => setHelpText("Close Loop Settings")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <RotateCcw size={12} /> Reset
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        )}
+                        </div>
+
+
+
 
 
                         {/* Hover Help Text */}
@@ -1538,48 +2075,88 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 onWheel={handleWheel}
                             >
 
-                                {/* Fixed Height Content Strip */}
-                                <div className="relative my-auto top-1/2 -translate-y-1/2" style={{ width: contentWidth, height: 256, minWidth: '100%' }}>
+                                {/* Fixed Height Content Strip with Ruler */}
+                                <div className="relative my-auto top-1/2 -translate-y-1/2 flex flex-col" style={{ width: contentWidth, minWidth: '100%' }}>
 
-                                    {/* WaveSurfer Container */}
-                                    <div
-                                        ref={containerRef}
-                                        className="absolute inset-0 z-0 bg-black/20 cursor-text touch-none"
-                                        onPointerDown={handleWaveformPointerDown}
-                                        onPointerMove={handleWaveformPointerMove}
-                                        onPointerUp={handleWaveformPointerUp}
-                                        onPointerLeave={handleWaveformPointerUp}
+                                    {/* Playhead Ruler - Always visible seeking */}
+                                    <PlayheadRuler
+                                        duration={editorDuration}
+                                        currentTime={currentTime}
+                                        points={automationPoints}
+                                        onSeek={(t) => {
+                                            if (wavesurfer.current) wavesurfer.current.seekTo(t / editorDuration);
+                                        }}
+                                        onPointsChange={(pts) => {
+                                            setAutomationPoints(pts);
+                                            handleDirtyChange();
+                                        }}
+                                        className="w-full z-30"
                                     />
 
-                                    {/* Fade Overlay */}
-                                    {editorDuration > 0 && (
-                                        <div className="absolute inset-0 z-10 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
-                                            <FadeOverlay
-                                                width={contentWidth}
-                                                height={256}
-                                                fadeIn={fadeIn}
-                                                fadeOut={fadeOut}
-                                                duration={editorDuration}
-                                                region={regionState}
-                                                onFadeChange={(type, duration) => {
-                                                    const rounded = Math.round(duration * 100) / 100;
-                                                    if (type === 'in') setFadeIn(rounded);
-                                                    else setFadeOut(rounded);
-                                                    handleDirtyChange();
-                                                }}
-                                                onRegionChange={(start, end) => {
-                                                    const regionList = regions.current?.getRegions();
-                                                    if (regionList && regionList.length > 0) {
-                                                        regionList[0].setOptions({ start, end });
-                                                    }
-                                                    setRegionState({ start, end });
-                                                }}
-                                            />
-                                        </div>
-                                    )}
+                                    {/* Waveform Area */}
+                                    <div className="relative" style={{ height: 256 }}>
+                                        {/* WaveSurfer Container */}
+                                        <div
+                                            ref={containerRef}
+                                            className="absolute inset-0 z-0 bg-black/20 cursor-text touch-none"
+                                            onPointerDown={handleWaveformPointerDown}
+                                            onPointerMove={handleWaveformPointerMove}
+                                            onPointerUp={handleWaveformPointerUp}
+                                            onPointerLeave={handleWaveformPointerUp}
+                                        />
 
-                                    {/* Center Line Visual */}
-                                    <div className="absolute inset-0 pointer-events-none border-t border-b border-dashed border-gray-700/30 top-1/2 -translate-y-1/2 h-0 z-0"></div>
+                                        {/* Fade Overlay (Existing) */}
+                                        {editorDuration > 0 && (
+                                            <div className="absolute inset-0 z-10 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
+                                                <FadeOverlay
+                                                    width={contentWidth}
+                                                    height={256}
+                                                    fadeIn={fadeIn}
+                                                    fadeOut={fadeOut}
+                                                    duration={editorDuration}
+                                                    region={regionState}
+                                                    onFadeChange={(type, duration) => {
+                                                        const rounded = Math.round(duration * 100) / 100;
+                                                        if (type === 'in') setFadeIn(rounded);
+                                                        else setFadeOut(rounded);
+                                                        if (hasTrimmed) setHasTrimmed(false);
+                                                        handleDirtyChange();
+                                                    }}
+                                                    onRegionChange={(start, end) => {
+                                                        const regionList = regions.current?.getRegions();
+                                                        if (regionList && regionList.length > 0) {
+                                                            regionList[0].setOptions({ start, end });
+                                                        }
+                                                        setRegionState({ start, end });
+                                                        if (hasTrimmed) setHasTrimmed(false);
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Automation Overlay (New) */}
+                                        <AutomationOverlay
+                                            points={automationPoints}
+                                            duration={editorDuration}
+                                            width={contentWidth}
+                                            height={256}
+                                            onPointsChange={(pts) => {
+                                                setAutomationPoints(pts);
+                                                handleDirtyChange();
+                                                // Auto-enable panel if adding points
+                                                if (pts.length > 0 && !showAutomationPanel) {
+                                                    setShowAutomationPanel(true);
+                                                }
+                                            }}
+                                            onSeek={(t) => {
+                                                if (wavesurfer.current) wavesurfer.current.seekTo(t / editorDuration);
+                                            }}
+                                            smooth={smooth}
+                                        />
+
+                                        {/* Center Line Visual */}
+                                        <div className="absolute inset-0 pointer-events-none border-t border-b border-dashed border-gray-700/30 top-1/2 -translate-y-1/2 h-0 z-0"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1645,64 +2222,119 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         </div>
 
                         {/* Playback Controls - FIXED at bottom (outside scroll) */}
-                        <div className="flex justify-center gap-4 shrink-0 pb-4 pt-2 border-t border-gray-800 bg-[#1a1a1a] z-50">
-                            <button
-                                onClick={() => {
-                                    const newLooping = !isLooping;
-                                    setIsLooping(newLooping);
+                        <div className="flex flex-col shrink-0 border-t border-gray-800 bg-[#1a1a1a] z-50 transition-all duration-200">
 
-                                    // ENABLE NATIVE LOOPING on the region as backup/primary
-                                    if (regions.current) {
-                                        const list = regions.current.getRegions();
-                                        if (list.length > 0) {
-                                            list[0].setOptions({ loop: newLooping });
-                                        }
-                                    }
-                                }}
-                                className={`flex items-center justify-center w-12 h-12 rounded-full border border-gray-700 transition-all ${isLooping ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
-                                title={isLooping ? "Looping Active" : "Enable Looping"}
-                            >
-                                <Repeat size={20} />
-                            </button>
 
-                            <button
-                                onClick={handlePlayPause}
-                                className="flex items-center gap-2 px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full text-lg font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
-                            >
-                                {isPlaying ? <Pause fill="white" /> : <Play fill="white" />}
-                                {isPlaying ? 'PAUSE' : 'PLAY'}
-                            </button>
-                            <div title={!isDirty && loadedVersionId === activeVersionId ? "File has not changed" : ""}>
+
+                            <div className="flex justify-center gap-4 pb-4 pt-2">
                                 <button
                                     onClick={() => {
-                                        if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
-                                            onAssignVersion(loadedVersionId);
-                                            // onClose(); // User wants to just assign? Or keep editing?
-                                            // "making this just the assigned file for the slot"
-                                            // Let's assume we maintain local state but trigger assignment
-                                        } else {
-                                            handleSave();
+                                        const newLooping = !isLooping;
+                                        setIsLooping(newLooping);
+
+                                        // ENABLE NATIVE LOOPING on the region as backup/primary
+                                        if (regions.current) {
+                                            const list = regions.current.getRegions();
+                                            if (list.length > 0) {
+                                                list[0].setOptions({ loop: newLooping });
+                                            }
                                         }
                                     }}
-                                    disabled={isProcessing || (!isDirty && loadedVersionId === activeVersionId)}
-                                    className={`flex items-center gap-2 px-8 py-3 rounded-full text-lg font-bold transition-all shadow-lg ${isProcessing || (!isDirty && loadedVersionId === activeVersionId)
-                                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
-                                        : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
-                                        }`}
+                                    className={`flex items-center justify-center w-12 h-12 rounded-full border border-gray-700 transition-all ${isLooping ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                                    title={isLooping ? "Looping Active" : "Enable Looping"}
                                 >
-                                    <Save size={20} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
+                                    <Repeat size={20} />
                                 </button>
 
-                            </div>
+                                <button
+                                    onClick={handlePlayPause}
+                                    className="flex items-center gap-2 px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full text-lg font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
+                                >
+                                    {isPlaying ? <Pause fill="white" /> : <Play fill="white" />}
+                                    {isPlaying ? 'PAUSE' : 'PLAY'}
+                                </button>
+                                <div title={!isDirty && loadedVersionId === activeVersionId ? "File has not changed" : ""}>
+                                    <button
+                                        onClick={() => {
+                                            if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
+                                                onAssignVersion(loadedVersionId);
+                                                // onClose(); // User wants to just assign? Or keep editing?
+                                                // "making this just the assigned file for the slot"
+                                                // Let's assume we maintain local state but trigger assignment
+                                            } else {
+                                                if (wavesurfer.current && isPlaying) {
+                                                    wavesurfer.current.pause();
+                                                    setIsPlaying(false);
+                                                }
+                                                handleSave();
+                                            }
+                                        }}
+                                        disabled={isProcessing || (!isDirty && loadedVersionId === activeVersionId)}
+                                        className={`flex items-center gap-2 px-8 py-3 rounded-full text-lg font-bold transition-all shadow-lg ${isProcessing || (!isDirty && loadedVersionId === activeVersionId)
+                                            ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
+                                            : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
+                                            }`}
+                                    >
+                                        <Save size={20} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
+                                    </button>
 
-                            {/* Save Unique Button (For Duplicates) */}
-                            {isDuplicate && onSaveUnique && (
+                                </div>
+
+                                {/* Save Unique Button (For Duplicates) */}
+                                {isDuplicate && onSaveUnique && (
+                                    <button
+                                        onClick={async () => {
+                                            if (!originalBuffer) return;
+                                            setIsProcessing(true);
+                                            try {
+                                                // 1. Process Audio (Trim & Fade)
+                                                let start = 0;
+                                                let end = originalBuffer.duration;
+                                                if (regions.current) {
+                                                    const regionList = regions.current.getRegions();
+                                                    if (regionList && regionList.length > 0) {
+                                                        start = regionList[0].start;
+                                                        end = regionList[0].end;
+                                                    }
+                                                }
+
+                                                // Determine processing tags
+                                                const processingTags: ('normalized' | 'trimmed' | 'looped')[] = [];
+                                                if (start > 0.01 || end < originalBuffer.duration - 0.01) processingTags.push('trimmed');
+                                                // We don't have normalize state explicit here unless we ran it, but let's stick to trim/loop
+                                                if (isLooping) processingTags.push('looped');
+
+                                                let processed = await audioProcessor.trim(originalBuffer, start, end);
+                                                if (fadeIn > 0 || fadeOut > 0) {
+                                                    processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
+                                                }
+
+                                                // 2. Encode
+                                                const newBlob = encodeWAV(processed);
+
+                                                // 3. Callback
+                                                onSaveUnique(newBlob, processed.duration, processingTags);
+                                                showToast("Saved as Unique File!", "success");
+                                            } catch (e) {
+                                                console.error(e);
+                                                showToast("Failed to save unique file", "error");
+                                            } finally {
+                                                setIsProcessing(false);
+                                            }
+                                        }}
+                                        disabled={isProcessing}
+                                        className="flex items-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
+                                        title="Save as a new unique file and assign to this slot, leaving other duplicates unchanged."
+                                    >
+                                        <Copy size={16} /> SAVE UNIQUE
+                                    </button>
+                                )}
+
                                 <button
                                     onClick={async () => {
                                         if (!originalBuffer) return;
                                         setIsProcessing(true);
                                         try {
-                                            // 1. Process Audio (Trim & Fade)
                                             let start = 0;
                                             let end = originalBuffer.duration;
                                             if (regions.current) {
@@ -1712,78 +2344,33 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     end = regionList[0].end;
                                                 }
                                             }
-
-                                            // Determine processing tags
-                                            const processingTags: ('normalized' | 'trimmed' | 'looped')[] = [];
-                                            if (start > 0.01 || end < originalBuffer.duration - 0.01) processingTags.push('trimmed');
-                                            // We don't have normalize state explicit here unless we ran it, but let's stick to trim/loop
-                                            if (isLooping) processingTags.push('looped');
-
                                             let processed = await audioProcessor.trim(originalBuffer, start, end);
                                             if (fadeIn > 0 || fadeOut > 0) {
                                                 processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                                             }
-
-                                            // 2. Encode
                                             const newBlob = encodeWAV(processed);
-
-                                            // 3. Callback
-                                            onSaveUnique(newBlob, processed.duration, processingTags);
-                                            showToast("Saved as Unique File!", "success");
+                                            onSaveAsCopy(newBlob, processed.duration);
+                                            showToast("Saved copy to Unused Pool!", "success");
                                         } catch (e) {
                                             console.error(e);
-                                            showToast("Failed to save unique file", "error");
-                                        } finally {
-                                            setIsProcessing(false);
+                                            showToast("Failed to save copy", "error");
                                         }
+                                        finally { setIsProcessing(false); }
                                     }}
                                     disabled={isProcessing}
-                                    className="flex items-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
-                                    title="Save as a new unique file and assign to this slot, leaving other duplicates unchanged."
+                                    className="flex items-center gap-2 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
+                                    title="Save as a new Parked file (Unassigned)"
                                 >
-                                    <Copy size={16} /> SAVE UNIQUE
+                                    <Save size={16} /> SAVE COPY TO POOL
                                 </button>
-                            )}
-
-                            <button
-                                onClick={async () => {
-                                    if (!originalBuffer) return;
-                                    setIsProcessing(true);
-                                    try {
-                                        let start = 0;
-                                        let end = originalBuffer.duration;
-                                        if (regions.current) {
-                                            const regionList = regions.current.getRegions();
-                                            if (regionList && regionList.length > 0) {
-                                                start = regionList[0].start;
-                                                end = regionList[0].end;
-                                            }
-                                        }
-                                        let processed = await audioProcessor.trim(originalBuffer, start, end);
-                                        if (fadeIn > 0 || fadeOut > 0) {
-                                            processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
-                                        }
-                                        const newBlob = encodeWAV(processed);
-                                        onSaveAsCopy(newBlob, processed.duration);
-                                        showToast("Saved copy to Unused Pool!", "success");
-                                    } catch (e) {
-                                        console.error(e);
-                                        showToast("Failed to save copy", "error");
-                                    }
-                                    finally { setIsProcessing(false); }
-                                }}
-                                disabled={isProcessing}
-                                className="flex items-center gap-2 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
-                                title="Save as a new Parked file (Unassigned)"
-                            >
-                                <Save size={16} /> SAVE COPY TO POOL
-                            </button>
+                            </div>
                         </div>
-
                     </div>
-                </div>
+                </div >
             </div>
         </div >
+
+
 
 
     );

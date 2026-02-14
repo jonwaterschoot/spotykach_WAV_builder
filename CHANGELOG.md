@@ -1,11 +1,34 @@
 # Changelog
 
-## [1.0.3] - 2026-02-13
+## [1.1.0] - 2026-02-14
+
+### Major Feature: Volume Automation
+- **Keyframe System**: Added a professional volume automation overlay. Users can now add, move, and delete points to create precise volume fades and curves over time.
+- **Interactive Overlay**: 
+    - Click line to add points.
+    - Drag points to adjust time/volume.
+    - Double-click waveform to add point and **auto-enable** the panel.
+- **Controls**: Smooth/Linear toggle, value sliders, and dedicated delete buttons.
 
 ### Added
-- **Sample Pack**:
+- **Loop Preview**:
+    - **Gapless Looping**: Implemented native browser looping for "Preview Loop" to eliminate the audible JS-latency gap.
+    - **Crossfade Controls**: Dedicated slider for loop crossfade duration.
+- **Smart Sync**:
+    - **Incremental SD Export**: Tracks file versions to only write changed files to the SD card, significantly speeding up exports.
+- **Sample Packs**:
     - Added **Vinyl Crackle** (11 samples) and **Foley** (5 samples) categories to the **Jonwtr Explorations** pack.
-    - Updated documentation for the Jonwtr sample pack.
+- **Export**:
+    - **Progress Feedback**: Added a visual progress bar and percentage indicator during ZIP generation and file processing, providing real-time feedback for long export operations.
+
+### Fixed
+- **Data Integrity (Critical)**:
+    - **Export Clicks**: Fixed an off-by-one error in the trimmer logic (`audioProcessor.ts`) that caused a single sample of silence (click) at the end of exported WAV files.
+- **UX**:
+    - **Tooltips**: Comprehensive tooltips added for all editor buttons and toggles.
+    - **Layout**: Improved alignment of Automation and Loop panels in the top toolbar.
+- **Playback**:
+    - Fixed sticky playback state when triggering processing actions.
 
 ## [1.0.2] - 2026-02-12
 

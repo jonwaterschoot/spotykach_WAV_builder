@@ -8,7 +8,7 @@ interface ExportModalProps {
     files: Record<string, FileRecord>;
     tapes: Record<TapeColor, import('../types').Tape>;
     onClose: () => void;
-    onExportSD: (options: { includeProject: boolean; directWrite: boolean }) => void;
+    onExportSD: (options: { includeProject: boolean; directWrite: boolean; smartSync?: boolean }) => void;
     onExportFiles: (options: { keepStructure: boolean; fileIds: string[] }) => void;
     onExportProject: (options: { excludeCleanup: boolean }) => void;
 }
@@ -21,6 +21,7 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
     // SD Options
     const [sdIncludeProject, setSdIncludeProject] = useState(true);
     const [sdDirectWrite, setSdDirectWrite] = useState(false);
+    const [sdSmartSync, setSdSmartSync] = useState(true);
     const hasFileSystemAccess = 'showDirectoryPicker' in window;
 
     // Manual Options
@@ -150,11 +151,28 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                                         )}
                                     </div>
                                 </label>
+
+                                {sdDirectWrite && (
+                                    <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 hover:bg-black/30 cursor-pointer transition-colors ml-8 border-l-4 border-l-synthux-action">
+                                        <input
+                                            type="checkbox"
+                                            checked={sdSmartSync}
+                                            onChange={(e) => setSdSmartSync(e.target.checked)}
+                                            className="w-5 h-5 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700"
+                                        />
+                                        <div>
+                                            <div className="font-bold text-white flex items-center gap-2">
+                                                Smart Sync <span className="bg-synthux-action text-black text-[10px] px-1 rounded font-black">NEW</span>
+                                            </div>
+                                            <div className="text-xs text-gray-400">Only write files that have changed since last export. Slightly faster!</div>
+                                        </div>
+                                    </label>
+                                )}
                             </div>
 
                             <div className="mt-auto pt-4">
                                 <button
-                                    onClick={() => onExportSD({ includeProject: sdIncludeProject, directWrite: sdDirectWrite })}
+                                    onClick={() => onExportSD({ includeProject: sdIncludeProject, directWrite: sdDirectWrite, smartSync: sdSmartSync })}
                                     className="w-full py-3 bg-synthux-yellow hover:bg-yellow-400 text-black font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
                                 >
                                     {sdDirectWrite ? <FolderInput size={20} /> : <Download size={20} />}

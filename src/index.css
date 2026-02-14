@@ -44,6 +44,7 @@ img {
     --color-synthux-browsebg: #1b1b1b;
     --color-synthux-tapebg: #444746;
     --color-synthux-turquoise: #2dd4bf;
+    --color-synthux-action: #23E073;
 
     --font-sans: "Funnel Display", sans-serif;
     --font-mono: "Space Mono", monospace;
@@ -65,6 +66,7 @@ img {
     --color-synthux-browsebg: var(--color-synthux-browsebg);
     --color-synthux-tapebg: var(--color-synthux-tapebg);
     --color-synthux-turquoise: var(--color-synthux-turquoise);
+    --color-synthux-action: var(--color-synthux-action);
 
     --font-sans: var(--font-sans);
     --font-mono: var(--font-mono);
