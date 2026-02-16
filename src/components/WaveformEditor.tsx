@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Square, Sliders } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw } from 'lucide-react';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
@@ -991,17 +991,15 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const handlePreviewAutomation = async () => {
         if (!originalBuffer || !wavesurfer.current) return;
 
-        if (isPreviewing) {
-            await handleStopPreview();
-            return;
-        }
+        // Always regenerate (Refresh behavior)
+        // if (isPreviewing) { await handleStopPreview(); return; }
 
         // Generate temp blob
         try {
             // Processing...
             setIsProcessing(true);
             const processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
-            const newBlob = encodeWAV(processed);
+            const newBlob = await audioProcessor.toWav(processed);
 
             await wavesurfer.current.loadBlob(newBlob);
             wavesurfer.current.play();
@@ -1018,6 +1016,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const handlePreviewLoop = async () => {
         if (!originalBuffer || !wavesurfer.current) return;
 
+        // Always regenerate (Refresh behavior)
+        /*
         if (isPreviewingLoop) {
             if (currentBlob) await wavesurfer.current.loadBlob(currentBlob);
             // Disable Loop
@@ -1026,6 +1026,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             setIsPreviewingLoop(false);
             return;
         }
+        */
 
         setIsProcessing(true);
         try {
@@ -1040,8 +1041,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             }
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
 
-            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-            const newBlob = encodeWAV(looped);
+            let looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+            const newBlob = await audioProcessor.toWav(looped);
 
             await wavesurfer.current.loadBlob(newBlob);
 
@@ -1102,7 +1103,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 // Not dirty -> Assign to Tape
                 let processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
-                finalBlob = encodeWAV(processed);
+                finalBlob = await audioProcessor.toWav(processed);
 
                 // Preserve processing tags if assigning same version? 
                 // Parent handles assignment. If we pass !isDirty, it re-uses current version logic usually?
@@ -1117,7 +1118,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                 }
                 finalDuration = processed.duration;
-                finalBlob = encodeWAV(processed);
+                finalBlob = await audioProcessor.toWav(processed);
 
                 // New edit -> likely 'trimmed' unless it was just fades?
                 // We don't distinguish just fades vs trim well. 
@@ -1695,7 +1696,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         try {
                                             // Normalize to -1dB
                                             const normalized = await audioProcessor.normalize(originalBuffer, -1);
-                                            const newBlob = encodeWAV(normalized);
+                                            const newBlob = await audioProcessor.toWav(normalized);
                                             // Normalization is a specific action
                                             onSave(newBlob, normalized.duration, `Normalized`, true, ['normalized']);
                                             setHasNormalized(true);
@@ -1873,11 +1874,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         : 'bg-gray-800 hover:bg-synthux-blue text-white'
                                                         }`}
                                                     title={isPreviewing ? "Stop Preview (Revert)" : "Preview Automation Effect"}
-                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Stop Preview (Revert)" : "Hear Automation Effect")}
+                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Refresh Preview (Update Settings)" : "Hear Automation Effect")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    {isPreviewing ? <Square size={12} fill="currentColor" /> : <Play size={12} />}
-                                                    {isPreviewing ? "Stop" : "Preview"}
+                                                    {isPreviewing ? <RefreshCw size={12} className="animate-spin-once" /> : <Play size={12} />}
+                                                    {isPreviewing ? "Refresh" : "Preview"}
                                                 </button>
                                                 <button
                                                     onClick={handleApplyAutomation}
@@ -1979,12 +1980,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         ? 'bg-synthux-blue text-white hover:bg-red-500'
                                                         : 'bg-gray-800 hover:bg-synthux-blue text-white'
                                                         }`}
-                                                    title={isPreviewingLoop ? "Stop Loop Preview" : "Preview Loop (Gapless)"}
-                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Stop Loop Preview" : "Hear Loop with Crossfade")}
+                                                    title={isPreviewingLoop ? "Refresh Loop Preview" : "Preview Loop (Gapless)"}
+                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Refresh Loop (Update Crossfade)" : "Hear Loop with Crossfade")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    {isPreviewingLoop ? <Square size={12} fill="currentColor" /> : <Play size={12} />}
-                                                    {isPreviewingLoop ? "Stop" : "Preview"}
+                                                    {isPreviewingLoop ? <RefreshCw size={12} className="animate-spin-once" /> : <Play size={12} />}
+                                                    {isPreviewingLoop ? "Refresh" : "Preview"}
                                                 </button>
 
                                                 {/* Apply */}

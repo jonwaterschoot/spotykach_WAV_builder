@@ -1,6 +1,6 @@
 export function encodeWAV(audioBuffer: AudioBuffer): Blob { // 32-bit float
     const numChannels = 2; // Always stereo
-    const sampleRate = 48000; // Always 48kHz
+    const sampleRate = audioBuffer.sampleRate; // Use actual rate
     const format = 3; // IEEE Float
     const bitDepth = 32;
 

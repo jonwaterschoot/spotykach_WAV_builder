@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.1.5] - 2026-02-16
+
+### Fixed
+- **Audio Pitch Issue**: Resolved a critical issue where editing 44.1kHz audio (common on many systems) resulted in high-pitched playback and incorrect speed.
+    - **WAV Headers**: The encoder now correctly writes the actual sample rate of the audio data instead of hardcoding 48kHz.
+    - **Automatic Resampling**: The Waveform Editor now automatically checks regarding audio sample rates and resamples non-48kHz audio to the project standard (48kHz) before saving.
+    - **Robust Architecture**: Implemented a centralized `toWav` method in the audio processor to ensure all future features automatically benefit from these safety checks.
+
+## [1.1.4] - 2026-02-15
+
+### Fixed
+- **Smart Sync Export Crash**: Resolved a "Permission denied" error during export by correctly cloning file data into memory during the sync process. Previously, the app held references to files on the SD card which could become invalid or locked, causing the export to fail when trying to read them.
+
+## [1.1.3] - 2026-02-15
+
+### Added
+- **Sync Preview**: A new confirmation modal appears before running "Restore & Sync", showing a summary of new files and updated versions found on the SD card.
+- **Sync Progress**: Visual feedback during the sync process using the standard task progress interface.
+
+## [1.1.2] - 2026-02-15
+
+### Added
+- **Smart Sync**:
+    - **Backup Detection**: Automatically detects `project_backup.zip` when importing an SD card folder structure.
+    - **Restore & Sync**: New workflow to restore the project state from backup AND synchronize any new recordings or changes found on the SD card (based on file size comparison).
+    - **Logic**: Prevents "blind overwrite" of new recordings when restoring a backup, and prevents "loss of project context" when importing only audio files.
+
+## [1.1.1] - 2026-02-15
+
+### Improved
+- **Preview Behavior**:
+    - **Refresh Logic**: "Preview" buttons now act as a "Refresh" trigger when active, allowing parameter updates without stopping playback.
+    - **Pause Support**: Users can now pause the preview using the main transport controls.
+    - **Visuals**: Added a "Refresh" icon with a spin animation.
+
+### Fixed
+- **Export Polish**:
+    - **Progress Bar**: Restored visibility of the green progress bar (`bg-synthux-action`).
+    - **Logs**: Reduced log spam by hiding redundant text messages during export.
+    - **CSS**: Fixed a syntax error in `index.css` causing build warnings.
+
 ## [1.1.0] - 2026-02-14
 
 ### Major Feature: Volume Automation

@@ -1,3 +1,5 @@
+import { encodeWAV } from './wavEncoder';
+
 export class Processor {
     // No context needed for direct buffer manipulation
 
@@ -256,6 +258,28 @@ export class Processor {
         }
 
         return newBuffer;
+    }
+    async resample(buffer: AudioBuffer, targetSampleRate: number): Promise<AudioBuffer> {
+        if (buffer.sampleRate === targetSampleRate) {
+            return buffer;
+        }
+
+        const offlineCtx = new OfflineAudioContext(buffer.numberOfChannels, Math.ceil(buffer.duration * targetSampleRate), targetSampleRate);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(offlineCtx.destination);
+        source.start(0);
+
+        return await offlineCtx.startRendering();
+    }
+
+    // Robust export method: Enforces 48kHz and encodes
+    async toWav(buffer: AudioBuffer): Promise<Blob> {
+        let processed = buffer;
+        if (processed.sampleRate !== 48000) {
+            processed = await this.resample(processed, 48000);
+        }
+        return encodeWAV(processed);
     }
 }
 

@@ -1,4 +1,4 @@
-import { encodeWAV } from './wavEncoder';
+
 
 export class AudioEngine {
     private audioContext: AudioContext;
@@ -11,33 +11,21 @@ export class AudioEngine {
         const arrayBuffer = await file.arrayBuffer();
         const originalBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
 
-        // Resample to 48kHz if needed, and ensure Stereo
+        // Resample/Encode logic
+        // We use the shared processor.
+        const { audioProcessor } = await import('./audioProcessor');
+
         let processedBuffer = originalBuffer;
-        if (originalBuffer.sampleRate !== 48000 || originalBuffer.numberOfChannels !== 2) {
-            processedBuffer = await this.resampleTo48kStereo(originalBuffer);
+
+        // Check if resampling is needed for the BUFFER (for return value)
+        if (processedBuffer.sampleRate !== 48000) {
+            processedBuffer = await audioProcessor.resample(processedBuffer, 48000);
         }
 
-        const blob = encodeWAV(processedBuffer);
+        // Encode to WAV (using buffer that is now guaranteed 48k)
+        const blob = await audioProcessor.toWav(processedBuffer);
+
         return { buffer: processedBuffer, blob };
-    }
-
-    private async resampleTo48kStereo(sourceBuffer: AudioBuffer): Promise<AudioBuffer> {
-        const targetSampleRate = 48000;
-        const channels = 2;
-        const duration = sourceBuffer.duration;
-
-        // Create OfflineAudioContext
-        const validLength = Math.ceil(duration * targetSampleRate);
-        const offlineCtx = new OfflineAudioContext(channels, validLength, targetSampleRate);
-
-        // Create Source
-        const source = offlineCtx.createBufferSource();
-        source.buffer = sourceBuffer;
-        source.connect(offlineCtx.destination);
-        source.start(0);
-
-        // Render
-        return await offlineCtx.startRendering();
     }
 }
 
