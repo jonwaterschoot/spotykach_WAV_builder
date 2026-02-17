@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.6] - 2026-02-17
+
+### Fixed
+- **Unassign Slot Bug**: Fixed a critical issue where unassigning a slot in "All Tapes" view or specific contexts would incorrectly remove the file from the **Blue** tape instead of the target tape. The removal logic now explicitly respects the target tape color.
+
+### Improved
+- **Smart Export Folder**: The export logic now intelligently detects if the user selected a folder named `SK`. If so, it writes directly to it instead of creating a nested `SK/SK` structure.
+
 ## [1.1.5] - 2026-02-16
 
 ### Fixed

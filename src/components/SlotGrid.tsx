@@ -9,7 +9,7 @@ interface SlotGridProps {
     onSlotClick: (id: number) => void;
     onSlotDrop: (id: number, files: FileList) => void;
     onSlotDropInternal: (slotId: number, fileId: string, source: string, isDuplicate: boolean, sourceSlotId?: number, sourceSlotColor?: TapeColor) => void;
-    onRemoveSlot: (slotId: number) => void;
+    onRemoveSlot: (slotId: number, color: TapeColor) => void;
     duplicates: Set<string>;
     onDeleteFile: (fileId: string) => void;
     onBulkAssign: (targetSlotId: number, fileIds: string[], targetColor: TapeColor, sourceSlotKeys?: string[]) => void;
@@ -38,7 +38,7 @@ export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, o
                         onClick={() => onSlotClick(slot.id)}
                         onDrop={(files) => onSlotDrop(slot.id, files)}
                         onDropInternal={(fileId, source, isDuplicate, sourceSlotId, sourceSlotColor) => onSlotDropInternal(slot.id, fileId, source, isDuplicate, sourceSlotId, sourceSlotColor)}
-                        onRemove={() => onRemoveSlot(slot.id)}
+                        onRemove={() => onRemoveSlot(slot.id, tapeColor)}
                         onDelete={() => slot.fileId && onDeleteFile(slot.fileId)}
                         onBulkAssign={onBulkAssign}
                         // Selection

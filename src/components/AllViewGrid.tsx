@@ -6,7 +6,7 @@ import { TapeIcon } from './TapeIcon';
 interface AllViewGridProps {
     tapes: AppState['tapes'];
     files: AppState['files'];
-    onRemoveSlot: (slotId: number) => void;
+    onRemoveSlot: (slotId: number, color: TapeColor) => void;
     onSlotDrop: (slotId: number, files: FileList, color: typeof TAPE_COLORS[number]) => void;
     onSlotDropInternal: (slotId: number, fileId: string, source: string, isDuplicate: boolean, color: typeof TAPE_COLORS[number], sourceSlotId?: number, sourceSlotColor?: TapeColor) => void;
     onSlotClick: (slotId: number, color: typeof TAPE_COLORS[number]) => void;
@@ -70,7 +70,7 @@ export const AllViewGrid = ({ tapes, files, onRemoveSlot, onSlotDrop, onSlotDrop
                                                 fileRecord={file}
                                                 tapeColor={color}
                                                 isDuplicate={isDuplicate}
-                                                onRemove={() => onRemoveSlot(slot.id)}
+                                                onRemove={() => onRemoveSlot(slot.id, color)}
                                                 onDelete={() => slot.fileId && onDeleteFile(slot.fileId)}
                                                 onDrop={(files) => onSlotDrop(slot.id, files, color)}
                                                 onDropInternal={(fileId, source, isDuplicate, sourceSlotId, sourceSlotColor) => onSlotDropInternal(slot.id, fileId, source, isDuplicate, color, sourceSlotId, sourceSlotColor)}

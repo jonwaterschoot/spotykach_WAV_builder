@@ -1174,20 +1174,29 @@ function App() {
 
 
 
-  const handleRemoveFromTape = (slotId: number) => {
+  const handleRemoveFromTape = (slotId: number, color?: TapeColor) => {
     setState(prev => {
       const nextTapes = { ...prev.tapes };
 
-      // Find the tape containing the slot
-      let targetTapeColor: TapeColor | null = null;
+      // Determine Target Tape (Use arg if provided, otherwise default to current or search?)
+      // It's safer to rely on argument now.
+      // But for backward compat (if called elsewhere), we can fallback to search or current?
+      // Given the bug, we should prioritize explicit color.
+
+      let targetTapeColor: TapeColor | null = color || null;
       let targetSlot: typeof nextTapes.Blue.slots[0] | undefined;
 
-      for (const color of TAPE_COLORS) {
-        const s = nextTapes[color].slots.find(s => s.id === slotId);
-        if (s) {
-          targetTapeColor = color;
-          targetSlot = s;
-          break;
+      if (targetTapeColor) {
+        targetSlot = nextTapes[targetTapeColor].slots.find(s => s.id === slotId);
+      } else {
+        // Fallback search (Legacy / Risk of bug)
+        for (const c of TAPE_COLORS) {
+          const s = nextTapes[c].slots.find(s => s.id === slotId);
+          if (s) {
+            targetTapeColor = c;
+            targetSlot = s;
+            break;
+          }
         }
       }
 
@@ -1788,7 +1797,7 @@ function App() {
                   <AllViewGrid
                     tapes={state.tapes}
                     files={state.files}
-                    onRemoveSlot={(slotId) => handleRemoveFromTape(slotId)}
+                    onRemoveSlot={(slotId, color) => handleRemoveFromTape(slotId, color)}
                     onSlotDrop={handleSlotDrop} // AllViewGrid will pass color
                     onSlotDropInternal={handleSlotDropInternal} // AllViewGrid will pass color
                     onSlotClick={handleAllViewSlotClick}

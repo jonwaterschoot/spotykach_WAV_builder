@@ -173,8 +173,16 @@ export const exportSDStructure = async (state: AppState, options: { includeProje
             // @ts-ignore
             const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
 
-            onProgress?.("Creating SK folder...", 5);
-            const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
+            onProgress?.("Creating/Accessing SK folder...", 5);
+
+            // Smart Detection: If user selected 'SK' folder, use it directly.
+            // Otherwise, create/access 'SK' subdirectory.
+            let skHandle = rootHandle;
+            if (rootHandle.name !== 'SK') {
+                skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
+            } else {
+                onProgress?.("Selected folder appears to be 'SK'. Writing directly...", 5);
+            }
 
             // SMART SYNC MANIFEST
             let manifest: Record<string, Record<number, string>> = {};
