@@ -18,6 +18,7 @@ import { HelpModal } from './components/HelpModal'; // Manual
 import { ExportModal } from './components/ExportModal';
 import { ExportProgressModal } from './components/ExportProgressModal';
 import { ImportModal } from './components/ImportModal';
+import { SyncPreviewModal } from './components/SyncPreviewModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SamplePackModal } from './components/SamplePackModal';
 import { Toast, type ToastType } from './components/Toast';
@@ -78,6 +79,7 @@ function App() {
 
   // Import State
   const [importAnalysis, setImportAnalysis] = useState<ImportAnalysis | null>(null);
+  const [syncPreview, setSyncPreview] = useState<{ state: AppState, diff: import('./utils/importUtils').SyncDiff } | null>(null);
 
   // Bulk Conflict State
   const [bulkConflictState, setBulkConflictState] = useState<{
@@ -289,6 +291,61 @@ function App() {
 
 
 
+
+
+  // Restore & Sync Handler
+  const handleRestoreAndSync = async (backupFile: File, structureMap: any) => {
+    // 1. Load State & Calculate Diff
+    setIsProcessing(true);
+    setProgressMsg("Analyzing Backup...");
+    try {
+      const { loadProjectFromZip, calculateSyncDiff } = await import('./utils/importUtils');
+      const state = await loadProjectFromZip(backupFile);
+
+      if (state) {
+        const diff = calculateSyncDiff(state, structureMap);
+        setSyncPreview({ state, diff }); // Open Preview Modal
+        setImportAnalysis(null); // Close Import Modal
+      } else {
+        setToast({ msg: "Failed to load project from backup.", type: 'error' });
+      }
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: "Analysis Failed", type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const executeSync = async () => {
+    if (!syncPreview) return;
+
+    setSyncPreview(null); // Close Preview
+    setShowExportProgress(true); // Re-use Export Modal for "Import Progress" (generic name needed?)
+    setExportLogs(["Starting Sync Process..."]);
+    // setExportProgress(0); // Optional if we want bar
+
+    try {
+      const { applySyncDiff } = await import('./utils/importUtils');
+
+      // Wrap in logger adapter
+      const logAdapter = (msg: string) => {
+        setExportLogs(prev => [...prev, msg]);
+      };
+
+      const finalState = await applySyncDiff(syncPreview.state, syncPreview.diff, logAdapter);
+
+      setState(finalState);
+      setIsExportComplete(true); // Re-using "Export Complete" state to show checkmark
+      setExportError(null);
+      setToast({ msg: "Project Synced Successfully", type: 'success' });
+
+    } catch (e) {
+      console.error(e);
+      setExportError("Sync Failed");
+      setIsExportComplete(true);
+    }
+  };
 
 
   // Export Progress Handler
@@ -2117,6 +2174,7 @@ function App() {
             <ImportModal
               analysis={importAnalysis}
               onClose={() => setImportAnalysis(null)}
+              onRestoreAndSync={handleRestoreAndSync}
               onRestoreProject={(projectState) => {
                 setState(projectState);
                 setImportAnalysis(null);
@@ -2152,6 +2210,13 @@ function App() {
             />
           )
         }
+
+        <SyncPreviewModal
+          isOpen={!!syncPreview}
+          onClose={() => setSyncPreview(null)}
+          onConfirm={executeSync}
+          diff={syncPreview?.diff || { newFiles: [], updatedFiles: [], totalCount: 0 }}
+        />
 
         <SamplePackModal
           isOpen={showSampleBrowser}

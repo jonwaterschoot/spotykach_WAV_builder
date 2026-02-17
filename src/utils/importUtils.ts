@@ -1,8 +1,9 @@
 import JSZip from 'jszip';
-import type { AppState, TapeColor } from '../types';
+import type { AppState, TapeColor, FileRecord, AudioVersion } from '../types';
 import { TAPE_COLORS } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
-export type ImportType = 'PROJECT_BACKUP' | 'SD_STRUCTURE' | 'LOOSE_FILES' | 'UNKNOWN';
+export type ImportType = 'PROJECT_BACKUP' | 'SD_STRUCTURE' | 'SD_WITH_BACKUP' | 'LOOSE_FILES' | 'UNKNOWN';
 
 export interface ImportAnalysis {
     type: ImportType;
@@ -16,37 +17,29 @@ export interface ImportAnalysis {
         [key in TapeColor]?: { [slotId: number]: File }
     };
 
+    // For SD with Backup
+    backupFile?: File;
+
     // For Loose Files
     files?: File[];
 }
 
-export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis> => {
-    // 1. Check for Single ZIP Project Backup
-    if (inputFiles.length === 1 && inputFiles[0].name.endsWith('.zip')) {
-        try {
-            const zip = await JSZip.loadAsync(inputFiles[0]);
+// Helper: Load Project from Zip
+export const loadProjectFromZip = async (zipFile: File): Promise<AppState | null> => {
+    try {
+        const zip = await JSZip.loadAsync(zipFile);
+        const projectJson = zip.file("project.json");
 
-            // A. Check for project.json (Full Backup)
-            const projectJson = zip.file("project.json");
-            if (projectJson) {
-                const content = await projectJson.async("string");
-                const state = JSON.parse(content) as AppState;
+        if (projectJson) {
+            const content = await projectJson.async("string");
+            const state = JSON.parse(content) as AppState;
+            const blobsFolder = zip.folder("blobs");
 
-                // We might need to hydrate blobs if they are separate? 
-                // In our exportSaveState, we separate blobs.
-                // We need to re-attach blobs from zip to the state.files.
-
-                const blobsFolder = zip.folder("blobs");
-                if (blobsFolder) {
-                    for (const fileId of Object.keys(state.files)) {
-                        const file = state.files[fileId];
+            if (blobsFolder) {
+                for (const fileId of Object.keys(state.files)) {
+                    const file = state.files[fileId];
+                    if (file && file.versions) { // Guard checks
                         for (const version of file.versions) {
-                            // If we exported with "blobRef", look it up
-                            // The current exportSaveState stores blobs in 'blobs/' and puts valid refs in project.json?
-                            // Actually, let's look at exportUtils.ts again. 
-                            // It does: blobsFolder.file(blobName, v.blob);
-                            // And v.blob is null in json.
-
                             const blobName = `${version.id}.wav`;
                             const blobFile = blobsFolder.file(blobName);
                             if (blobFile) {
@@ -55,58 +48,54 @@ export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis>
                         }
                     }
                 }
-
-                return {
-                    type: 'PROJECT_BACKUP',
-                    summary: `Found Project Backup (v${state.metadata?.version || 'Unknown'}) with ${Object.keys(state.files).length} files.`,
-                    projectState: state
-                };
             }
+            return state;
+        }
+        return null;
+    } catch (e) {
+        console.error("Failed to load project zip", e);
+        return null;
+    }
+};
 
-            // B. Check for SD Structure in ZIP?
-            // TODO: recursive scan of zip for SK/B/1.WAV etc.
-
-        } catch (e) {
-            console.warn("Failed to parse ZIP", e);
+export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis> => {
+    // 1. Check for Single ZIP Project Backup
+    if (inputFiles.length === 1 && inputFiles[0].name.endsWith('.zip')) {
+        const state = await loadProjectFromZip(inputFiles[0]);
+        if (state) {
+            return {
+                type: 'PROJECT_BACKUP',
+                summary: `Found Project Backup (v${state.metadata?.version || 'Unknown'}) with ${Object.keys(state.files).length} files.`,
+                projectState: state
+            };
         }
     }
 
-    // 2. Check for project.json in file list (Folder Drag/Drop or Select)
-    const projectFile = inputFiles.find(f => f.name === 'project.json');
-    if (projectFile) {
-        // We need the blobs folder too. 
-        // Logic for folder import is tricky with flat FileList unless we use webkitRelativePath.
-        // Let's assume for now valid "Project Restore" comes primarily from the ZIP we generate.
-    }
-
-    // 3. Check for SK Structure (Folder Drag/Drop)
-    // We look for files with paths like "SK/B/1.WAV" or just "B/1.WAV"
+    // 2. Check for SK Structure (Folder Drag/Drop)
     const structureMap: any = {};
     let foundStructure = false;
+    let foundBackupZip: File | undefined;
 
     for (const file of inputFiles) {
-        const path = (file.webkitRelativePath || file.name).toUpperCase();
-        // Regex for SK/Color/Number.wav or Color/Number.wav
-        // Colors: B, G, P, R, Y, T, W (Turquoise/White? T is Turquoise? Wait, let's check TAPE_COLORS)
-        // In types.ts/TAPE_COLORS.
+        const path = (file.webkitRelativePath || file.name);
 
-        // Let's do a looser check: Parent folder is a Color initial?
-        const parts = path.split('/');
+        // Detect Backup Zip in structure
+        if (file.name === 'project_backup.zip' || path.includes('/project_backup.zip') || path.includes('\\project_backup.zip')) {
+            foundBackupZip = file;
+        }
+
+        const upperPath = path.toUpperCase();
+        const parts = upperPath.split('/');
+
+        // Looser check: Parent folder is a Color initial?
         if (parts.length >= 2) {
             const fileName = parts[parts.length - 1];
             const parent = parts[parts.length - 2];
-
-            // Check if parent matches a tape color initial
             const colorCode = parent.charAt(0).toUpperCase();
 
-
-
-            // We need to look up TAPE_COLORS dynamically or hardcode mapping if standard.
-            // Let's infer from TAPE_COLORS.
             const matchedColor = TAPE_COLORS.find(c => c.charAt(0).toUpperCase() === colorCode);
 
             if (matchedColor) {
-                // Check if file is Number.wav
                 const match = fileName.match(/^(\d+)\.WAV$/i);
                 if (match) {
                     const slotId = parseInt(match[1]);
@@ -121,6 +110,16 @@ export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis>
     if (foundStructure) {
         let count = 0;
         Object.values(structureMap).forEach((slots: any) => count += Object.keys(slots).length);
+
+        if (foundBackupZip) {
+            return {
+                type: 'SD_WITH_BACKUP',
+                summary: `Found SD Card Structure (${count} files) AND a Project Backup.`,
+                structureMap,
+                backupFile: foundBackupZip
+            };
+        }
+
         return {
             type: 'SD_STRUCTURE',
             summary: `Found SD Card Structure with ${count} assigned files.`,
@@ -128,7 +127,7 @@ export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis>
         };
     }
 
-    // 4. Default: Loose Files
+    // 3. Default: Loose Files
     const audioFiles = inputFiles.filter(f => f.type.startsWith('audio/') || f.name.toLowerCase().endsWith('.wav') || f.name.toLowerCase().endsWith('.mp3'));
 
     if (audioFiles.length > 0) {
@@ -146,10 +145,8 @@ export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis>
 // STATE PROCESSORS
 // ==========================================
 
-import { v4 as uuidv4 } from 'uuid';
-
-export const processAudioFiles = (files: File[]): Record<string, import('../types').FileRecord> => {
-    const newFiles: Record<string, import('../types').FileRecord> = {};
+export const processAudioFiles = (files: File[]): Record<string, FileRecord> => {
+    const newFiles: Record<string, FileRecord> = {};
     for (const file of files) {
         if (file.type.startsWith('audio/') || file.name.endsWith('.wav') || file.name.endsWith('.mp3')) {
             const id = uuidv4();
@@ -175,17 +172,15 @@ export const processAudioFiles = (files: File[]): Record<string, import('../type
 
 export const processSDStructure = (
     structureMap: { [key in TapeColor]?: { [slotId: number]: File } },
-    currentFiles: Record<string, import('../types').FileRecord>,
+    currentFiles: Record<string, FileRecord>,
     currentTapes: Record<TapeColor, import('../types').Tape>
 ) => {
-    // 1. Flatten all files from structure
     const allFiles: File[] = [];
     Object.values(structureMap).forEach((slots: any) => {
         Object.values(slots).forEach((f: any) => allFiles.push(f));
     });
 
-    // 2. Create File Records
-    const newFiles: Record<string, import('../types').FileRecord> = {};
+    const newFiles: Record<string, FileRecord> = {};
     const fileIdMap = new Map<File, string>();
 
     for (const file of allFiles) {
@@ -203,16 +198,14 @@ export const processSDStructure = (
                 duration: 0
             }],
             currentVersionId: '',
-            isParked: false // Assigned immediately
+            isParked: false
         };
         newFiles[id].currentVersionId = newFiles[id].versions[0].id;
     }
 
-    // 3. Merge Files
     const nextFiles = { ...currentFiles, ...newFiles };
     const nextTapes = { ...currentTapes };
 
-    // 4. Update Slots
     for (const color of TAPE_COLORS) {
         const tapeFiles = (structureMap as any)[color];
         if (tapeFiles) {
@@ -232,4 +225,143 @@ export const processSDStructure = (
     }
 
     return { files: nextFiles, tapes: nextTapes };
+};
+
+// 1. Calculate Diff
+export interface SyncDiff {
+    newFiles: { slot: string, name: string, file: File, slotIndex: number, color: TapeColor }[];
+    updatedFiles: { slot: string, name: string, file: File, existingFileId: string }[];
+    totalCount: number;
+}
+
+export const calculateSyncDiff = (
+    projectState: AppState,
+    structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
+): SyncDiff => {
+    const diff: SyncDiff = { newFiles: [], updatedFiles: [], totalCount: 0 };
+
+    for (const color of TAPE_COLORS) {
+        const tapeFiles = (structureMap as any)[color];
+        if (!tapeFiles) continue;
+
+        for (const [slotIdStr, fileUnsafe] of Object.entries(tapeFiles)) {
+            const file = fileUnsafe as File;
+            const slotId = parseInt(slotIdStr);
+            const tape = projectState.tapes[color];
+            const slotIndex = tape.slots.findIndex(s => s.id === slotId);
+
+            if (slotIndex === -1) continue;
+
+            const slot = tape.slots[slotIndex];
+            const existingFileId = slot.fileId;
+            const existingFile = existingFileId ? projectState.files[existingFileId] : null;
+
+            if (existingFile) {
+                // Check if different
+                const currentVer = existingFile.versions.find(v => v.id === existingFile.currentVersionId);
+                // Strict equality check on size for now
+                if (currentVer && currentVer.blob && currentVer.blob.size === file.size) {
+                    continue; // Skip identical
+                }
+
+                diff.updatedFiles.push({
+                    slot: `${color}${slotId}`,
+                    name: file.name,
+                    file,
+                    existingFileId: existingFileId as string
+                });
+            } else {
+                diff.newFiles.push({
+                    slot: `${color}${slotId}`,
+                    name: file.name,
+                    file,
+                    slotIndex,
+                    color
+                });
+            }
+        }
+    }
+    diff.totalCount = diff.newFiles.length + diff.updatedFiles.length;
+    return diff;
+};
+
+// 2. Apply Diff
+export const applySyncDiff = async (
+    projectState: AppState,
+    diff: SyncDiff,
+    onProgress?: (msg: string) => void
+): Promise<AppState> => {
+
+    // Process New Files
+    for (const item of diff.newFiles) {
+        onProgress?.(`Importing new file: ${item.name} into ${item.slot}...`);
+
+        const arrayBuffer = await item.file.arrayBuffer();
+        const safeBlob = new Blob([arrayBuffer], { type: item.file.type });
+
+        const newFileId = uuidv4();
+        const newFile: FileRecord = {
+            id: newFileId,
+            name: item.file.name,
+            originalName: item.file.name,
+            versions: [{
+                id: uuidv4(),
+                timestamp: Date.now(),
+                description: 'Imported from SD (New)',
+                blob: safeBlob,
+                duration: 0
+            }],
+            currentVersionId: '',
+            isParked: false,
+            origin: 'SD Card'
+        };
+        newFile.currentVersionId = newFile.versions[0].id; // Set current
+        projectState.files[newFileId] = newFile;
+        // Update Slot
+        const tape = projectState.tapes[item.color];
+        if (tape.slots[item.slotIndex]) {
+            tape.slots[item.slotIndex].fileId = newFileId;
+        }
+    }
+
+    // Process Updates
+    for (const item of diff.updatedFiles) {
+        onProgress?.(`Syncing update: ${item.name} for ${item.slot}...`);
+
+        const arrayBuffer = await item.file.arrayBuffer();
+        const safeBlob = new Blob([arrayBuffer], { type: item.file.type });
+
+        const fileRecord = projectState.files[item.existingFileId];
+        if (fileRecord) {
+            const newVerId = uuidv4();
+            const newVer: AudioVersion = {
+                id: newVerId,
+                timestamp: Date.now(),
+                description: 'Synced from SD (Hardware)',
+                blob: safeBlob,
+                duration: 0
+            };
+            fileRecord.versions.push(newVer);
+            fileRecord.currentVersionId = newVerId;
+        }
+    }
+
+    return projectState;
+};
+
+export const restoreProjectAndSync = async (
+    backupFile: File,
+    structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
+): Promise<{ state: AppState, report: string } | null> => {
+    // Legacy wrapper if needed, or we can remove/refactor
+    const projectState = await loadProjectFromZip(backupFile);
+    if (!projectState) return null;
+
+    const diff = calculateSyncDiff(projectState, structureMap);
+    const finalState = await applySyncDiff(projectState, diff);
+
+    return {
+        state: finalState,
+        report: `Sync Complete: Updated ${diff.updatedFiles.length} files, Added ${diff.newFiles.length} new files.`
+    };
 };

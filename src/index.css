@@ -101,7 +101,16 @@ img {
     }
 }
 
+@keyframes spin-once {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 @layer utilities {
+    .animate-spin-once {
+        animation: spin-once 0.5s ease-out;
+    }
+
     .animate-pulse-halo {
         animation: pulse-glow-anim 3s ease-in-out infinite;
     }

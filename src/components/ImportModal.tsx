@@ -5,11 +5,12 @@ interface ImportModalProps {
     analysis: ImportAnalysis;
     onClose: () => void;
     onRestoreProject: (state: any) => void;
+    onRestoreAndSync: (backupFile: File, structureMap: any) => void;
     onImportStructure: (structureMap: any) => void;
     onImportFiles: (files: File[]) => void;
 }
 
-export const ImportModal = ({ analysis, onClose, onRestoreProject, onImportStructure, onImportFiles }: ImportModalProps) => {
+export const ImportModal = ({ analysis, onClose, onRestoreProject, onRestoreAndSync, onImportStructure, onImportFiles }: ImportModalProps) => {
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
@@ -61,6 +62,53 @@ export const ImportModal = ({ analysis, onClose, onRestoreProject, onImportStruc
                                 </button>
 
                                 {/* TODO: Extract Files Only option? For now just full restore. */}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TYPE: SD_WITH_BACKUP - NEW SMART SYNC */}
+                    {analysis.type === 'SD_WITH_BACKUP' && (
+                        <div className="space-y-6">
+                            <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-lg flex gap-3">
+                                <Archive className="text-purple-400 shrink-0 mt-1" size={24} />
+                                <div>
+                                    <h3 className="text-lg font-bold text-purple-400">Project Backup & SD Files</h3>
+                                    <p className="text-sm text-gray-300 mt-1">
+                                        Found a project backup bundle AND newer files on the SD card.
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-2 font-mono">
+                                        {analysis.summary}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-3">
+                                <button
+                                    onClick={() => analysis.backupFile && analysis.structureMap && onRestoreAndSync(analysis.backupFile, analysis.structureMap)}
+                                    className="w-full py-4 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition-colors flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <AlertTriangle size={20} />
+                                        <div className="text-left">
+                                            <div>Restore Project & Sync Changes</div>
+                                            <div className="text-xs font-normal opacity-80">Loads backup, then updates with new SD files</div>
+                                        </div>
+                                    </div>
+                                    <ArrowRight className="opacity-50 group-hover:translate-x-1 transition-transform" />
+                                </button>
+
+                                <button
+                                    onClick={() => analysis.structureMap && onImportStructure(analysis.structureMap)}
+                                    className="w-full py-3 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold rounded-lg transition-colors flex items-center justify-between"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <FolderInput size={20} />
+                                        <div className="text-left">
+                                            <div>Import Current Audio Only</div>
+                                            <div className="text-xs font-normal opacity-80">Ignore backup job state</div>
+                                        </div>
+                                    </div>
+                                </button>
                             </div>
                         </div>
                     )}
