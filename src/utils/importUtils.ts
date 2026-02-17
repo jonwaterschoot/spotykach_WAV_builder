@@ -25,17 +25,22 @@ export interface ImportAnalysis {
 }
 
 // Helper: Load Project from Zip
-export const loadProjectFromZip = async (zipFile: File): Promise<AppState | null> => {
+export const loadProjectFromZip = async (zipFile: File, onProgress?: (msg: string) => void): Promise<AppState | null> => {
     try {
+        onProgress?.('Reading ZIP file...');
         const zip = await JSZip.loadAsync(zipFile);
         const projectJson = zip.file("project.json");
 
         if (projectJson) {
+            onProgress?.('Parsing project data...');
             const content = await projectJson.async("string");
             const state = JSON.parse(content) as AppState;
             const blobsFolder = zip.folder("blobs");
 
             if (blobsFolder) {
+                const totalFiles = Object.keys(state.files).length;
+                let processed = 0;
+
                 for (const fileId of Object.keys(state.files)) {
                     const file = state.files[fileId];
                     if (file && file.versions) { // Guard checks
@@ -46,6 +51,10 @@ export const loadProjectFromZip = async (zipFile: File): Promise<AppState | null
                                 version.blob = await blobFile.async("blob");
                             }
                         }
+                    }
+                    processed++;
+                    if (processed % 5 === 0 || processed === totalFiles) {
+                        onProgress?.(`Loading audio blobs... (${processed}/${totalFiles})`);
                     }
                 }
             }
@@ -58,10 +67,10 @@ export const loadProjectFromZip = async (zipFile: File): Promise<AppState | null
     }
 };
 
-export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis> => {
+export const analyzeImport = async (inputFiles: File[], onProgress?: (msg: string) => void): Promise<ImportAnalysis> => {
     // 1. Check for Single ZIP Project Backup
     if (inputFiles.length === 1 && inputFiles[0].name.endsWith('.zip')) {
-        const state = await loadProjectFromZip(inputFiles[0]);
+        const state = await loadProjectFromZip(inputFiles[0], onProgress);
         if (state) {
             return {
                 type: 'PROJECT_BACKUP',
@@ -70,6 +79,9 @@ export const analyzeImport = async (inputFiles: File[]): Promise<ImportAnalysis>
             };
         }
     }
+
+    onProgress?.('Scanning files structure...');
+
 
     // 2. Check for SK Structure (Folder Drag/Drop)
     const structureMap: any = {};
@@ -228,9 +240,26 @@ export const processSDStructure = (
 };
 
 // 1. Calculate Diff
+export interface SyncDiffItemNew {
+    slot: string;
+    name: string;
+    file: File;
+    slotIndex: number;
+    color: TapeColor;
+    size: number;
+}
+export interface SyncDiffItemUpdate {
+    slot: string;
+    name: string;
+    file: File;
+    existingFileId: string;
+    existingName: string;
+    size: number;
+}
+
 export interface SyncDiff {
-    newFiles: { slot: string, name: string, file: File, slotIndex: number, color: TapeColor }[];
-    updatedFiles: { slot: string, name: string, file: File, existingFileId: string }[];
+    newFiles: SyncDiffItemNew[];
+    updatedFiles: SyncDiffItemUpdate[];
     totalCount: number;
 }
 
@@ -268,7 +297,9 @@ export const calculateSyncDiff = (
                     slot: `${color}${slotId}`,
                     name: file.name,
                     file,
-                    existingFileId: existingFileId as string
+                    existingFileId: existingFileId as string,
+                    existingName: existingFile.name,
+                    size: file.size
                 });
             } else {
                 diff.newFiles.push({
@@ -276,7 +307,8 @@ export const calculateSyncDiff = (
                     name: file.name,
                     file,
                     slotIndex,
-                    color
+                    color,
+                    size: file.size
                 });
             }
         }
@@ -286,37 +318,51 @@ export const calculateSyncDiff = (
 };
 
 // 2. Apply Diff
+export type SyncDecision = 'overwrite' | 'skip' | 'keep_both';
+
 export const applySyncDiff = async (
     projectState: AppState,
     diff: SyncDiff,
+    decisions: Record<string, SyncDecision> = {},
     onProgress?: (msg: string) => void
 ): Promise<AppState> => {
 
     // Process New Files
     for (const item of diff.newFiles) {
+        // Default decision is overwrite/import if not specified
+        const decision = decisions[item.slot] || 'overwrite';
+
+        if (decision === 'skip') {
+            onProgress?.(`Skipping new file: ${item.name}`);
+            continue;
+        }
+
         onProgress?.(`Importing new file: ${item.name} into ${item.slot}...`);
 
         const arrayBuffer = await item.file.arrayBuffer();
         const safeBlob = new Blob([arrayBuffer], { type: item.file.type });
 
         const newFileId = uuidv4();
+        // Create File Record
         const newFile: FileRecord = {
             id: newFileId,
-            name: item.file.name,
+            name: item.name,
             originalName: item.file.name,
             versions: [{
                 id: uuidv4(),
                 timestamp: Date.now(),
                 description: 'Imported from SD (New)',
                 blob: safeBlob,
-                duration: 0
+                duration: 0 // Will be updated on load or separate process
             }],
             currentVersionId: '',
             isParked: false,
             origin: 'SD Card'
         };
         newFile.currentVersionId = newFile.versions[0].id; // Set current
+
         projectState.files[newFileId] = newFile;
+
         // Update Slot
         const tape = projectState.tapes[item.color];
         if (tape.slots[item.slotIndex]) {
@@ -326,11 +372,42 @@ export const applySyncDiff = async (
 
     // Process Updates
     for (const item of diff.updatedFiles) {
-        onProgress?.(`Syncing update: ${item.name} for ${item.slot}...`);
+        const decision = decisions[item.slot] || 'overwrite';
+
+        if (decision === 'skip') {
+            onProgress?.(`Skipping update for ${item.slot}`);
+            continue;
+        }
+
+        onProgress?.(`Syncing update: ${item.name} for ${item.slot} (${decision})...`);
 
         const arrayBuffer = await item.file.arrayBuffer();
         const safeBlob = new Blob([arrayBuffer], { type: item.file.type });
 
+        if (decision === 'keep_both') {
+            const newFileId = uuidv4();
+            const newFile: FileRecord = {
+                id: newFileId,
+                name: item.name + " (Sync)",
+                originalName: item.file.name,
+                versions: [{
+                    id: uuidv4(),
+                    timestamp: Date.now(),
+                    description: 'Imported from SD (Sync Conflict)',
+                    blob: safeBlob,
+                    duration: 0
+                }],
+                currentVersionId: '',
+                isParked: true, // PARKED
+                origin: 'SD Card'
+            };
+            newFile.currentVersionId = newFile.versions[0].id;
+            projectState.files[newFileId] = newFile;
+            onProgress?.(`  -> Imported as separate parked file.`);
+            continue;
+        }
+
+        // Default: Add Version to Existing File
         const fileRecord = projectState.files[item.existingFileId];
         if (fileRecord) {
             const newVerId = uuidv4();
@@ -349,16 +426,16 @@ export const applySyncDiff = async (
     return projectState;
 };
 
+// Helper for Legacy Wrapper
 export const restoreProjectAndSync = async (
     backupFile: File,
     structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
 ): Promise<{ state: AppState, report: string } | null> => {
-    // Legacy wrapper if needed, or we can remove/refactor
     const projectState = await loadProjectFromZip(backupFile);
     if (!projectState) return null;
 
     const diff = calculateSyncDiff(projectState, structureMap);
-    const finalState = await applySyncDiff(projectState, diff);
+    const finalState = await applySyncDiff(projectState, diff); // Uses defaults
 
     return {
         state: finalState,

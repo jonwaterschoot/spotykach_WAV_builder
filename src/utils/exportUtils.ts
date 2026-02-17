@@ -21,8 +21,9 @@ const generateReadme = (state: AppState, includeBundle: boolean): string => {
     const dateStr = new Date().toISOString().split('T')[0];
     let content = `SPOTYKACH WAV BUILDER EXPORT
 Date: ${dateStr}
-App Version: 1.0.2
+App Version: ${__APP_VERSION__}
 
+========================================================================
 ========================================================================
 FOLDER STRUCTURE (STRICT MODE)
 ========================================================================
@@ -130,7 +131,7 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
         tapes: state.tapes,
         metadata: {
             appName: "Spotykach WAV Builder",
-            version: "1.0.2",
+            version: __APP_VERSION__,
             exportDate: new Date().toISOString()
         }
     };

@@ -300,7 +300,7 @@ function App() {
     setProgressMsg("Analyzing Backup...");
     try {
       const { loadProjectFromZip, calculateSyncDiff } = await import('./utils/importUtils');
-      const state = await loadProjectFromZip(backupFile);
+      const state = await loadProjectFromZip(backupFile, (msg) => setProgressMsg(msg));
 
       if (state) {
         const diff = calculateSyncDiff(state, structureMap);
@@ -314,10 +314,11 @@ function App() {
       setToast({ msg: "Analysis Failed", type: 'error' });
     } finally {
       setIsProcessing(false);
+      setProgressMsg(''); // Clear msg
     }
   };
 
-  const executeSync = async () => {
+  const executeSync = async (decisions: Record<string, import('./utils/importUtils').SyncDecision>) => {
     if (!syncPreview) return;
 
     setSyncPreview(null); // Close Preview
@@ -333,7 +334,7 @@ function App() {
         setExportLogs(prev => [...prev, msg]);
       };
 
-      const finalState = await applySyncDiff(syncPreview.state, syncPreview.diff, logAdapter);
+      const finalState = await applySyncDiff(syncPreview.state, syncPreview.diff, decisions, logAdapter);
 
       setState(finalState);
       setIsExportComplete(true); // Re-using "Export Complete" state to show checkmark
@@ -1457,14 +1458,19 @@ function App() {
     if (!files || files.length === 0) return;
 
     const fileArray = Array.from(files);
-    setToast({ msg: "Analyzing content...", type: "neutral" });
+
+    setIsProcessing(true);
+    setProgressMsg("Analyzing content...");
 
     try {
-      const analysis = await analyzeImport(fileArray);
+      const analysis = await analyzeImport(fileArray, (msg) => setProgressMsg(msg));
       setImportAnalysis(analysis);
     } catch (e) {
       console.error("Import analysis failed", e);
       setToast({ msg: "Failed to analyze import", type: "error" });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
     }
 
     // Reset input
