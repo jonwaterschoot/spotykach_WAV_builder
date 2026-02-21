@@ -59,6 +59,29 @@ This project is built using:
 
 Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV_builder/](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
 
+## Multi-version GitHub Pages
+
+This repo can now deploy a version picker at the root and host multiple app versions:
+
+- `https://jonwaterschoot.github.io/spotykach_WAV_builder/v1/`
+- `https://jonwaterschoot.github.io/spotykach_WAV_builder/v2/`
+
+Workflow:
+
+1. Put a built legacy v1 static site into `legacy/v1-dist/`.
+2. Build the versioned site:
+   ```bash
+   npm run build:versioned
+   ```
+3. Deploy to `gh-pages`:
+   ```bash
+   npm run deploy:versioned
+   ```
+
+Notes:
+- The root version picker lives in `site/index.html`.
+- v2 is built from current source with base path `/spotykach_WAV_builder/v2/`.
+
 ## Roadmap
 
 ### Priority Features

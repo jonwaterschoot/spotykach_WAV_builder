@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:v2:raw": "vite build --base=/spotykach_WAV_builder/v2/ --outDir=.tmp/v2-build",
+    "build:versioned": "node scripts/build-versioned-pages.mjs",
     "build:local": "tsc -b && vite build --base=/",
     "lint": "eslint .",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "predeploy:versioned": "npm run build:versioned",
+    "deploy:versioned": "gh-pages -d dist"
   },
   "dependencies": {
     "@types/jszip": "^3.4.0",
