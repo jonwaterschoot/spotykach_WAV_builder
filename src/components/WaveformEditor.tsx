@@ -4,6 +4,7 @@ import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw } from 'lucide-react';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
+import { v4 as uuidv4 } from 'uuid';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { TapeIcon } from './TapeIcon';
 import { ConfirmModal } from './ConfirmModal';
@@ -340,7 +341,7 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, onFadeC
     );
 };
 
-import type { AudioVersion, TapeColor } from '../types';
+import type { AudioVersion, TapeColor, WavMetadata } from '../types';
 
 interface EditorSlot {
     id: number;
@@ -355,16 +356,17 @@ interface WaveformEditorProps {
     activeVersionId: string;
     onClose: () => void;
     onSave: (blob: Blob, duration: number, description: string, isDirty: boolean, processing?: ('normalized' | 'trimmed' | 'looped')[]) => void;
-    onSaveAsCopy: (blob: Blob, duration: number) => void;
+    onSaveAsCopy: (blob: Blob, duration: number, createdId: string) => void;
     onDeleteVersion?: (versionId: string) => void;
     onAssignVersion?: (versionId: string) => void;
     onMoveVersionToPool?: (versionId: string) => void;
     tapeColor?: TapeColor;
     isDuplicate?: boolean;
-    onSaveUnique?: (blob: Blob, duration: number, processing?: ('normalized' | 'trimmed' | 'looped')[]) => void;
+    onSaveUnique?: (blob: Blob, duration: number, processing: ('normalized' | 'trimmed' | 'looped')[], createdId: string) => void;
+    metadata?: WavMetadata;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -963,7 +965,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // User wants to "Apply Automation". Usually this means "Render loudness" but keep the region?
             // If we save as new version, we just save the processed buffer.
 
-            const newBlob = encodeWAV(processed);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
+            const newBlob = encodeWAV(processed, meta);
             onSave(newBlob, processed.duration, "Automation Applied", true, ['normalized']);
 
             // Reset points
@@ -999,7 +1002,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // Processing...
             setIsProcessing(true);
             const processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
-            const newBlob = await audioProcessor.toWav(processed);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const newBlob = await audioProcessor.toWav(processed, meta);
 
             await wavesurfer.current.loadBlob(newBlob);
             wavesurfer.current.play();
@@ -1042,7 +1046,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
 
             let looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-            const newBlob = await audioProcessor.toWav(looped);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
+            const newBlob = await audioProcessor.toWav(looped, meta);
 
             await wavesurfer.current.loadBlob(newBlob);
 
@@ -1103,7 +1108,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 // Not dirty -> Assign to Tape
                 let processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
-                finalBlob = await audioProcessor.toWav(processed);
+                // Preserve metadata
+                const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+                finalBlob = await audioProcessor.toWav(processed, meta);
 
                 // Preserve processing tags if assigning same version? 
                 // Parent handles assignment. If we pass !isDirty, it re-uses current version logic usually?
@@ -1118,7 +1125,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                 }
                 finalDuration = processed.duration;
-                finalBlob = await audioProcessor.toWav(processed);
+                const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed'] };
+                finalBlob = await audioProcessor.toWav(processed, meta);
 
                 // New edit -> likely 'trimmed' unless it was just fades?
                 // We don't distinguish just fades vs trim well. 
@@ -2010,7 +2018,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                             }
                                                             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
                                                             const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-                                                            const newBlob = encodeWAV(looped);
+                                                            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['looped', 'trimmed'] };
+                                                            const newBlob = encodeWAV(looped, meta);
 
                                                             onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s)`, true, ['looped', 'trimmed']);
                                                             showToast("Loop Created!", "success");
@@ -2311,10 +2320,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 }
 
                                                 // 2. Encode
-                                                const newBlob = encodeWAV(processed);
+                                                const newId = uuidv4();
+                                                const meta = { ...(metadata || {}), id: newId, processing: processingTags };
+                                                const newBlob = encodeWAV(processed, meta);
 
                                                 // 3. Callback
-                                                onSaveUnique(newBlob, processed.duration, processingTags);
+                                                onSaveUnique(newBlob, processed.duration, processingTags, newId);
                                                 showToast("Saved as Unique File!", "success");
                                             } catch (e) {
                                                 console.error(e);
@@ -2349,8 +2360,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             if (fadeIn > 0 || fadeOut > 0) {
                                                 processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                                             }
-                                            const newBlob = encodeWAV(processed);
-                                            onSaveAsCopy(newBlob, processed.duration);
+                                            const newId = uuidv4();
+                                            const meta = { ...(metadata || {}), id: newId };
+                                            const newBlob = encodeWAV(processed, meta);
+                                            onSaveAsCopy(newBlob, processed.duration, newId);
                                             showToast("Saved copy to Unused Pool!", "success");
                                         } catch (e) {
                                             console.error(e);

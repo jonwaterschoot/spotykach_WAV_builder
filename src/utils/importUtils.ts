@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { AppState, TapeColor, FileRecord, AudioVersion } from '../types';
+import type { AppState, TapeColor, FileRecord, AudioVersion, ProjectSummary } from '../types';
 import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,6 +16,9 @@ export interface ImportAnalysis {
     structureMap?: {
         [key in TapeColor]?: { [slotId: number]: File }
     };
+
+    // Found Projects
+    projects?: ProjectSummary[];
 
     // For SD with Backup
     backupFile?: File;
@@ -88,24 +91,55 @@ export const analyzeImport = async (inputFiles: File[], onProgress?: (msg: strin
     let foundStructure = false;
     let foundBackupZip: File | undefined;
 
-    for (const file of inputFiles) {
+    // Filter to find "SK/" folder first
+    const skFiles = inputFiles.filter(f => {
+        const path = f.webkitRelativePath || f.name;
+        // Check if file is INSIDE "SK/" folder
+        // path example: "SD_CARD/SK/Red/1.WAV" or just "SK/Red/1.WAV"
+        return path.includes('/SK/') || path.startsWith('SK/');
+    });
+
+    const targetFiles = skFiles.length > 0 ? skFiles : inputFiles;
+    const isStrictSK = skFiles.length > 0;
+
+    for (const file of targetFiles) {
         const path = (file.webkitRelativePath || file.name);
 
-        // Detect Backup Zip in structure
-        if (file.name === 'project_backup.zip' || path.includes('/project_backup.zip') || path.includes('\\project_backup.zip')) {
+        // Detect Backup Zip in structure (If we are in strict mode, look for backup anywhere or just root?)
+        // Let's keep looking for backup zip generally
+        if (file.name === 'project_backup.zip' || path.includes('/project_backup.zip')) {
             foundBackupZip = file;
         }
 
         const upperPath = path.toUpperCase();
         const parts = upperPath.split('/');
 
-        // Looser check: Parent folder is a Color initial?
-        if (parts.length >= 2) {
-            const fileName = parts[parts.length - 1];
-            const parent = parts[parts.length - 2];
-            const colorCode = parent.charAt(0).toUpperCase();
+        // Structure parsing:
+        // Standard: [ROOT, Color, File] -> Length 3
+        // Strict SK: [ROOT, SK, Color, File] -> Length 4
+        // We need to find the "Color" folder.
 
-            const matchedColor = TAPE_COLORS.find(c => c.charAt(0).toUpperCase() === colorCode);
+        // Find index of Tape Color in path
+        let colorIndex = -1;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i];
+            if (part.length === 1 && TAPE_COLORS.some(c => c.charAt(0) === part.charAt(0))) {
+                colorIndex = i;
+                break;
+            }
+            // Also check full names "RED", "BLUE"
+            if (TAPE_COLORS.includes(part as any)) {
+                colorIndex = i;
+                break;
+            }
+        }
+
+        if (colorIndex !== -1) {
+            const fileName = parts[parts.length - 1]; // "1.WAV"
+            const colorPart = parts[colorIndex]; // "R" or "RED"
+
+            // Validate Parent is Color
+            const matchedColor = TAPE_COLORS.find(c => c.charAt(0) === colorPart.charAt(0));
 
             if (matchedColor) {
                 const match = fileName.match(/^(\d+)\.WAV$/i);
@@ -123,10 +157,12 @@ export const analyzeImport = async (inputFiles: File[], onProgress?: (msg: strin
         let count = 0;
         Object.values(structureMap).forEach((slots: any) => count += Object.keys(slots).length);
 
+        const summaryPrefix = isStrictSK ? "Found Active Project (SK/)" : "Found SD Card Structure";
+
         if (foundBackupZip) {
             return {
                 type: 'SD_WITH_BACKUP',
-                summary: `Found SD Card Structure (${count} files) AND a Project Backup.`,
+                summary: `${summaryPrefix} (${count} files) AND a Backup.`,
                 structureMap,
                 backupFile: foundBackupZip
             };
@@ -134,7 +170,7 @@ export const analyzeImport = async (inputFiles: File[], onProgress?: (msg: strin
 
         return {
             type: 'SD_STRUCTURE',
-            summary: `Found SD Card Structure with ${count} assigned files.`,
+            summary: `${summaryPrefix} with ${count} assigned files.`,
             structureMap
         };
     }
@@ -240,6 +276,18 @@ export const processSDStructure = (
 };
 
 // 1. Calculate Diff
+export type SyncStatus = 'MATCH' | 'CONFLICT' | 'LOCAL_ONLY' | 'REMOTE_ONLY' | 'EMPTY';
+
+export interface SyncSlotDiff {
+    slotId: string; // "Red1", "Blue2"
+    color: TapeColor;
+    index: number; // 0-5
+    status: SyncStatus;
+    localFile?: FileRecord;
+    remoteFile?: File; // Raw file from SD
+}
+
+// Legacy Interface Support (to prevent build break until consumers are updated)
 export interface SyncDiffItemNew {
     slot: string;
     name: string;
@@ -257,65 +305,217 @@ export interface SyncDiffItemUpdate {
     size: number;
 }
 
-export interface SyncDiff {
-    newFiles: SyncDiffItemNew[];
-    updatedFiles: SyncDiffItemUpdate[];
-    totalCount: number;
+// Diff Types for Device Scanning
+export interface DeviceFileChange {
+    slot: string; // e.g. "A1"
+    file: File;
+    color?: import('../types').TapeColor;
+    slotId?: number;
+    // For Modified:
+    originalFileId?: string;
+    // For New:
+    // ... just slot and file
 }
 
-export const calculateSyncDiff = (
+export interface DeviceDiff {
+    newFiles: DeviceFileChange[];
+    updatedFiles: DeviceFileChange[];
+}
+export interface SyncDiff {
+    slots: Record<string, SyncSlotDiff>;
+    summary: {
+        matches: number;
+        conflicts: number;
+        localOnly: number;
+        remoteOnly: number;
+    };
+    totalCount: number; // For legacy check
+    // Legacy support (optional, can simulate if needed or refactor consumers)
+    newFiles: SyncDiffItemNew[];
+    updatedFiles: SyncDiffItemUpdate[];
+}
+
+
+
+import type { WavMetadata } from '../types';
+
+// Helper: Parse WAV Metadata (LIST INFO)
+export const readWavMetadata = async (file: File): Promise<WavMetadata | null> => {
+    try {
+        const buffer = await file.arrayBuffer();
+        const view = new DataView(buffer);
+
+        // Simple RIFF parser for LIST INFO
+        let offset = 12; // Skip RIFF header
+        while (offset < view.byteLength) {
+            const chunkId = String.fromCharCode(
+                view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3)
+            );
+            const chunkSize = view.getUint32(offset + 4, true);
+
+            if (chunkId === 'LIST') {
+                const listType = String.fromCharCode(
+                    view.getUint8(offset + 8), view.getUint8(offset + 9), view.getUint8(offset + 10), view.getUint8(offset + 11)
+                );
+
+                if (listType === 'INFO') {
+                    // Parse Subchunks
+                    let subOffset = offset + 12;
+                    const maxSub = offset + 8 + chunkSize;
+
+                    const metadata: WavMetadata = {};
+                    let foundAny = false;
+
+                    while (subOffset < maxSub) {
+                        const subId = String.fromCharCode(
+                            view.getUint8(subOffset), view.getUint8(subOffset + 1), view.getUint8(subOffset + 2), view.getUint8(subOffset + 3)
+                        );
+                        const subSize = view.getUint32(subOffset + 4, true);
+
+                        // Read Value
+                        let value = '';
+                        for (let i = 0; i < subSize; i++) {
+                            const charCode = view.getUint8(subOffset + 8 + i);
+                            if (charCode !== 0) value += String.fromCharCode(charCode);
+                        }
+
+                        if (subId === 'ICMT') {
+                            try {
+                                const payload = JSON.parse(value);
+                                if (payload.id) metadata.id = payload.id;
+                                if (payload.h) metadata.hash = payload.h;
+                                if (payload.p) metadata.processing = payload.p;
+                                if (payload.t) metadata.tempo = payload.t;
+                                foundAny = true;
+                            } catch (e) {
+                                // Not JSON, maybe normal comment?
+                            }
+                        }
+
+                        subOffset += 8 + subSize + (subSize % 2);
+                    }
+
+                    if (foundAny) return metadata;
+                }
+            }
+
+            offset += 8 + chunkSize + (chunkSize % 2);
+        }
+    } catch (e) {
+        console.warn('Failed to parse WAV metadata', e);
+    }
+    return null;
+};
+
+
+// 1. Calculate Diff
+export const calculateSyncDiff = async (
     projectState: AppState,
     structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
-): SyncDiff => {
-    const diff: SyncDiff = { newFiles: [], updatedFiles: [], totalCount: 0 };
+): Promise<SyncDiff> => {
+    const diff: SyncDiff = {
+        slots: {},
+        summary: { matches: 0, conflicts: 0, localOnly: 0, remoteOnly: 0 },
+        totalCount: 0,
+        newFiles: [],
+        updatedFiles: []
+    };
 
     for (const color of TAPE_COLORS) {
-        const tapeFiles = (structureMap as any)[color];
-        if (!tapeFiles) continue;
+        const tape = projectState.tapes[color];
+        const remoteTape = structureMap[color] || {};
 
-        for (const [slotIdStr, fileUnsafe] of Object.entries(tapeFiles)) {
-            const file = fileUnsafe as File;
-            const slotId = parseInt(slotIdStr);
-            const tape = projectState.tapes[color];
-            const slotIndex = tape.slots.findIndex(s => s.id === slotId);
+        for (const localSlot of tape.slots) { // Use for-of for async
+            const index = localSlot.id - 1; // 0-indexed assumption from upstream logic
+            const slotId = `${color}${localSlot.id}`;
+            const remoteFile = remoteTape[localSlot.id];
+            const localFile = localSlot.fileId ? projectState.files[localSlot.fileId] : undefined;
 
-            if (slotIndex === -1) continue;
+            let status: SyncStatus = 'EMPTY';
 
-            const slot = tape.slots[slotIndex];
-            const existingFileId = slot.fileId;
-            const existingFile = existingFileId ? projectState.files[existingFileId] : null;
+            if (localFile && remoteFile) {
+                // Both exist - Compare
+                const currentVer = localFile.versions.find(v => v.id === localFile.currentVersionId);
 
-            if (existingFile) {
-                // Check if different
-                const currentVer = existingFile.versions.find(v => v.id === existingFile.currentVersionId);
-                // Strict equality check on size for now
-                if (currentVer && currentVer.blob && currentVer.blob.size === file.size) {
-                    continue; // Skip identical
+                // Read Metadata from Remote File
+                const remoteMeta = await readWavMetadata(remoteFile);
+
+                let isMatch = false;
+
+                // 1. Check Metadata UUID
+                if (remoteMeta?.id && localFile.id === remoteMeta.id) {
+                    // UUID Match! Check for content changes.
+                    isMatch = true;
+
+                    // A. Compare Processing Flags (e.g. Normalized, Faded)
+                    const localProc = (currentVer?.processing || []).slice().sort();
+                    const remoteProc = (remoteMeta.processing || []).slice().sort();
+
+                    if (JSON.stringify(localProc) !== JSON.stringify(remoteProc)) {
+                        isMatch = false; // Processing differs -> Update available
+                    }
+
+                    // B. Compare Size (Fallback for re-encodes without flag changes)
+                    if (isMatch && remoteFile.size !== currentVer?.blob?.size) {
+                        isMatch = false;
+                    }
+                } else {
+                    // No metadata or ID mismatch
+                    // Fallback to strict Size check
+                    if (currentVer && currentVer.blob && currentVer.blob.size === remoteFile.size) {
+                        isMatch = true;
+                    }
                 }
 
-                diff.updatedFiles.push({
-                    slot: `${color}${slotId}`,
-                    name: file.name,
-                    file,
-                    existingFileId: existingFileId as string,
-                    existingName: existingFile.name,
-                    size: file.size
-                });
-            } else {
+                if (isMatch) {
+                    status = 'MATCH';
+                    diff.summary.matches++;
+                } else {
+                    status = 'CONFLICT';
+                    diff.summary.conflicts++;
+
+                    diff.updatedFiles.push({
+                        slot: slotId,
+                        name: remoteFile.name,
+                        file: remoteFile,
+                        existingFileId: localFile.id,
+                        existingName: localFile.name,
+                        size: remoteFile.size
+                    });
+                }
+            } else if (localFile && !remoteFile) {
+                status = 'LOCAL_ONLY';
+                diff.summary.localOnly++;
+            } else if (!localFile && remoteFile) {
+                status = 'REMOTE_ONLY';
+                diff.summary.remoteOnly++;
                 diff.newFiles.push({
-                    slot: `${color}${slotId}`,
-                    name: file.name,
-                    file,
-                    slotIndex,
-                    color,
-                    size: file.size
+                    slot: slotId,
+                    name: remoteFile.name,
+                    file: remoteFile,
+                    slotIndex: index,
+                    color: color,
+                    size: remoteFile.size
                 });
             }
+
+            diff.slots[slotId] = {
+                slotId,
+                color,
+                index,
+                status,
+                localFile,
+                remoteFile
+            };
         }
     }
+
     diff.totalCount = diff.newFiles.length + diff.updatedFiles.length;
+
     return diff;
 };
+
+
 
 // 2. Apply Diff
 export type SyncDecision = 'overwrite' | 'skip' | 'keep_both';
@@ -434,11 +634,155 @@ export const restoreProjectAndSync = async (
     const projectState = await loadProjectFromZip(backupFile);
     if (!projectState) return null;
 
-    const diff = calculateSyncDiff(projectState, structureMap);
+    const diff = await calculateSyncDiff(projectState, structureMap);
     const finalState = await applySyncDiff(projectState, diff); // Uses defaults
 
     return {
         state: finalState,
         report: `Sync Complete: Updated ${diff.updatedFiles.length} files, Added ${diff.newFiles.length} new files.`
     };
+};
+// ==========================================
+// DEVICE SYNC (SK Folder Scanning)
+// ==========================================
+
+export interface DeviceDiff {
+    projectId: string; // From project.json in SK
+    projectName: string;
+    newFiles: DeviceFileChange[];
+    updatedFiles: DeviceFileChange[];
+    syncedFiles: DeviceFileChange[];
+}
+
+export const scanDeviceChanges = async (skHandle: FileSystemDirectoryHandle): Promise<DeviceDiff | null> => {
+    try {
+        // 1. Read Project Manifest
+        let projectIdentity: any = null;
+        try {
+            const jsonHandle = await skHandle.getFileHandle('project.json');
+            const file = await jsonHandle.getFile();
+            const text = await file.text();
+            projectIdentity = JSON.parse(text);
+        } catch (e) {
+            console.warn("No project.json found in SK folder. Cannot verify device changes.");
+            return null;
+        }
+
+        if (!projectIdentity || !projectIdentity.metadata) return null;
+
+        const diff: DeviceDiff = {
+            projectId: projectIdentity.metadata.projectName, // Using name as ID for now
+            projectName: projectIdentity.metadata.projectName,
+            newFiles: [],
+            updatedFiles: [],
+            syncedFiles: []
+        };
+
+        const exportDate = new Date(projectIdentity.metadata.exportDate).getTime();
+        const TOLERANCE = 2000; // 2 seconds tolerance
+
+        // 2. Scan SK Folders
+        for (const color of TAPE_COLORS) {
+            const folderName = color.charAt(0).toUpperCase(); // "R", "B"
+            try {
+                const tapeHandle = await skHandle.getDirectoryHandle(folderName);
+                // @ts-ignore
+                for await (const [name, entry] of tapeHandle.entries()) {
+                    if (entry.kind === 'file' && name.toUpperCase().endsWith('.WAV')) {
+                        const match = name.match(/^(\d+)\.WAV$/i);
+                        if (match) {
+                            const slotId = parseInt(match[1]);
+                            const fileHandle = entry as FileSystemFileHandle;
+                            const file = await fileHandle.getFile();
+
+                            // 3. Compare with Manifest
+                            // Manifest structure: tapes[color].slots[index].fileId
+                            // And files[fileId]
+
+                            const tape = projectIdentity.tapes[color];
+                            const slot = tape?.slots.find((s: any) => s.id === slotId);
+                            const originalFileId = slot?.fileId;
+
+                            // Check if this slot was supposed to be empty
+                            if (!originalFileId) {
+                                // NEW FILE
+                                diff.newFiles.push({
+                                    slot: `${color}${slotId}`,
+                                    file,
+                                    color,
+                                    slotId
+                                });
+                            } else {
+                                // SLOT WAS OCCUPIED
+                                // Check if modified
+                                // Logic: If file.lastModified > exportDate -> Modified
+                                if (file.lastModified > (exportDate + TOLERANCE)) {
+                                    diff.updatedFiles.push({
+                                        slot: `${color}${slotId}`,
+                                        file,
+                                        color,
+                                        slotId,
+                                        originalFileId
+                                    });
+                                } else {
+                                    diff.syncedFiles.push({
+                                        slot: `${color}${slotId}`,
+                                        file,
+                                        color,
+                                        slotId,
+                                        originalFileId
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Folder might not exist, skip
+            }
+        }
+
+        return diff;
+
+    } catch (e) {
+        console.error("Failed to scan device changes", e);
+        return null;
+    }
+};
+
+/**
+ * Scans the root SD handle for the 'SK' folder and reads its Tape structure.
+ * This ensures we iterate correctly using the master TAPE_COLORS.
+ */
+export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Promise<{ [key in TapeColor]?: { [slotId: number]: File } }> => {
+    const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } = {};
+
+    try {
+        const skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
+
+        for (const color of TAPE_COLORS) {
+            const letter = color.charAt(0).toUpperCase();
+            structureMap[color] = {};
+
+            try {
+                const tapeDir = await skRoot.getDirectoryHandle(letter, { create: false });
+
+                // @ts-ignore
+                for await (const [name, entry] of tapeDir.entries()) {
+                    if (entry.kind === 'file' && name.toUpperCase().endsWith('.WAV')) {
+                        const match = name.match(/^(\d+)\.WAV$/i);
+                        if (match) {
+                            structureMap[color]![parseInt(match[1])] = await (entry as FileSystemFileHandle).getFile();
+                        }
+                    }
+                }
+            } catch (e) {
+                // Tape folder missing, safe to skip
+            }
+        }
+    } catch (e) {
+        // SK folder entirely missing, return empty structure map
+    }
+
+    return structureMap;
 };

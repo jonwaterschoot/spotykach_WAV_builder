@@ -273,13 +273,14 @@ export class Processor {
         return await offlineCtx.startRendering();
     }
 
+
     // Robust export method: Enforces 48kHz and encodes
-    async toWav(buffer: AudioBuffer): Promise<Blob> {
+    async toWav(buffer: AudioBuffer, metadata?: any): Promise<Blob> {
         let processed = buffer;
         if (processed.sampleRate !== 48000) {
             processed = await this.resample(processed, 48000);
         }
-        return encodeWAV(processed);
+        return encodeWAV(processed, metadata);
     }
 }
 

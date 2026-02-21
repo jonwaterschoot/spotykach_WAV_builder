@@ -7,7 +7,7 @@ export const COLOR_MAP: Record<TapeColor, string> = {
     Green: 'bg-synthux-green',
     Pink: 'bg-synthux-pink',
     Red: 'bg-synthux-red', // Brand Red
-    Turquoise: 'bg-teal-400', // Keep or find brand match? User didn't specify. Keep teal-400 or match closest.
+    Turquoise: 'bg-synthux-turquoise',
     Yellow: 'bg-synthux-yellow',
 };
 
@@ -29,6 +29,14 @@ export interface FileRecord {
     isParked: boolean; // if false, implies it *might* be assigned, or just pending
     origin?: string; // e.g., "Sample Pack Name"
     license?: string; // e.g., "CC-BY 4.0"
+    metadata?: WavMetadata;
+}
+
+export interface WavMetadata {
+    id?: string; // UUID from file header (ICMT)
+    hash?: string; // Content hash for change detection
+    tempo?: number; // BPM
+    processing?: string[]; // Flags like ["NORMALIZED", "FADED"]
 }
 
 // Tape Slots now just reference the FileID
@@ -51,4 +59,17 @@ export interface AppState {
         version: string;
         exportDate: string;
     };
+}
+
+export interface ProjectSummary {
+    name: string;
+    path: string; // e.g. "Projects/MySong"
+    hasMeta: boolean; // found project.json
+    fileCount: number;
+    files?: FileRecord[]; // Changed from File[] to allow strict typing if needed
+    lastModified?: number;
+    meta?: AppState['metadata'];
+    status?: 'synced' | 'local' | 'backup' | 'modified'; // NEW: Sync status
+    local?: ProjectSummary;
+    backup?: ProjectSummary;
 }

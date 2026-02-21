@@ -1,5 +1,24 @@
 # Changelog
 
+
+## [2.0.0] - 2026-02-22
+
+### Big overhual of SD card import/export system
+- **Project Manager**: Added a new Project Manager to manage multiple projects and their associated SD SK Folders.
+  - unified import/export system with a Syncing logic.
+  - Separate project syncing and Root SK folder syncing.
+
+- **Main header**: now has the following buttons:
+  - Import SD
+  - Build SD
+  - Save
+  - New Project
+  - Project Manager
+
+### TODO
+- debugging / testing various issues with the import/export system
+- build a user library of samples, accesible from each project see the [roadmap](roadmap-bugs.md) for more details
+
 ## [1.1.6] - 2026-02-17
 
 ### Fixed

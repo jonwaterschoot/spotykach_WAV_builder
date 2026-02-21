@@ -11,21 +11,29 @@ import type { AppState, TapeColor, FileRecord, AudioVersion } from './types';
 import { TAPE_COLORS } from './types';
 import { getInitialState } from './utils/initialState';
 import { audioEngine } from './lib/audio/audioEngine';
-import { exportSaveState, exportSingleTape, exportSDStructure, exportFilesOnly } from './utils/exportUtils';
+import { exportSaveState, exportSingleTape, exportSDStructure, exportFilesOnly, loadProjectFromDirectory, saveProjectToDirectory, duplicateProject } from './utils/exportUtils';
 import { analyzeImport, type ImportAnalysis } from './utils/importUtils';
+import { ImportModal } from './components/ImportModal';
 import { InfoModal } from './components/InfoModal';
-import { HelpModal } from './components/HelpModal'; // Manual
+import { HelpModal } from './components/HelpModal';
 import { ExportModal } from './components/ExportModal';
 import { ExportProgressModal } from './components/ExportProgressModal';
-import { ImportModal } from './components/ImportModal';
-import { SyncPreviewModal } from './components/SyncPreviewModal';
-import { ConfirmModal } from './components/ConfirmModal';
 import { SamplePackModal } from './components/SamplePackModal';
-import { Toast, type ToastType } from './components/Toast';
-import { Upload, Download, Info, HelpCircle, AlertTriangle } from 'lucide-react';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
+import { ProjectManager } from './components/ProjectManager';
+import { ProjectSyncModal } from './components/ProjectSyncModal';
+import { DeviceImportModal } from './components/DeviceImportModal';
+import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight } from 'lucide-react';
+import { RiSdCardMiniLine } from 'react-icons/ri';
+
+import { ConfirmModal } from './components/ConfirmModal';
+import { Toast, type ToastType } from './components/Toast';
+import { SetupWizard } from './components/SetupWizard';
+import { SettingsModal } from './components/SettingsModal';
+import { ExportPreviewModal } from './components/ExportPreviewModal';
+// import { TapeSettingsModal } from './components/TapeSettingsModal'; // Removed: not used
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -33,16 +41,19 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Confirm Action Helper
 import { loadStateFromDB, saveStateToDB, clearState } from './utils/persistence';
+import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
 
 const sanitizeFilename = (name: string) => {
   return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
 };
 
 function App() {
+  console.log("App Component Rendered");
   // ==========================================
   // STATE DEFINITIONS
   // ==========================================
   const [state, setState] = useState<AppState>(getInitialState());
+  const [restorableHandles, setRestorableHandles] = useState<{ work: FileSystemDirectoryHandle, backup: FileSystemDirectoryHandle | null } | null>(null);
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
@@ -79,7 +90,45 @@ function App() {
 
   // Import State
   const [importAnalysis, setImportAnalysis] = useState<ImportAnalysis | null>(null);
-  const [syncPreview, setSyncPreview] = useState<{ state: AppState, diff: import('./utils/importUtils').SyncDiff } | null>(null);
+
+
+  // Project Manager State
+  const [showProjectManager, setShowProjectManager] = useState(false);
+  const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
+  const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
+  const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
+  const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(undefined);
+
+  // Workflow / Settings State
+  const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [syncUserLibrary, setSyncUserLibrary] = useState(true); // Global Pref
+
+  // Sync Logic State
+  const [syncModalState, setSyncModalState] = useState<{
+    isOpen: boolean;
+    projectName: string;
+    diff: import('./utils/importUtils').SyncDiff | null;
+    defaultMode?: 'import' | 'push';
+  } | null>(null);
+
+  const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
+  const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
+  const [showDeviceImport, setShowDeviceImport] = useState(false);
+
+  // Computed Mode for UI/Logic compatibility
+  // const workflowMode: 'LOCAL' | 'BROWSER' = workHandle ? 'LOCAL' : 'BROWSER';
+
+  // Ref for the Root Handle (SD or Folder) - Merged into workHandle state but we might keep ref for non-reactive access if needed?
+  // Actually, let's keep it sync'd or just use state. State is fine for high level.
+  // BUT many utils depend on ref.current for async ops without staleness.
+  const projectRootHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
+
+  // Sync ref with state
+  useEffect(() => {
+    projectRootHandleRef.current = workHandle;
+  }, [workHandle]);
 
   // Bulk Conflict State
   const [bulkConflictState, setBulkConflictState] = useState<{
@@ -101,6 +150,10 @@ function App() {
   const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
 
   // Handle Reset
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const isFirstRender = useRef(true);
+  const isSystemUpdate = useRef(false);
+
   const handleReset = () => {
     setConfirmAction({
       title: "Reset Application?",
@@ -127,9 +180,387 @@ function App() {
     });
   };
 
+  const checkUnsavedChanges = (action: () => void) => {
+    if (hasUnsavedChanges) {
+      setConfirmAction({
+        title: "Unsaved Changes",
+        message: "You have unsaved changes. Discard them?",
+        confirmLabel: "Discard Changes",
+        isDestructive: true,
+        showCancel: true,
+        onConfirm: () => {
+          setConfirmAction(null);
+          action();
+        }
+      });
+    } else {
+      action();
+    }
+  };
+
+  // ==========================================
+  // PROJECT MANAGEMENT HANDLERS
+  // ==========================================
+
+  const handleScanProjects = async () => {
+    await scanProjects(workHandle, backupHandle);
+    setShowProjectManager(true);
+  };
+
+  const handleLoadProject = async (projectName: string) => {
+    if (!workHandle) return;
+
+    setIsProcessing(true);
+    setProgressMsg(`Loading ${projectName}...`);
+
+    try {
+      const loadedState = await loadProjectFromDirectory(projectName, workHandle, (msg) => {
+        setProgressMsg(msg || "Loading...");
+      });
+
+      // Update Ref to point to this new project folder
+      const projectsDir = await workHandle.getDirectoryHandle('Projects');
+      projectRootHandleRef.current = await projectsDir.getDirectoryHandle(projectName);
+
+      // Merge with current running state specifics if needed? 
+      // No, replace state.
+      isSystemUpdate.current = true;
+      setState(loadedState);
+      setCurrentProjectName(projectName);
+      setHasUnsavedChanges(false); // Clean state after load
+      setShowProjectManager(false);
+      setToast({ msg: `Project "${projectName}" Loaded`, type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: "Failed to load project", type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  const handleImportDeviceChanges = async (selectedFiles: import('./utils/importUtils').DeviceFileChange[]) => {
+    console.log("[DeviceImport] Starting import for", selectedFiles.length, "files");
+
+    const newFiles: Record<string, import('./types').FileRecord> = {};
+    const newTapes = { ...state.tapes };
+    let importedCount = 0;
+
+    for (const change of selectedFiles) {
+      try {
+        const file = change.file;
+
+        // FORCE SAFE COPY: Read into ArrayBuffer to detach from file system
+        const arrayBuffer = await file.arrayBuffer();
+        const safeBlob = new Blob([arrayBuffer], { type: "audio/wav" });
+
+        // Validate size
+        if (safeBlob.size === 0) {
+          console.warn(`[DeviceImport] Warning: Read 0 bytes from ${change.slot}`);
+        }
+
+        const isMod = 'originalFileId' in change && change.originalFileId;
+
+        if (isMod) {
+          // MODIFIED FILE: Create new version
+          const originalId = change.originalFileId!;
+          const originalFile = state.files[originalId];
+
+          if (originalFile) {
+            console.log(`[DeviceImport] Updating version for ${originalFile.originalName} (${originalId})`);
+
+            const newVersionId = crypto.randomUUID();
+            const newVersion = {
+              id: newVersionId,
+              timestamp: Date.now(),
+              description: `Device Import (${new Date().toLocaleTimeString()})`,
+              blob: safeBlob,
+              duration: 0
+            };
+
+            const updatedFile = {
+              ...originalFile,
+              versions: [...originalFile.versions, newVersion],
+              currentVersionId: newVersionId
+            };
+
+            newFiles[originalId] = updatedFile;
+            importedCount++;
+          }
+        } else {
+          // NEW FILE: Create new asset
+          console.log(`[DeviceImport] Importing new file for slot ${change.slot}`);
+
+          const newId = crypto.randomUUID();
+          const versionId = crypto.randomUUID();
+
+          const newFile: import('./types').FileRecord = {
+            id: newId,
+            name: file.name,
+            originalName: file.name,
+            versions: [{
+              id: versionId,
+              timestamp: Date.now(),
+              description: 'Device Import',
+              blob: safeBlob,
+              duration: 0
+            }],
+            currentVersionId: versionId,
+            isParked: false
+          };
+          newFiles[newId] = newFile;
+
+          // Assign to Slot if color/slotId available
+          if (change.color && change.slotId) {
+            const tapeColor = change.color as import('./types').TapeColor;
+            const slotIndex = change.slotId - 1; // 0-based
+
+            if (newTapes[tapeColor] && slotIndex >= 0 && slotIndex < 6) {
+              // Clone the tape object to avoid mutation
+              // @ts-ignore
+              const updatedTape = { ...newTapes[tapeColor] };
+              // Clone the slots array
+              // @ts-ignore
+              updatedTape.slots = [...newTapes[tapeColor].slots];
+
+              // Update the specific slot
+              // @ts-ignore
+              updatedTape.slots[slotIndex] = { id: slotIndex + 1, fileId: newId };
+
+              // Assign back to tapes object
+              // @ts-ignore
+              newTapes[tapeColor] = updatedTape;
+            }
+          }
+          importedCount++;
+        }
+
+      } catch (e) {
+        console.error(`[DeviceImport] Failed to import ${change.slot}`, e);
+      }
+    }
+
+    // Apply changes
+    if (importedCount > 0) {
+      setState(prev => ({
+        ...prev,
+        files: { ...prev.files, ...newFiles },
+        tapes: newTapes
+      }));
+
+      setToast({ msg: `Successfully imported ${importedCount} files from device.`, type: "success" });
+      setDeviceDiff(null);
+    }
+    setShowDeviceImport(false);
+  };
+
+
+  const handleCreateEmptyProject = async (projectName: string) => {
+    if (!workHandle) {
+      setToast({ msg: "Please set a Work Folder first.", type: 'error' });
+      return;
+    }
+
+    if (!projectName) return;
+
+    setIsProcessing(true);
+    setProgressMsg(`Creating Empty Project ${projectName}...`);
+
+    try {
+      // 1. Get/Create 'Projects' folder
+      const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+
+      // 2. Create specific Project folder
+      const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
+
+      // 3. Update Ref to point to this new project folder
+      projectRootHandleRef.current = projectDir;
+
+      // 4. Save blank state
+      const emptyState = getInitialState();
+      // @ts-ignore
+      await saveProjectToDirectory(emptyState, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+
+      // 5. Load blank state into UI map
+      setState(emptyState);
+      setCurrentProjectName(projectName);
+      setHasUnsavedChanges(false);
+      setToast({ msg: "Empty Project Created", type: 'success' });
+
+      handleSmartScan(workHandle);
+    } catch (e: any) {
+      console.error(e);
+      setToast({ msg: "Failed to create project: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSaveProjectAs = async (projectName: string) => {
+    // If we are in Browser Mode (no workHandle), we can't "Save As" to disk directly without picking a folder.
+    // The UI should handle this by asking to Set Work Folder first.
+    if (!workHandle) {
+      setToast({ msg: "Please set a Work Folder first.", type: 'error' });
+      return;
+    }
+
+    if (!projectName) return;
+
+    setIsProcessing(true);
+    setProgressMsg(`Creating Project ${projectName}...`);
+
+    try {
+      // 1. Get/Create 'Projects' folder
+      const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+
+      // 2. Create specific Project folder
+      const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
+
+      // 3. Update Ref to point to this new project folder
+      projectRootHandleRef.current = projectDir;
+
+      // 4. Save
+      // @ts-ignore
+      const exportedFiles = await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+
+      setCurrentProjectName(projectName);
+      setHasUnsavedChanges(false);
+      setToast({ msg: "Project Created & Saved", type: 'success' });
+
+      // Refresh found projects list?
+      // Maybe trigger a silent scan or just add to list?
+      // For now, simple scan:
+      handleSmartScan(workHandle);
+
+    } catch (e: any) {
+      console.error(e);
+      setToast({ msg: "Failed to create project: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteProject = async (projectName: string) => {
+    setConfirmAction({
+      title: "Delete Project",
+      message: `Are you sure you want to delete "${projectName}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      isDestructive: true,
+      showCancel: true,
+      onConfirm: async () => {
+        setConfirmAction(null);
+        if (!workHandle) return;
+        setIsProcessing(true);
+        setProgressMsg(`Deleting ${projectName}...`);
+        try {
+          const { deleteProject } = await import('./utils/exportUtils');
+          await deleteProject(workHandle, projectName);
+          setToast({ msg: "Project Deleted", type: 'success' });
+
+          // If current project was deleted, create new
+          if (currentProjectName === projectName) {
+            setCurrentProjectName(undefined);
+            setState(getInitialState());
+            setHasUnsavedChanges(false);
+          }
+
+          await scanProjects(workHandle, backupHandle);
+        } catch (e: any) {
+          console.error(e);
+          setToast({ msg: "Delete Failed: " + e.message, type: 'error' });
+        } finally {
+          setIsProcessing(false);
+          setProgressMsg('');
+        }
+      }
+    });
+  };
+
+
+  const handleRenameProject = async (oldName: string, newName: string, renameBackup: boolean = false) => {
+    if (!workHandle) return;
+    try {
+      setIsProcessing(true);
+      setProgressMsg("Renaming Project...");
+      const { renameProject } = await import('./utils/exportUtils');
+      // @ts-ignore
+      await renameProject(workHandle, oldName, newName);
+
+      if (renameBackup && backupHandle) {
+        try {
+          setProgressMsg("Renaming Backup...");
+          // @ts-ignore
+          await renameProject(backupHandle, oldName, newName);
+          setToast({ msg: `Renamed Local & Backup to "${newName}"`, type: 'success' });
+        } catch (e) {
+          console.error("Backup rename failed", e);
+          setToast({ msg: `Renamed Local, but Backup failed`, type: 'warning' });
+        }
+      } else {
+        setToast({ msg: `Renamed to "${newName}"`, type: 'success' });
+      }
+
+      if (currentProjectName === oldName) {
+        setCurrentProjectName(newName);
+      }
+      handleScanProjects();
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: "Failed to rename project", type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSKRefresh = async () => {
+    if (!backupHandle || !syncModalState) return;
+
+    setIsProcessing(true);
+    setProgressMsg('Scanning SK folder on SD...');
+    try {
+      const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+      const projectName = syncModalState.projectName;
+
+      let projectState = state;
+      if (projectName && projectName !== currentProjectName && workHandle) {
+        const { loadProjectFromDirectory } = await import('./utils/exportUtils');
+        projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
+      }
+
+      const structureMap = await scanSKStructure(backupHandle);
+      const diff = await calculateSyncDiff(projectState, structureMap);
+
+      setSyncModalState(prev => prev ? { ...prev, diff } : null);
+      setToast({ msg: "SD Card rescanned", type: "success" });
+    } catch (e: any) {
+      console.error(e);
+      setToast({ msg: "SK scan failed: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
   // ==========================================
   // EFFECTS
   // ==========================================
+
+  // Track Unsaved Changes
+  // Track Unsaved Changes
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    if (isSystemUpdate.current) {
+      isSystemUpdate.current = false;
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    setHasUnsavedChanges(true);
+  }, [state]);
 
   // Initial Load
   useEffect(() => {
@@ -137,6 +568,7 @@ function App() {
     // Current persistence.ts handles IDB. 
     loadStateFromDB().then(saved => {
       if (saved) {
+        isSystemUpdate.current = true;
         setState(saved);
       } else {
         // Fallback to localStorage if IDB is empty? 
@@ -144,12 +576,67 @@ function App() {
         if (savedLS) {
           try {
             const parsed = JSON.parse(savedLS);
-            if (parsed.files && parsed.tapes) setState(parsed);
+            if (parsed.files && parsed.tapes) {
+              isSystemUpdate.current = true;
+              setState(parsed);
+            }
           } catch (e) { console.error(e); }
         }
       }
     });
   }, []);
+
+  // Check for persistent handles on mount
+  useEffect(() => {
+    const checkHandles = async () => {
+      try {
+        const savedWork = await getDirectoryHandle('work');
+        const savedBackup = await getDirectoryHandle('backup');
+
+        if (savedWork) {
+          setRestorableHandles({ work: savedWork, backup: savedBackup });
+        }
+      } catch (e) { console.error("Error loading handles", e); }
+    };
+    checkHandles();
+  }, []);
+
+  const handleRestoreSession = async () => {
+    if (!restorableHandles) return;
+
+    // Verify Work Handle
+    let workPermission = await restorableHandles.work.queryPermission({ mode: 'readwrite' });
+    if (workPermission !== 'granted') {
+      workPermission = await restorableHandles.work.requestPermission({ mode: 'readwrite' });
+    }
+
+    if (workPermission !== 'granted') {
+      setToast({ msg: "Permission denied for Work Folder", type: 'error' });
+      return;
+    }
+
+    setWorkHandle(restorableHandles.work);
+
+    // Verify Backup Handle (if exists)
+    if (restorableHandles.backup) {
+      let backupPermission = await restorableHandles.backup.queryPermission({ mode: 'readwrite' });
+      if (backupPermission !== 'granted') {
+        backupPermission = await restorableHandles.backup.requestPermission({ mode: 'readwrite' });
+      }
+      if (backupPermission === 'granted') {
+        setBackupHandle(restorableHandles.backup);
+      }
+    }
+
+    setIsWelcomeActive(false);
+    setToast({ msg: "Session Restored", type: 'success' });
+
+    // Scan
+    await handleSmartScan(restorableHandles.work);
+
+    // Open Project Manager
+    setShowProjectManager(true);
+  };
 
   // Autosave
   useEffect(() => {
@@ -284,6 +771,165 @@ function App() {
 
 
 
+  // ==========================================
+  // WORKFLOW HANDLERS
+  // ==========================================
+
+  // ==========================================
+  // STORAGE HANDLERS
+  // ==========================================
+
+  const handleSetWorkFolder = async () => {
+    checkUnsavedChanges(async () => {
+      // @ts-ignore
+      if (!('showDirectoryPicker' in window)) {
+        alert("Your browser doesn't support direct file access. Please use Chrome or Edge.");
+        return;
+      }
+
+      try {
+        // @ts-ignore
+        const handle = await window.showDirectoryPicker({
+          mode: 'readwrite',
+          startIn: 'documents'
+        });
+
+        if (!handle) return;
+
+        setWorkHandle(handle);
+        setCurrentProjectName(undefined);
+        setHasUnsavedChanges(false);
+        setToast({ msg: `Work Folder Set: ${handle.name}`, type: 'success' });
+
+        // Save for persistence
+        saveDirectoryHandle('work', handle).catch(console.error);
+
+        // Auto-scan and open Project Manager
+        await handleSmartScan(handle);
+        setShowProjectManager(true);
+
+      } catch (e: any) {
+        if (e.name !== 'AbortError') {
+          console.error("Setup failed", e);
+          setToast({ msg: "Could not access folder.", type: 'error' });
+        }
+      }
+    });
+  };
+
+  const handleSetBackupFolder = async () => {
+    try {
+      // @ts-ignore
+      const handle = await window.showDirectoryPicker({
+        mode: 'readwrite',
+        startIn: 'documents'
+      });
+      if (!handle) return;
+
+      setBackupHandle(handle);
+      saveDirectoryHandle('backup', handle).catch(console.error);
+      setToast({ msg: `Backup Folder Set: ${handle.name}`, type: 'success' });
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        setToast({ msg: "Could not access folder.", type: 'error' });
+      }
+    }
+  };
+
+
+  const scanProjects = async (localDir: FileSystemDirectoryHandle | null, backupDir: FileSystemDirectoryHandle | null) => {
+    // Lazy load utils
+    // Lazy load utils
+    const { scanForProjects, getActiveSKProject, exportSaveState } = await import('./utils/exportUtils');
+    const { scanDeviceChanges, applySyncDiff } = await import('./utils/importUtils');
+
+    let localProjects: import('./types').ProjectSummary[] = [];
+    let backupProjects: import('./types').ProjectSummary[] = [];
+    let activeSK: string | null = null;
+    let diff: import('./utils/importUtils').DeviceDiff | null = null;
+
+    if (localDir) {
+      try {
+        console.log(`[scanProjects] Scanning Local: ${localDir.name}`);
+        localProjects = await scanForProjects(localDir);
+      } catch (e) { console.error("Local Scan Error", e); }
+    }
+
+    if (backupDir) {
+      try {
+        console.log(`[scanProjects] Scanning Backup: ${backupDir.name}`);
+        backupProjects = await scanForProjects(backupDir);
+        activeSK = await getActiveSKProject(backupDir); // Get active project from SD
+
+        // Scan for Device Changes (SK Folder)
+        try {
+          const skHandle = await backupDir.getDirectoryHandle('SK');
+          diff = await scanDeviceChanges(skHandle);
+          if (diff) {
+            console.log("[DeviceDiff] Hardware state loaded:", diff);
+          }
+        } catch (e) { /* No SK folder or scan failed */ }
+
+      } catch (e) { console.error("Backup Scan Error", e); }
+    }
+
+    console.log(`[scanProjects] Local: ${localProjects.length}, Backup: ${backupProjects.length}, ActiveSK: ${activeSK}`);
+    setActiveSKProject(activeSK); // Update state
+    setDeviceDiff(diff); // Update diff state
+
+    // Merge Logic (Match by Name)
+    const projectMap = new Map<string, import('./types').ProjectSummary & { local?: import('./types').ProjectSummary, backup?: import('./types').ProjectSummary }>();
+
+    localProjects.forEach(p => {
+      projectMap.set(p.name, { ...p, local: p });
+    });
+
+    backupProjects.forEach(p => {
+      const existing = projectMap.get(p.name);
+      if (existing) {
+        projectMap.set(p.name, { ...existing, backup: p });
+      } else {
+        projectMap.set(p.name, { ...p, backup: p });
+      }
+    });
+
+    const merged = Array.from(projectMap.values()).map(p => {
+      let status: 'synced' | 'local' | 'backup' | 'modified' = 'local';
+
+      if (p.local && p.backup) {
+        status = 'synced';
+        // Check for modifications (Local newer than Backup by > 2 seconds)
+        const localTime = p.local.lastModified || 0;
+        const backupTime = p.backup.lastModified || 0;
+        if (localTime > (backupTime + 2000)) {
+          status = 'modified';
+        }
+      } else if (p.backup) {
+        status = 'backup';
+      }
+
+      return { ...p, status };
+    });
+
+    console.log(`[scanProjects] Merged Total: ${merged.length}. Setting foundProjects.`);
+    setFoundProjects(merged);
+  };
+
+  // Wrapper for compatibility
+  const handleSmartScan = async (newWorkHandle?: FileSystemDirectoryHandle) => {
+    // Use passed handle or fall back to state (state might be stale during setup)
+    const effectiveWork = newWorkHandle || workHandle;
+    await scanProjects(effectiveWork, backupHandle);
+  };
+
+  // Effect to rescan when handles change
+  useEffect(() => {
+    if (workHandle || backupHandle) {
+      scanProjects(workHandle, backupHandle);
+    }
+  }, [workHandle, backupHandle]);
+
+
   const handleImportClick = () => {
     // Direct trigger for now, Import Modal coming in Phase 2
     fileInputRef.current?.click();
@@ -293,60 +939,108 @@ function App() {
 
 
 
-  // Restore & Sync Handler
-  const handleRestoreAndSync = async (backupFile: File, structureMap: any) => {
-    // 1. Load State & Calculate Diff
+  // Restore Handler
+  const handleRestoreAndSync = async (backupFile: File, _structureMap: any) => {
     setIsProcessing(true);
-    setProgressMsg("Analyzing Backup...");
+    setProgressMsg("Restoring Backup...");
     try {
-      const { loadProjectFromZip, calculateSyncDiff } = await import('./utils/importUtils');
-      const state = await loadProjectFromZip(backupFile, (msg) => setProgressMsg(msg));
+      const { loadProjectFromZip } = await import('./utils/importUtils');
+      const loadedState = await loadProjectFromZip(backupFile, (msg) => setProgressMsg(msg));
 
-      if (state) {
-        const diff = calculateSyncDiff(state, structureMap);
-        setSyncPreview({ state, diff }); // Open Preview Modal
-        setImportAnalysis(null); // Close Import Modal
+      if (loadedState) {
+        setState(loadedState);
+        setImportAnalysis(null);
+        setToast({ msg: "Project Restored Successfully", type: 'success' });
       } else {
         setToast({ msg: "Failed to load project from backup.", type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      setToast({ msg: "Analysis Failed", type: 'error' });
+      setToast({ msg: "Restore Failed", type: 'error' });
     } finally {
       setIsProcessing(false);
-      setProgressMsg(''); // Clear msg
+      setProgressMsg('');
     }
   };
 
-  const executeSync = async (decisions: Record<string, import('./utils/importUtils').SyncDecision>) => {
-    if (!syncPreview) return;
+  // Save Project Handler
+  const handleSaveProject = async () => {
+    // 1. If we have an active project handle (or Work Handle + Name), save
+    if (workHandle && currentProjectName) {
+      setIsProcessing(true);
+      setProgressMsg("Saving Project...");
+      try {
+        const { saveProjectToDirectory } = await import('./utils/exportUtils');
+        // Save using Root Handle + Project Name logic for robustness
+        // @ts-ignore
+        await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), currentProjectName);
 
-    setSyncPreview(null); // Close Preview
-    setShowExportProgress(true); // Re-use Export Modal for "Import Progress" (generic name needed?)
-    setExportLogs(["Starting Sync Process..."]);
-    // setExportProgress(0); // Optional if we want bar
+        setToast({ msg: "Project Saved Successfully", type: 'success' });
+        setHasUnsavedChanges(false);
+      } catch (e: any) {
+        console.error(e);
+        setToast({ msg: "Save Failed: " + e.message, type: 'error' });
+      } finally {
+        setIsProcessing(false);
+        setProgressMsg('');
+      }
+      return;
+    }
 
+    // 2. If no active project handle, but we have a Work Folder -> Prompt to Create (Save As)
+    if (workHandle) {
+      const name = prompt("Enter Project Name to Save:");
+      if (name) await handleSaveProjectAs(name);
+      return;
+    }
+
+    // 3. Fallback (Browser Mode) -> Prompt to Export
+    if (confirm("Download Project Backup?")) {
+      await handleExportProgress('Project Backup', async (log) => {
+        await exportSaveState(state, false, log);
+      });
+    }
+  };
+
+
+
+  const handleDuplicateProject = async (sourceName: string, newName: string) => {
+    if (!workHandle) return;
+    setIsProcessing(true);
+    setProgressMsg(`Duplicating "${sourceName}" to "${newName}"...`);
     try {
-      const { applySyncDiff } = await import('./utils/importUtils');
-
-      // Wrap in logger adapter
-      const logAdapter = (msg: string) => {
-        setExportLogs(prev => [...prev, msg]);
-      };
-
-      const finalState = await applySyncDiff(syncPreview.state, syncPreview.diff, decisions, logAdapter);
-
-      setState(finalState);
-      setIsExportComplete(true); // Re-using "Export Complete" state to show checkmark
-      setExportError(null);
-      setToast({ msg: "Project Synced Successfully", type: 'success' });
-
-    } catch (e) {
+      await duplicateProject(workHandle, sourceName, newName);
+      setToast({ msg: "Project Duplicated Successfully", type: 'success' });
+      // Refresh list
+      await handleSmartScan(workHandle);
+    } catch (e: any) {
       console.error(e);
-      setExportError("Sync Failed");
-      setIsExportComplete(true);
+      setToast({ msg: "Duplicate Failed: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
     }
   };
+
+  /* Removed duplicate handlers */
+
+
+
+
+  // ==========================================
+  // UNIFIED SYNC FLOW
+  // ==========================================
+
+
+
+  // NOTE: TO PROPERLY IMPLEMENT ACTIONS, I NEED THE ROOT HANDLE.
+  // I will store it in a Ref.
+  // const sdRootHandleRef = useRef<any>(null);
+
+  // Re-write handleSyncClick to store ref
+  // REMOVED handleSyncClickWithRef - Unified Sync now uses Backup Folder logic.
+
+  // REMOVED performSyncAction - Unified Sync now uses Backup Folder logic.
 
 
   // Export Progress Handler
@@ -1542,732 +2236,1171 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen bg-synthux-main text-white font-sans overflow-hidden">
+    <ErrorBoundary>
+      {isWelcomeActive && !workHandle && (
+        <SetupWizard
+          onComplete={async (work, backup) => {
+            setWorkHandle(work);
+            setBackupHandle(backup || null);
+            setIsWelcomeActive(false);
+            setToast({ msg: "Workspace Configured!", type: 'success' });
 
-      {/* Sidebar Tape Selector */}
-      <TapeSelector
-        currentTape={currentTapeColor}
-        isAllView={viewMode === 'all'}
-        onSelect={(color) => {
-          setCurrentTapeColor(color);
-          setViewMode('single');
-        }}
-        onToggleAllView={() => setViewMode('all')}
-        onDropOnTape={handleTapeDrop}
-        onDropOnViewAll={handleDropOnViewAll}
-        onReset={handleReset}
-      />
+            // Save handles
+            saveDirectoryHandle('work', work);
+            if (backup) saveDirectoryHandle('backup', backup);
 
-      {/* Duplicates Banner */}
+            // Auto-scan projects
+            await handleSmartScan(work);
 
+            // If backup is set, maybe do a quick sync check?
+            // For now just open Project Manager
+            setShowProjectManager(true);
+          }}
+          onSkip={() => {
+            if (confirm("Browser Cache Mode is temporary. Your work will be lost if you clear browser data. Continue?")) {
+              setIsWelcomeActive(false);
+            }
+          }}
+          restorableHandles={restorableHandles}
+          onRestore={handleRestoreSession}
+        />
+      )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-h-0 relative">
-        {/* DEBUGGER REMOVED - See docs/debugging/README.md */}
+      {(!isWelcomeActive || workHandle) && (
+        <div className="flex h-screen bg-synthux-main text-white font-sans overflow-hidden">
 
-        {/* Header */}
-        <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-synthux-panel">
-          <div className="flex items-center gap-4">
-            <img src={logoImg} alt="Spotykach Logo" className="h-10 w-auto object-contain" />
-            <span className="text-[2rem] font-bold tracking-tight bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent hidden md:block font-header leading-none pt-2">
-              Spotykach .WAV builder
-            </span>
-          </div>
-
-          {/* HIDDEN INPUTS */}
-          <input
-            type="file"
-            multiple
-            {...{ webkitdirectory: "" } as any}
-            ref={fileInputRef}
-            onChange={handleImportFiles}
-            className="hidden"
-          />
-          {/* Single File Upload Input (Used by SlotGrid) */}
-          <input
-            type="file"
-            ref={singleFileInputRef}
-            onChange={(e) => {
-              if (e.target.files && targetSlotForUpload !== null) {
-                // Determine color? Single file input is only used by SlotGrid (currentTape) or maybe AllView?
-                // Currently setTargetSlotForUpload is only called in SlotGrid (Single View) and AllView.
-                // We need to know which tape too if we support upload in AllView.
-                // For now, let's assume currentTapeColor for Single View.
-                // If AllView calls this, we need to track targetColorForUpload.
-                // Let's defer exact AllView upload "click to upload" support or assume it uses currentTapeColor?
-                // Actually AllView upload isn't fully wired for "click empty slot", simpler to just support D&D for now in AllView.
-                // Fixing for Single View:
-                handleSlotDrop(targetSlotForUpload, e.target.files, currentTapeColor);
-              }
-              setTargetSlotForUpload(null);
-              if (singleFileInputRef.current) singleFileInputRef.current.value = '';
+          {/* Sidebar Tape Selector */}
+          <TapeSelector
+            currentTape={currentTapeColor}
+            isAllView={viewMode === 'all'}
+            onSelect={(color) => {
+              setCurrentTapeColor(color);
+              setViewMode('single');
             }}
-            className="hidden"
+            onToggleAllView={() => setViewMode('all')}
+            onDropOnTape={handleTapeDrop}
+            onDropOnViewAll={handleDropOnViewAll}
+            onReset={handleReset}
           />
 
-          <div className="flex gap-4">
-            <button
-              onClick={() => setShowHelp(true)}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors border border-transparent hover:border-gray-600"
-              title="User Manual & Help"
-            >
-              <HelpCircle size={20} />
-            </button>
+          {/* Duplicates Banner */}
 
-            <button
-              onClick={() => setShowInfo(true)}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors border border-transparent hover:border-gray-600"
-              title="About"
-            >
-              <Info size={20} />
-            </button>
 
-            <div className="h-6 w-px bg-gray-700 my-auto"></div>
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col min-h-0 relative">
+            {/* DEBUGGER REMOVED - See docs/debugging/README.md */}
 
-            {/* Import */}
-            <button
-              onClick={handleImportClick}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors text-sm font-bold border border-gray-700"
-              title="Import SK folder or project folder"
-            >
-              <Upload size={16} /> <span className="hidden sm:inline">Import</span>
-            </button>
+            {/* Header */}
+            <header className="h-14 border-b border-gray-800 flex items-center justify-between px-4 bg-synthux-panel shrink-0 gap-4">
 
-            <div className="h-6 w-px bg-gray-700 my-auto"></div>
+              {/* LEFT — Logo + context */}
+              <div className="flex items-center gap-3 min-w-0 shrink-0">
+                <img src={logoImg} alt="Spotykach Logo" className="h-8 w-auto object-contain shrink-0" />
+                <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent hidden lg:block font-header leading-none">
+                  Spotykach
+                </span>
 
-            {/* NEW Export Button */}
-            <button
-              onClick={() => setShowExport(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-300 hover:to-orange-400 text-black rounded-lg transition-all text-sm font-bold shadow-lg shadow-orange-500/20"
-              title="Export / Save"
-            >
-              <Download size={16} /> <span className="hidden sm:inline">Export</span>
-            </button>
-          </div>
-        </header>
+                {/* Context pill */}
+                <div className="hidden sm:flex ml-1 px-2.5 py-1 rounded-full bg-gray-900/60 border border-gray-700/60 text-[11px] font-medium text-gray-300 items-center gap-1.5 select-none shrink-0 max-w-[260px] truncate">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${workHandle ? 'bg-indigo-400 shadow-[0_0_6px_rgba(99,102,241,0.6)]' : 'bg-gray-600'}`} />
+                  {workHandle ? (
+                    <>
+                      <span className="text-gray-400 truncate">{workHandle.name}</span>
+                      {currentProjectName && (
+                        <>
+                          <span className="text-gray-600">/</span>
+                          <span className="text-white font-bold truncate">{currentProjectName}</span>
+                          {hasUnsavedChanges && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_5px_rgba(250,204,21,0.5)] shrink-0" title="Unsaved changes" />
+                          )}
+                        </>
+                      )}
+                    </>
+                  ) : <span className="text-gray-500 italic">No folder</span>}
+                </div>
+              </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          <FileBrowser
-            files={Object.values(state.files)}
-            tapes={state.tapes}
-            onParkRequest={handleParkRequest}
-            onOpenSampleBrowser={() => setShowSampleBrowser(true)}
-            duplicates={duplicateFileIds}
-            onOpenDuplicateModal={() => setShowDuplicateModal(true)}
-            onUnassignFile={onUnassignFile}
-            onBulkUnassign={handleBulkUnassign}
-            onDeleteFile={onDeleteFile}
-            onFillFreeSlots={handleFillAllFreeSlots}
-          />
+              {/* HIDDEN INPUTS */}
+              <input type="file" multiple {...{ webkitdirectory: "" } as any} ref={fileInputRef} onChange={handleImportFiles} className="hidden" />
+              <input type="file" ref={singleFileInputRef} onChange={(e) => {
+                if (e.target.files && targetSlotForUpload !== null) {
+                  handleSlotDrop(targetSlotForUpload, e.target.files, currentTapeColor);
+                }
+                setTargetSlotForUpload(null);
+                if (singleFileInputRef.current) singleFileInputRef.current.value = '';
+              }} className="hidden" />
 
-          {/* Grid Area */}
-          <main className="flex-1 overflow-y-auto p-4 flex flex-col items-center relative">
+              {/* RIGHT — Action buttons */}
+              <div className="flex items-center gap-1.5 shrink-0">
 
-            {/* Background Decoration */}
-            <div
-              className="absolute right-0 bottom-0 pointer-events-none z-0 overflow-hidden w-full h-full"
-              style={{
-                // Ensure it doesn't block clicks
-                zIndex: 0
-              }}
-            >
-              <div
-                className="absolute right-0 bottom-0 animate-slow-spin opacity-15"
-                style={{
-                  width: '120%',
-                  aspectRatio: '1/1',
-                  transform: 'translate(50%, 50%)', // Center on bottom-right corner
-                  maskImage: `url(${tapeIcon})`,
-                  maskSize: 'contain',
-                  maskPosition: 'center',
-                  maskRepeat: 'no-repeat',
-                  WebkitMaskImage: `url(${tapeIcon})`,
-                  WebkitMaskSize: 'contain',
-                  WebkitMaskPosition: 'center',
-                  WebkitMaskRepeat: 'no-repeat',
-                  backgroundColor: viewMode === 'all' ? '#ffffff' : `var(--color-synthux-${
-                    // Helper to map Color to Var Name (Need to duplicate logic or import?)
-                    // Simple inline map for now to avoid refactor overhead
-                    (currentTapeColor === 'Red' ? 'red' :
-                      currentTapeColor === 'Blue' ? 'blue' :
-                        currentTapeColor === 'Green' ? 'green' :
-                          currentTapeColor === 'Pink' ? 'pink' :
-                            currentTapeColor === 'Yellow' ? 'yellow' :
-                              currentTapeColor === 'Turquoise' ? 'turquoise' : 'blue')
-                    })`,
-                  opacity: viewMode === 'all' ? 0.05 : undefined
-                }}
+                {/* Info + Help (icon-only, small) */}
+                <button onClick={() => setShowInfo(true)} title="About"
+                  className="p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-md transition-colors">
+                  <Info size={16} />
+                </button>
+                <button onClick={() => setShowHelp(true)} title="Help"
+                  className="p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-md transition-colors">
+                  <HelpCircle size={16} />
+                </button>
+
+                <div className="h-5 w-px bg-gray-700 mx-1" />
+
+                {/* Import SD — only when SD connected */}
+                {backupHandle && (
+                  <button
+                    onClick={async () => {
+                      setIsProcessing(true);
+                      setProgressMsg('Scanning SK folder on SD...');
+                      try {
+                        const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+                        const structureMap = await scanSKStructure(backupHandle);
+                        const diff = await calculateSyncDiff(state, structureMap);
+                        setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
+                      } catch (e: any) {
+                        setToast({ msg: 'SK scan failed: ' + e.message, type: 'error' });
+                      } finally {
+                        setIsProcessing(false);
+                        setProgressMsg('');
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
+                    title="Import SK from SD card"
+                  >
+                    <RiSdCardMiniLine size={14} />
+                    <ArrowLeft size={11} strokeWidth={2.5} />
+                    <span className="hidden sm:inline">Import SD</span>
+                  </button>
+                )}
+
+                {/* Build SD — only when SD connected */}
+                {backupHandle && (
+                  <button
+                    onClick={async () => {
+                      if (!currentProjectName) {
+                        handleScanProjects(); // open PM to pick a project
+                        return;
+                      }
+                      setIsProcessing(true);
+                      setProgressMsg('Scanning SK slot differences...');
+                      try {
+                        const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+                        const structureMap = await scanSKStructure(backupHandle);
+                        const diff = await calculateSyncDiff(state, structureMap);
+                        setSyncModalState({ isOpen: true, projectName: currentProjectName, diff, defaultMode: 'push' });
+                      } catch (e: any) {
+                        setToast({ msg: 'SK scan failed: ' + e.message, type: 'error' });
+                      } finally {
+                        setIsProcessing(false);
+                        setProgressMsg('');
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-500/30 text-indigo-400 hover:text-white hover:bg-indigo-500/15 hover:border-indigo-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
+                    title="Push SK to SD card"
+                  >
+                    <RiSdCardMiniLine size={14} />
+                    <ArrowRight size={11} strokeWidth={2.5} />
+                    <span className="hidden sm:inline">Build SD</span>
+                  </button>
+                )}
+
+                <div className="h-5 w-px bg-gray-700 mx-1" />
+
+                {/* Save */}
+                <button
+                  onClick={handleSaveProject}
+                  title={hasUnsavedChanges ? `Save ${currentProjectName || 'Project'} (unsaved changes)` : `Save ${currentProjectName || 'Project'}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all ${hasUnsavedChanges
+                    ? 'border-yellow-500/50 text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20'
+                    : 'border-white/10 text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                >
+                  <Save size={13} strokeWidth={2.5} />
+                  <span className="hidden sm:inline">Save</span>
+                  {hasUnsavedChanges && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />}
+                </button>
+
+                {/* New Project */}
+                <button
+                  id="save-as-btn"
+                  onClick={async () => {
+                    if (!workHandle) { handleSetWorkFolder(); return; }
+                    const name = prompt("New project name:", currentProjectName ? `${currentProjectName}_copy` : "New Project");
+                    if (name) await handleSaveProjectAs(name);
+                  }}
+                  title="Save current state as a new project"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 text-[11px] font-bold uppercase tracking-wider transition-all"
+                >
+                  <FilePlus size={13} strokeWidth={2.5} />
+                  <span className="hidden sm:inline">New Project</span>
+                </button>
+
+                {/* Project Manager */}
+                <button
+                  onClick={() => {
+                    if (!workHandle) handleSetWorkFolder();
+                    else handleScanProjects();
+                  }}
+                  title="Project Manager"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 text-[11px] font-bold uppercase tracking-wider transition-all"
+                >
+                  <Folder size={13} strokeWidth={2.5} />
+                  <span className="hidden sm:inline">Project Manager</span>
+                </button>
+
+              </div>
+            </header>
+
+            <div className="flex flex-1 overflow-hidden">
+              <FileBrowser
+                files={Object.values(state.files)}
+                tapes={state.tapes}
+                onParkRequest={handleParkRequest}
+                onOpenSampleBrowser={() => setShowSampleBrowser(true)}
+                duplicates={duplicateFileIds}
+                onOpenDuplicateModal={() => setShowDuplicateModal(true)}
+                onUnassignFile={onUnassignFile}
+                onBulkUnassign={handleBulkUnassign}
+                onDeleteFile={onDeleteFile}
+                onFillFreeSlots={handleFillAllFreeSlots}
               />
-            </div>
 
-            <div className="w-full max-w-5xl py-8 relative z-10">
-              {viewMode === 'single' ? (
-                <>
-                  <div className="flex items-center gap-4 mb-6 w-full">
-                    {/* Tape Icon */}
-                    <div className="flex items-center justify-center">
-                      <TapeIcon color={`var(--color-synthux-${currentTapeColor.toLowerCase()})`} size={40} />
-                    </div>
-                    {/* Title */}
-                    <div className="flex-1">
-                      <h2
-                        style={{ color: `var(--color-synthux-${currentTapeColor.toLowerCase()})` }}
-                        className="text-4xl font-bold font-header tracking-tight uppercase drop-shadow-md shrink-0 flex items-center gap-3"
-                      >
-                        Tape {currentTapeColor}
-                        {/* Download Tape Button (Next to Title) */}
-                        <button
-                          onClick={() => exportSingleTape(currentTapeColor, currentTape, state.files)}
-                          className="p-1.5 rounded-full bg-gray-800 hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-500"
-                          title={`Download ${currentTapeColor} Tape (Zip)`}
-                        >
-                          <Download size={16} />
-                        </button>
-                      </h2>
-                    </div>
+              {/* Grid Area */}
+              <main className="flex-1 overflow-y-auto p-4 flex flex-col items-center relative">
 
-                    {/* Single View Duplicate Notification (Left Aligned next to title) */}
-                    {duplicateFileIds.size > 0 && (
-                      <div className="flex items-center gap-4 bg-[#1a1a1a]/80 border border-orange-500/20 rounded-lg px-4 py-2 backdrop-blur-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1 bg-orange-500/10 rounded-full">
-                            <AlertTriangle className="text-orange-900" size={14} />
-                          </div>
-                          <span className="text-xs font-medium text-gray-400">
-                            {duplicateFileIds.size} file{duplicateFileIds.size !== 1 ? 's' : ''} assigned to multiple slots.
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => setShowDuplicateModal(true)}
-                          className="text-[10px] font-bold uppercase text-orange-600 hover:text-orange-400 hover:bg-orange-500/10 px-2 py-1 rounded transition-all"
-                        >
-                          Resolve
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <SlotGrid
-                    slots={currentTape.slots}
-                    files={state.files}
-                    tapeColor={currentTapeColor}
-                    activeSlotId={activeSlotId}
-                    onSlotClick={handleSlotClick}
-                    onSlotDrop={(id, files) => handleSlotDrop(id, files, currentTapeColor)}
-                    onSlotDropInternal={(slotId, fileId, source, isDuplicate, sourceSlotId, sourceSlotColor) => {
-                      handleSlotDropInternal(slotId, fileId, source, isDuplicate, currentTapeColor, sourceSlotId, sourceSlotColor);
+                {/* Background Decoration */}
+                <div
+                  className="absolute right-0 bottom-0 pointer-events-none z-0 overflow-hidden w-full h-full"
+                  style={{
+                    // Ensure it doesn't block clicks
+                    zIndex: 0
+                  }}
+                >
+                  <div
+                    className="absolute right-0 bottom-0 animate-slow-spin opacity-15"
+                    style={{
+                      width: '120%',
+                      aspectRatio: '1/1',
+                      transform: 'translate(50%, 50%)', // Center on bottom-right corner
+                      maskImage: `url(${tapeIcon})`,
+                      maskSize: 'contain',
+                      maskPosition: 'center',
+                      maskRepeat: 'no-repeat',
+                      WebkitMaskImage: `url(${tapeIcon})`,
+                      WebkitMaskSize: 'contain',
+                      WebkitMaskPosition: 'center',
+                      WebkitMaskRepeat: 'no-repeat',
+                      backgroundColor: viewMode === 'all' ? '#ffffff' : `var(--color-synthux-${
+                        // Helper to map Color to Var Name (Need to duplicate logic or import?)
+                        // Simple inline map for now to avoid refactor overhead
+                        (currentTapeColor === 'Red' ? 'red' :
+                          currentTapeColor === 'Blue' ? 'blue' :
+                            currentTapeColor === 'Green' ? 'green' :
+                              currentTapeColor === 'Pink' ? 'pink' :
+                                currentTapeColor === 'Yellow' ? 'yellow' :
+                                  currentTapeColor === 'Turquoise' ? 'turquoise' : 'blue')
+                        })`,
+                      opacity: viewMode === 'all' ? 0.05 : undefined
                     }}
-                    onRemoveSlot={handleRemoveFromTape}
-                    duplicates={duplicateFileIds}
-                    onDeleteFile={onDeleteFile}
-                    onBulkAssign={handleBulkAssign}
-                    selectedSlots={selectedSlots}
-                    onSlotSelectionClick={(color, id, e) => handleSlotSelectionClick(id, color, e)}
-                    onToggleSlotSelection={(color, id) => toggleSlotSelection(id, color)}
-                    onSlotDragStart={handleSlotDragStart}
-                  />
-                </>
-              ) : (
-                <div className="bg-black/40 rounded-3xl p-4 border border-white/5 backdrop-blur-md">
-                  <div className="flex items-center justify-between gap-3 mb-6 px-4">
-                    <h2 className="text-4xl font-bold font-header tracking-tight uppercase text-white drop-shadow-md">
-                      All Tapes
-                    </h2>
-
-                    {/* All View Duplicate Notification */}
-                    {duplicateFileIds.size > 0 && (
-                      <div className="flex items-center gap-4 bg-[#1a1a1a]/80 border border-orange-500/20 rounded-lg px-4 py-2 backdrop-blur-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1 bg-orange-500/10 rounded-full">
-                            <AlertTriangle className="text-orange-900" size={14} />
-                          </div>
-                          <span className="text-xs font-medium text-gray-400">
-                            {duplicateFileIds.size} Conflict{duplicateFileIds.size !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => setShowDuplicateModal(true)}
-                          className="text-[10px] font-bold uppercase text-orange-600 hover:text-orange-400 hover:bg-orange-500/10 px-2 py-1 rounded transition-all"
-                        >
-                          Resolve
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <AllViewGrid
-                    tapes={state.tapes}
-                    files={state.files}
-                    onRemoveSlot={(slotId, color) => handleRemoveFromTape(slotId, color)}
-                    onSlotDrop={handleSlotDrop} // AllViewGrid will pass color
-                    onSlotDropInternal={handleSlotDropInternal} // AllViewGrid will pass color
-                    onSlotClick={handleAllViewSlotClick}
-                    onTapeHeaderClick={(color) => {
-                      setCurrentTapeColor(color);
-                      setViewMode('single');
-                    }}
-                    duplicates={duplicatesMap}
-                    onDeleteFile={onDeleteFile}
-                    onBulkAssign={handleBulkAssign}
-                    selectedSlots={selectedSlots}
-                    onSlotSelectionClick={handleSlotSelectionClick}
-                    onToggleSlotSelection={(id, color) => toggleSlotSelection(id, color)}
-                    onSlotDragStart={handleSlotDragStart}
                   />
                 </div>
-              )}
+
+                <div className="w-full max-w-5xl py-8 relative z-10">
+                  {viewMode === 'single' ? (
+                    <>
+                      <div className="flex items-center gap-4 mb-6 w-full">
+                        {/* Tape Icon */}
+                        <div className="flex items-center justify-center">
+                          <TapeIcon color={`var(--color-synthux-${currentTapeColor.toLowerCase()})`} size={40} />
+                        </div>
+                        {/* Title */}
+                        <div className="flex-1">
+                          <h2
+                            style={{ color: `var(--color-synthux-${currentTapeColor.toLowerCase()})` }}
+                            className="text-4xl font-bold font-header tracking-tight uppercase drop-shadow-md shrink-0 flex items-center gap-3"
+                          >
+                            Tape {currentTapeColor}
+                            {/* Download Tape Button (Next to Title) */}
+                            <button
+                              onClick={() => exportSingleTape(currentTapeColor, currentTape, state.files)}
+                              className="p-1.5 rounded-full bg-gray-800 hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-500"
+                              title={`Download ${currentTapeColor} Tape (Zip)`}
+                            >
+                              <Download size={16} />
+                            </button>
+                          </h2>
+                        </div>
+
+                        {/* Single View Duplicate Notification (Left Aligned next to title) */}
+                        {duplicateFileIds.size > 0 && (
+                          <div className="flex items-center gap-4 bg-[#1a1a1a]/80 border border-orange-500/20 rounded-lg px-4 py-2 backdrop-blur-sm">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1 bg-orange-500/10 rounded-full">
+                                <AlertTriangle className="text-orange-900" size={14} />
+                              </div>
+                              <span className="text-xs font-medium text-gray-400">
+                                {duplicateFileIds.size} file{duplicateFileIds.size !== 1 ? 's' : ''} assigned to multiple slots.
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setShowDuplicateModal(true)}
+                              className="text-[10px] font-bold uppercase text-orange-600 hover:text-orange-400 hover:bg-orange-500/10 px-2 py-1 rounded transition-all"
+                            >
+                              Resolve
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <SlotGrid
+                        slots={currentTape.slots}
+                        files={state.files}
+                        tapeColor={currentTapeColor}
+                        activeSlotId={activeSlotId}
+                        onSlotClick={handleSlotClick}
+                        onSlotDrop={(id, files) => handleSlotDrop(id, files, currentTapeColor)}
+                        onSlotDropInternal={(slotId, fileId, source, isDuplicate, sourceSlotId, sourceSlotColor) => {
+                          handleSlotDropInternal(slotId, fileId, source, isDuplicate, currentTapeColor, sourceSlotId, sourceSlotColor);
+                        }}
+                        onRemoveSlot={handleRemoveFromTape}
+                        duplicates={duplicateFileIds}
+                        onDeleteFile={onDeleteFile}
+                        onBulkAssign={handleBulkAssign}
+                        selectedSlots={selectedSlots}
+                        onSlotSelectionClick={(color, id, e) => handleSlotSelectionClick(id, color, e)}
+                        onToggleSlotSelection={(color, id) => toggleSlotSelection(id, color)}
+                        onSlotDragStart={handleSlotDragStart}
+                      />
+                    </>
+                  ) : (
+                    <div className="bg-black/40 rounded-3xl p-4 border border-white/5 backdrop-blur-md">
+                      <div className="flex items-center justify-between gap-3 mb-6 px-4">
+                        <h2 className="text-4xl font-bold font-header tracking-tight uppercase text-white drop-shadow-md">
+                          All Tapes
+                        </h2>
+
+                        {/* All View Duplicate Notification */}
+                        {duplicateFileIds.size > 0 && (
+                          <div className="flex items-center gap-4 bg-[#1a1a1a]/80 border border-orange-500/20 rounded-lg px-4 py-2 backdrop-blur-sm">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1 bg-orange-500/10 rounded-full">
+                                <AlertTriangle className="text-orange-900" size={14} />
+                              </div>
+                              <span className="text-xs font-medium text-gray-400">
+                                {duplicateFileIds.size} Conflict{duplicateFileIds.size !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setShowDuplicateModal(true)}
+                              className="text-[10px] font-bold uppercase text-orange-600 hover:text-orange-400 hover:bg-orange-500/10 px-2 py-1 rounded transition-all"
+                            >
+                              Resolve
+                            </button>
+                          </div>
+                        )}
+
+
+                      </div>
+
+                      <AllViewGrid
+                        tapes={state.tapes}
+                        files={state.files}
+                        onRemoveSlot={(slotId, color) => handleRemoveFromTape(slotId, color)}
+                        onSlotDrop={handleSlotDrop} // AllViewGrid will pass color
+                        onSlotDropInternal={handleSlotDropInternal} // AllViewGrid will pass color
+                        onSlotClick={handleAllViewSlotClick}
+                        onTapeHeaderClick={(color) => {
+                          setCurrentTapeColor(color);
+                          setViewMode('single');
+                        }}
+                        duplicates={duplicatesMap}
+                        onDeleteFile={onDeleteFile}
+                        onBulkAssign={handleBulkAssign}
+                        selectedSlots={selectedSlots}
+                        onSlotSelectionClick={handleSlotSelectionClick}
+                        onToggleSlotSelection={(id, color) => toggleSlotSelection(id, color)}
+                        onSlotDragStart={handleSlotDragStart}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Duplicates Notification (Calm & Below Tapes) */}
+
+
+
+              </main>
             </div>
 
-            {/* Duplicates Notification (Calm & Below Tapes) */}
+            {/* Editor Modal */}
+            {
+              showEditor && activeFile && (
+                <ErrorBoundary>
+                  {(() => {
+                    const currentVersion = activeFile.versions.find(v => v.id === activeFile.currentVersionId);
+                    const blob = currentVersion?.blob;
+
+                    // Defensive Check for valid Blob
+                    if (!blob || !(blob instanceof Blob)) {
+                      return (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                          <div className="bg-gray-900 p-6 rounded-lg text-center max-w-sm border border-red-900">
+                            <h3 className="text-red-500 font-bold mb-2">Audio Data Missing</h3>
+                            <p className="text-sm text-gray-400 mb-4">
+                              The audio file for "{activeFile.name}" could not be loaded.
+                              This usually happens if the data cache was cleared or corrupted.
+                            </p>
+                            <button
+                              onClick={() => setActiveSlotId(null)}
+                              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <WaveformEditor
+                        slot={{ ...activeSlot!, name: activeFile.name, blob } as any}
+                        versions={activeFile.versions}
+                        activeVersionId={activeFile.currentVersionId}
+                        tapeColor={currentTapeColor}
+                        isDuplicate={duplicateFileIds.has(activeFile.id)}
+                        metadata={activeFile.metadata}
+                        onClose={() => setActiveSlotId(null)}
+                        onSaveUnique={(newBlob, duration, processing, createdId) => {
+                          if (!activeFileId || !activeSlotId) return;
+
+                          // 1. Generate IDs
+                          const newFileId = createdId;
+                          const newVersionId = generateId();
+
+                          // 2. Create Version
+                          const version: AudioVersion = {
+                            id: newVersionId,
+                            timestamp: Date.now(),
+                            description: 'Unique Version from ' + activeFile.name,
+                            blob: newBlob,
+                            duration,
+                            processing
+                          };
+
+                          // 3. Create New File Record
+                          const newFile: FileRecord = {
+                            id: newFileId,
+                            name: activeFile.name + " (Unique)",
+                            originalName: activeFile.originalName,
+                            versions: [version],
+                            currentVersionId: newVersionId,
+                            isParked: false // It will be assigned immediately
+                          };
+
+                          // 4. Update State
+                          setState(prev => {
+                            // a. Add new file
+                            const updatedFiles = { ...prev.files, [newFileId]: newFile };
+
+                            // b. Update the Tape Slot to point to newFileId
+                            // b. Update the Tape Slot to point to newFileId
+                            const updatedTapes = { ...prev.tapes };
+                            // const targetTape = updatedTapes[activeSlot!.color]; // Removed: inactive code causing error
+
+                            const tape = updatedTapes[currentTapeColor as TapeColor];
+                            if (tape) {
+                              updatedTapes[currentTapeColor as TapeColor] = {
+                                ...tape,
+                                slots: tape.slots.map(s => s.id === activeSlotId ? { ...s, fileId: newFileId } : s)
+                              };
+                            }
+
+                            return {
+                              ...prev,
+                              files: updatedFiles,
+                              tapes: updatedTapes
+                            };
+                          });
+
+                          // 5. Close Editor (Since we switched file, keeping editor open might be tricky without full re-mount)
+                          // User likely wants to confirm it's done.
+                          setActiveSlotId(null);
+                        }}
+                        onSave={(newBlob, duration, description, isDirty, processing) => {
+                          if (!activeFileId) return;
+
+                          // SMART SAVE LOGIC
+                          if (!isDirty) {
+                            // File unchanged. Just ensure assignment (already done usually).
+                            // We could force re-assignment validation here if needed, but for now just close.
+                            // Maybe update timestamp or something? No, keep it clean.
+                            // showToast is handled by Editor? No, Editor closed.
+                            // Editor called onClose().
+                            // Wait, if Editor calls onClose(), we just unmount.
+                            // We don't need to do anything here except maybe ensure the slot points to this file (it does).
+                            return;
+                          }
+
+                          const fileId = activeFileId;
+                          const versionId = generateId();
+                          const version: AudioVersion = {
+                            id: versionId,
+                            timestamp: Date.now(),
+                            description: description || 'Edited',
+                            blob: newBlob,
+                            duration,
+                            processing
+                          };
+
+                          setState(prev => ({
+                            ...prev,
+                            files: {
+                              ...prev.files,
+                              [fileId]: {
+                                ...prev.files[fileId],
+                                versions: [version, ...prev.files[fileId].versions],
+                                currentVersionId: versionId
+                              }
+                            }
+                          }));
+
+                        }}
+                        onSaveAsCopy={(newBlob, duration, createdId) => {
+                          const fileId = createdId;
+                          const versionId = generateId();
+                          const version: AudioVersion = {
+                            id: versionId,
+                            timestamp: Date.now(),
+                            description: 'Copy from ' + activeFile.name,
+                            blob: newBlob,
+                            duration
+                          };
+
+                          const newFile: FileRecord = {
+                            id: fileId,
+                            name: activeFile.name + "_COPY",
+                            originalName: activeFile.originalName,
+                            versions: [version],
+                            currentVersionId: versionId,
+                            isParked: true
+                          };
+
+                          // ALSO record this action in the source file's history
+                          const sourceVersionId = generateId();
+                          const sourceVersion: AudioVersion = {
+                            id: sourceVersionId,
+                            timestamp: Date.now(),
+                            description: 'Saved to Pool',
+                            blob: newBlob,
+                            duration
+                          };
+
+                          setState(prev => ({
+                            ...prev,
+                            files: {
+                              ...prev.files,
+                              [fileId]: newFile,
+                              // Update active file history
+                              [activeFileId!]: {
+                                ...prev.files[activeFileId!],
+                                versions: [sourceVersion, ...prev.files[activeFileId!].versions],
+                                currentVersionId: sourceVersionId
+                              }
+                            }
+                          }));
+                        }}
+                        onDeleteVersion={(versionId) => {
+                          if (!activeFileId) return;
+
+                          setState(prev => {
+                            const file = prev.files[activeFileId];
+                            if (!file) return prev;
+                            if (file.versions.length <= 1) return prev; // Keep at least one
+
+                            const newVersions = file.versions.filter(v => v.id !== versionId);
+                            let newCurrentId = file.currentVersionId;
+
+                            // If current version is deleted, switch to the first available one
+                            // (Which will be the previous one since we prepend new ones)
+                            if (file.currentVersionId === versionId) {
+                              newCurrentId = newVersions[0].id; // New newest version
+                            }
+
+                            return {
+                              ...prev,
+                              files: {
+                                ...prev.files,
+                                [activeFileId]: {
+                                  ...file,
+                                  versions: newVersions,
+                                  currentVersionId: newCurrentId
+                                }
+                              }
+                            };
+                          });
+                        }}
+                        onAssignVersion={(versionId) => {
+                          if (!activeFileId) return;
+                          setState(prev => ({
+                            ...prev,
+                            files: {
+                              ...prev.files,
+                              [activeFileId]: {
+                                ...prev.files[activeFileId],
+                                currentVersionId: versionId
+                              }
+                            }
+                          }));
+                          setToast({ msg: "Version Assigned to Slot 🫡", type: "success" });
+                        }}
+                        onMoveVersionToPool={(versionId) => {
+                          if (!activeFileId) return;
+                          const file = state.files[activeFileId];
+                          const versionToMove = file.versions.find(v => v.id === versionId);
+                          if (!versionToMove) return;
+
+                          // 1. Create New File from Version
+                          const newFileId = generateId();
+                          const newVersionId = generateId(); // New ID for independence? Or keep same? Let's give new ID.
+
+                          const newVersion: AudioVersion = {
+                            ...versionToMove,
+                            id: newVersionId,
+                            timestamp: Date.now(),
+                            description: `Extracted from ${file.name}`
+                          };
+
+                          const newFile: FileRecord = {
+                            id: newFileId,
+                            name: `${file.name}_v${new Date(versionToMove.timestamp).getTime().toString().slice(-4)}`,
+                            originalName: file.originalName,
+                            versions: [newVersion],
+                            currentVersionId: newVersionId,
+                            isParked: true // Unassigned
+                          };
+
+                          // 2. Remove Version from Source (if not the only one/current?)
+                          // User wants "Move", implying removal from source history.
+                          // If it's the current version, we need to handle that (switch to another).
+                          // If it's the ONLY version, we probably shouldn't fully remove it? Or maybe we can?
+                          // If we remove the only version, the file is empty/invalid.
+
+                          if (file.versions.length <= 1) {
+                            setToast({ msg: "Cannot move the only version. Use 'Save Copy' instead.", type: "error" });
+                            return;
+                          }
+
+                          setState(prev => {
+                            const currentFile = prev.files[activeFileId];
+                            const newVersions = currentFile.versions.filter(v => v.id !== versionId);
+                            let newCurrentId = currentFile.currentVersionId;
+
+                            if (currentFile.currentVersionId === versionId) {
+                              newCurrentId = newVersions[0].id; // Fallback to first available
+                            }
+
+                            return {
+                              ...prev,
+                              files: {
+                                ...prev.files,
+                                [newFileId]: newFile,
+                                [activeFileId]: {
+                                  ...currentFile,
+                                  versions: newVersions,
+                                  currentVersionId: newCurrentId
+                                }
+                              }
+                            };
+                          });
+                          setToast({ msg: "Version moved to Unassigned Pool", type: "success" });
+                        }}
+                      />
+                    );
+                  })()}
+                </ErrorBoundary>
+              )
+            }
+
+            {
+              bulkConflictState && (
+                <BulkConflictModal
+                  count={bulkConflictState.conflicts}
+                  onOverwrite={handleBulkOverwrite}
+                  onFillEmpty={handleBulkFillEmpty}
+                  onCancel={() => setBulkConflictState(null)}
+                />
+              )
+            }
+
+            {
+              showDuplicateModal && (
+                <DuplicateResolveModal
+                  duplicates={duplicatesMap}
+                  files={state.files}
+                  onClose={() => setShowDuplicateModal(false)}
+                  onKeep={handleResolveKeep}
+                  onMakeUnique={handleResolveUnique}
+                />
+              )
+            }
 
 
 
-          </main>
-        </div>
+            {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+            {showInfo && <InfoModal onClose={() => setShowInfo(false)} onReset={handleReset} />}
+            <SettingsModal
+              isOpen={showSettings}
+              onClose={() => setShowSettings(false)}
+              workFolderName={workHandle?.name || null}
+              backupFolderName={backupHandle?.name || null}
+              onSetWorkFolder={handleSetWorkFolder}
+              onSetBackupFolder={handleSetBackupFolder}
+              onResetApp={handleReset}
+            />
+            {showExport && (
+              <ExportModal
+                files={state.files}
+                tapes={state.tapes}
+                onClose={() => setShowExport(false)}
+                onExportSD={async (opts) => {
+                  setShowExport(false); // Close settings modal
+                  await handleExportProgress('SD Card Export', async (log: (msg: string | undefined, progress?: number) => void) => {
+                    await exportSDStructure(state, opts, log);
+                  });
+                }}
+                onExportFiles={async (opts) => {
+                  setShowExport(false);
+                  await handleExportProgress('File Export', async (log: (msg: string | undefined, progress?: number) => void) => {
+                    await exportFilesOnly(state, opts, log);
+                  });
+                }}
+                onExportProject={async (_opts) => {
+                  setShowExport(false);
+                  await handleExportProgress('Project Backup', async (log) => {
+                    await exportSaveState(state, false, log);
+                  });
+                }}
+              />
+            )}
 
-        {/* Editor Modal */}
-        {
-          showEditor && activeFile && (
-            <ErrorBoundary>
-              {(() => {
-                const currentVersion = activeFile.versions.find(v => v.id === activeFile.currentVersionId);
-                const blob = currentVersion?.blob;
+            <ExportProgressModal
+              isOpen={showExportProgress}
+              onClose={() => setShowExportProgress(false)}
+              logs={exportLogs}
+              isComplete={isExportComplete}
+              error={exportError}
+              progress={exportProgress !== null ? exportProgress : undefined}
+            />
 
-                // Defensive Check for valid Blob
-                if (!blob || !(blob instanceof Blob)) {
-                  return (
-                    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-                      <div className="bg-gray-900 p-6 rounded-lg text-center max-w-sm border border-red-900">
-                        <h3 className="text-red-500 font-bold mb-2">Audio Data Missing</h3>
-                        <p className="text-sm text-gray-400 mb-4">
-                          The audio file for "{activeFile.name}" could not be loaded.
-                          This usually happens if the data cache was cleared or corrupted.
-                        </p>
-                        <button
-                          onClick={() => setActiveSlotId(null)}
-                          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                  );
+            {
+              importAnalysis && (
+                <ImportModal
+                  analysis={importAnalysis}
+                  onClose={() => setImportAnalysis(null)}
+                  onRestoreAndSync={handleRestoreAndSync}
+                  onRestoreProject={(projectState) => {
+                    setState(projectState);
+                    setImportAnalysis(null);
+                    setToast({ msg: "Project Restored Successfully", type: "success" });
+                  }}
+                  onImportStructure={async (structureMap) => {
+                    setToast({ msg: "Importing Structure...", type: "neutral" });
+
+                    import('./utils/importUtils').then(({ processSDStructure }) => {
+                      setState(prev => {
+                        const result = processSDStructure(structureMap, prev.files, prev.tapes);
+                        return { ...prev, files: result.files, tapes: result.tapes };
+                      });
+                      setImportAnalysis(null);
+                      setToast({ msg: "SD Structure Imported", type: "success" });
+                    });
+                  }}
+                  onImportFiles={(files) => {
+                    import('./utils/importUtils').then(({ processAudioFiles }) => {
+                      const newFiles = processAudioFiles(files);
+                      const count = Object.keys(newFiles).length;
+
+                      if (count > 0) {
+                        setState(prev => ({
+                          ...prev,
+                          files: { ...prev.files, ...newFiles }
+                        }));
+                        setToast({ msg: `Imported ${count} files to Pool`, type: "success" });
+                      }
+                      setImportAnalysis(null);
+                    });
+                  }}
+                />
+              )
+            }
+
+
+
+
+
+            <ProjectManager
+              isOpen={showProjectManager}
+              onClose={() => setShowProjectManager(false)}
+              projects={foundProjects}
+              onLoadProject={(name) => {
+                checkUnsavedChanges(() => handleLoadProject(name));
+              }}
+              onSaveProject={handleSaveProjectAs}
+              onCreateEmptyProject={handleCreateEmptyProject}
+              currentProjectName={currentProjectName}
+              hasUnsavedChanges={hasUnsavedChanges}
+              onDeleteProject={handleDeleteProject}
+              onDeleteBackupProject={backupHandle ? async (name) => {
+                setConfirmAction({
+                  title: 'Delete SD Backup?',
+                  message: (
+                    <span>
+                      This will permanently delete <strong>{name}</strong> from the SD card backup.<br /><br />
+                      The local copy in your Work Folder will <em>not</em> be affected.
+                    </span>
+                  ),
+                  isDestructive: true,
+                  confirmLabel: 'Delete from SD',
+                  onConfirm: async () => {
+                    try {
+                      setIsProcessing(true);
+                      setProgressMsg(`Deleting SD backup: ${name}...`);
+                      const projectsDir = await backupHandle!
+                        .getDirectoryHandle('WAV_Builder', { create: false })
+                        .then(d => d.getDirectoryHandle('Projects', { create: false }));
+                      await projectsDir.removeEntry(name, { recursive: true });
+                      setToast({ msg: `SD backup "${name}" deleted`, type: 'success' });
+                      await scanProjects(workHandle, backupHandle);
+                    } catch (e: any) {
+                      setToast({ msg: 'Delete failed: ' + e.message, type: 'error' });
+                    } finally {
+                      setIsProcessing(false);
+                      setProgressMsg('');
+                    }
+                  },
+                });
+              } : undefined}
+              onRenameProject={handleRenameProject}
+              onDuplicateProject={handleDuplicateProject}
+              onScan={async () => {
+                if (isProcessing) return;
+                setIsProcessing(true);
+                try {
+                  const startTime = Date.now();
+                  await scanProjects(workHandle, backupHandle);
+
+                  // Ensure spinner shows for at least 500ms
+                  const elapsed = Date.now() - startTime;
+                  if (elapsed < 500) {
+                    await new Promise(r => setTimeout(r, 500 - elapsed));
+                  }
+
+                  setToast({ msg: "Project scan complete", type: "success" });
+                } catch (e) {
+                  console.error("Scan failed", e);
+                  setToast({ msg: "Scan failed", type: "error" });
+                } finally {
+                  setIsProcessing(false);
+                }
+              }}
+              isScanning={isProcessing}
+              deviceDiff={deviceDiff || undefined}
+              onImportDeviceChanges={() => setShowDeviceImport(true)}
+              workHandle={workHandle}
+              backupHandle={backupHandle}
+              onChangeWorkFolder={handleSetWorkFolder}
+              onChangeBackupFolder={handleSetBackupFolder}
+              onSyncProject={(projectName) => setSyncProjectTarget(projectName)}
+              onBuildProject={async (projectName) => {
+                if (!workHandle || !backupHandle) {
+                  setToast({ msg: "Both Project Folder and SD Card must be connected.", type: 'error' });
+                  return;
                 }
 
-                return (
-                  <WaveformEditor
-                    slot={{ ...activeSlot!, name: activeFile.name, blob } as any}
-                    versions={activeFile.versions}
-                    activeVersionId={activeFile.currentVersionId}
-                    tapeColor={currentTapeColor}
-                    isDuplicate={duplicateFileIds.has(activeFile.id)}
-                    onClose={() => setActiveSlotId(null)}
-                    onSaveUnique={(newBlob, duration, processing) => {
-                      if (!activeFileId || !activeSlotId) return;
+                setIsProcessing(true);
+                setProgressMsg(`Analyzing ${projectName}...`);
 
-                      // 1. Generate IDs
-                      const newFileId = generateId();
-                      const newVersionId = generateId();
+                try {
+                  const { loadProjectFromDirectory } = await import('./utils/exportUtils');
+                  const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
 
-                      // 2. Create Version
-                      const version: AudioVersion = {
-                        id: newVersionId,
-                        timestamp: Date.now(),
-                        description: 'Unique Version from ' + activeFile.name,
-                        blob: newBlob,
-                        duration,
-                        processing
-                      };
+                  // 1. Load Project State Headless
+                  const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading project...'));
 
-                      // 3. Create New File Record
-                      const newFile: FileRecord = {
-                        id: newFileId,
-                        name: activeFile.name + " (Unique)",
-                        originalName: activeFile.originalName,
-                        versions: [version],
-                        currentVersionId: newVersionId,
-                        isParked: false // It will be assigned immediately
-                      };
+                  // 2. Scan SD Structure
+                  setProgressMsg('Scanning SD Card...');
+                  const structureMap = await scanSKStructure(backupHandle);
 
-                      // 4. Update State
-                      setState(prev => {
-                        // a. Add new file
-                        const updatedFiles = { ...prev.files, [newFileId]: newFile };
+                  // 3. Calculate Diff
+                  setProgressMsg('Calculating Differences...');
+                  const diff = await calculateSyncDiff(projectState, structureMap);
 
-                        // b. Update the Tape Slot to point to newFileId
-                        // b. Update the Tape Slot to point to newFileId
-                        const updatedTapes = { ...prev.tapes };
-                        // const targetTape = updatedTapes[activeSlot!.color]; // Removed: inactive code causing error
+                  setSyncModalState({ isOpen: true, projectName, diff, defaultMode: 'push' });
 
-                        const tape = updatedTapes[currentTapeColor as TapeColor];
-                        if (tape) {
-                          updatedTapes[currentTapeColor as TapeColor] = {
-                            ...tape,
-                            slots: tape.slots.map(s => s.id === activeSlotId ? { ...s, fileId: newFileId } : s)
-                          };
-                        }
-
-                        return {
-                          ...prev,
-                          files: updatedFiles,
-                          tapes: updatedTapes
-                        };
-                      });
-
-                      // 5. Close Editor (Since we switched file, keeping editor open might be tricky without full re-mount)
-                      // User likely wants to confirm it's done.
-                      setActiveSlotId(null);
-                    }}
-                    onSave={(newBlob, duration, description, isDirty, processing) => {
-                      if (!activeFileId) return;
-
-                      // SMART SAVE LOGIC
-                      if (!isDirty) {
-                        // File unchanged. Just ensure assignment (already done usually).
-                        // We could force re-assignment validation here if needed, but for now just close.
-                        // Maybe update timestamp or something? No, keep it clean.
-                        // showToast is handled by Editor? No, Editor closed.
-                        // Editor called onClose().
-                        // Wait, if Editor calls onClose(), we just unmount.
-                        // We don't need to do anything here except maybe ensure the slot points to this file (it does).
-                        return;
-                      }
-
-                      const fileId = activeFileId;
-                      const versionId = generateId();
-                      const version: AudioVersion = {
-                        id: versionId,
-                        timestamp: Date.now(),
-                        description: description || 'Edited',
-                        blob: newBlob,
-                        duration,
-                        processing
-                      };
-
-                      setState(prev => ({
-                        ...prev,
-                        files: {
-                          ...prev.files,
-                          [fileId]: {
-                            ...prev.files[fileId],
-                            versions: [version, ...prev.files[fileId].versions],
-                            currentVersionId: versionId
-                          }
-                        }
-                      }));
-
-                    }}
-                    onSaveAsCopy={(newBlob, duration) => {
-                      const fileId = generateId();
-                      const versionId = generateId();
-                      const version: AudioVersion = {
-                        id: versionId,
-                        timestamp: Date.now(),
-                        description: 'Copy from ' + activeFile.name,
-                        blob: newBlob,
-                        duration
-                      };
-
-                      const newFile: FileRecord = {
-                        id: fileId,
-                        name: activeFile.name + "_COPY",
-                        originalName: activeFile.originalName,
-                        versions: [version],
-                        currentVersionId: versionId,
-                        isParked: true
-                      };
-
-                      // ALSO record this action in the source file's history
-                      const sourceVersionId = generateId();
-                      const sourceVersion: AudioVersion = {
-                        id: sourceVersionId,
-                        timestamp: Date.now(),
-                        description: 'Saved to Pool',
-                        blob: newBlob,
-                        duration
-                      };
-
-                      setState(prev => ({
-                        ...prev,
-                        files: {
-                          ...prev.files,
-                          [fileId]: newFile,
-                          // Update active file history
-                          [activeFileId!]: {
-                            ...prev.files[activeFileId!],
-                            versions: [sourceVersion, ...prev.files[activeFileId!].versions],
-                            currentVersionId: sourceVersionId
-                          }
-                        }
-                      }));
-                    }}
-                    onDeleteVersion={(versionId) => {
-                      if (!activeFileId) return;
-
-                      setState(prev => {
-                        const file = prev.files[activeFileId];
-                        if (!file) return prev;
-                        if (file.versions.length <= 1) return prev; // Keep at least one
-
-                        const newVersions = file.versions.filter(v => v.id !== versionId);
-                        let newCurrentId = file.currentVersionId;
-
-                        // If current version is deleted, switch to the first available one
-                        // (Which will be the previous one since we prepend new ones)
-                        if (file.currentVersionId === versionId) {
-                          newCurrentId = newVersions[0].id; // New newest version
-                        }
-
-                        return {
-                          ...prev,
-                          files: {
-                            ...prev.files,
-                            [activeFileId]: {
-                              ...file,
-                              versions: newVersions,
-                              currentVersionId: newCurrentId
-                            }
-                          }
-                        };
-                      });
-                    }}
-                    onAssignVersion={(versionId) => {
-                      if (!activeFileId) return;
-                      setState(prev => ({
-                        ...prev,
-                        files: {
-                          ...prev.files,
-                          [activeFileId]: {
-                            ...prev.files[activeFileId],
-                            currentVersionId: versionId
-                          }
-                        }
-                      }));
-                      setToast({ msg: "Version Assigned to Slot 🫡", type: "success" });
-                    }}
-                    onMoveVersionToPool={(versionId) => {
-                      if (!activeFileId) return;
-                      const file = state.files[activeFileId];
-                      const versionToMove = file.versions.find(v => v.id === versionId);
-                      if (!versionToMove) return;
-
-                      // 1. Create New File from Version
-                      const newFileId = generateId();
-                      const newVersionId = generateId(); // New ID for independence? Or keep same? Let's give new ID.
-
-                      const newVersion: AudioVersion = {
-                        ...versionToMove,
-                        id: newVersionId,
-                        timestamp: Date.now(),
-                        description: `Extracted from ${file.name}`
-                      };
-
-                      const newFile: FileRecord = {
-                        id: newFileId,
-                        name: `${file.name}_v${new Date(versionToMove.timestamp).getTime().toString().slice(-4)}`,
-                        originalName: file.originalName,
-                        versions: [newVersion],
-                        currentVersionId: newVersionId,
-                        isParked: true // Unassigned
-                      };
-
-                      // 2. Remove Version from Source (if not the only one/current?)
-                      // User wants "Move", implying removal from source history.
-                      // If it's the current version, we need to handle that (switch to another).
-                      // If it's the ONLY version, we probably shouldn't fully remove it? Or maybe we can?
-                      // If we remove the only version, the file is empty/invalid.
-
-                      if (file.versions.length <= 1) {
-                        setToast({ msg: "Cannot move the only version. Use 'Save Copy' instead.", type: "error" });
-                        return;
-                      }
-
-                      setState(prev => {
-                        const currentFile = prev.files[activeFileId];
-                        const newVersions = currentFile.versions.filter(v => v.id !== versionId);
-                        let newCurrentId = currentFile.currentVersionId;
-
-                        if (currentFile.currentVersionId === versionId) {
-                          newCurrentId = newVersions[0].id; // Fallback to first available
-                        }
-
-                        return {
-                          ...prev,
-                          files: {
-                            ...prev.files,
-                            [newFileId]: newFile,
-                            [activeFileId]: {
-                              ...currentFile,
-                              versions: newVersions,
-                              currentVersionId: newCurrentId
-                            }
-                          }
-                        };
-                      });
-                      setToast({ msg: "Version moved to Unassigned Pool", type: "success" });
-                    }}
-                  />
-                );
-              })()}
-            </ErrorBoundary>
-          )
-        }
-
-        {/* Overlay Loading */}
-        {
-          isProcessing && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
-              <div className="flex flex-col items-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-                <div className="text-white font-medium">{progressMsg}</div>
-              </div>
-            </div>
-          )
-        }
-
-        {
-          bulkConflictState && (
-            <BulkConflictModal
-              count={bulkConflictState.conflicts}
-              onOverwrite={handleBulkOverwrite}
-              onFillEmpty={handleBulkFillEmpty}
-              onCancel={() => setBulkConflictState(null)}
-            />
-          )
-        }
-
-        {
-          showDuplicateModal && (
-            <DuplicateResolveModal
-              duplicates={duplicatesMap}
-              files={state.files}
-              onClose={() => setShowDuplicateModal(false)}
-              onKeep={handleResolveKeep}
-              onMakeUnique={handleResolveUnique}
-            />
-          )
-        }
-
-        {showInfo && <InfoModal onClose={() => setShowInfo(false)} onReset={handleReset} />}
-        {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
-        {showExport && (
-          <ExportModal
-            files={state.files}
-            tapes={state.tapes}
-            onClose={() => setShowExport(false)}
-            onExportSD={async (opts) => {
-              setShowExport(false); // Close settings modal
-              await handleExportProgress('SD Card Export', async (log: (msg: string | undefined, progress?: number) => void) => {
-                await exportSDStructure(state, opts, log);
-              });
-            }}
-            onExportFiles={async (opts) => {
-              setShowExport(false);
-              await handleExportProgress('File Export', async (log: (msg: string | undefined, progress?: number) => void) => {
-                await exportFilesOnly(state, opts, log);
-              });
-            }}
-            onExportProject={async (_opts) => {
-              setShowExport(false);
-              await handleExportProgress('Project Backup', async (log: (msg: string | undefined, progress?: number) => void) => {
-                await exportSaveState(state, false, log);
-              });
-            }}
-          />
-        )}
-
-        <ExportProgressModal
-          isOpen={showExportProgress}
-          onClose={() => setShowExportProgress(false)}
-          logs={exportLogs}
-          isComplete={isExportComplete}
-          error={exportError}
-          progress={exportProgress !== null ? exportProgress : undefined}
-        />
-
-        {
-          importAnalysis && (
-            <ImportModal
-              analysis={importAnalysis}
-              onClose={() => setImportAnalysis(null)}
-              onRestoreAndSync={handleRestoreAndSync}
-              onRestoreProject={(projectState) => {
-                setState(projectState);
-                setImportAnalysis(null);
-                setToast({ msg: "Project Restored Successfully", type: "success" });
+                } catch (e: any) {
+                  console.error(e);
+                  setToast({ msg: "Failed to build diff: " + e.message, type: 'error' });
+                } finally {
+                  setIsProcessing(false);
+                  setProgressMsg('');
+                }
               }}
-              onImportStructure={async (structureMap) => {
-                setToast({ msg: "Importing Structure...", type: "neutral" });
-
-                import('./utils/importUtils').then(({ processSDStructure }) => {
-                  setState(prev => {
-                    const result = processSDStructure(structureMap, prev.files, prev.tapes);
-                    return { ...prev, files: result.files, tapes: result.tapes };
-                  });
-                  setImportAnalysis(null);
-                  setToast({ msg: "SD Structure Imported", type: "success" });
-                });
+              onImportSK={async () => {
+                if (!backupHandle) {
+                  setToast({ msg: "SD card not connected.", type: 'error' });
+                  return;
+                }
+                setIsProcessing(true);
+                setProgressMsg('Scanning SK folder on SD...');
+                try {
+                  const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+                  const structureMap = await scanSKStructure(backupHandle);
+                  const diff = await calculateSyncDiff(state, structureMap);
+                  setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
+                } catch (e: any) {
+                  console.error(e);
+                  setToast({ msg: "SK scan failed: " + e.message, type: 'error' });
+                } finally {
+                  setIsProcessing(false);
+                  setProgressMsg('');
+                }
               }}
-              onImportFiles={(files) => {
-                import('./utils/importUtils').then(({ processAudioFiles }) => {
-                  const newFiles = processAudioFiles(files);
-                  const count = Object.keys(newFiles).length;
+              syncUserLibrary={syncUserLibrary}
+              onToggleSyncUserLibrary={setSyncUserLibrary}
+              activeSKProject={activeSKProject || undefined}
+            />
 
-                  if (count > 0) {
-                    setState(prev => ({
-                      ...prev,
-                      files: { ...prev.files, ...newFiles }
-                    }));
-                    setToast({ msg: `Imported ${count} files to Pool`, type: "success" });
+            {syncProjectTarget && workHandle && backupHandle && (
+              <ProjectSyncModal
+                projectName={syncProjectTarget}
+                localState={state}
+                workHandle={workHandle}
+                backupHandle={backupHandle}
+                onClose={() => setSyncProjectTarget(null)}
+                onApply={async (newState) => {
+                  if (!workHandle || !backupHandle || !syncProjectTarget) return;
+                  setIsProcessing(true);
+                  setProgressMsg('Saving sync changes locally...');
+                  try {
+                    // Stamp a shared saved-at timestamp so both copies have the same
+                    // metadata.exportDate — this prevents scanProjects from
+                    // marking the project as "modified" right after a sync.
+                    const savedAt = new Date().toISOString();
+                    const stampedState: AppState = {
+                      ...newState,
+                      metadata: {
+                        ...newState.metadata,
+                        exportDate: savedAt,
+                        appName: newState.metadata?.appName ?? 'WAV Builder',
+                        version: newState.metadata?.version ?? '1.0',
+                      },
+                    };
+
+                    // Local: Work/Projects/{name}/
+                    await saveProjectToDirectory(stampedState, workHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
+
+                    // Backup: SD/WAV_Builder/ → Projects/{name}/
+                    setProgressMsg('Saving sync changes to SD backup...');
+                    const wavBuilderHandle = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
+                    await saveProjectToDirectory(stampedState, wavBuilderHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
+
+                    // If this is the active project, update in-memory state without
+                    // triggering the hasUnsavedChanges watcher.
+                    if (currentProjectName === syncProjectTarget) {
+                      isSystemUpdate.current = true;
+                      setState(stampedState);
+                      setHasUnsavedChanges(false);
+                    }
+
+                    setToast({ msg: `${syncProjectTarget} synced successfully`, type: 'success' });
+                    setSyncProjectTarget(null);
+                    await scanProjects(workHandle, backupHandle);
+                  } catch (e: any) {
+                    console.error(e);
+                    setToast({ msg: 'Sync failed: ' + e.message, type: 'error' });
+                  } finally {
+                    setIsProcessing(false);
+                    setProgressMsg('');
                   }
-                  setImportAnalysis(null);
-                });
-              }}
-            />
-          )
-        }
+                }}
+              />
+            )}
 
-        <SyncPreviewModal
-          isOpen={!!syncPreview}
-          onClose={() => setSyncPreview(null)}
-          onConfirm={executeSync}
-          diff={syncPreview?.diff || { newFiles: [], updatedFiles: [], totalCount: 0 }}
+            {syncModalState?.diff && (
+              <ExportPreviewModal
+                isOpen={!!syncModalState?.isOpen}
+                projectName={syncModalState?.projectName || ''}
+                diff={syncModalState.diff}
+                defaultMode={syncModalState.defaultMode ?? 'push'}
+                onRefresh={handleSKRefresh}
+                isRefreshing={isProcessing}
+                onClose={() => setSyncModalState(null)}
+                onConfirm={async (decisions, options, importDecisions) => {
+                  const projectName = syncModalState?.projectName;
+                  setSyncModalState(null); // Close modal
+
+                  if (!workHandle || !projectName) return;
+
+                  setIsProcessing(true);
+                  setProgressMsg(`Syncing ${projectName}...`);
+
+                  try {
+                    const { loadProjectFromDirectory, exportSDStructure } = await import('./utils/exportUtils');
+
+                    const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
+
+                    // 2. Export push decisions (push_to_sk, delete_sk)
+                    const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
+                    if (hasPushDecisions) {
+                      await exportSDStructure(projectState, {
+                        includeProject: true,
+                        directWrite: true,
+                        smartSync: options.skMode === 'overwrite',
+                        skMode: options.skMode,
+                        syncUserLibrary: syncUserLibrary,
+                        backupSKToProject: options.backupSKToProject,
+                        destinationHandle: backupHandle!,
+                        workHandle: workHandle,
+                        projectName: projectName,
+                        syncDecisions: decisions,
+                      }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
+                    }
+
+                    // 3. Apply import decisions (pull_to_slot, toPool)
+                    const importEntries = Object.entries(importDecisions);
+                    if (importEntries.length > 0) {
+                      setProgressMsg('Importing SK files into project...');
+                      const { v4: uuidv4 } = await import('uuid');
+                      const TAPE_COLORS_ORDERED = ['Blue', 'Green', 'Pink', 'Red', 'Turquoise', 'Yellow'] as const;
+
+                      // Deep-clone state to mutate safely
+                      const newState = JSON.parse(JSON.stringify(state)) as typeof state;
+                      // Blobs can't survive JSON round-trip — restore them in newState.files
+                      for (const [id, fr] of Object.entries(state.files)) {
+                        if (newState.files[id]) {
+                          newState.files[id].versions = fr.versions;
+                        }
+                      }
+
+                      for (const [slotId, dec] of importEntries) {
+                        if (!dec.file) continue;
+
+                        // SAFE COPY: Read into ArrayBuffer to detach from hardware handle
+                        // This prevents NotReadableError when saving later if permissions change
+                        const arrayBuffer = await dec.file.arrayBuffer();
+                        const blob = new Blob([arrayBuffer], { type: dec.file.type || 'audio/wav' });
+
+                        const fileName = dec.file.name || `${slotId}.wav`;
+
+                        const versionId = uuidv4();
+                        const fileId = uuidv4();
+                        const version = {
+                          id: versionId,
+                          timestamp: Date.now(),
+                          description: `Imported from SK (${slotId})`,
+                          blob,
+                          duration: 0,
+                          processing: [] as ('normalized' | 'trimmed' | 'looped')[],
+                        };
+                        const fileRecord = {
+                          id: fileId,
+                          name: fileName,
+                          originalName: fileName,
+                          versions: [version],
+                          currentVersionId: versionId,
+                          isParked: true,
+                          origin: 'SK Import',
+                        };
+                        newState.files[fileId] = fileRecord;
+
+                        if (dec.pullToSlot) {
+                          // Assign to the tape slot matching current row's color+index
+                          const color = dec.color as typeof TAPE_COLORS_ORDERED[number];
+                          const slotIdx = dec.slotIndex - 1; // convert 1-based to 0-based
+                          if (newState.tapes[color]?.slots[slotIdx] != null) {
+                            newState.tapes[color].slots[slotIdx].fileId = fileId;
+                            fileRecord.isParked = false;
+                          }
+                        }
+                        // toPool: isParked stays true — file sits in the pool
+                      }
+
+                      isSystemUpdate.current = true;
+                      setState(newState);
+                    }
+
+                    setToast({ msg: "Hardware Build Complete", type: "success" });
+                    scanProjects(workHandle, backupHandle);
+                  } catch (e: any) {
+                    console.error(e);
+                    setToast({ msg: "Build Failed: " + e.message, type: "error" });
+                  } finally {
+                    setIsProcessing(false);
+                    setProgressMsg('');
+                  }
+                }}
+              />
+            )}
+
+            <SamplePackModal
+              isOpen={showSampleBrowser}
+              onClose={() => setShowSampleBrowser(false)}
+              onImport={handleSampleImport}
+            />
+
+
+
+
+          </div>
+        </div >
+      )}
+
+      {/* GLOBAL MODALS */}
+      {
+        confirmAction && (
+          <ConfirmModal
+            isOpen={true}
+            onClose={() => setConfirmAction(null)}
+            onConfirm={confirmAction.onConfirm}
+            title={confirmAction.title}
+            message={confirmAction.message}
+            isDestructive={confirmAction.isDestructive}
+            confirmLabel={confirmAction.confirmLabel}
+            showCancel={confirmAction.showCancel}
+          />
+        )
+      }
+
+      {
+        toast && (
+          <Toast
+            message={toast.msg}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )
+      }
+
+      {showDeviceImport && (
+        <DeviceImportModal
+          isOpen={showDeviceImport}
+          onClose={() => setShowDeviceImport(false)}
+          diff={deviceDiff}
+          projectState={state}
+          onImport={handleImportDeviceChanges}
         />
+      )}
 
-        <SamplePackModal
-          isOpen={showSampleBrowser}
-          onClose={() => setShowSampleBrowser(false)}
-          onImport={handleSampleImport}
-        />
+      {/* PROCESSING OVERLAY */}
+      {isProcessing && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center animate-in fade-in duration-200">
+          <div className="bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 min-w-[300px]">
+            <Loader className="animate-spin text-indigo-500" size={32} />
+            <div className="text-white font-medium text-lg">{progressMsg || "Processing..."}</div>
+          </div>
+        </div>
+      )}
 
-
-
-        {
-          confirmAction && (
-            <ConfirmModal
-              isOpen={true}
-              onClose={() => setConfirmAction(null)}
-              onConfirm={confirmAction.onConfirm}
-              title={confirmAction.title}
-              message={confirmAction.message}
-              isDestructive={confirmAction.isDestructive}
-              confirmLabel={confirmAction.confirmLabel}
-              showCancel={confirmAction.showCancel}
-            />
-          )
-        }
-
-        {
-          toast && (
-            <Toast
-              message={toast.msg}
-              type={toast.type}
-              onClose={() => setToast(null)}
-            />
-          )
-        }
-
-      </div >
-    </div >
+    </ErrorBoundary >
   );
 }
 

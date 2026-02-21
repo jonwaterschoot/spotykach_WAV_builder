@@ -110,6 +110,18 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
                                             </p>
                                         </div>
                                     </div>
+                                    <div className="mt-4 pt-4 border-t border-gray-700">
+                                        <h4 className="text-white font-bold mb-2">Hardware Verification</h4>
+                                        <p className="text-sm text-gray-400 mb-3">
+                                            Download this special test file to verify if your Spotykach can read WAV files with embedded metadata (INFO chunks) and slices (CUE chunks).
+                                        </p>
+                                        <button
+                                            onClick={() => import('../utils/testWavGenerator').then(m => m.downloadTestWav())}
+                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-medium"
+                                        >
+                                            <Save size={16} /> Download Metadata Test File
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>

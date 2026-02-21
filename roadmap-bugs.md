@@ -14,23 +14,54 @@ Is this related to the tweak we tried for eleminating the gap during loop playba
 >Report by @Naenyn:
 >"deck a loading happily now. I've noticed that one one file is bad and a load is attempted, that seems to kill that deck .. can no longer load anything until cycling power."
 
-
 ---
 
-## new features / new functions / improvements / ideas:
+# new features / new functions / improvements / ideas:
 
-### import / export
-- version number in export readme file text not auto updating
-- upon import as soon as we start checking the content of the folder , and immediatly when we start importing/reading the zip file we should show a progress, as now it can feel like nothing is happening after user clicks 
 
-- conflict resolving: a (different) project is open in the browser, we import a project from sd card, we detect a conflict, what should happen? 
+## User Sample Pool & Libraries 
 
-I suggest to build a comparison table with audio preview, to allow user to decide what to do with each file, this can be used in the other direction as well. This feature is best using terms like sync. It should show basic info about the files, like name, size, duration, and a preview of the audio.
+Goal: Allow users to create their own "sample packs" and use them in all projects. Build a separate user sample pool that is not tied to any project. - this is the foundation for the "My Samples" tab in the sample browser.
 
-- what data can we store in the files we rename to 1.WAV, 2.WAV, etc. and still want to keep their file history. What if it was recorded on SK and has no info, the user should be able to add a name and a description to the file, and this should be stored in the file or our index , and also in the project folder, in a separate file, e.g. project.json, or something similar. 
-- export: when using export to SD card or separate export, use a comparison table with audio preview, to allow user to decide what to do with each file
+### Sample Pack Browser will have this extra section after the built in sample packs:
 
-- project backup: when exporting a project backup, and one is already made/present in the project folder, ask user what to do with it. - overwrite, rename, or cancel? Or we immediatly start implementing project backup v2 with the idea of using multiple projects? Still when it's the "same" project we need a way to distinguish between different versions of the project. 
+        Available Packs
+        * Synthux Horror Sample Pack 2025
+        * Jonwtr Explorations 
+        * My Library
+            - *Projects Samples* - standard collapsed
+                - Option to open a section that shows all the projects samples in a dry expandable list (only samples from slots and unassigned, not the versions)
+            - *Main User Library* is the users Curated List of samples 
+
+### My Library Manager    
+
+    - A link in My Library opens the sample library manager:
+        - user can get an overview of all the current files in the current project:
+            - one section with the unassigned samples from the current active project
+            - one section with the assigned samples from the current active project
+            - The samples can be expanded to see the versions of the samples 
+                - it is here that the user can copy individual samples to the user library.
+                - option to set (new) title (only used in the new assigned user library, original files are not touched)
+        - option to set a general licence and user / artist name for the User Library, standard assigned to each sample, can be changed on an individual level. (If the option ever comes that users share projects, the readme's will be able to use this info. This hooks into our already used system where we look at the license of the Sample packs.) 
+
+### Sync User Library
+
+Option to sync the user library to the SD card in the same way as the projects are synced. Though we must keep an eye on available space on the SD card. 
+
+### Option to download sample packs from github
+
+  **Offline Sample Packs**
+    - [ ] **Download vs Stream**: Allow downloading GitHub sample packs 
+    
+---
+
+### Simplified editor / export to SD card only tool option for people who do not want the syncing/project management features
+
+A simplified version of the tool that only allows editing and exporting to a folder, without the syncing/project management features. This could be a separate tool, or a mode in the current tool.
+- probably best quite literally a stripped down version of the current tool, with no project management features, and no syncing features, just the editor and the export to folder option
+- on a 1 file per time base, easy access to just opening a file and doing the conversion to the needed output, user will only need to set the number, they can manually put it in the desired folder, or even just click download which moves it to standard downloads folder.
+
+---
 
 ### History / Trashcan
 - Keep a temporary trashcan for removed files and an action history list, able to use ctrl+z / ctrl+y to undo/redo actions, and buttons in a main menu place?
@@ -47,26 +78,13 @@ I suggest to build a comparison table with audio preview, to allow user to decid
 
 - **Project cleanup feature**: option to clean up the project by removing all files that are not used in any tape, and an option to only keep the original file but not keep the unused history files, only the files saved to the pool
 
-### File handling
-**Shared Sample Pool**: A centralized pool of samples shared across different projects. option to save files to the sample browser with descriptions and a way to export/download - should be clear that these live outside the project folder, but are not a part of the online browser, hence where do we store these? 
-    - we make folder structure on the SD card: /SPOTYKACH_USER_SAMPLES/ and /SPOTYKACH_PROJECTS/ 
-- unassigned samples in the sample browser should be clearly marked as such, and we should be able to assign them to a project, or delete them, or move them to the user samples folder 
-- when saving a project or exporting we allow the user to select which files to include, and we show a preview of the files to be included, with the option to deselect them, remove, move to user samples, or keep in project folder, etc. 
 
-### Project Manager & Data Persistence
-
-Currently, the app uses **IndexedDB** for storage. Resetting the app wipes this data. We need a more robust solution.
-
-**Phase 1: Internal Project Manager (Web-Friendly)**
-*   Store *multiple* projects in IndexedDB (e.g., "Techno Set", "Ambient Jams").
-*   Allow instant switching between projects.
-*   "Backup All" feature to download a single file containing all local projects.
-
-**Phase 2: Standalone Application (Electron)**
+### Standalone Application (Electron)
 *   Wrap the app in Electron for native "File > Open/Save" dialogs.
-*   Direct file system access (no storage limits, drag-and-drop to specific folders).
-*   Best for power users.
+*   completely offline mode, no connection to the internet needed
 
+
+## Editor Improvements
 
 ### Automation tool
 - snap to 0db while dragging, dragging with alt allows free movement
@@ -81,7 +99,6 @@ Currently, the app uses **IndexedDB** for storage. Resetting the app wipes this 
 A slicer tool with up to 32 slices
 > about the slice points - we'll need to agree on convention. I'm thinking about CUE chunk of the header. Also the maximum number of slice points will be 32 - that's what Spotykach is prepared for.
 > It would be also good to have this chunk prior to DATA chunk as currently once I find DATA, i'm not looking further.
-
 
 ### add info and meta data to WAV files
 - add slicer tool + tempo (+ bpm detection)
@@ -100,4 +117,7 @@ Improve touch targets and layout for tablet/phone usage.
 - Further testing needed on various devices.
 - Editor UI improvements for touch (larger buttons, spacing).
 - Firefox touch drag-and-drop issues (Windows & Android).
+
+
+
 
