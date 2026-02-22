@@ -14,7 +14,7 @@ export interface SamplePack {
     samples: Sample[];
 }
 
-export const SAMPLE_PACKS: SamplePack[] = [
+const RAW_SAMPLE_PACKS: SamplePack[] = [
     {
         id: 'synthux-horror',
         name: 'Synthux Horror Sample Pack 2025',
@@ -30,45 +30,45 @@ Nobody else can claim this work as their own.`,
         coverImage: '/samples/horror/p1/Audrey-II-Horror-Sample-Pack-2026-Synthux-Academy.png',
         samples: [
             // KHAGE
-            { name: "C-Larinet Der Wal", path: "/samples/horror/p1/KG/Clarinet_Rixdorf.wav", category: "KHAGE" },
+            { name: "C-Larinet Der Wal", path: "/samples/horror/p1/KG/Clarinet_Rixdorf.flac", category: "KHAGE" },
 
             // Machine Oil
-            { name: "Acid Box Echo Fix 1", path: "/samples/horror/p1/MO/AcidBox_Echo1.wav", category: "Machine Oil" },
-            { name: "Acid Box Echo Fix 2", path: "/samples/horror/p1/MO/AcidBox_Echo2.wav", category: "Machine Oil" },
-            { name: "Echo Fix 1", path: "/samples/horror/p1/MO/Echo1.wav", category: "Machine Oil" },
-            { name: "Echo Fix 2", path: "/samples/horror/p1/MO/Echo2.wav", category: "Machine Oil" },
-            { name: "Echo Fix 3", path: "/samples/horror/p1/MO/Echo3.wav", category: "Machine Oil" },
-            { name: "Echo Fix 4", path: "/samples/horror/p1/MO/Echo4.wav", category: "Machine Oil" },
+            { name: "Acid Box Echo Fix 1", path: "/samples/horror/p1/MO/AcidBox_Echo1.flac", category: "Machine Oil" },
+            { name: "Acid Box Echo Fix 2", path: "/samples/horror/p1/MO/AcidBox_Echo2.flac", category: "Machine Oil" },
+            { name: "Echo Fix 1", path: "/samples/horror/p1/MO/Echo1.flac", category: "Machine Oil" },
+            { name: "Echo Fix 2", path: "/samples/horror/p1/MO/Echo2.flac", category: "Machine Oil" },
+            { name: "Echo Fix 3", path: "/samples/horror/p1/MO/Echo3.flac", category: "Machine Oil" },
+            { name: "Echo Fix 4", path: "/samples/horror/p1/MO/Echo4.flac", category: "Machine Oil" },
 
             // Neuromorph
-            { name: "Neuromorph CF 1", path: "/samples/horror/p1/NM/CF_1.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 2", path: "/samples/horror/p1/NM/CF_2.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 3", path: "/samples/horror/p1/NM/CF_3.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 4", path: "/samples/horror/p1/NM/CF_4.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 5", path: "/samples/horror/p1/NM/CF_5.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 6", path: "/samples/horror/p1/NM/CF_6.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 7", path: "/samples/horror/p1/NM/CF_7.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 8", path: "/samples/horror/p1/NM/CF_8.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 9", path: "/samples/horror/p1/NM/CF_9.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 10", path: "/samples/horror/p1/NM/CF_10.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 11", path: "/samples/horror/p1/NM/CF_11.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 12", path: "/samples/horror/p1/NM/CF_12.wav", category: "Neuromorph" },
-            { name: "Neuromorph CF 13", path: "/samples/horror/p1/NM/CF_13.wav", category: "Neuromorph" },
+            { name: "Neuromorph CF 1", path: "/samples/horror/p1/NM/CF_1.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 2", path: "/samples/horror/p1/NM/CF_2.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 3", path: "/samples/horror/p1/NM/CF_3.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 4", path: "/samples/horror/p1/NM/CF_4.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 5", path: "/samples/horror/p1/NM/CF_5.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 6", path: "/samples/horror/p1/NM/CF_6.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 7", path: "/samples/horror/p1/NM/CF_7.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 8", path: "/samples/horror/p1/NM/CF_8.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 9", path: "/samples/horror/p1/NM/CF_9.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 10", path: "/samples/horror/p1/NM/CF_10.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 11", path: "/samples/horror/p1/NM/CF_11.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 12", path: "/samples/horror/p1/NM/CF_12.flac", category: "Neuromorph" },
+            { name: "Neuromorph CF 13", path: "/samples/horror/p1/NM/CF_13.flac", category: "Neuromorph" },
 
             // The Pedalboard Orchestra
-            { name: "Audrey II Horrorscape Pt 1", path: "/samples/horror/p1/TPO/Horrorscape_Pt1.wav", category: "The Pedalboard Orchestra" },
-            { name: "Audrey II Horrorscape Pt 2", path: "/samples/horror/p1/TPO/Horrorscape_Pt2.wav", category: "The Pedalboard Orchestra" },
-            { name: "Audrey II Horrorscape Pt 3", path: "/samples/horror/p1/TPO/Horrorscape_Pt3.wav", category: "The Pedalboard Orchestra" },
+            { name: "Audrey II Horrorscape Pt 1", path: "/samples/horror/p1/TPO/Horrorscape_Pt1.flac", category: "The Pedalboard Orchestra" },
+            { name: "Audrey II Horrorscape Pt 2", path: "/samples/horror/p1/TPO/Horrorscape_Pt2.flac", category: "The Pedalboard Orchestra" },
+            { name: "Audrey II Horrorscape Pt 3", path: "/samples/horror/p1/TPO/Horrorscape_Pt3.flac", category: "The Pedalboard Orchestra" },
 
             // enkaytee
-            { name: "Arhythmic", path: "/samples/horror/p1/NKT/Arhythmic.wav", category: "enkaytee" },
-            { name: "Cosmic Winds", path: "/samples/horror/p1/NKT/CosmicWinds.wav", category: "enkaytee" },
-            { name: "Midnight Chimes", path: "/samples/horror/p1/NKT/MidnightChimes.wav", category: "enkaytee" },
-            { name: "Silent Bells", path: "/samples/horror/p1/NKT/SilentBells.wav", category: "enkaytee" },
+            { name: "Arhythmic", path: "/samples/horror/p1/NKT/Arhythmic.flac", category: "enkaytee" },
+            { name: "Cosmic Winds", path: "/samples/horror/p1/NKT/CosmicWinds.flac", category: "enkaytee" },
+            { name: "Midnight Chimes", path: "/samples/horror/p1/NKT/MidnightChimes.flac", category: "enkaytee" },
+            { name: "Silent Bells", path: "/samples/horror/p1/NKT/SilentBells.flac", category: "enkaytee" },
 
             // jonwtr
-            { name: "Model Cycles Audrey Touch Pt 1", path: "/samples/horror/p1/JW/ModelCycles_Pt1.wav", category: "jonwtr" },
-            { name: "Model Cycles Audrey Touch Pt 2", path: "/samples/horror/p1/JW/ModelCycles_Pt2.wav", category: "jonwtr" }
+            { name: "Model Cycles Audrey Touch Pt 1", path: "/samples/horror/p1/JW/ModelCycles_Pt1.flac", category: "jonwtr" },
+            { name: "Model Cycles Audrey Touch Pt 2", path: "/samples/horror/p1/JW/ModelCycles_Pt2.flac", category: "jonwtr" }
         ]
     },
     {
@@ -89,45 +89,68 @@ Everyone is permitted to copy and distribute verbatim or modified copies of this
         coverImage: '/samples/jonwtr/og-image.png',
         samples: [
             // Voice
-            { name: "Tractatus Logico Robovoice", path: "/samples/jonwtr/Tractatus_logico_robovoice.wav", category: "Voice" },
-            { name: "Voice Glitch Raw", path: "/samples/jonwtr/voice_prrrrttttsktsk_rawCut.wav", category: "Voice" },
+            { name: "Tractatus Logico Robovoice", path: "/samples/jonwtr/Tractatus_logico_robovoice.flac", category: "Voice" },
+            { name: "Voice Glitch Raw", path: "/samples/jonwtr/voice_prrrrttttsktsk_rawCut.flac", category: "Voice" },
 
             // Textures & Drone
-            { name: "Noise Trickle Distorted 1", path: "/samples/jonwtr/noise_trickle_distorted1.wav", category: "Textures" },
-            { name: "Noise Trickle Distorted 2", path: "/samples/jonwtr/noise_trickle_distorted2.wav", category: "Textures" },
-            { name: "Noise Drone", path: "/samples/jonwtr/noisedrone.wav", category: "Textures" },
-            { name: "Noisy Bass Pad", path: "/samples/jonwtr/noisybasspadC2G1.wav", category: "Textures" },
+            { name: "Noise Trickle Distorted 1", path: "/samples/jonwtr/noise_trickle_distorted1.flac", category: "Textures" },
+            { name: "Noise Trickle Distorted 2", path: "/samples/jonwtr/noise_trickle_distorted2.flac", category: "Textures" },
+            { name: "Noise Drone", path: "/samples/jonwtr/noisedrone.flac", category: "Textures" },
+            { name: "Noisy Bass Pad", path: "/samples/jonwtr/noisybasspadC2G1.flac", category: "Textures" },
 
             // Field Recordings
-            { name: "Drainpipe UZ", path: "/samples/jonwtr/drainpipeUZ.wav", category: "Field Recordings" },
-            { name: "Trickling Stones Dense", path: "/samples/jonwtr/tricklingstones_dense.wav", category: "Field Recordings" },
-            { name: "Trickling Stones Sparse", path: "/samples/jonwtr/tricklingstones_lessdense.wav", category: "Field Recordings" },
+            { name: "Drainpipe UZ", path: "/samples/jonwtr/drainpipeUZ.flac", category: "Field Recordings" },
+            { name: "Trickling Stones Dense", path: "/samples/jonwtr/tricklingstones_dense.flac", category: "Field Recordings" },
+            { name: "Trickling Stones Sparse", path: "/samples/jonwtr/tricklingstones_lessdense.flac", category: "Field Recordings" },
 
             // Instruments
-            { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G.wav", category: "Instruments" },
-            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G_distorted.wav", category: "Instruments" },
+            { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G.flac", category: "Instruments" },
+            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G_distorted.flac", category: "Instruments" },
 
             // Vinyl Crackle
-            { name: "Vinyl Crackle 12 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle12_densedirty35rpm.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 13 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle13_densedirty35rpm.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 14 (End of Chord)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle14_endofchord.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 15 (Aggressive)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle15_moreagressivestereo.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 17 (Manipulating)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle17_manipulatinghand.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 18", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle18.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 19", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle19.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 20", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle20.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 21", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle21.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 22", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle22.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 23", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle23.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 24", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle24.WAV", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 25", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle25.WAV", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 12 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle12_densedirty35rpm.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 13 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle13_densedirty35rpm.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 14 (End of Chord)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle14_endofchord.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 15 (Aggressive)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle15_moreagressivestereo.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 17 (Manipulating)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle17_manipulatinghand.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 18", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle18.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 19", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle19.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 20", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle20.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 21", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle21.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 22", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle22.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 23", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle23.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 24", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle24.flac", category: "Vinyl Crackle" },
+            { name: "Vinyl Crackle 25", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle25.flac", category: "Vinyl Crackle" },
 
             // Foley
-            { name: "Dragging Branch", path: "/samples/jonwtr/foley2/draggingbranch.WAV", category: "Foley" },
-            { name: "Kicking Ice 1", path: "/samples/jonwtr/foley2/kicking-ice.WAV", category: "Foley" },
-            { name: "Kicking Ice 2", path: "/samples/jonwtr/foley2/kicking-ice01.wav", category: "Foley" },
-            { name: "Shaker (Bad Timing)", path: "/samples/jonwtr/foley2/shaker_badtiming.wav", category: "Foley" },
-            { name: "Shaker (Bad Timing Edit)", path: "/samples/jonwtr/foley2/shaker_badtiming_edit.wav", category: "Foley" }
+            { name: "Dragging Branch", path: "/samples/jonwtr/foley2/draggingbranch.flac", category: "Foley" },
+            { name: "Kicking Ice 1", path: "/samples/jonwtr/foley2/kicking-ice.flac", category: "Foley" },
+            { name: "Kicking Ice 2", path: "/samples/jonwtr/foley2/kicking-ice01.flac", category: "Foley" },
+            { name: "Shaker (Bad Timing)", path: "/samples/jonwtr/foley2/shaker_badtiming.flac", category: "Foley" },
+            { name: "Shaker (Bad Timing Edit)", path: "/samples/jonwtr/foley2/shaker_badtiming_edit.flac", category: "Foley" }
         ]
     }
 ];
+
+const externalSampleAssetBaseUrl = (import.meta.env.VITE_SAMPLE_ASSET_BASE_URL || '').replace(/\/+$/, '');
+const absoluteUrlPattern = /^(?:[a-z]+:)?\/\//i;
+const audioSamplePathPattern = /^\/samples\/.+\.(?:wav|flac)$/i;
+
+const resolveSampleAssetPath = (path: string): string => {
+    if (absoluteUrlPattern.test(path) || !audioSamplePathPattern.test(path)) {
+        return path;
+    }
+    const fileName = path.split('/').pop();
+    return externalSampleAssetBaseUrl && fileName
+        ? `${externalSampleAssetBaseUrl}/${fileName}`
+        : path;
+};
+
+export const SAMPLE_PACKS: SamplePack[] = RAW_SAMPLE_PACKS.map(pack => ({
+    ...pack,
+    coverImage: pack.coverImage,
+    samples: pack.samples.map(sample => ({
+        ...sample,
+        path: resolveSampleAssetPath(sample.path)
+    }))
+}));

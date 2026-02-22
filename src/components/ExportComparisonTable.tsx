@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Play, Square, ArrowRight, X, RotateCcw, FileAudio, AlertTriangle, Trash2, Check } from 'lucide-react';
 
 export interface ExportItem {

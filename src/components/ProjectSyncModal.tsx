@@ -26,7 +26,6 @@ const TAPE_DOT_COLORS: Record<string, string> = {
 interface ProjectSyncModalProps {
     projectName: string;
     localState: AppState;
-    workHandle: FileSystemDirectoryHandle; // kept for future use (e.g. reading local assets)
     backupHandle: FileSystemDirectoryHandle;
     onApply: (newState: AppState) => Promise<void>;
     onClose: () => void;
@@ -37,7 +36,6 @@ type Phase = 'loading' | 'review' | 'applying' | 'done';
 export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     projectName,
     localState,
-    workHandle,
     backupHandle,
     onApply,
     onClose,
@@ -52,7 +50,6 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     // Audio preview
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewLabel, setPreviewLabel] = useState<string>('');
-    const [isPlaying, setIsPlaying] = useState(false);
     const [activePreviewKey, setActivePreviewKey] = useState<string | null>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -85,14 +82,12 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
             if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
             setPreviewUrl(null);
             setActivePreviewKey(null);
-            setIsPlaying(false);
             return;
         }
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setPreviewLabel(label);
         setActivePreviewKey(key);
-        setIsPlaying(true);
         setTimeout(() => { if (audioRef.current) audioRef.current.play().catch(() => { }); }, 50);
     }, [previewUrl, activePreviewKey]);
 
@@ -362,7 +357,6 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
                                     src={previewUrl}
                                     controls
                                     autoPlay
-                                    onEnded={() => setIsPlaying(false)}
                                     className="h-7 flex-1 max-w-lg opacity-90 invert hue-rotate-180"
                                     controlsList="nodownload noplaybackrate"
                                 />

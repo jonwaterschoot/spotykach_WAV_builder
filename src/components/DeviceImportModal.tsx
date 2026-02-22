@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, ArrowDown, FolderInput, AlertTriangle, FileAudio, CheckSquare, Square, RefreshCw, Check, ArrowRight } from 'lucide-react';
 import type { DeviceDiff, DeviceFileChange } from '../utils/importUtils';
-import type { AppState, FileRecord } from '../types';
+import type { AppState } from '../types';
 
 interface DeviceImportModalProps {
     isOpen: boolean;

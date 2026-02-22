@@ -16,6 +16,16 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     host: true,
-    allowedHosts: true
-  }
+    allowedHosts: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
 }))

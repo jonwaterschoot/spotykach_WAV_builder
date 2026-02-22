@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, ArrowRight, X, RotateCcw, FileAudio, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Play, Square, ArrowRight, X, FileAudio } from 'lucide-react';
 
 export interface SyncItem {
     id: string;

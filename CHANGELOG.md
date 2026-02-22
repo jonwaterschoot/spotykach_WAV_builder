@@ -1,9 +1,65 @@
 # Changelog
 
+## [2.0.1] - 2026-02-22
 
-## [2.0.0] - 2026-02-22
+### Added
+- **Sample Manager / Library Manager Overhaul**:
+  - Added a **Review Import Batch** step before importing files into the user library.
+  - Review supports:
+    - temporary audition/preview playback,
+    - removing files from the batch,
+    - renaming display/filename before import,
+    - assigning tags per-file and globally across the batch.
+  - Added persistent batch processing logs with manual clear for debugging and user transparency.
+
+- **WAV to FLAC Import Pipeline**:
+  - Added stricter uncompressed WAV detection and conversion logic.
+  - When conversion is enabled, qualifying WAV imports are converted and stored as `.flac`.
+  - Improved conversion reliability by loading FFmpeg from local app assets first, with safe fallback behavior.
+
+- **Scrub Preview Players**:
+  - Added bottom scrub playback bars in:
+    - Sample Pack Browser,
+    - Review Import Batch,
+    - Library Manager current-library section.
+  - Enables precise auditioning and seeking before import/use.
+
+- **Tagging and Search Improvements**:
+  - Added tag filters to Sample Pack Browser (User Library view) and Library Manager.
+  - Added selectable tag-pill filters.
+  - Search now matches **partial tag text** and also **filenames**.
+
+- **Library Editing Workflow**:
+  - Redesigned "Your Current Library" into a two-column management layout:
+    - left: clean selectable file list (selection, play, title, edit),
+    - right: bulk editor for rename and tags.
+  - Multi-select rename now auto-numbers titles (`Name 1`, `Name 2`, ...).
+  - Renaming updates stored filenames (extension-aware) and syncs disk files in `User_Library`.
+
+- **Project Load Diagnostics for Missing Assets**:
+  - Missing asset errors are now captured as structured load issues.
+  - Users receive a detailed modal showing:
+    - affected file records,
+    - assignment location (slot refs or unassigned pool),
+    - missing version references.
+  - Added one-click cleanup option to remove unrecoverable file records and clear dead slot references.
+  - Added SD backup cross-reference and restore option:
+    - checks backup project assets,
+    - reports recoverable counts,
+    - restores available missing assets from SD backup,
+    - offers cleanup only for unresolved remainder.
+
+- **Swap Sample Packs .wav files**: 
+  - Swapped the files to the more compressed fileformat flac to save space.
+    - Synthux horror samples pack
+    - jonwtr samples
+
+## [2.0.0] - 2026-02-22 - not integrated into /V1
 
 ### Big overhual of SD card import/export system
+
+For now entering the main URL will first offer the option to run old V1 version. When picking the new version, V2, it will open the Setup Wizard, which will allow you to select a project or create a new one.
+
 - **Project Manager**: Added a new Project Manager to manage multiple projects and their associated SD SK Folders.
   - unified import/export system with a Syncing logic.
   - Separate project syncing and Root SK folder syncing.

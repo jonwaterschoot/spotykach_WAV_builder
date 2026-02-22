@@ -111,7 +111,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                             <div className="text-xs font-normal opacity-80 uppercase tracking-wider">Resume Session</div>
                             <div className="truncate max-w-[200px] text-sm">{restorableHandles.work.name}</div>
                         </div>
-                        <ArrowRight className="ml-auto" />
+                        <ArrowRight />
                     </button>
                 )}
 

@@ -73,6 +73,10 @@ Workflow:
    ```bash
    npm run build:versioned
    ```
+   To host samples outside GitHub Pages (for both `v1` and `v2`), set a base URL first:
+   ```bash
+   SAMPLE_ASSET_BASE_URL=https://github.com/<owner>/<repo>/releases/download/<tag> npm run build:versioned
+   ```
 3. Deploy to `gh-pages`:
    ```bash
    npm run deploy:versioned
@@ -81,6 +85,7 @@ Workflow:
 Notes:
 - The root version picker lives in `site/index.html`.
 - v2 is built from current source with base path `/spotykach_WAV_builder/v2/`.
+- When `SAMPLE_ASSET_BASE_URL` is set, the build rewrites sample URLs to that host and removes `dist/v1/samples` and `dist/v2/samples` from the Pages output.
 
 ## Roadmap
 

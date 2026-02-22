@@ -1,5 +1,5 @@
 import React from 'react';
-import { HardDrive, FolderOpen, Globe, AlertTriangle } from 'lucide-react';
+import { FolderOpen, AlertTriangle } from 'lucide-react';
 
 interface WelcomeScreenProps {
     onSelectMode: (mode: 'LOCAL' | 'SD' | 'BROWSER') => void;

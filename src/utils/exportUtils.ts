@@ -76,6 +76,53 @@ export const syncDirectory = async (
     }
 };
 
+export const saveUserLibraryToDirectory = async (
+    library: import('../types').UserLibrary,
+    rootHandle: FileSystemDirectoryHandle,
+    onProgress?: (msg: string) => void
+) => {
+    try {
+        const userLibDir = await rootHandle.getDirectoryHandle('User_Library', { create: true });
+        const files = Object.values(library.files);
+        const expectedNames = new Set(files.map(f => f.name));
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const mainVerId = file.currentVersionId;
+            const version = file.versions.find(v => v.id === mainVerId) || file.versions[0];
+
+            if (version?.blob) {
+                try {
+                    const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
+                    // @ts-ignore
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(version.blob);
+                    await writable.close();
+                } catch (e) {
+                    console.warn(`Failed to write library file: ${file.name}`, e);
+                }
+            }
+            onProgress?.(`Saving Library: ${i + 1}/${files.length}`);
+        }
+
+        // Remove files that no longer exist in library state
+        // @ts-ignore
+        for await (const [name, entry] of userLibDir.entries()) {
+            if (entry.kind !== 'file') continue;
+            if (!expectedNames.has(name)) {
+                try {
+                    await userLibDir.removeEntry(name);
+                } catch (e) {
+                    console.warn(`Failed to remove stale library file: ${name}`, e);
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Failed to save User Library to directory", e);
+        throw e;
+    }
+};
+
 
 // Clean Directory Helper (Recursive Delete Content)
 export const cleanDirectory = async (rootHandle: FileSystemDirectoryHandle, dirName: string) => {
@@ -222,6 +269,7 @@ export interface ExportSDOptions {
     // New Options
     skMode?: 'overwrite' | 'clean';
     syncUserLibrary?: boolean;
+    userLibrary?: import('../types').UserLibrary; // Passed from App state
     backupSKToProject?: boolean;
     workHandle?: FileSystemDirectoryHandle | null; // Needed for internal backup
     projectName?: string; // Needed for folder naming
@@ -529,19 +577,38 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             }
 
             // 4. SYNC USER LIBRARY (Optional)
-            if (options.syncUserLibrary && options.workHandle) {
+            // 4. SYNC USER LIBRARY (Optional - from IndexedDB object)
+            if (options.syncUserLibrary && options.userLibrary) {
                 onProgress?.("Syncing User Library...", 80);
                 try {
-                    // Source: Work/User_Library
-                    // Target: SD/WAV_Builder/User_Library
                     const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
+                    const userLibDir = await wavBuilderDir.getDirectoryHandle('User_Library', { create: true });
 
+                    const libFiles = Object.values(options.userLibrary.files);
+                    for (let i = 0; i < libFiles.length; i++) {
+                        const file = libFiles[i];
+                        const mainVerId = file.currentVersionId;
+                        const version = file.versions.find(v => v.id === mainVerId) || file.versions[0];
+                        if (version?.blob) {
+                            const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
+                            const w = await fileHandle.createWritable();
+                            await w.write(version.blob);
+                            await w.close();
+                        }
+                        onProgress?.(`Syncing User Library: ${file.name}`, 80 + ((i / libFiles.length) * 10));
+                    }
+                } catch (e) {
+                    console.error("User Library Sync Failed", e);
+                }
+            } else if (options.syncUserLibrary && options.workHandle) {
+                onProgress?.("Syncing User Library (Legacy)...", 80);
+                try {
+                    const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
                     await syncDirectory(options.workHandle, wavBuilderDir, 'User_Library', (p) => {
                         onProgress?.("Syncing User Library...", 80 + (p * 10));
                     });
-
                 } catch (e) {
-                    // Likely no User_Library exists, ignore
+                    // Ignore
                 }
             }
 
@@ -1023,6 +1090,7 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
         const file = await projectFileHandle.getFile();
         const text = await file.text();
         const state: AppState = JSON.parse(text);
+        const missingAssets: NonNullable<AppState['loadIssues']>['missingAssets'] = [];
 
         // 2. Rehydrate Blobs
         onProgress?.("Loading Assets...", 20);
@@ -1057,8 +1125,16 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
                             const fileData = await fileHandle.getFile(); // Returns File which is a Blob
                             return { ...v, blob: fileData };
                         } catch (e) {
-                            console.error(`Failed to load asset ${v.blobRef}`, e);
-                            return v; // Missing blob
+                            const errMsg = e instanceof Error ? e.message : String(e);
+                            console.warn(`Failed to load asset ${v.blobRef}`, e);
+                            missingAssets.push({
+                                fileId: fileRecord.id,
+                                fileName: fileRecord.name,
+                                versionId: v.id || 'unknown',
+                                blobRef: v.blobRef,
+                                reason: errMsg,
+                            });
+                            return { ...v, blob: null }; // Explicitly mark missing blob
                         }
                     }
                     return v;
@@ -1066,6 +1142,20 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
 
                 // Fix types if needed (cast to AudioVersion)
             }
+        }
+
+        if (missingAssets.length > 0) {
+            state.loadIssues = {
+                ...(state.loadIssues || {}),
+                missingAssets,
+            };
+            onProgress?.(`Loaded with warnings: ${missingAssets.length} missing asset file(s).`, 98);
+        } else if (state.loadIssues?.missingAssets?.length) {
+            // Clear stale runtime warnings if project.json carried old in-memory state by mistake.
+            state.loadIssues = {
+                ...state.loadIssues,
+                missingAssets: [],
+            };
         }
 
         onProgress?.("Project Loaded Successfully!", 100);

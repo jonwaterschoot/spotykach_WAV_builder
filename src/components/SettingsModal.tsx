@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, RefreshCw, AlertTriangle, HardDrive, Folder, Save } from 'lucide-react';
+import { Settings, RefreshCw, AlertTriangle, HardDrive, Folder } from 'lucide-react';
 
 interface SettingsModalProps {
     isOpen: boolean;

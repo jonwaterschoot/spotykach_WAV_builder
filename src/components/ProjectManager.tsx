@@ -24,6 +24,9 @@ interface ProjectManagerProps {
     onSyncProject?: (projectName: string) => void;
     onBuildProject?: (projectName: string) => void;
     onImportSK?: () => void;
+    onImportDeviceChanges?: () => void;
+    syncUserLibrary?: boolean;
+    onToggleSyncUserLibrary?: (val: boolean) => void;
     activeSKProject?: string;
     deviceDiff?: import('../utils/importUtils').DeviceDiff;
     onScan: () => void;
@@ -90,6 +93,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     onSyncProject,
     onBuildProject,
     onImportSK,
+    onImportDeviceChanges,
+    syncUserLibrary,
+    onToggleSyncUserLibrary,
     onDeleteBackupProject,
     activeSKProject,
     deviceDiff,
@@ -382,6 +388,29 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                             <span className="text-[10px] text-gray-600 italic normal-case">Not Connected</span>
                         )}
                         {onChangeBackupFolder && <button onClick={onChangeBackupFolder} className="ml-auto text-xs text-orange-400 hover:underline normal-case">{backupHandle ? 'Change' : 'Connect'}</button>}
+
+                        {/* Sync User Library Toggle */}
+                        {onToggleSyncUserLibrary && (
+                            <label className="flex items-center gap-2 cursor-pointer ml-4 mr-2">
+                                <input
+                                    type="checkbox"
+                                    checked={syncUserLibrary}
+                                    onChange={(e) => onToggleSyncUserLibrary(e.target.checked)}
+                                    className="w-3 h-3 accent-orange-500"
+                                />
+                                <span className="text-[10px] text-gray-400 uppercase font-bold">Sync Lib</span>
+                            </label>
+                        )}
+
+                        {/* Import Device Changes (Legacy or Specific) */}
+                        {onImportDeviceChanges && (
+                            <button
+                                onClick={onImportDeviceChanges}
+                                className="px-2 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded text-[10px] uppercase font-bold transition-colors"
+                            >
+                                Fix Slots
+                            </button>
+                        )}
                     </div>
                 </div>
 

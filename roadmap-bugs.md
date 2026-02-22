@@ -55,15 +55,8 @@ Option to sync the user library to the SD card in the same way as the projects a
     
 ---
 
-### Simplified editor / export to SD card only tool option for people who do not want the syncing/project management features
+## History / Trashcan
 
-A simplified version of the tool that only allows editing and exporting to a folder, without the syncing/project management features. This could be a separate tool, or a mode in the current tool.
-- probably best quite literally a stripped down version of the current tool, with no project management features, and no syncing features, just the editor and the export to folder option
-- on a 1 file per time base, easy access to just opening a file and doing the conversion to the needed output, user will only need to set the number, they can manually put it in the desired folder, or even just click download which moves it to standard downloads folder.
-
----
-
-### History / Trashcan
 - Keep a temporary trashcan for removed files and an action history list, able to use ctrl+z / ctrl+y to undo/redo actions, and buttons in a main menu place?
 
 - indexing (all) actions (how many actions should we keep in history? how to name them?)
@@ -78,11 +71,15 @@ A simplified version of the tool that only allows editing and exporting to a fol
 
 - **Project cleanup feature**: option to clean up the project by removing all files that are not used in any tape, and an option to only keep the original file but not keep the unused history files, only the files saved to the pool
 
+## Simplified editor / export to SD card only tool 
 
-### Standalone Application (Electron)
-*   Wrap the app in Electron for native "File > Open/Save" dialogs.
-*   completely offline mode, no connection to the internet needed
+Option for people who do not want the syncing/project management features
 
+A simplified version of the tool that only allows editing and exporting to a folder, without the syncing/project management features. This could be a separate tool, or a mode in the current tool.
+- probably best quite literally a stripped down version of the current tool, with no project management features, and no syncing features, just the editor and the export to folder option
+- on a 1 file per time base, easy access to just opening a file and doing the conversion to the needed output, user will only need to set the number, they can manually put it in the desired folder, or even just click download which moves it to standard downloads folder.
+
+---
 
 ## Editor Improvements
 
@@ -94,6 +91,7 @@ A simplified version of the tool that only allows editing and exporting to a fol
 
 ### Audio Processor
 - add 3 band EQ (automated)
+- add limiter
 
 ### Slicer tool
 A slicer tool with up to 32 slices
@@ -107,13 +105,24 @@ A slicer tool with up to 32 slices
 > We want to be able to make slices using the web-tool by @Jon Waterschoot and read those in the slice mode. In this case, start position should snap to the defined points instead of default 1/8th step.
 > To transfer the slice points to the Spotykach we’ll use CUE chunk of the WAV file header as described in RIFF specification. Considering there’s only a single DATA chunk in the file, the structure of the CUE chunk will be fairly simple.
 
+## Standalone Application (Electron)
+*   Wrap the app in Electron for native "File > Open/Save" dialogs.
+*   completely offline mode, no connection to the internet needed
+
+
+## other UI improvements
+
 ### Rightclick context menu
 For some places, like cardviews, with e.g. edit, remove from slot, remove from project, perma delete, move to tape x, move to tape y, etc., show file in browser panel
 
 ### Mobile Optimization
+
+As the interface has gotten more and more complex I'm not sure if this is still a realistic goal. 
+
 Improve touch targets and layout for tablet/phone usage.
 
 **Touch support** (Ongoing)
+
 - Further testing needed on various devices.
 - Editor UI improvements for touch (larger buttons, spacing).
 - Firefox touch drag-and-drop issues (Windows & Android).

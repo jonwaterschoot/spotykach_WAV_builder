@@ -29,6 +29,7 @@ export interface FileRecord {
     isParked: boolean; // if false, implies it *might* be assigned, or just pending
     origin?: string; // e.g., "Sample Pack Name"
     license?: string; // e.g., "CC-BY 4.0"
+    tags?: string[]; // User tags for filtering/organization
     metadata?: WavMetadata;
 }
 
@@ -37,6 +38,16 @@ export interface WavMetadata {
     hash?: string; // Content hash for change detection
     tempo?: number; // BPM
     processing?: string[]; // Flags like ["NORMALIZED", "FADED"]
+}
+
+export interface UserLibraryMetadata {
+    artist?: string;
+    license?: string;
+}
+
+export interface UserLibrary {
+    files: Record<string, FileRecord>;
+    metadata: UserLibraryMetadata;
 }
 
 // Tape Slots now just reference the FileID
@@ -58,6 +69,16 @@ export interface AppState {
         appName: string;
         version: string;
         exportDate: string;
+    };
+    userLibrary?: UserLibrary;
+    loadIssues?: {
+        missingAssets?: Array<{
+            fileId: string;
+            fileName: string;
+            versionId: string;
+            blobRef: string;
+            reason: string;
+        }>;
     };
 }
 

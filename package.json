@@ -1,7 +1,7 @@
 {
   "name": "spotykach-wav-builder",
   "private": true,
-  "version": "1.1.5",
+  "version": "2.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,9 @@
     "deploy:versioned": "gh-pages -d dist"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@types/jszip": "^3.4.0",
     "@types/uuid": "^10.0.0",
     "idb": "^8.0.3",

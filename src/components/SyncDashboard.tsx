@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { TAPE_COLORS, COLOR_MAP } from '../types';
 import type { SyncDiff, SyncStatus } from '../utils/importUtils';
-import { AlertTriangle, ArrowRight, ArrowLeft, Trash2, Check, RefreshCw, X, HardDrive, Smartphone, Save, Play, Pause, MoreVertical, Archive, Ban } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ArrowLeft, Trash2, Check, RefreshCw, X, HardDrive, Smartphone, Save, Play, Pause } from 'lucide-react';
 
 export type SyncActionType = 'PUSH' | 'PULL' | 'DELETE';
 
@@ -102,16 +102,6 @@ export const SyncDashboard = ({ isOpen, onClose, diff, onCommit }: SyncDashboard
                 next[slotId] = { type, slotId, description, archiveBehavior: 'AUTO' };
             }
             return next;
-        });
-    };
-
-    const setArchiveBehavior = (slotId: string, behavior: 'AUTO' | 'ARCHIVE' | 'DELETE') => {
-        setStagedActions(prev => {
-            if (!prev[slotId]) return prev;
-            return {
-                ...prev,
-                [slotId]: { ...prev[slotId], archiveBehavior: behavior }
-            };
         });
     };
 
