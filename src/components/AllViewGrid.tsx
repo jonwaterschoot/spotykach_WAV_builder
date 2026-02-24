@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react';
+import { Play, Pause } from 'lucide-react';
 import { TAPE_COLORS } from '../types';
 import type { AppState, TapeColor } from '../types';
 import { MiniSlotCard } from './MiniSlotCard';
 import { TapeIcon } from './TapeIcon';
+import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 
 interface AllViewGridProps {
     tapes: AppState['tapes'];
@@ -22,6 +25,18 @@ interface AllViewGridProps {
 }
 
 export const AllViewGrid = ({ tapes, files, onRemoveSlot, onSlotDrop, onSlotDropInternal, onSlotClick, onTapeHeaderClick, duplicates, onDeleteFile, onBulkAssign, selectedSlots, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart }: AllViewGridProps) => {
+    const { isPlaying, activeFileId, play, pause, currentTime, duration, seek } = useAudioPlayer();
+
+    // Retain last played file for player bar
+    const [lastActiveFileId, setLastActiveFileId] = useState<string | null>(null);
+    useEffect(() => {
+        if (activeFileId) {
+            setLastActiveFileId(activeFileId);
+        }
+    }, [activeFileId]);
+
+    const displayFileId = activeFileId || lastActiveFileId;
+    const activeFile = displayFileId ? files[displayFileId] : null;
 
     const getColorVar = (color: string) => {
         switch (color) {
@@ -90,6 +105,51 @@ export const AllViewGrid = ({ tapes, files, onRemoveSlot, onSlotDrop, onSlotDrop
                         </div>
                     );
                 })}
+            </div>
+
+            {/* Global Player Bar */}
+            <div className="mt-4 p-3 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-between gap-4 flex-shrink-0">
+                <div className="flex items-center gap-3 w-full">
+                    <button
+                        onClick={() => {
+                            if (isPlaying && activeFile?.id === activeFileId) pause();
+                            else if (activeFile) play(activeFile);
+                        }}
+                        disabled={!activeFile}
+                        className={`p-3 rounded-full transition-colors flex-shrink-0 ${activeFile && isPlaying && activeFile?.id === activeFileId ? 'bg-gray-700 text-white hover:bg-gray-600' : activeFile ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white' : 'bg-gray-900/50 text-gray-700 cursor-not-allowed'}`}
+                        title={isPlaying && activeFile?.id === activeFileId ? "Pause" : "Play"}
+                    >
+                        {isPlaying && activeFile?.id === activeFileId ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+                    </button>
+                    <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-sm font-bold text-gray-300 truncate" title={activeFile ? activeFile.name : 'No file selected'}>
+                            {activeFile ? activeFile.name : 'No file selected'}
+                        </span>
+                        {activeFile && (
+                            <div className="flex items-center gap-3 mt-1 w-full">
+                                <span className="text-[10px] text-gray-400 font-mono min-w-[30px] text-right">
+                                    {Math.floor(currentTime || 0)}s
+                                </span>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={duration || 0}
+                                    value={currentTime || 0}
+                                    disabled={!activeFile || duration <= 0}
+                                    onChange={(e) => {
+                                        if (duration > 0) {
+                                            seek(Number(e.target.value));
+                                        }
+                                    }}
+                                    className="flex-1 accent-gray-300 disabled:opacity-40"
+                                />
+                                <span className="text-[10px] text-gray-400 font-mono min-w-[30px]">
+                                    {Math.floor(duration || 0)}s
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );

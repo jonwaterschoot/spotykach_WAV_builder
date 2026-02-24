@@ -68,8 +68,8 @@ export const SyncComparisonTable = ({ items, onDecisionChange }: SyncComparisonT
                 <div
                     key={item.id}
                     className={`grid grid-cols-[auto_1fr_auto_auto] gap-4 items-center p-3 rounded-lg border transition-colors ${item.decision === 'skip' ? 'bg-black/20 border-gray-800 opacity-60' :
-                            item.type === 'new' ? 'bg-green-500/5 border-green-500/20' :
-                                'bg-blue-500/5 border-blue-500/20'
+                        item.type === 'new' ? 'bg-green-500/5 border-green-500/20' :
+                            'bg-blue-500/5 border-blue-500/20'
                         }`}
                 >
                     {/* Play Button */}
@@ -106,8 +106,8 @@ export const SyncComparisonTable = ({ items, onDecisionChange }: SyncComparisonT
                         <button
                             onClick={() => onDecisionChange(item.id, 'overwrite')}
                             className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${item.decision === 'overwrite'
-                                    ? (item.type === 'new' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white')
-                                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                ? (item.type === 'new' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white')
+                                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                                 }`}
                         >
                             {item.type === 'new' ? 'Import' : 'Overwrite'}

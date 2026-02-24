@@ -94,3 +94,15 @@ export interface ProjectSummary {
     local?: ProjectSummary;
     backup?: ProjectSummary;
 }
+
+export interface VisualFilters {
+    invert: number;
+    grayscale: number;
+    contrast: number;
+    brightness: number;
+    textureOpacity: number;
+    fontSize: number;
+    textureImage: string;
+    textureSize: string;
+    texturePosition?: string;
+}

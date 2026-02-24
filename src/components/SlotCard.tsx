@@ -23,7 +23,7 @@ interface SlotCardProps {
 }
 
 export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart }: SlotCardProps) => {
-    const { play, stop, isPlaying, activeFileId, currentTime, duration, seek } = useAudioPlayer();
+    const { play, pause, isPlaying, activeFileId, currentTime, duration, seek } = useAudioPlayer();
 
     // Check if this slot's file is currently playing
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
@@ -166,7 +166,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
             onDoubleClick={handleDoubleClick}
             className={`
                 relative aspect-square rounded-xl border-2 cursor-pointer transition-all duration-200
-                flex flex-col group
+                flex flex-col group noise-texture
                 ${isDragOver ? 'bg-white/10 scale-105 z-20' : isActive ? 'bg-[#1a1a1a] shadow-xl scale-[1.02]' : 'border-gray-700 bg-[#151515] hover:border-gray-500'}
                 ${fileRecord ? 'shadow-lg' : ''}
                 ${isDuplicate ? '!border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : ''}
@@ -263,7 +263,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                if (isThisPlaying) stop();
+                                if (isThisPlaying) pause();
                                 else if (fileRecord) play(fileRecord);
                             }}
                             className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded transition-all active:scale-95 ${isThisPlaying

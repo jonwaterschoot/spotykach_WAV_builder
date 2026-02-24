@@ -1335,7 +1335,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             )}
 
 
-            <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-7xl h-[90vh] shadow-2xl flex overflow-hidden">
+            <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-7xl h-[90vh] shadow-2xl flex overflow-hidden noise-texture">
                 {/* Reset Confirmation Modal */}
                 <ConfirmModal
                     isOpen={showResetConfirm}
@@ -1594,7 +1594,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                     <div className="p-6 pt-2 flex flex-col h-full overflow-hidden">
                         {/* Toolbar */}
-                        <div className="flex gap-6 mb-4 bg-[#111] p-4 rounded-xl border border-gray-800 flex-col text-left shrink-0 max-w-full">
+                        <div className="flex gap-6 mb-4 bg-[#111] relative z-20 p-4 rounded-xl border border-gray-800 flex-col text-left shrink-0 max-w-full">
                             <div className="flex items-center gap-6 w-full overflow-x-auto pb-2">
                                 <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap"
                                     onMouseEnter={() => setHelpText("Global Edit Controls (Step 1)")}
@@ -2075,7 +2075,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                         {/* Editor Container - SCROLLABLE WINDOW */}
                         {/* Parent: Flex-1 to take available space. Centered content. */}
-                        <div className="flex-1 bg-black/40 border-y border-gray-800 relative flex flex-col justify-center overflow-hidden min-h-[300px] min-w-0 max-w-full">
+                        <div className="flex-1 bg-[#111] border-y border-gray-800 relative z-20 flex flex-col justify-center overflow-hidden min-h-[300px] min-w-0 max-w-full">
 
                             {/* Scroll Area Wrapper - This handles the overflow-x */}
                             <div

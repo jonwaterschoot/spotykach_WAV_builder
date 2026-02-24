@@ -22,7 +22,7 @@ interface MiniSlotCardProps {
 }
 
 export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart }: MiniSlotCardProps) => {
-    const { play, stop, isPlaying, activeFileId } = useAudioPlayer();
+    const { play, pause, isPlaying, activeFileId } = useAudioPlayer();
 
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
     const currentVersion = fileRecord?.versions.find(v => v.id === fileRecord.currentVersionId);
@@ -169,7 +169,7 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
             onDrop={handleDrop}
             style={{ touchAction: 'none' }}
             className={`
-            relative w-full h-full min-h-[50px] rounded-lg border bg-[#151515] 
+            relative w-full h-full min-h-[64px] rounded-lg border bg-[#151515] noise-texture
             flex flex-col group transition-all
             ${isDragOver ? 'border-synthux-blue bg-synthux-blue/10 scale-105 z-20 shadow-xl' : 'border-gray-800 hover:border-gray-500'}
             ${fileRecord ? 'cursor-grab active:cursor-grabbing' : 'opacity-80 hover:opacity-100 cursor-pointer'}
@@ -209,14 +209,14 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                     </div>
 
                     {/* Content Overlay */}
-                    <div className="relative z-10 flex flex-col justify-between h-full p-2 bg-gradient-to-t from-black/80 to-transparent">
+                    <div className="relative z-10 flex flex-col justify-between h-full p-2 bg-gradient-to-t from-black/80 to-transparent rounded-lg overflow-hidden">
 
                         {/* Top Row: Play & Trash (Hidden until hover unless playing) */}
                         <div className={`flex justify - between items - start transition - opacity duration - 200 ${isThisPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} `}>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    if (isThisPlaying) stop();
+                                    if (isThisPlaying) pause();
                                     else play(fileRecord);
                                 }}
                                 className="p-1 rounded-full bg-black/60 hover:bg-white text-white hover:text-black transition-colors"

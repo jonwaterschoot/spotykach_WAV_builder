@@ -142,8 +142,7 @@ export const MiniWaveform = ({ blob, buffer: propBuffer, width = 100, height = 4
     return (
         <div
             ref={containerRef}
-            className={`flex items-center justify-center opacity-80 relative ${className} ${onSeek ? 'cursor-ew-resize' : ''}`}
-            style={{ width, height }}
+            className={`flex items-center justify-center opacity-80 relative w-full h-full ${className} ${onSeek ? 'cursor-ew-resize' : ''}`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}

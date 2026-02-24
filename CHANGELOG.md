@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0] - 2026-02-24
+
+### Major Feature: Visual Overhaul
+- **Visual Settings Tab**: Added a dedicated Visual Settings modal featuring smooth animated transitions between various visual presets. Provides granular slider controls over visual elements like brightness, contrast, and inversion.
+- **Texture Enhancements**: Introduced scrolling background textures in the Sample Pack Browser and granular noise textures in the Audio Editor to improve the app's aesthetic depth and contrast on main controls.
+- **Interactive Video Background**: Integrated an interactive video loop into the Setup Wizard / Welcome screen with an easily accessible toggle for playing video sound.
+- **Theme Improvements**: Refined the Setup Wizard with updated title gradients, button opacities, and adjusted the bottom button spacing to avoid Windows taskbar clipping.
+
+### UI/UX Refinements
+- **React Portal Integration**: Isolated the "Reset Visual Effects" button from global UI filters using a React Portal, ensuring it always remains visible. Repositioned Toast notifications to the top of the screen to prevent clipping and fixed portal rendering issues.
+- **Player Bar**: Improved playback interaction (play/pause consistency via spacebar and clicks) and refined the progress bar styling throughout the All Tapes view using darker/lighter contrast hints.
+
 ## [2.0.1] - 2026-02-22
 
 ### Added

@@ -994,7 +994,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                 </div>
                                             </div>
                                         </div>
-                                            <button
+                                        <button
                                             onClick={() => {
                                                 if (playingPreviewKey === `draft:${draft.id}`) stopPreview();
                                                 setPendingUploadDrafts(prev => (prev || []).filter(d => d.id !== draft.id));

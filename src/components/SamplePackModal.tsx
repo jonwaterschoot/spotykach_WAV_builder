@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Play, Square, Download, FolderOpen, Loader, Check, User, Briefcase, Edit2 } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Edit2 } from 'lucide-react';
 import { SAMPLE_PACKS } from '../data/samplePacks';
 import type { UserLibrary, ProjectSummary, FileRecord } from '../types';
 import { loadProjectFromDirectory } from '../utils/exportUtils';
@@ -23,6 +23,7 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
     const [loadingProjectId, setLoadingProjectId] = useState<string | null>(null);
     const [playingSample, setPlayingSample] = useState<string | null>(null);
     const [playingSampleName, setPlayingSampleName] = useState<string>('');
+    const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
     const [playbackTime, setPlaybackTime] = useState(0);
     const [playbackDuration, setPlaybackDuration] = useState(0);
     const [userLibraryTagFilter, setUserLibraryTagFilter] = useState('');
@@ -174,6 +175,9 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
         if (playingSample === sample.path && audioRef.current && !audioRef.current.paused) {
             // Stop
             audioRef.current?.pause();
+        } else if (playingSample === sample.path && audioRef.current && audioRef.current.paused) {
+            // Resume
+            audioRef.current.play().catch(e => console.error("Preview resume failed", e));
         } else {
             // Play new
             if (audioRef.current) {
@@ -235,225 +239,241 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
 
                 <div className="flex-1 flex overflow-hidden">
                     {/* Sidebar: Packs List */}
-                    <div className="w-64 bg-synthux-sidebg border-r border-gray-800 p-4 flex flex-col gap-2 overflow-y-auto">
-                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Available Packs</h3>
-                        {SAMPLE_PACKS.map((pack: any) => (
-                            <button
-                                key={pack.id}
-                                onClick={() => { setSelectedPackId(pack.id); setSelectedProjectId(null); }}
-                                className={`text-left px-3 py-2 rounded text-sm font-medium transition-colors ${selectedPackId === pack.id
-                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                    }`}
-                            >
-                                {pack.name}
-                            </button>
-                        ))}
-
-                        <div className="mt-4 space-y-2">
-                            <h3 className="text-xs font-bold text-gray-500 uppercase flex items-center justify-between">
-                                My Library
+                    <div className="w-64 bg-synthux-browsebg border-r border-gray-800 flex flex-col overflow-hidden">
+                        <div className="flex-1 p-4 flex flex-col gap-2 overflow-y-auto">
+                            <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Available Packs</h3>
+                            {SAMPLE_PACKS.map((pack: any) => (
                                 <button
-                                    onClick={(e) => { e.stopPropagation(); onOpenLibraryManager(); }}
-                                    className="p-1 hover:bg-gray-700 rounded text-synthux-orange"
-                                    title="Open Library Manager"
+                                    key={pack.id}
+                                    onClick={() => { setSelectedPackId(pack.id); setSelectedProjectId(null); }}
+                                    className={`text-left px-3 py-2 rounded text-sm font-medium transition-colors ${selectedPackId === pack.id
+                                        ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                        }`}
                                 >
-                                    <Edit2 size={12} />
+                                    {pack.name}
                                 </button>
-                            </h3>
+                            ))}
 
-                            <button
-                                onClick={() => { setSelectedPackId('project-samples'); }}
-                                className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'project-samples'
-                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                    }`}
-                            >
-                                <Briefcase size={14} /> Projects Samples
-                            </button>
+                            <div className="mt-4 space-y-2">
+                                <h3 className="text-xs font-bold text-gray-500 uppercase flex items-center justify-between">
+                                    My Library
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenLibraryManager(); }}
+                                        className="p-1 hover:bg-gray-700 rounded text-synthux-orange"
+                                        title="Open Library Manager"
+                                    >
+                                        <Edit2 size={12} />
+                                    </button>
+                                </h3>
 
-                            {isProjectSamplesSelected && (
-                                <div className="pl-6 space-y-1">
-                                    {projects.filter(p => (p as any).hasMeta && ((p as any).local || !(p as any).backup)).map(proj => (
-                                        <button
-                                            key={proj.name}
-                                            onClick={() => {
-                                                setSelectedProjectId(proj.name);
-                                                setProjectLoadError(null);
-                                            }}
-                                            className={`w-full text-left px-2 py-1.5 rounded text-[11px] font-mono transition-colors truncate ${selectedProjectId === proj.name
-                                                ? 'text-white bg-white/5'
-                                                : 'text-gray-500 hover:text-gray-300'
-                                                }`}
-                                        >
-                                            {proj.name} {proj.name === currentProjectName && '(Current)'}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                                <button
+                                    onClick={() => { setSelectedPackId('project-samples'); }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'project-samples'
+                                        ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                        }`}
+                                >
+                                    <Briefcase size={14} /> Projects Samples
+                                </button>
 
-                            <button
-                                onClick={() => { setSelectedPackId('my-library'); setSelectedProjectId(null); }}
-                                className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'my-library'
-                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                    }`}
-                            >
-                                <User size={14} /> Main User Library
-                            </button>
+                                {isProjectSamplesSelected && (
+                                    <div className="pl-6 space-y-1">
+                                        {projects.filter(p => (p as any).hasMeta && ((p as any).local || !(p as any).backup)).map(proj => (
+                                            <button
+                                                key={proj.name}
+                                                onClick={() => {
+                                                    setSelectedProjectId(proj.name);
+                                                    setProjectLoadError(null);
+                                                }}
+                                                className={`w-full text-left px-2 py-1.5 rounded text-[11px] font-mono transition-colors truncate ${selectedProjectId === proj.name
+                                                    ? 'text-white bg-white/5'
+                                                    : 'text-gray-500 hover:text-gray-300'
+                                                    }`}
+                                            >
+                                                {proj.name} {proj.name === currentProjectName && '(Current)'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
 
-                            {isUserLibrarySelected && (
-                                <div className="mt-2">
-                                    <label className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">Filter by tags</label>
-                                    <input
-                                        value={userLibraryTagFilter}
-                                        onChange={(e) => setUserLibraryTagFilter(e.target.value)}
-                                        placeholder="Type tags (partial match)"
-                                        className="w-full bg-black/40 border border-gray-700 rounded px-2 py-1.5 text-[11px] text-gray-200"
-                                    />
-                                    {availableUserLibraryTags.length > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1.5">
-                                            {availableUserLibraryTags.map(tag => {
-                                                const selected = selectedUserLibraryTags.includes(tag);
-                                                return (
-                                                    <button
-                                                        key={tag}
-                                                        onClick={() => {
-                                                            setSelectedUserLibraryTags(prev =>
-                                                                prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-                                                            );
-                                                        }}
-                                                        className={`px-2 py-1 rounded-full text-[10px] border transition-colors ${selected
-                                                            ? 'bg-synthux-orange/20 border-synthux-orange/50 text-synthux-orange'
-                                                            : 'bg-black/40 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                                                            }`}
-                                                    >
-                                                        {tag}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                                <button
+                                    onClick={() => { setSelectedPackId('my-library'); setSelectedProjectId(null); }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'my-library'
+                                        ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                        }`}
+                                >
+                                    <User size={14} /> Main User Library
+                                </button>
+
+                                {isUserLibrarySelected && (
+                                    <div className="mt-2">
+                                        <label className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">Filter by tags</label>
+                                        <input
+                                            value={userLibraryTagFilter}
+                                            onChange={(e) => setUserLibraryTagFilter(e.target.value)}
+                                            placeholder="Type tags (partial match)"
+                                            className="w-full bg-black/40 border border-gray-700 rounded px-2 py-1.5 text-[11px] text-gray-200"
+                                        />
+                                        {availableUserLibraryTags.length > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                {availableUserLibraryTags.map(tag => {
+                                                    const selected = selectedUserLibraryTags.includes(tag);
+                                                    return (
+                                                        <button
+                                                            key={tag}
+                                                            onClick={() => {
+                                                                setSelectedUserLibraryTags(prev =>
+                                                                    prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                                                                );
+                                                            }}
+                                                            className={`px-2 py-1 rounded-full text-[10px] border transition-colors ${selected
+                                                                ? 'bg-synthux-orange/20 border-synthux-orange/50 text-synthux-orange'
+                                                                : 'bg-black/40 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                                                                }`}
+                                                        >
+                                                            {tag}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
                     {/* Main: Sample List */}
-                    <div className="flex-1 bg-synthux-main p-6 overflow-y-auto">
-                        {selectedPack ? (
-                            <>
-                                <div className="mb-6">
-                                    <h1 className="text-2xl font-bold text-white mb-2">{selectedPack.name}</h1>
-                                    <p className="text-gray-400 text-sm max-w-xl mb-4 leading-relaxed font-body">{selectedPack.description}</p>
+                    <div className="flex-1 bg-synthux-main flex flex-col overflow-hidden">
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            {selectedPack ? (
+                                <>
+                                    <div className="mb-6">
+                                        <h1 className="text-2xl font-bold text-white mb-2">{selectedPack.name}</h1>
+                                        <p className="text-gray-400 text-sm max-w-xl mb-4 leading-relaxed font-body">{selectedPack.description}</p>
 
-                                    {selectedPack.license && (
-                                        <div className="bg-black/20 p-3 rounded-lg border border-gray-800 text-xs text-gray-400 font-mono whitespace-pre-wrap mb-4 max-w-xl">
-                                            <strong className="block text-gray-500 mb-1 uppercase tracking-wider">License</strong>
-                                            {selectedPack.license}
-                                        </div>
-                                    )}
+                                        {selectedPack.license && (
+                                            <div className="bg-black/20 p-3 rounded-lg border border-gray-800 text-xs text-gray-400 font-mono whitespace-pre-wrap mb-4 max-w-xl">
+                                                <strong className="block text-gray-500 mb-1 uppercase tracking-wider">License</strong>
+                                                {selectedPack.license}
+                                            </div>
+                                        )}
 
-                                    {selectedPack.links && selectedPack.links.length > 0 && (
-                                        <div className="flex gap-2 mb-4 flex-wrap text-sm">
-                                            {selectedPack.links.map((link: any, i: number) => (
-                                                <a
-                                                    key={i}
-                                                    href={link.url}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-synthux-blue rounded border border-gray-700 transition-colors"
-                                                >
-                                                    {link.label}
-                                                </a>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                        {selectedPack.links && selectedPack.links.length > 0 && (
+                                            <div className="flex gap-2 mb-4 flex-wrap text-sm">
+                                                {selectedPack.links.map((link: any, i: number) => (
+                                                    <a
+                                                        key={i}
+                                                        href={link.url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-synthux-blue rounded border border-gray-700 transition-colors"
+                                                    >
+                                                        {link.label}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
 
-                                <div className="space-y-6">
-                                    {categorizedSamples.map(([category, samples]) => (
-                                        <div key={category}>
-                                            <h3 className="sticky top-0 z-10 bg-synthux-main text-xs font-bold text-synthux-orange uppercase py-2 px-4 mb-1 border-b border-gray-800">
-                                                {category}
-                                            </h3>
-                                            <div className="space-y-1">
-                                                {samples.map((sample: any, idx: number) => {
-                                                    const isPlaying = playingSample === sample.path;
-                                                    const isImporting = importingSample === sample.path;
-                                                    const isAdded = addedSamples.has(sample.path);
+                                    <div className="space-y-6">
+                                        {categorizedSamples.map(([category, samples]) => (
+                                            <div key={category}>
+                                                <h3 className="sticky top-0 z-10 bg-synthux-main text-xs font-bold text-synthux-orange uppercase py-2 px-4 mb-1 border-b border-gray-800">
+                                                    {category}
+                                                </h3>
+                                                <div className="space-y-1">
+                                                    {samples.map((sample: any, idx: number) => {
+                                                        const isPlaying = playingSample === sample.path;
+                                                        const isImporting = importingSample === sample.path;
+                                                        const isAdded = addedSamples.has(sample.path);
 
-                                                    return (
-                                                        <div key={idx} className="grid grid-cols-[40px_1fr_100px] gap-4 items-center px-4 py-3 hover:bg-gray-800/50 rounded border border-transparent hover:border-gray-800 transition-colors group">
-                                                            {/* Play Button */}
-                                                            <button
-                                                                onClick={() => handlePlay(sample)}
-                                                                className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${isPlaying ? 'text-synthux-orange bg-synthux-orange/10' : 'text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700'
-                                                                    }`}
-                                                            >
-                                                                {isPlaying ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-                                                            </button>
-
-                                                            {/* Name */}
-                                                            <div className="font-mono text-sm text-gray-300 group-hover:text-white truncate">
-                                                                <div className="truncate">{sample.name}</div>
-                                                                {sample.tags && sample.tags.length > 0 && (
-                                                                    <div className="mt-1 text-[10px] text-gray-500 truncate">
-                                                                        #{sample.tags.join(' #')}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-
-                                                            {/* Action */}
-                                                            <div className="text-right">
+                                                        return (
+                                                            <div key={idx} className="grid grid-cols-[40px_1fr_100px] gap-4 items-center px-4 py-3 hover:bg-gray-800/50 rounded border border-transparent hover:border-gray-800 transition-colors group">
+                                                                {/* Play Button */}
                                                                 <button
-                                                                    onClick={() => handleImport(sample)}
-                                                                    disabled={isImporting || isAdded}
-                                                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-colors disabled:cursor-not-allowed ${isAdded
-                                                                        ? 'bg-synthux-yellow/20 text-synthux-yellow border border-synthux-yellow/50'
-                                                                        : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white'
+                                                                    onClick={() => handlePlay(sample)}
+                                                                    className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${isPlaying && isPreviewPlaying ? 'text-synthux-orange bg-synthux-orange/10' : 'text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700'
                                                                         }`}
                                                                 >
-                                                                    {isImporting ? (
-                                                                        <>
-                                                                            <Loader size={12} className="animate-spin" /> Adding...
-                                                                        </>
-                                                                    ) : isAdded ? (
-                                                                        <>
-                                                                            <Check size={14} /> Added
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <Download size={14} /> Add
-                                                                        </>
-                                                                    )}
+                                                                    {isPlaying && isPreviewPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                                                                 </button>
+
+                                                                {/* Name */}
+                                                                <div className="font-mono text-sm text-gray-300 group-hover:text-white truncate">
+                                                                    <div className="truncate">{sample.name}</div>
+                                                                    {sample.tags && sample.tags.length > 0 && (
+                                                                        <div className="mt-1 text-[10px] text-gray-500 truncate">
+                                                                            #{sample.tags.join(' #')}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Action */}
+                                                                <div className="text-right">
+                                                                    <button
+                                                                        onClick={() => handleImport(sample)}
+                                                                        disabled={isImporting || isAdded}
+                                                                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-colors disabled:cursor-not-allowed ${isAdded
+                                                                            ? 'bg-synthux-yellow/20 text-synthux-yellow border border-synthux-yellow/50'
+                                                                            : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white'
+                                                                            }`}
+                                                                    >
+                                                                        {isImporting ? (
+                                                                            <>
+                                                                                <Loader size={12} className="animate-spin" /> Adding...
+                                                                            </>
+                                                                        ) : isAdded ? (
+                                                                            <>
+                                                                                <Check size={14} /> Added
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Download size={14} /> Add
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-gray-500 font-mono text-sm">
+                                    {isProjectSamplesSelected && !selectedProjectId
+                                        ? 'Select a project from the sidebar to browse its samples'
+                                        : isProjectSamplesSelected && loadingProjectId
+                                            ? `Loading project samples for ${loadingProjectId}...`
+                                            : isProjectSamplesSelected && projectLoadError
+                                                ? projectLoadError
+                                                : 'Select a pack to browse samples'}
                                 </div>
-                            </>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-gray-500 font-mono text-sm">
-                                {isProjectSamplesSelected && !selectedProjectId
-                                    ? 'Select a project from the sidebar to browse its samples'
-                                    : isProjectSamplesSelected && loadingProjectId
-                                        ? `Loading project samples for ${loadingProjectId}...`
-                                        : isProjectSamplesSelected && projectLoadError
-                                            ? projectLoadError
-                                    : 'Select a pack to browse samples'}
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 {/* Hidden Audio Element for Preview */}
                 <div className="border-t border-gray-800 bg-black/30 px-4 py-3">
                     <div className="flex items-center gap-3 text-xs text-gray-300">
+                        <button
+                            onClick={() => {
+                                if (audioRef.current) {
+                                    if (isPreviewPlaying) audioRef.current.pause();
+                                    else audioRef.current.play().catch(e => console.error(e));
+                                }
+                            }}
+                            disabled={!playingSample}
+                            className={`flex flex-shrink-0 items-center justify-center w-8 h-8 rounded-full transition-colors ${playingSample && isPreviewPlaying ? 'bg-synthux-orange/20 text-synthux-orange' : playingSample ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white' : 'bg-gray-900 text-gray-700 cursor-not-allowed'}`}
+                        >
+                            {isPreviewPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                        </button>
                         <div className="min-w-0 flex-1 truncate font-mono">
                             {playingSample ? `Preview: ${playingSampleName}` : 'No sample selected'}
                         </div>
@@ -487,8 +507,9 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
                         if (!audioRef.current) return;
                         setPlaybackTime(audioRef.current.currentTime || 0);
                     }}
-                    onPause={() => setPlayingSample(null)}
-                    onEnded={() => setPlayingSample(null)}
+                    onPlay={() => setIsPreviewPlaying(true)}
+                    onPause={() => setIsPreviewPlaying(false)}
+                    onEnded={() => setIsPreviewPlaying(false)}
                 />
             </div>
         </div>

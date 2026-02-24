@@ -26,7 +26,7 @@ import { ProjectManager } from './components/ProjectManager';
 import { ProjectSyncModal } from './components/ProjectSyncModal';
 import { DeviceImportModal } from './components/DeviceImportModal';
 import { LibraryManager } from './components/LibraryManager';
-import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight, Settings } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ConfirmModal } from './components/ConfirmModal';
@@ -147,6 +147,61 @@ function App() {
   });
   const [showLibraryManager, setShowLibraryManager] = useState(false);
 
+  // Visual Filters State
+  const [visualFilters, setVisualFilters] = useState<import('./types').VisualFilters>(() => {
+    try {
+      const saved = localStorage.getItem('spotykach_visual_filters');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to load visual filters', e);
+    }
+    return {
+      invert: 0,
+      grayscale: 0,
+      contrast: 1,
+      brightness: 1,
+      textureOpacity: 0.05,
+      fontSize: 1,
+      textureImage: 'highrestexture_tapenoisevhs_whitetrans.png',
+      textureSize: 'cover',
+      texturePosition: 'center'
+    };
+  });
+
+  // Sync Visual Filters to CSS Variables
+  useEffect(() => {
+    localStorage.setItem('spotykach_visual_filters', JSON.stringify(visualFilters));
+    const root = document.documentElement;
+    root.style.setProperty('--master-invert', String(visualFilters.invert));
+    root.style.setProperty('--master-grayscale', String(visualFilters.grayscale));
+    root.style.setProperty('--master-contrast', String(visualFilters.contrast));
+    root.style.setProperty('--master-brightness', String(visualFilters.brightness));
+    root.style.setProperty('--master-texture-opacity', String(visualFilters.textureOpacity));
+    root.style.setProperty('--master-font-size', `${visualFilters.fontSize * 16}px`);
+    const imgPath = visualFilters.textureImage.endsWith('.gif') ? '/vid/' : '/img/';
+    root.style.setProperty('--master-texture-image', `url('${imgPath}${visualFilters.textureImage}')`);
+    root.style.setProperty('--master-texture-size', visualFilters.textureSize || 'cover');
+    root.style.setProperty('--master-texture-position', visualFilters.texturePosition || 'center');
+  }, [visualFilters]);
+
+  const handleSaveVisualSettings = async () => {
+    if (!projectRootHandleRef.current) {
+      setToast({ msg: "No active project folder found", type: "error" });
+      return;
+    }
+
+    try {
+      const fileHandle = await projectRootHandleRef.current.getFileHandle('visual_settings.json', { create: true });
+      const writable = await (fileHandle as any).createWritable();
+      await writable.write(JSON.stringify(visualFilters, null, 2));
+      await writable.close();
+      setToast({ msg: "Visual settings saved to workspace", type: "success" });
+    } catch (e) {
+      console.error("Failed to save visual settings", e);
+      setToast({ msg: "Save failed - folder access might be restricted", type: "error" });
+    }
+  };
+
   // Advanced Selection
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [lastSelectedSlot, setLastSelectedSlot] = useState<string | null>(null);
@@ -238,6 +293,24 @@ function App() {
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false); // Clean state after load
       setShowProjectManager(false);
+
+      // --- NEW: Load Visual Settings from Workspace ---
+      try {
+        const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: false });
+        const pDir = await projectsDir.getDirectoryHandle(projectName, { create: false });
+        try {
+          const vHandle = await pDir.getFileHandle('visual_settings.json', { create: false });
+          const vFile = await vHandle.getFile();
+          const vText = await vFile.text();
+          const vJson = JSON.parse(vText);
+          setVisualFilters(vJson);
+          console.log("[ProjectLoad] Applied visual settings from workspace");
+        } catch (e) {
+          // No visual settings file, ignore
+        }
+      } catch (e) {
+        console.warn("[ProjectLoad] Failed to check for visual_settings.json", e);
+      }
       if (missingAssets.length > 0) {
         const affectedIds = Array.from(new Set(missingAssets.map(m => m.fileId)));
         const missingRefsUnique = Array.from(new Set(missingAssets.map(m => m.blobRef)));
@@ -2606,7 +2679,7 @@ function App() {
       )}
 
       {(!isWelcomeActive || workHandle) && (
-        <div className="flex h-screen bg-synthux-main text-white font-sans overflow-hidden">
+        <div className="flex h-screen bg-synthux-main text-white font-sans overflow-hidden noise-texture">
 
           {/* Sidebar Tape Selector */}
           <TapeSelector
@@ -2636,7 +2709,7 @@ function App() {
               <div className="flex items-center gap-3 min-w-0 shrink-0">
                 <img src={logoImg} alt="Spotykach Logo" className="h-8 w-auto object-contain shrink-0" />
                 <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent hidden lg:block font-header leading-none">
-                  Spotykach
+                  Spotykach WAV.builder
                 </span>
 
                 {/* Context pill */}
@@ -2672,7 +2745,10 @@ function App() {
               {/* RIGHT — Action buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
 
-                {/* Info + Help (icon-only, small) */}
+                <button onClick={() => setShowSettings(true)} title="Settings"
+                  className="p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-md transition-colors">
+                  <Settings size={16} />
+                </button>
                 <button onClick={() => setShowInfo(true)} title="About"
                   className="p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-md transition-colors">
                   <Info size={16} />
@@ -3289,11 +3365,10 @@ function App() {
             <SettingsModal
               isOpen={showSettings}
               onClose={() => setShowSettings(false)}
-              workFolderName={workHandle?.name || null}
-              backupFolderName={backupHandle?.name || null}
-              onSetWorkFolder={handleSetWorkFolder}
-              onSetBackupFolder={handleSetBackupFolder}
               onResetApp={handleReset}
+              visualFilters={visualFilters}
+              onUpdateVisualFilters={setVisualFilters}
+              onSaveVisualSettings={handleSaveVisualSettings}
             />
             {showExport && (
               <ExportModal
@@ -3710,8 +3785,24 @@ function App() {
 
 
 
+            {/* VIDEO TEXTURE OVERLAY */}
+            {visualFilters.textureImage === 'wavbuilderfullscreen_1.mp4' && (
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="fixed inset-0 w-full h-full object-cover pointer-events-none z-[1]"
+                style={{
+                  opacity: visualFilters.textureOpacity,
+                  mixBlendMode: 'overlay',
+                }}
+              >
+                <source src="/vid/wavbuilderfullscreen_1.mp4" type="video/mp4" />
+              </video>
+            )}
           </div>
-        </div >
+        </div>
       )}
 
       {/* GLOBAL MODALS */}
@@ -3740,25 +3831,30 @@ function App() {
         )
       }
 
-      {showDeviceImport && (
-        <DeviceImportModal
-          isOpen={showDeviceImport}
-          onClose={() => setShowDeviceImport(false)}
-          diff={deviceDiff}
-          projectState={state}
-          onImport={handleImportDeviceChanges}
-        />
-      )}
+      {
+        showDeviceImport && (
+          <DeviceImportModal
+            isOpen={showDeviceImport}
+            onClose={() => setShowDeviceImport(false)}
+            diff={deviceDiff}
+            projectState={state}
+            onImport={handleImportDeviceChanges}
+          />
+        )
+      }
 
       {/* PROCESSING OVERLAY */}
-      {isProcessing && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center animate-in fade-in duration-200">
-          <div className="bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 min-w-[300px]">
-            <Loader className="animate-spin text-indigo-500" size={32} />
-            <div className="text-white font-medium text-lg">{progressMsg || "Processing..."}</div>
+      {
+        isProcessing && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center animate-in fade-in duration-200">
+            <div className="bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 min-w-[300px]">
+              <Loader className="animate-spin text-indigo-500" size={32} />
+              <div className="text-white font-medium text-lg">{progressMsg || "Processing..."}</div>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
+
 
     </ErrorBoundary >
   );

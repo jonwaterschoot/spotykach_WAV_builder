@@ -6,6 +6,7 @@ interface AudioPlayerContextType {
     activeFileId: string | null;
     play: (file: FileRecord, versionId?: string) => void;
     stop: () => void;
+    pause: () => void;
     seek: (time: number) => void;
     duration: number;
     currentTime: number;
@@ -63,6 +64,13 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         setCurrentTime(0);
     };
 
+    const pause = () => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+        }
+        setIsPlaying(false);
+    };
+
     const seek = (time: number) => {
         if (audioRef.current) {
             audioRef.current.currentTime = time;
@@ -71,15 +79,26 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
     };
 
     const play = (file: FileRecord, versionId?: string) => {
-        // If clicking the same file that is playing, stop it (toggle)
+        const targetVersionId = versionId || file.currentVersionId;
+
+        // If clicking the same file that is playing, pause it (toggle)
         if (activeFileId === file.id && isPlaying) {
-            stop();
+            pause();
+            return;
+        }
+
+        // If clicking the same file and it is paused, resume it
+        if (activeFileId === file.id && !isPlaying && currentUrlRef.current) {
+            if (audioRef.current) {
+                audioRef.current.play()
+                    .then(() => setIsPlaying(true))
+                    .catch(e => console.error("Resume failed", e));
+            }
             return;
         }
 
         stop(); // Ensure previous is stopped
 
-        const targetVersionId = versionId || file.currentVersionId;
         const version = file.versions.find(v => v.id === targetVersionId);
 
         if (!version || !version.blob) {
@@ -110,7 +129,7 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
     };
 
     return (
-        <AudioPlayerContext.Provider value={{ isPlaying, activeFileId, play, stop, seek, duration, currentTime }}>
+        <AudioPlayerContext.Provider value={{ isPlaying, activeFileId, play, stop, pause, seek, duration, currentTime }}>
             {children}
         </AudioPlayerContext.Provider>
     );

@@ -50,6 +50,17 @@ img {
     --font-mono: "Space Mono", monospace;
     --font-header: "Syne Mono", monospace;
     --font-body: "Funnel Display", sans-serif;
+
+    /* Master Filters */
+    --master-invert: 0;
+    --master-grayscale: 0;
+    --master-contrast: 1;
+    --master-brightness: 1;
+    --master-texture-opacity: 0.05;
+    --master-font-size: 16px;
+    --master-texture-image: url('/img/highrestexture_tapenoisevhs_whitetrans.png');
+    --master-texture-size: cover;
+    --master-texture-position: center;
 }
 
 @theme {
@@ -72,6 +83,8 @@ img {
     --font-mono: var(--font-mono);
     --font-header: var(--font-header);
     --font-body: var(--font-body);
+
+    --texture-noise: var(--master-texture-image);
 }
 
 @keyframes pulse-glow-anim {
@@ -106,6 +119,11 @@ img {
     to { transform: rotate(360deg); }
 }
 
+@keyframes toast-slide-in {
+    from { transform: translateY(-20px) translateX(-50%); opacity: 0; }
+    to { transform: translateY(0) translateX(-50%); opacity: 1; }
+}
+
 @layer utilities {
     .animate-spin-once {
         animation: spin-once 0.5s ease-out;
@@ -122,6 +140,67 @@ img {
     .animate-pulse-glow {
         animation: pulse-ring 2s infinite;
     }
+
+    /* Apply texture to background classes */
+    .bg-synthux-panel, 
+    .bg-synthux-browsebg, 
+    .bg-synthux-tapebg,
+    .bg-synthux-main {
+        position: relative;
+    }
+
+    .bg-synthux-panel::before, 
+    .bg-synthux-browsebg::before, 
+    .bg-synthux-tapebg::before,
+    .bg-synthux-main::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: var(--texture-noise);
+        background-size: var(--master-texture-size);
+        background-position: var(--master-texture-position, center);
+        background-repeat: no-repeat;
+        background-blend-mode: overlay;
+        opacity: var(--master-texture-opacity);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .noise-texture {
+        position: relative;
+    }
+
+    .noise-texture::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: var(--texture-noise);
+        background-size: var(--master-texture-size);
+        background-repeat: no-repeat;
+        background-position: var(--master-texture-position, center);
+        opacity: var(--master-texture-opacity);
+        pointer-events: none;
+        z-index: 10;
+        mix-blend-mode: overlay;
+    }
+
+    .noise-texture-light {
+        position: relative;
+    }
+
+    .noise-texture-light::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: var(--texture-noise);
+        background-size: var(--master-texture-size);
+        background-repeat: no-repeat;
+        background-position: var(--master-texture-position, center);
+        opacity: calc(var(--master-texture-opacity) * 0.4);
+        pointer-events: none;
+        z-index: 0;
+        mix-blend-mode: overlay;
+    }
 }
 
 @layer base {
@@ -129,8 +208,34 @@ img {
     html,
     body {
         font-family: var(--font-sans);
+        font-size: var(--master-font-size);
         background-color: var(--color-synthux-black);
         color: white;
+        overflow-x: hidden;
+    }
+
+    #root {
+        min-height: 100vh;
+        filter: 
+            invert(var(--master-invert)) 
+            grayscale(var(--master-grayscale)) 
+            contrast(var(--master-contrast)) 
+            brightness(var(--master-brightness));
+    }
+
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: var(--texture-noise);
+        background-size: var(--master-texture-size);
+        background-position: var(--master-texture-position, center);
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-blend-mode: overlay;
+        opacity: var(--master-texture-opacity);
+        pointer-events: none;
+        z-index: -1;
     }
 
     h1,

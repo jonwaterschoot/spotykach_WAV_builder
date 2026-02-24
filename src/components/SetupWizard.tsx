@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { HardDrive, FolderOpen, ArrowRight, Check, Save } from 'lucide-react';
+
+const OVERLAYS = [
+    { name: 'None', svg: '' },
+    { name: 'Sq 3x3 gap 2', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='5' height='5'><rect width='3' height='3' fill='rgba(0,0,0,0.5)'/></svg>` },
+    { name: 'Sq 2x2 gap 3', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='5' height='5'><rect width='2' height='2' fill='rgba(0,0,0,0.5)'/></svg>` },
+    { name: 'Circ r=2 gap 3', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='7' height='7'><circle cx='2.5' cy='2.5' r='2' fill='rgba(0,0,0,0.5)'/></svg>` },
+    { name: 'Circ r=1 gap 4', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='6' height='6'><circle cx='1.5' cy='1.5' r='1' fill='rgba(0,0,0,0.5)'/></svg>` },
+    { name: 'Sq 4x4 gap 4', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><rect width='4' height='4' fill='rgba(0,0,0,0.5)'/></svg>` }
+];
 
 interface SetupWizardProps {
     onComplete: (workHandle: FileSystemDirectoryHandle, backupHandle: FileSystemDirectoryHandle | null) => void;
@@ -12,6 +21,19 @@ type WizardStep = 'INTRO' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'CONFIRM';
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, restorableHandles, onRestore }) => {
     const [step, setStep] = useState<WizardStep>('INTRO');
+    const [overlayIdx, setOverlayIdx] = useState(2);
+    const [isMuted, setIsMuted] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        return () => {
+            if (videoRef.current) {
+                videoRef.current.pause();
+                videoRef.current.removeAttribute('src');
+                videoRef.current.load();
+            }
+        };
+    }, []);
     const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
     const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
     const [workAnalysis, setWorkAnalysis] = useState<string | null>(null);
@@ -91,7 +113,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
     const renderIntro = () => (
         <div className="max-w-xl w-full text-center space-y-8 animate-in fade-in zoom-in duration-300">
             <div className="space-y-4">
-                <h1 className="text-5xl font-bold tracking-tighter bg-gradient-to-br from-indigo-400 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-5xl font-bold tracking-tighter bg-gradient-to-br from-synthux-yellow to-synthux-orange bg-clip-text text-transparent">
                     Spotykach <br /> WAV Builder
                 </h1>
                 <p className="text-xl text-gray-400 leading-relaxed">
@@ -104,7 +126,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 {restorableHandles && onRestore && (
                     <button
                         onClick={onRestore}
-                        className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-emerald-500/20 mb-2"
+                        className="w-full py-4 bg-gradient-to-r from-emerald-600/60 to-teal-600/60 hover:from-emerald-500/80 hover:to-teal-500/80 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-emerald-500/20 mb-2"
                     >
                         <HardDrive size={24} />
                         <div className="text-left leading-tight">
@@ -117,7 +139,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
                 <button
                     onClick={() => setStep('SELECT_WORK')}
-                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-indigo-500/20"
+                    className="w-full py-4 bg-indigo-600/60 hover:bg-indigo-500/80 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-indigo-500/20"
                 >
                     Start New Setup <ArrowRight />
                 </button>
@@ -251,7 +273,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
             <button
                 onClick={handleFinish}
-                className="w-full py-5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-2xl font-bold text-xl text-white shadow-xl shadow-indigo-900/20 transition-all transform hover:scale-[1.02]"
+                className="w-full py-5 bg-gradient-to-r from-indigo-600/60 to-purple-600/60 hover:from-indigo-500/80 hover:to-purple-500/80 rounded-2xl font-bold text-xl text-white shadow-xl shadow-indigo-900/20 transition-all transform hover:scale-[1.02]"
             >
                 Enter Studio
             </button>
@@ -264,12 +286,54 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
         </div>
     );
 
+    const overlayStyle = OVERLAYS[overlayIdx].svg
+        ? { backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(OVERLAYS[overlayIdx].svg)}")` }
+        : {};
+
     return (
-        <div className="fixed inset-0 z-[100] bg-[#121212] flex flex-col items-center justify-center p-6 text-white font-sans">
-            {step === 'INTRO' && renderIntro()}
-            {step === 'SELECT_WORK' && renderSelectWork()}
-            {step === 'SELECT_BACKUP' && renderSelectBackup()}
-            {step === 'CONFIRM' && renderConfirm()}
+        <div className="fixed inset-0 z-[100] bg-[#121212] text-white font-sans overflow-hidden grid">
+            <video
+                ref={videoRef}
+                autoPlay
+                loop
+                muted={isMuted}
+                playsInline
+                className="col-start-1 row-start-1 w-full h-full object-cover z-0 opacity-80 pointer-events-none"
+                src="/vid/wavbuilderfullscreen_1.mp4"
+            />
+            <div className="col-start-1 row-start-1 w-full h-full z-0 pointer-events-none" style={overlayStyle} />
+
+            <div className="col-start-1 row-start-1 z-10 w-full h-full flex flex-col items-center justify-center p-6 overflow-x-hidden overflow-y-auto">
+                {step === 'INTRO' && renderIntro()}
+                {step === 'SELECT_WORK' && renderSelectWork()}
+                {step === 'SELECT_BACKUP' && renderSelectBackup()}
+                {step === 'CONFIRM' && renderConfirm()}
+            </div>
+
+            <div className="col-start-1 row-start-1 z-20 self-end justify-self-center mb-12 flex gap-4 pointer-events-auto">
+                {OVERLAYS.map((o, idx) => {
+                    const isSoundToggle = idx === 0;
+                    return (
+                        <button
+                            key={idx}
+                            onClick={() => {
+                                if (isSoundToggle) setIsMuted(!isMuted);
+                                else setOverlayIdx(idx);
+                            }}
+                            className={`w-12 h-12 rounded-full border-2 overflow-hidden flex items-center justify-center transition-all ${(!isSoundToggle && idx === overlayIdx) ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-white/20 hover:border-white/50 bg-black/50'}`}
+                            title={isSoundToggle ? (isMuted ? "Unmute Sound" : "Mute Sound") : o.name}
+                            style={(!isSoundToggle && o.svg) ? { backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(o.svg)}")` } : { backgroundColor: '#111' }}
+                        >
+                            {isSoundToggle && (
+                                <div className="text-[9px] font-bold text-gray-400 flex flex-col items-center leading-none pointer-events-none">
+                                    <span>SND</span>
+                                    <span>{isMuted ? "OFF" : "ON"}</span>
+                                </div>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 };

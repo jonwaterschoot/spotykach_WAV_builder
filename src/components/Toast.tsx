@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, AlertTriangle, Info, X } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'info' | 'neutral';
@@ -30,13 +31,20 @@ export const Toast = ({ message, type = 'info', onClose, duration = 3000 }: Toas
         neutral: <Info size={18} />
     };
 
-    return (
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 px-4 py-3 rounded-lg border shadow-2xl animate-in slide-in-from-bottom-5 fade-in duration-300 ${bgColors[type]}`}>
+    const portalRoot = document.getElementById('unfiltered-portal-root');
+    if (!portalRoot) return null;
+
+    return createPortal(
+        <div
+            className={`!fixed top-8 left-1/2 z-[10002] flex items-center gap-3 px-4 py-3 rounded-lg border shadow-2xl w-auto max-w-[90vw] md:max-w-md animate-[toast-slide-in_0.3s_ease-out] ${bgColors[type]}`}
+            style={{ transform: 'translateX(-50%)' }}
+        >
             {icons[type]}
             <span className="font-medium text-sm text-gray-200">{message}</span>
             <button onClick={onClose} className="ml-2 hover:bg-white/10 p-1 rounded transition-colors">
                 <X size={14} />
             </button>
-        </div>
+        </div>,
+        portalRoot
     );
 };
