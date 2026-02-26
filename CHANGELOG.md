@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.2.0] - 2026-02-26
+
+### Added
+- **License Management**:
+  - Added **WTFPL** (Do What The Fuck You Want To Public License) to the license preset list.
+  - Implemented per-file and bulk license editing within the **Library Manager**.
+  - Integrated `NotesEditor` for licensed fields in settings and management tabs.
+  - Added auto-save mechanism for license fields with visual checkmark indicator.
+- **Project Notes Improvements**:
+  - Refined alignment of tape note previews for better vertical consistency.
+  - Implemented logic to ensure the Project Notes window is fully visible on initial load.
+  - Default state for tape notes in "All Tapes" view is now fully collapsed.
+- **Browser & Preference Management**:
+  - Added "Reset Browser Choice" option in settings and direct cogwheel link in browser header.
+  - Integrated "Remember Choice" functionality with global browser settings.
+
+### Fixed
+- Resolved **white screen error** caused by named import mismatch for `BrowserChoiceModal`.
+- Fixed JSX syntax errors and closing tag issues in `LibraryManager.tsx`.
+- Resolved persistent "Missing Files Detected" notice by improving cleanup logic.
+- Restored visibility of SD backup scan results and implemented direct recovery actions.
+
 ## [2.1.0] - 2026-02-24
 
 ### Major Feature: Visual Overhaul

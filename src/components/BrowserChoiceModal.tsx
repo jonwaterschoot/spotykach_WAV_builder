@@ -7,7 +7,7 @@ interface BrowserChoiceModalProps {
     onChoice: (choice: 'os' | 'sample-browser', remember: boolean) => void;
 }
 
-export const BrowserChoiceModal = ({ isOpen, onClose, onChoice }: BrowserChoiceModalProps) => {
+const BrowserChoiceModal = ({ isOpen, onClose, onChoice }: BrowserChoiceModalProps) => {
     const [remember, setRemember] = useState(false);
 
     if (!isOpen) return null;
@@ -67,3 +67,5 @@ export const BrowserChoiceModal = ({ isOpen, onClose, onChoice }: BrowserChoiceM
         </div>
     );
 };
+
+export default BrowserChoiceModal;

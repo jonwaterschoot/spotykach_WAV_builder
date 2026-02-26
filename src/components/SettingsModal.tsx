@@ -7,6 +7,7 @@ interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
     onResetApp: () => void;
+    onResetEmptySlotBrowserPreference: () => void;
     visualFilters: VisualFilters;
     onUpdateVisualFilters: (filters: VisualFilters) => void;
     onSaveVisualSettings: () => void;
@@ -32,6 +33,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     isOpen,
     onClose,
     onResetApp,
+    onResetEmptySlotBrowserPreference,
     visualFilters,
     onUpdateVisualFilters,
     onSaveVisualSettings
@@ -625,6 +627,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {/* Danger Zone */}
                     <div className="space-y-3 pt-4 border-t border-white/10">
+                        <h3 className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest flex items-center gap-2">
+                            <Settings size={12} /> Browser Preferences
+                        </h3>
+                        <button
+                            onClick={onResetEmptySlotBrowserPreference}
+                            className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 rounded-lg flex items-center justify-center gap-2 transition-colors text-xs font-bold"
+                        >
+                            <RefreshCw size={12} /> Reset Empty Slot Browser Choice
+                        </button>
+                        <p className="text-[9px] text-gray-600 text-center leading-tight px-2">
+                            Clears the saved choice between App Sample Browser and OS Browser for empty tape slots.
+                        </p>
+
+                        <div className="border-t border-white/10 pt-3 space-y-3">
                         <h3 className="text-[10px] font-bold text-red-500/70 uppercase tracking-widest flex items-center gap-2">
                             <AlertTriangle size={12} /> Reset System
                         </h3>
@@ -637,6 +653,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <p className="text-[9px] text-gray-600 text-center leading-tight px-2">
                             Clears all browser data, projects, and settings. Use with care.
                         </p>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -27,6 +27,7 @@ interface AllViewGridProps {
     setNoteStates: React.Dispatch<React.SetStateAction<Record<TapeColor, 'collapsed' | 'preview' | 'expanded'>>>;
     onTapeNoteChange: (color: TapeColor, note: string) => void;
     onRenameFile?: (fileId: string, newName: string) => void;
+    missingFileIds?: Set<string>;
 }
 
 export const AllViewGrid = ({
@@ -35,7 +36,7 @@ export const AllViewGrid = ({
     onBulkAssign, selectedSlots, onSlotSelectionClick,
     onToggleSlotSelection, onSlotDragStart,
     noteStates, setNoteStates, onTapeNoteChange,
-    onRenameFile
+    onRenameFile, missingFileIds
 }: AllViewGridProps) => {
     const { isPlaying, activeFileId, play, pause, currentTime, duration, seek } = useAudioPlayer();
 
@@ -125,6 +126,7 @@ export const AllViewGrid = ({
                                                     fileRecord={file}
                                                     tapeColor={color}
                                                     isDuplicate={isDuplicate}
+                                                    isMissing={slot.fileId && missingFileIds ? missingFileIds.has(slot.fileId) : false}
                                                     onRemove={() => onRemoveSlot(slot.id, color)}
                                                     onDelete={() => slot.fileId && onDeleteFile(slot.fileId)}
                                                     onDrop={(files) => onSlotDrop(slot.id, files, color)}

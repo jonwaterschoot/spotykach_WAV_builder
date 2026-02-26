@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2 } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings } from 'lucide-react';
 import { SAMPLE_PACKS } from '../data/samplePacks';
 import type { UserLibrary, ProjectSummary, FileRecord } from '../types';
 import { loadProjectFromDirectory } from '../utils/exportUtils';
@@ -11,7 +11,7 @@ interface SampleBrowserProps {
     onImport: (url: string, name: string, origin?: string, license?: string) => Promise<void>;
     userLibrary: UserLibrary;
     projects: ProjectSummary[];
-    onOpenLibraryManager: () => void;
+    onOpenLibraryManager: (tab?: 'upload' | 'project' | 'manage' | 'settings') => void;
     currentProjectName?: string;
     workHandle: FileSystemDirectoryHandle | null;
     mode?: 'global' | 'slot-selection'; // Context for future extensions
@@ -397,9 +397,18 @@ export const SampleBrowser = ({
                     <h2 className="text-xl font-bold flex items-center gap-2 text-white">
                         <FolderOpen className="text-synthux-orange" /> Sample Browser
                     </h2>
-                    <button onClick={onClose} className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors">
-                        <X size={20} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onOpenLibraryManager('settings')}
+                            className="p-1.5 hover:bg-white/10 rounded-md text-gray-500 hover:text-synthux-orange transition-all"
+                            title="Browser Settings"
+                        >
+                            <Settings size={20} />
+                        </button>
+                        <button onClick={onClose} className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 flex overflow-hidden">

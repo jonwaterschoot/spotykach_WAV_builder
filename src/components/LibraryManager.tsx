@@ -1,9 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Upload, Trash2, Edit2, Check, Settings, Plus, FileAudio, FolderOpen, AlertCircle, ChevronDown, ChevronRight, Play, Square } from 'lucide-react';
+import { X, Upload, Trash2, Edit2, Check, Settings, Plus, FileAudio, FolderOpen, AlertCircle, Info, ChevronDown, ChevronRight, Play, Square, RotateCcw, RefreshCw } from 'lucide-react';
 import type { FileRecord, UserLibrary, UserLibraryMetadata } from '../types';
 import { useAudioConverter } from '../utils/useAudioConverter';
 import { type CustomFolderRecord, loadCustomFoldersFromDB, saveCustomFoldersToDB } from '../utils/persistence';
 import { SmartTagInput } from './SmartTagInput';
+import { NotesEditor } from './NotesEditor';
+import { saveKnownTags } from '../utils/tagStore';
+
+const COMMON_LICENSES = [
+    { label: "Standard Copyright / All Rights Reserved", value: "" },
+    { label: "Creative Commons Attribution (CC BY 4.0)", value: "This work is licensed under CC BY 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/4.0/" },
+    { label: "Creative Commons Attribution-ShareAlike (CC BY-SA 4.0)", value: "This work is licensed under CC BY-SA 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-sa/4.0/" },
+    { label: "Creative Commons Attribution-NonCommercial (CC BY-NC 4.0)", value: "This work is licensed under CC BY-NC 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-nc/4.0/" },
+    { label: "Creative Commons Zero (CC0 - Public Domain)", value: "This work has been marked as being free of known restrictions under copyright law, including all related and neighboring rights." },
+    { label: "MIT License", value: "Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software..." },
+    { label: "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE", value: "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed." },
+];
 
 interface LibraryManagerProps {
     isOpen: boolean;
@@ -13,6 +25,11 @@ interface LibraryManagerProps {
     projectFiles: Record<string, FileRecord>;
     projectName?: string;
     workHandle: FileSystemDirectoryHandle | null;
+    missingLibraryFiles: string[];
+    onSmartScan: () => void;
+    onRefreshLibrary: () => Promise<void>;
+    initialTab?: 'upload' | 'project' | 'manage' | 'settings';
+    onResetBrowserPreference?: () => void;
 }
 
 interface UploadDraft {
@@ -24,8 +41,76 @@ interface UploadDraft {
     tagInput: string;
 }
 
-export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, projectFiles, projectName, workHandle }: LibraryManagerProps) => {
-    const [activeTab, setActiveTab] = useState<'upload' | 'project' | 'settings'>('upload');
+const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy }: { file: FileRecord; isExpanded: boolean; onToggle: () => void; onCopy: (file: FileRecord, name?: string) => void; }) => {
+    const [editName, setEditName] = useState(false);
+    const [newName, setNewName] = useState(file.name);
+
+    return (
+        <div className="bg-black/20 border border-gray-800 rounded-lg overflow-hidden transition-all hover:border-gray-700">
+            <div className="flex items-center justify-between p-3">
+                <div className="flex items-center gap-3">
+                    <button onClick={onToggle} className="text-gray-500 hover:text-white transition-colors">
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                    <div className="p-1.5 bg-gray-800 rounded text-synthux-green">
+                        <FileAudio size={14} />
+                    </div>
+                    <div>
+                        {editName ? (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={newName}
+                                    onChange={e => setNewName(e.target.value)}
+                                    autoFocus
+                                    className="bg-black/50 border border-synthux-orange/50 rounded px-2 py-0.5 text-xs text-white outline-none font-mono"
+                                />
+                                <button onClick={() => setEditName(false)} className="text-synthux-green hover:brightness-125">
+                                    <Check size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="text-sm font-medium text-white flex items-center gap-2">
+                                {file.name}
+                                <button onClick={() => { setEditName(true); setNewName(file.name); }} className="text-gray-600 hover:text-gray-400">
+                                    <Edit2 size={10} />
+                                </button>
+                            </div>
+                        )}
+                        <div className="text-[10px] text-gray-500 font-mono">
+                            {file.versions.length} versions • {file.license || 'No License'}
+                        </div>
+                    </div>
+                </div>
+
+                <button
+                    onClick={() => onCopy(file, newName)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-synthux-orange text-gray-300 hover:text-white rounded text-xs font-bold transition-all"
+                >
+                    <Plus size={14} /> Copy to Library
+                </button>
+            </div>
+
+            {isExpanded && (
+                <div className="bg-black/40 border-t border-gray-800 p-3 space-y-2">
+                    <div className="text-[10px] font-bold text-gray-600 uppercase tracking-widest pl-10 mb-2">History & Versions</div>
+                    {file.versions.map(v => (
+                        <div key={v.id} className="flex items-center justify-between pl-10 pr-4 py-1.5 hover:bg-white/5 rounded transition-colors group">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-1.5 h-1.5 rounded-full ${v.id === file.currentVersionId ? 'bg-synthux-orange shadow-[0_0_5px_rgba(255,107,0,0.5)]' : 'bg-gray-700'}`} />
+                                <div className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">{v.description}</div>
+                                <div className="text-[10px] text-gray-600 font-mono">{new Date(v.timestamp).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, projectFiles, projectName, workHandle, missingLibraryFiles, onSmartScan, onRefreshLibrary, initialTab = 'upload', onResetBrowserPreference }: LibraryManagerProps) => {
+    const [activeTab, setActiveTab] = useState<'upload' | 'project' | 'manage' | 'settings'>(initialTab);
     const [isConvertingBatch, setIsConvertingBatch] = useState(false);
     const [batchProgress, setBatchProgress] = useState(0);
     const [batchLog, setBatchLog] = useState<string[]>([]);
@@ -43,11 +128,13 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
     const [libraryBulkName, setLibraryBulkName] = useState('');
     const [libraryBulkTagInput, setLibraryBulkTagInput] = useState('');
+    const [libraryBulkLicense, setLibraryBulkLicense] = useState('');
 
     const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>([]);
     const [activeCustomFolder, setActiveCustomFolder] = useState<string | null>(null);
     const [customFolderContent, setCustomFolderContent] = useState<File[]>([]);
     const [isReadingFolder, setIsReadingFolder] = useState(false);
+    const [showSavedCheck, setShowSavedCheck] = useState(false);
 
     const { convertWavToFlac, isLoaded, load } = useAudioConverter();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,8 +145,20 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     useEffect(() => {
         if (isOpen) {
             loadCustomFoldersFromDB().then(setCustomFolders);
+            if (initialTab) setActiveTab(initialTab);
         }
-    }, [isOpen]);
+    }, [isOpen, initialTab]);
+
+    const allLibraryTags = Array.from(
+        new Set(Object.values(userLibrary.files).flatMap(file => file.tags || []))
+    ).sort((a, b) => a.localeCompare(b));
+
+    // Sync known tags to global store for autocomplete
+    useEffect(() => {
+        if (allLibraryTags.length > 0) {
+            saveKnownTags(allLibraryTags);
+        }
+    }, [allLibraryTags]);
 
     if (!isOpen) return null;
 
@@ -294,10 +393,6 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
         playBlobPreview(currentVersion.blob, `library:${file.id}`, file.name);
     };
 
-    const allLibraryTags = Array.from(
-        new Set(Object.values(userLibrary.files).flatMap(file => file.tags || []))
-    ).sort((a, b) => a.localeCompare(b));
-
     const typedLibraryTagTerms = libraryTagFilter
         .split(/[,\s]+/)
         .map(t => t.trim().toLowerCase())
@@ -306,6 +401,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     const filteredLibraryFiles = Object.values(userLibrary.files).filter(file => {
         const tags = (file.tags || []).map(t => t.toLowerCase());
         const name = (file.name || '').toLowerCase();
+
         const typedMatches = typedLibraryTagTerms.every(term =>
             tags.some(tag => tag.includes(term)) || name.includes(term)
         );
@@ -342,6 +438,11 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
 
     const selectSingleLibraryFile = (id: string) => {
         setSelectedLibraryIds(new Set([id]));
+        const file = userLibrary.files[id];
+        if (file) {
+            setLibraryBulkName(file.name);
+            setLibraryBulkLicense(file.license || '');
+        }
     };
 
     const applyBulkRename = async () => {
@@ -410,6 +511,20 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
             return { ...prev, files: next };
         });
         setLibraryBulkTagInput('');
+    };
+
+    const applyBulkLicense = () => {
+        if (selectedLibraryFiles.length === 0) return;
+        const selectedIds = selectedLibraryFiles.map(f => f.id);
+        setUserLibrary(prev => {
+            const next = { ...prev.files };
+            selectedIds.forEach(id => {
+                const file = next[id];
+                if (!file) return;
+                next[id] = { ...file, license: libraryBulkLicense };
+            });
+            return { ...prev, files: next };
+        });
     };
 
     const selectedTagCounts = selectedLibraryFiles.reduce<Record<string, number>>((acc, file) => {
@@ -637,11 +752,128 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
         });
     };
 
+    const handleDeleteAllMissing = () => {
+        if (!confirm(`Are you sure you want to remove all ${missingLibraryFiles.length} missing files from your library index? This cannot be undone.`)) return;
+
+        setUserLibrary(prev => {
+            const nextFiles = { ...prev.files };
+            missingLibraryFiles.forEach(id => {
+                delete nextFiles[id];
+            });
+            return { ...prev, files: nextFiles };
+        });
+    };
+
+    const handleRecoverFromCache = async () => {
+        if (!workHandle) {
+            alert("No work folder connected. Please set a work folder first.");
+            return;
+        }
+
+        const count = missingLibraryFiles.length;
+        if (!confirm(`This will attempt to recreate ${count} missing files in your User_Library folder using audio data stored in your browser's cache.\n\nWarning: This only works if you haven't cleared your browser data since the files went missing.`)) return;
+
+        setIsConvertingBatch(true);
+        setBatchProgress(0);
+        setBatchLog(["Starting recovery from browser cache..."]);
+
+        try {
+            const libDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
+            let recovered = 0;
+            let failed = 0;
+
+            for (let i = 0; i < missingLibraryFiles.length; i++) {
+                const id = missingLibraryFiles[i];
+                const fileRec = userLibrary.files[id];
+                if (!fileRec) continue;
+
+                const latestVersion = fileRec.versions[fileRec.versions.length - 1];
+                if (latestVersion?.blob) {
+                    try {
+                        const fileHandle = await libDir.getFileHandle(fileRec.name, { create: true });
+                        // @ts-ignore
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(latestVersion.blob);
+                        await writable.close();
+                        recovered++;
+                        setBatchLog(prev => [...prev.slice(-4), `Recovered: ${fileRec.name}`]);
+                    } catch (err) {
+                        console.error(`Failed to write ${fileRec.name}`, err);
+                        failed++;
+                        setBatchLog(prev => [...prev.slice(-4), `Error: ${fileRec.name}`]);
+                    }
+                } else {
+                    failed++;
+                    setBatchLog(prev => [...prev.slice(-4), `No data for: ${fileRec.name}`]);
+                }
+                setBatchProgress(Math.round(((i + 1) / count) * 100));
+            }
+
+            setBatchLog(prev => [...prev, `DONE: ${recovered} recovered, ${failed} failed.`]);
+
+            await onRefreshLibrary();
+
+            setTimeout(() => {
+                setIsConvertingBatch(false);
+                if (recovered > 0) {
+                    alert(`Successfully restored ${recovered} files to User_Library.`);
+                }
+            }, 500);
+
+        } catch (e: any) {
+            console.error("Recovery failed", e);
+            setBatchLog(prev => [...prev, `FATAL ERROR: ${e.message}`]);
+            setIsConvertingBatch(false);
+        }
+    };
+
+    const handleRecoverSingleFile = async (id: string) => {
+        if (!workHandle) return;
+        const fileRec = userLibrary.files[id];
+        if (!fileRec) return;
+
+        const latestVersion = fileRec.versions[fileRec.versions.length - 1];
+        if (!latestVersion?.blob) {
+            alert("No audio data found in cache for this file.");
+            return;
+        }
+
+        try {
+            const libDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
+            const fileHandle = await libDir.getFileHandle(fileRec.name, { create: true });
+            // @ts-ignore
+            const writable = await fileHandle.createWritable();
+            await writable.write(latestVersion.blob);
+            await writable.close();
+
+            await onRefreshLibrary();
+        } catch (err: any) {
+            console.error("Single recovery failed", err);
+            alert(`Failed to restore ${fileRec.name}: ${err.message}`);
+        }
+    };
+
+    const handleDeleteSingleMissing = (id: string) => {
+        const fileRec = userLibrary.files[id];
+        if (!fileRec) return;
+
+        if (!confirm(`Remove ${fileRec.name} from your library index?`)) return;
+
+        handleRemoveFromLibrary(id);
+        // Sync should follow in App via useEffect, but let's be explicit
+        setTimeout(() => onRefreshLibrary(), 0);
+    };
+
     const updateMetadata = (key: keyof UserLibraryMetadata, value: string) => {
         setUserLibrary(prev => ({
             ...prev,
             metadata: { ...prev.metadata, [key]: value }
         }));
+
+        // Show saved indicator
+        setShowSavedCheck(true);
+        const timer = setTimeout(() => setShowSavedCheck(false), 2000);
+        return () => clearTimeout(timer);
     };
 
     return (
@@ -654,6 +886,14 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                         <h2 className="text-xl font-bold flex items-center gap-2 text-white">
                             <FolderOpen className="text-synthux-orange" /> My Library Manager
                         </h2>
+                        <button
+                            onClick={() => onRefreshLibrary()}
+                            className="p-2 text-gray-500 hover:text-white transition-colors flex items-center gap-2 group"
+                            title="Force Rescan Library Folder"
+                        >
+                            <RefreshCw size={16} className="group-hover:rotate-180 transition-transform duration-500" />
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Rescan Folder</span>
+                        </button>
 
                         <div className="flex bg-black/40 p-1 rounded-lg border border-gray-800">
                             <button
@@ -667,6 +907,12 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'project' ? 'bg-synthux-orange text-white' : 'text-gray-400 hover:text-white'}`}
                             >
                                 <FileAudio size={14} className="inline mr-2" /> Project
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('manage')}
+                                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'manage' ? 'bg-synthux-orange text-white' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Settings size={14} className="inline mr-2" /> Manage
                             </button>
                             <button
                                 onClick={() => setActiveTab('settings')}
@@ -689,9 +935,9 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
 
                         {activeTab === 'upload' && (
                             <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {/* Traditional Upload Box */}
-                                    <div className="bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 text-center hover:border-synthux-orange/50 transition-colors flex flex-col justify-center">
+                                    <div className="md:col-span-1 bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 text-center hover:border-synthux-orange/50 transition-colors flex flex-col justify-center">
                                         <input
                                             type="file"
                                             multiple
@@ -724,7 +970,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                     </div>
 
                                     {/* Custom Folders Box */}
-                                    <div className="bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 hover:border-synthux-blue/50 transition-colors flex flex-col">
+                                    <div className="md:col-span-2 bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 hover:border-synthux-blue/50 transition-colors flex flex-col">
                                         {activeCustomFolder ? (
                                             <div className="flex flex-col h-full">
                                                 <div className="flex items-center justify-between mb-2">
@@ -790,7 +1036,182 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                         )}
                                     </div>
                                 </div>
+                            </div>
+                        )}
 
+                        {activeTab === 'project' && (
+                            <div className="space-y-8">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-white font-bold flex items-center gap-2">
+                                        Active Project: <span className="text-synthux-orange">{projectName || 'Current Project'}</span>
+                                    </h3>
+                                    <div className="text-xs text-gray-500 bg-black/40 px-3 py-1 rounded-full border border-gray-800">
+                                        {Object.keys(projectFiles).length} files across all tapes & pool
+                                    </div>
+                                </div>
+
+                                {/* Assigned Samples */}
+                                <section className="space-y-4">
+                                    <h4 className="text-[10px] font-bold text-synthux-orange uppercase tracking-[0.2em]">Assigned to Slots</h4>
+                                    <div className="space-y-2">
+                                        {Object.values(projectFiles).filter(f => !f.isParked).map(file => (
+                                            <ProjectFileRow
+                                                key={file.id}
+                                                file={file}
+                                                isExpanded={expandedFiles.has(file.id)}
+                                                onToggle={() => toggleExpand(file.id)}
+                                                onCopy={handleCopyToLibrary}
+                                            />
+                                        ))}
+                                    </div>
+                                </section>
+
+                                {/* Unassigned Samples */}
+                                <section className="space-y-4 pt-4 border-t border-gray-800">
+                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Unassigned (Project Pool)</h4>
+                                    <div className="space-y-2">
+                                        {Object.values(projectFiles).filter(f => f.isParked).map(file => (
+                                            <ProjectFileRow
+                                                key={file.id}
+                                                file={file}
+                                                isExpanded={expandedFiles.has(file.id)}
+                                                onToggle={() => toggleExpand(file.id)}
+                                                onCopy={handleCopyToLibrary}
+                                            />
+                                        ))}
+                                    </div>
+                                </section>
+                            </div>
+                        )}
+
+                        {activeTab === 'manage' && (
+                            <div className="space-y-6">
+                                <div className="flex items-center justify-between border-b border-gray-800 pb-4">
+                                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                                        <Settings size={18} className="text-synthux-orange" /> Library Maintenance
+                                    </h3>
+                                    <div className="text-xs text-gray-500">
+                                        {Object.keys(userLibrary.files).length} Total Indexed Samples
+                                    </div>
+                                </div>
+
+                                {missingLibraryFiles.length > 0 ? (
+                                    <div className="bg-red-900/20 border border-red-500/50 rounded-xl p-6">
+                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 shadow-inner">
+                                                    <AlertCircle size={24} />
+                                                </div>
+                                                <div className="max-w-md">
+                                                    <h4 className="text-base font-bold text-white mb-0.5">Missing Library Files Detected</h4>
+                                                    <p className="text-xs text-red-200/60 leading-relaxed">
+                                                        {missingLibraryFiles.length} samples in your index were not found in the <code className="bg-red-500/20 px-1 rounded text-red-300">User_Library</code> folder.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                                                <button
+                                                    onClick={handleRecoverFromCache}
+                                                    className="flex-1 md:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2"
+                                                    title="Recreate all physical files from browser cache"
+                                                >
+                                                    <RotateCcw size={14} /> Recover All
+                                                </button>
+                                                <button
+                                                    onClick={onSmartScan}
+                                                    className="flex-1 md:flex-none px-4 py-2 bg-synthux-orange hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2"
+                                                >
+                                                    <FolderOpen size={14} /> Smart Scan Folder
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Detailed File List */}
+                                        <div className="bg-black/30 rounded-lg border border-red-500/20 overflow-hidden">
+                                            <div className="px-4 py-2 bg-red-900/30 border-b border-red-500/20 text-[10px] font-bold text-red-300 uppercase tracking-widest flex items-center justify-between">
+                                                <span>Missing Assets Detail</span>
+                                                <span>{missingLibraryFiles.length} Total</span>
+                                            </div>
+                                            <div className="max-h-[40vh] overflow-y-auto divide-y divide-red-500/10">
+                                                {missingLibraryFiles.map(id => {
+                                                    const file = userLibrary.files[id];
+                                                    if (!file) return null;
+                                                    return (
+                                                        <div key={id} className="px-4 py-2.5 flex items-center justify-between gap-4 hover:bg-red-500/5 transition-colors group">
+                                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                                <FileAudio size={14} className="text-red-400/50 flex-shrink-0" />
+                                                                <span className="text-xs text-white font-medium truncate">{file.name}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                                <button
+                                                                    onClick={() => handleRecoverSingleFile(id)}
+                                                                    className="flex items-center gap-1.5 px-2 py-1 hover:bg-green-500/20 text-green-400 rounded transition-colors text-[9px] font-bold uppercase tracking-wider"
+                                                                    title="Recover from cache"
+                                                                >
+                                                                    <RotateCcw size={10} /> Recover
+                                                                </button>
+                                                                <button
+                                                                    onClick={onSmartScan}
+                                                                    className="flex items-center gap-1.5 px-2 py-1 hover:bg-orange-500/20 text-orange-400 rounded transition-colors text-[9px] font-bold uppercase tracking-wider"
+                                                                    title="Browse for file"
+                                                                >
+                                                                    <FolderOpen size={10} /> Scan
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteSingleMissing(id)}
+                                                                    className="flex items-center gap-1.5 px-2 py-1 hover:bg-red-500/20 text-red-400 rounded transition-colors text-[9px] font-bold uppercase tracking-wider"
+                                                                    title="Remove from index"
+                                                                >
+                                                                    <Trash2 size={10} /> Delete
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div className="mt-6 flex justify-end">
+                                            <button
+                                                onClick={handleDeleteAllMissing}
+                                                className="px-4 py-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                                            >
+                                                <Trash2 size={14} /> Purge All Missing From Index
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-synthux-green/10 border border-synthux-green/30 rounded-xl p-12 text-center space-y-4">
+                                        <div className="w-16 h-16 bg-synthux-green/20 rounded-full flex items-center justify-center text-synthux-green mx-auto">
+                                            <Check size={32} />
+                                        </div>
+                                        <h4 className="text-white font-bold text-lg">Library is Healthy</h4>
+                                        <p className="text-gray-400 text-sm max-w-sm mx-auto">
+                                            All {Object.keys(userLibrary.files).length} indexed samples were successfully located in your <code className="bg-black/40 px-1 rounded">User_Library</code> folder.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button
+                                        onClick={() => onRefreshLibrary()}
+                                        className="bg-black/20 border border-gray-700 rounded-xl p-6 text-left hover:border-synthux-orange transition-colors group"
+                                    >
+                                        <RefreshCw className="text-gray-500 mb-2 group-hover:rotate-180 transition-transform duration-500" size={24} />
+                                        <h4 className="text-white font-bold mb-1">Rescan Folder</h4>
+                                        <p className="text-gray-400 text-xs">Verify all files on disk and update the library index.</p>
+                                    </button>
+
+                                    <button
+                                        onClick={onSmartScan}
+                                        className="bg-black/20 border border-gray-700 rounded-xl p-6 text-left hover:border-synthux-orange transition-colors"
+                                    >
+                                        <FolderOpen className="text-gray-500 mb-2" size={24} />
+                                        <h4 className="text-white font-bold mb-1">Smart Find Folder</h4>
+                                        <p className="text-gray-400 text-xs">Relocate missing files by scanning a different root folder.</p>
+                                    </button>
+                                </div>
+
+                                {/* Batch Log (Transplanted from Upload Tab) */}
                                 {batchLog.length > 0 && (
                                     <div className="bg-black/30 border border-gray-800 rounded-lg p-6 space-y-4">
                                         <div className="flex justify-between items-center text-sm">
@@ -827,6 +1248,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                     </div>
                                 )}
 
+                                {/* Library Management (Transplanted from Upload Tab) */}
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-2">Your Current Library ({Object.keys(userLibrary.files).length} samples)</h3>
                                     <div className="bg-black/20 border border-gray-800 rounded-lg p-3 space-y-3">
@@ -890,8 +1312,13 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                         >
                                                             {playingPreviewKey === `library:${file.id}` ? <Square size={11} fill="currentColor" /> : <Play size={11} fill="currentColor" />}
                                                         </button>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="text-sm text-white truncate font-mono">{file.name}</div>
+                                                        <div className="min-w-0 flex-1 pr-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="text-sm text-white truncate font-mono">{file.name}</div>
+                                                                {missingLibraryFiles.includes(file.id) && (
+                                                                    <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-500 text-[9px] font-bold uppercase tracking-wider border border-red-500/30 shrink-0">Missing</span>
+                                                                )}
+                                                            </div>
                                                             <div className="text-[10px] text-gray-500 truncate">{(file.tags || []).join(', ') || 'No tags'}</div>
                                                         </div>
                                                         <button
@@ -944,17 +1371,25 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                             <div className="space-y-2">
                                                 <label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Tags</label>
                                                 <div className="flex gap-2">
-                                                    <input
+                                                    <SmartTagInput
                                                         value={libraryBulkTagInput}
-                                                        onChange={(e) => setLibraryBulkTagInput(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter' || e.key === ',') {
-                                                                e.preventDefault();
-                                                                applyBulkTags();
-                                                            }
+                                                        onChange={setLibraryBulkTagInput}
+                                                        onAdd={(val) => {
+                                                            const parsed = parseTags(val);
+                                                            if (parsed.length === 0 || selectedLibraryFiles.length === 0) return;
+                                                            const selectedIds = selectedLibraryFiles.map(f => f.id);
+                                                            setUserLibrary(prev => {
+                                                                const next = { ...prev.files };
+                                                                selectedIds.forEach(id => {
+                                                                    const file = next[id];
+                                                                    if (!file) return;
+                                                                    next[id] = { ...file, tags: Array.from(new Set([...(file.tags || []), ...parsed])) };
+                                                                });
+                                                                return { ...prev, files: next };
+                                                            });
+                                                            setLibraryBulkTagInput('');
                                                         }}
-                                                        placeholder="Add tags and press Enter"
-                                                        className="flex-1 bg-black/50 border border-gray-700 rounded px-3 py-2 text-xs text-white"
+                                                        placeholder="Add tags..."
                                                     />
                                                     <button
                                                         onClick={applyBulkTags}
@@ -978,6 +1413,43 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                         ))}
                                                     </div>
                                                 )}
+                                            </div>
+
+                                            <div className="space-y-3 pt-2 border-t border-gray-800">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">License</label>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Preselect:</span>
+                                                        <select
+                                                            className="bg-black/60 border border-gray-700/50 rounded-lg px-2 py-0.5 text-[10px] text-gray-400 outline-none hover:border-gray-600 transition-colors"
+                                                            onChange={(e) => setLibraryBulkLicense(e.target.value)}
+                                                            value=""
+                                                        >
+                                                            <option value="" disabled>Presets</option>
+                                                            {COMMON_LICENSES.map(l => (
+                                                                <option key={l.label} value={l.value}>{l.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div className="min-h-[140px] relative">
+                                                    <NotesEditor
+                                                        value={libraryBulkLicense}
+                                                        onChange={setLibraryBulkLicense}
+                                                        placeholder="License terms..."
+                                                        minHeight="140px"
+                                                        fullHeight={false}
+                                                    />
+                                                </div>
+
+                                                <button
+                                                    onClick={applyBulkLicense}
+                                                    disabled={selectedLibraryFiles.length === 0}
+                                                    className="w-full px-3 py-2 rounded bg-synthux-orange hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Apply License to Selected
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -1010,232 +1482,142 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                             </div>
                         )}
 
-                        {activeTab === 'project' && (
-                            <div className="space-y-8">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-white font-bold flex items-center gap-2">
-                                        Active Project: <span className="text-synthux-orange">{projectName || 'Current Project'}</span>
-                                    </h3>
-                                    <div className="text-xs text-gray-500 bg-black/40 px-3 py-1 rounded-full border border-gray-800">
-                                        {Object.keys(projectFiles).length} files across all tapes & pool
-                                    </div>
-                                </div>
-
-                                {/* Assigned Samples */}
-                                <section className="space-y-4">
-                                    <h4 className="text-[10px] font-bold text-synthux-orange uppercase tracking-[0.2em]">Assigned to Slots</h4>
-                                    <div className="space-y-2">
-                                        {Object.values(projectFiles).filter(f => !f.isParked).map(file => (
-                                            <ProjectFileRow
-                                                key={file.id}
-                                                file={file}
-                                                isExpanded={expandedFiles.has(file.id)}
-                                                onToggle={() => toggleExpand(file.id)}
-                                                onCopy={handleCopyToLibrary}
-                                            />
-                                        ))}
-                                    </div>
-                                </section>
-
-                                {/* Unassigned Samples */}
-                                <section className="space-y-4 pt-4 border-t border-gray-800">
-                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Unassigned (Project Pool)</h4>
-                                    <div className="space-y-2">
-                                        {Object.values(projectFiles).filter(f => f.isParked).map(file => (
-                                            <ProjectFileRow
-                                                key={file.id}
-                                                file={file}
-                                                isExpanded={expandedFiles.has(file.id)}
-                                                onToggle={() => toggleExpand(file.id)}
-                                                onCopy={handleCopyToLibrary}
-                                            />
-                                        ))}
-                                    </div>
-                                </section>
-                            </div>
-                        )}
-
                         {activeTab === 'settings' && (
-                            <div className="max-w-xl mx-auto space-y-8 py-4">
-                                <div className="space-y-4">
-                                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                                        <Settings size={18} className="text-synthux-orange" /> Global Library Settings
-                                    </h3>
-                                    <p className="text-gray-400 text-sm">These metadata values will be attached to all samples added to your Main User Library. This information is used for crediting and licensing when sharing projects.</p>
+                            <div className="max-w-xl mx-auto space-y-8 py-4 px-2">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="space-y-4">
+                                        <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                                            <Settings size={18} className="text-synthux-orange" /> Global Library Settings
+                                        </h3>
+                                        <p className="text-gray-400 text-sm">These metadata values will be attached to all samples added to your Main User Library. This information is used for crediting and licensing when sharing projects.</p>
+                                    </div>
+
+                                    {/* Saved Indicator */}
+                                    <div className={`p-2 bg-green-500/20 border border-green-500/40 text-green-400 rounded-full transition-all duration-300 ${showSavedCheck ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`} title="Settings Saved">
+                                        <Check size={20} />
+                                    </div>
                                 </div>
 
                                 <div className="space-y-6">
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Default Artist / Creator Name</label>
-                                        <input
-                                            type="text"
-                                            value={userLibrary.metadata.artist || ''}
-                                            onChange={e => updateMetadata('artist', e.target.value)}
-                                            placeholder="e.g., Jonwtr"
-                                            className="w-full bg-black/40 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-synthux-orange/50 focus:ring-1 focus:ring-synthux-orange/20 transition-all font-mono text-sm"
-                                        />
+                                        <div className="relative group">
+                                            <input
+                                                type="text"
+                                                value={userLibrary.metadata.artist || ''}
+                                                onChange={e => updateMetadata('artist', e.target.value)}
+                                                placeholder="e.g., Jonwtr"
+                                                className="w-full bg-black/60 border border-gray-700/50 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-synthux-orange/50 focus:ring-1 focus:ring-synthux-orange/20 transition-all font-mono text-sm group-hover:border-gray-600 outline-none shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]"
+                                            />
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 group-hover:text-gray-400 transition-colors">
+                                                <Edit2 size={14} />
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Default License Text</label>
-                                        <textarea
-                                            value={userLibrary.metadata.license || ''}
-                                            onChange={e => updateMetadata('license', e.target.value)}
-                                            placeholder="e.g., CC-BY 4.0"
-                                            rows={5}
-                                            className="w-full bg-black/40 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-synthux-orange/50 focus:ring-1 focus:ring-synthux-orange/20 transition-all font-mono text-sm resize-none"
-                                        />
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Default License Text</label>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Preselect:</span>
+                                                <select
+                                                    className="bg-black/60 border border-gray-700/50 rounded-lg px-2 py-1 text-[11px] text-gray-300 outline-none hover:border-gray-600 transition-colors"
+                                                    onChange={(e) => updateMetadata('license', e.target.value)}
+                                                    value=""
+                                                >
+                                                    <option value="" disabled>Common Licenses</option>
+                                                    {COMMON_LICENSES.map(l => (
+                                                        <option key={l.label} value={l.value}>{l.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="min-h-[220px]">
+                                            <NotesEditor
+                                                value={userLibrary.metadata.license || ''}
+                                                onChange={val => updateMetadata('license', val)}
+                                                placeholder="e.g., CC-BY 4.0 - Add your licensing details here..."
+                                                minHeight="180px"
+                                                fullHeight={false}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="bg-synthux-yellow/10 border border-synthux-yellow/30 rounded-lg p-4 flex gap-4">
-                                    <AlertCircle className="text-synthux-yellow shrink-0" size={20} />
+                                <div className="bg-synthux-yellow/10 border border-synthux-yellow/30 rounded-xl p-5 flex gap-4 shadow-lg shadow-black/20">
+                                    <div className="w-10 h-10 rounded-full bg-synthux-yellow/20 flex items-center justify-center text-synthux-yellow shrink-0 border border-synthux-yellow/30">
+                                        <Info size={20} />
+                                    </div>
                                     <div className="text-sm text-synthux-yellow/90">
-                                        <p className="font-bold mb-1">About Licenses</p>
-                                        <p className="leading-relaxed">Licenses help other users understand how they can use your shared samples. If you leave this clear, standard copyright applies.</p>
+                                        <p className="font-bold mb-1 uppercase tracking-wider">About Licenses</p>
+                                        <p className="leading-relaxed opacity-80">Licenses help other users understand how they can use your shared samples. If you leave this clear, standard copyright applies to your original work.</p>
+                                    </div>
+                                </div>
+
+                                <div className="pt-8 border-t border-white/5 space-y-4">
+                                    <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-gray-800/50">
+                                        <div className="space-y-1">
+                                            <h4 className="text-white font-bold text-sm">Browser Choice Preference</h4>
+                                            <p className="text-xs text-gray-400">Reset the saved choice between OS Browser and App Sample Browser.</p>
+                                        </div>
+                                        <button
+                                            onClick={onResetBrowserPreference}
+                                            className="px-4 py-2 bg-gray-800 hover:bg-red-500/20 border border-gray-700 hover:border-red-500/50 text-gray-300 hover:text-red-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 group"
+                                        >
+                                            <RotateCcw size={14} className="group-hover:rotate-180 transition-transform duration-500" /> Reset Preference
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                    </div>
-
-                </div>
-            </div>
-
-            {pendingUploadDrafts && (
-                <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-xl border border-gray-700 bg-synthux-panel flex flex-col">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-                            <div>
-                                <h3 className="text-white text-lg font-bold">Review Import Batch</h3>
-                                <p className="text-xs text-gray-400">Audition, rename, remove, and tag files before conversion/import.</p>
-                            </div>
-                            <button onClick={handleCloseReview} className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white">
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="px-5 py-4 border-b border-gray-800 bg-black/20 space-y-3">
-                            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                                Global Tags (applied to all imports)
-                            </div>
-                            <div className="flex gap-2">
-                                <SmartTagInput
-                                    value={globalTagInput}
-                                    onChange={setGlobalTagInput}
-                                    onAdd={(val) => {
-                                        setGlobalTags(prev => appendTags(prev, val));
-                                        setGlobalTagInput('');
-                                    }}
-                                    placeholder="Add comma-separated tags and press Enter"
-                                />
-                                <button
-                                    onClick={() => {
-                                        if (!globalTagInput.trim()) return;
-                                        setGlobalTags(prev => appendTags(prev, globalTagInput));
-                                        setGlobalTagInput('');
-                                    }}
-                                    className="px-3 py-2 rounded bg-gray-800 hover:bg-gray-700 text-xs font-bold text-white"
-                                >
-                                    Add
-                                </button>
-                            </div>
-                            {globalTags.length > 0 && (
-                                <div className="flex flex-wrap gap-2">
-                                    {globalTags.map(tag => (
-                                        <button
-                                            key={tag}
-                                            onClick={() => setGlobalTags(prev => prev.filter(t => t !== tag))}
-                                            className="px-2 py-1 rounded-full text-[10px] font-bold bg-synthux-orange/20 border border-synthux-orange/40 text-synthux-orange"
-                                            title="Remove tag"
-                                        >
-                                            {tag} x
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-synthux-main">
-                            {pendingUploadDrafts.length === 0 && (
-                                <div className="text-sm text-gray-400">No files left in this batch.</div>
-                            )}
-
-                            {pendingUploadDrafts.map(draft => (
-                                <div key={draft.id} className="border border-gray-800 bg-black/20 rounded-lg p-4 space-y-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <button
-                                                onClick={() => toggleDraftPreview(draft)}
-                                                className={`w-8 h-8 rounded-full flex items-center justify-center ${playingPreviewKey === `draft:${draft.id}` ? 'text-synthux-orange bg-synthux-orange/10' : 'text-gray-400 bg-gray-800 hover:bg-gray-700 hover:text-white'}`}
-                                                title="Audition"
-                                            >
-                                                {playingPreviewKey === `draft:${draft.id}` ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-                                            </button>
-                                            <div className="min-w-0">
-                                                <div className="text-xs text-gray-400 font-mono truncate">{draft.file.name}</div>
-                                                <div className="text-[10px] text-gray-500">
-                                                    {draft.willConvert ? 'Will convert WAV -> FLAC' : 'No conversion'}
-                                                </div>
-                                            </div>
+                        {pendingUploadDrafts && (
+                            <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                                <div className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-xl border border-gray-700 bg-synthux-panel flex flex-col">
+                                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+                                        <div>
+                                            <h3 className="text-white text-lg font-bold">Review Import Batch</h3>
+                                            <p className="text-xs text-gray-400">Audition, rename, remove, and tag files before conversion/import.</p>
                                         </div>
-                                        <button
-                                            onClick={() => {
-                                                if (playingPreviewKey === `draft:${draft.id}`) stopPreview();
-                                                setPendingUploadDrafts(prev => (prev || []).filter(d => d.id !== draft.id));
-                                            }}
-                                            className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
-                                            title="Remove from batch"
-                                        >
-                                            <Trash2 size={14} />
+                                        <button onClick={handleCloseReview} className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white">
+                                            <X size={18} />
                                         </button>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Display Name</label>
-                                        <input
-                                            value={draft.displayName}
-                                            onChange={e => setPendingUploadDrafts(prev => (prev || []).map(d => d.id === draft.id ? { ...d, displayName: e.target.value } : d))}
-                                            className="w-full bg-black/50 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tags (per file)</label>
+                                    <div className="px-5 py-4 border-b border-gray-800 bg-black/20 space-y-3">
+                                        <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                                            Global Tags (applied to all imports)
+                                        </div>
                                         <div className="flex gap-2">
-                                            <input
-                                                value={draft.tagInput}
-                                                onChange={e => setPendingUploadDrafts(prev => (prev || []).map(d => d.id === draft.id ? { ...d, tagInput: e.target.value } : d))}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' || e.key === ',') {
-                                                        e.preventDefault();
-                                                        setPendingUploadDrafts(prev => (prev || []).map(d => {
-                                                            if (d.id !== draft.id || !d.tagInput.trim()) return d;
-                                                            return { ...d, tags: appendTags(d.tags, d.tagInput), tagInput: '' };
-                                                        }));
-                                                    }
+                                            <SmartTagInput
+                                                value={globalTagInput}
+                                                onChange={setGlobalTagInput}
+                                                onAdd={(val) => {
+                                                    setGlobalTags(prev => appendTags(prev, val));
+                                                    setGlobalTagInput('');
                                                 }}
-                                                placeholder="Add tags and press Enter"
-                                                className="flex-1 bg-black/50 border border-gray-700 rounded px-3 py-2 text-xs text-white"
+                                                placeholder="Add comma-separated tags and press Enter"
                                             />
                                             <button
-                                                onClick={() => setPendingUploadDrafts(prev => (prev || []).map(d => {
-                                                    if (d.id !== draft.id || !d.tagInput.trim()) return d;
-                                                    return { ...d, tags: appendTags(d.tags, d.tagInput), tagInput: '' };
-                                                }))}
+                                                onClick={() => {
+                                                    if (!globalTagInput.trim()) return;
+                                                    setGlobalTags(prev => appendTags(prev, globalTagInput));
+                                                    setGlobalTagInput('');
+                                                }}
                                                 className="px-3 py-2 rounded bg-gray-800 hover:bg-gray-700 text-xs font-bold text-white"
                                             >
                                                 Add
                                             </button>
                                         </div>
-                                        {draft.tags.length > 0 && (
+                                        {globalTags.length > 0 && (
                                             <div className="flex flex-wrap gap-2">
-                                                {draft.tags.map(tag => (
+                                                {globalTags.map(tag => (
                                                     <button
-                                                        key={`${draft.id}-${tag}`}
-                                                        onClick={() => setPendingUploadDrafts(prev => (prev || []).map(d => d.id === draft.id ? { ...d, tags: d.tags.filter(t => t !== tag) } : d))}
-                                                        className="px-2 py-1 rounded-full text-[10px] font-bold bg-synthux-blue/20 border border-synthux-blue/40 text-synthux-blue"
+                                                        key={tag}
+                                                        onClick={() => setGlobalTags(prev => prev.filter(t => t !== tag))}
+                                                        className="px-2 py-1 rounded-full text-[10px] font-bold bg-synthux-orange/20 border border-synthux-orange/40 text-synthux-orange"
+                                                        title="Remove tag"
                                                     >
                                                         {tag} x
                                                     </button>
@@ -1243,149 +1625,166 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                            ))}
-                        </div>
 
-                        <div className="px-5 py-4 border-t border-gray-800 bg-black/20 space-y-3">
-                            <div>
-                                <div className="flex items-center justify-between text-xs text-gray-400">
-                                    <div className="truncate font-mono">
-                                        {playingPreviewKey?.startsWith('draft:') ? `Preview: ${playingPreviewLabel}` : 'Select a draft file to audition'}
+                                    <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-synthux-main">
+                                        {pendingUploadDrafts.length === 0 && (
+                                            <div className="text-sm text-gray-400">No files left in this batch.</div>
+                                        )}
+
+                                        {pendingUploadDrafts.map(draft => (
+                                            <div key={draft.id} className="border border-gray-800 bg-black/20 rounded-lg p-4 space-y-3">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <button
+                                                            onClick={() => toggleDraftPreview(draft)}
+                                                            className={`w-8 h-8 rounded-full flex items-center justify-center ${playingPreviewKey === `draft:${draft.id}` ? 'text-synthux-orange bg-synthux-orange/10' : 'text-gray-400 bg-gray-800 hover:bg-gray-700 hover:text-white'}`}
+                                                            title="Audition"
+                                                        >
+                                                            {playingPreviewKey === `draft:${draft.id}` ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                                                        </button>
+                                                        <div className="min-w-0">
+                                                            <div className="text-xs text-gray-400 font-mono truncate">{draft.file.name}</div>
+                                                            <div className="text-[10px] text-gray-500">
+                                                                {draft.willConvert ? 'Will convert WAV -> FLAC' : 'No conversion'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (playingPreviewKey === `draft:${draft.id}`) stopPreview();
+                                                            setPendingUploadDrafts(prev => (prev || []).filter(d => d.id !== draft.id));
+                                                        }}
+                                                        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                                        title="Remove from batch"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Display Name</label>
+                                                    <input
+                                                        value={draft.displayName}
+                                                        onChange={e => setPendingUploadDrafts(prev => (prev || []).map(d => d.id === draft.id ? { ...d, displayName: e.target.value } : d))}
+                                                        className="w-full bg-black/50 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tags (per file)</label>
+                                                    <div className="flex gap-2">
+                                                        <SmartTagInput
+                                                            value={draft.tagInput}
+                                                            onChange={val => setPendingUploadDrafts(prev => (prev || []).map(d => d.id === draft.id ? { ...d, tagInput: val } : d))}
+                                                            onAdd={(val) => {
+                                                                const parsed = parseTags(val);
+                                                                if (parsed.length === 0) return;
+                                                                setPendingUploadDrafts(prev => (prev || []).map(d => {
+                                                                    if (d.id !== draft.id) return d;
+                                                                    return { ...d, tags: Array.from(new Set([...d.tags, ...parsed])), tagInput: '' };
+                                                                }));
+                                                            }}
+                                                            placeholder="Add tags..."
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                const parsed = parseTags(draft.tagInput);
+                                                                if (parsed.length === 0) return;
+                                                                setPendingUploadDrafts(prev => (prev || []).map(d => {
+                                                                    if (d.id !== draft.id) return d;
+                                                                    return { ...d, tags: Array.from(new Set([...d.tags, ...parsed])), tagInput: '' };
+                                                                }));
+                                                            }}
+                                                            className="px-3 py-2 rounded bg-gray-800 hover:bg-gray-700 text-xs font-bold text-white"
+                                                        >
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                    {draft.tags.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {draft.tags.map(tag => (
+                                                                <button
+                                                                    key={`${draft.id}-${tag}`}
+                                                                    onClick={() => setPendingUploadDrafts(prev => (prev || []).map(d => d.id === draft.id ? { ...d, tags: d.tags.filter(t => t !== tag) } : d))}
+                                                                    className="px-2 py-1 rounded-full text-[10px] font-bold bg-synthux-blue/20 border border-synthux-blue/40 text-synthux-blue"
+                                                                >
+                                                                    {tag} x
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div className="font-mono">
-                                        {Math.floor(playbackTime)}s / {Math.floor(playbackDuration)}s
+
+                                    <div className="px-5 py-4 border-t border-gray-800 bg-black/20 space-y-3">
+                                        <div>
+                                            <div className="flex items-center justify-between text-xs text-gray-400">
+                                                <div className="truncate font-mono">
+                                                    {playingPreviewKey?.startsWith('draft:') ? `Preview: ${playingPreviewLabel}` : 'Select a draft file to audition'}
+                                                </div>
+                                                <div className="font-mono">
+                                                    {Math.floor(playbackTime)}s / {Math.floor(playbackDuration)}s
+                                                </div>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={playbackDuration || 0}
+                                                value={playbackTime}
+                                                disabled={!playingPreviewKey?.startsWith('draft:') || playbackDuration <= 0}
+                                                onChange={(e) => {
+                                                    const t = Number(e.target.value);
+                                                    if (!previewAudioRef.current) return;
+                                                    previewAudioRef.current.currentTime = t;
+                                                    setPlaybackTime(t);
+                                                }}
+                                                className="w-full mt-2 accent-synthux-orange disabled:opacity-40"
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-xs text-gray-400">
+                                                {pendingUploadDrafts.length} file(s) queued for import
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={handleCloseReview}
+                                                    className="px-3 py-2 rounded border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 text-xs font-bold"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleConfirmDraftImport}
+                                                    disabled={pendingUploadDrafts.length === 0 || isConvertingBatch}
+                                                    className="px-4 py-2 rounded bg-synthux-orange hover:bg-orange-600 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Import Selected
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <input
-                                    type="range"
-                                    min={0}
-                                    max={playbackDuration || 0}
-                                    value={playbackTime}
-                                    disabled={!playingPreviewKey?.startsWith('draft:') || playbackDuration <= 0}
-                                    onChange={(e) => {
-                                        const t = Number(e.target.value);
-                                        if (!previewAudioRef.current) return;
-                                        previewAudioRef.current.currentTime = t;
-                                        setPlaybackTime(t);
-                                    }}
-                                    className="w-full mt-2 accent-synthux-orange disabled:opacity-40"
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div className="text-xs text-gray-400">
-                                    {pendingUploadDrafts.length} file(s) queued for import
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={handleCloseReview}
-                                        className="px-3 py-2 rounded border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 text-xs font-bold"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleConfirmDraftImport}
-                                        disabled={pendingUploadDrafts.length === 0 || isConvertingBatch}
-                                        className="px-4 py-2 rounded bg-synthux-orange hover:bg-orange-600 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        Import Selected
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <audio
-                ref={previewAudioRef}
-                onLoadedMetadata={() => {
-                    if (!previewAudioRef.current) return;
-                    setPlaybackDuration(previewAudioRef.current.duration || 0);
-                }}
-                onTimeUpdate={() => {
-                    if (!previewAudioRef.current) return;
-                    setPlaybackTime(previewAudioRef.current.currentTime || 0);
-                }}
-                onEnded={stopPreview}
-            />
-        </div>
-    );
-};
-
-interface ProjectFileRowProps {
-    file: FileRecord;
-    isExpanded: boolean;
-    onToggle: () => void;
-    onCopy: (file: FileRecord, name?: string) => void;
-}
-
-const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy }: ProjectFileRowProps) => {
-    const [editName, setEditName] = useState(false);
-    const [newName, setNewName] = useState(file.name);
-
-    return (
-        <div className="bg-black/20 border border-gray-800 rounded-lg overflow-hidden transition-all hover:border-gray-700">
-            <div className="flex items-center justify-between p-3">
-                <div className="flex items-center gap-3">
-                    <button onClick={onToggle} className="text-gray-500 hover:text-white transition-colors">
-                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-                    <div className="p-1.5 bg-gray-800 rounded text-synthux-green">
-                        <FileAudio size={14} />
-                    </div>
-                    <div>
-                        {editName ? (
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="text"
-                                    value={newName}
-                                    onChange={e => setNewName(e.target.value)}
-                                    autoFocus
-                                    className="bg-black/50 border border-synthux-orange/50 rounded px-2 py-0.5 text-xs text-white outline-none font-mono"
-                                />
-                                <button onClick={() => setEditName(false)} className="text-synthux-green hover:brightness-125">
-                                    <Check size={14} />
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="text-sm font-medium text-white flex items-center gap-2">
-                                {file.name}
-                                <button onClick={() => { setEditName(true); setNewName(file.name); }} className="text-gray-600 hover:text-gray-400">
-                                    <Edit2 size={10} />
-                                </button>
                             </div>
                         )}
-                        <div className="text-[10px] text-gray-500 font-mono">
-                            {file.versions.length} versions • {file.license || 'No License'}
-                        </div>
+
+
+                        <audio
+                            ref={previewAudioRef}
+                            onLoadedMetadata={() => {
+                                if (!previewAudioRef.current) return;
+                                setPlaybackDuration(previewAudioRef.current.duration || 0);
+                            }}
+                            onTimeUpdate={() => {
+                                if (!previewAudioRef.current) return;
+                                setPlaybackTime(previewAudioRef.current.currentTime || 0);
+                            }}
+                            onEnded={stopPreview}
+                        />
                     </div>
                 </div>
-
-                <button
-                    onClick={() => onCopy(file, newName)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-synthux-orange text-gray-300 hover:text-white rounded text-xs font-bold transition-all"
-                >
-                    <Plus size={14} /> Copy to Library
-                </button>
             </div>
-
-            {isExpanded && (
-                <div className="bg-black/40 border-t border-gray-800 p-3 space-y-2">
-                    <div className="text-[10px] font-bold text-gray-600 uppercase tracking-widest pl-10 mb-2">History & Versions</div>
-                    {file.versions.map(v => (
-                        <div key={v.id} className="flex items-center justify-between pl-10 pr-4 py-1.5 hover:bg-white/5 rounded transition-colors group">
-                            <div className="flex items-center gap-3">
-                                <div className={`w-1.5 h-1.5 rounded-full ${v.id === file.currentVersionId ? 'bg-synthux-orange shadow-[0_0_5px_rgba(255,107,0,0.5)]' : 'bg-gray-700'}`} />
-                                <div className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">{v.description}</div>
-                                <div className="text-[10px] text-gray-600 font-mono">{new Date(v.timestamp).toLocaleString()}</div>
-                            </div>
-                            {/* Option to preview version? */}
-                        </div>
-                    ))}
-                </div>
-            )}
         </div>
     );
 };

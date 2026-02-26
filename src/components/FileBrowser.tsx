@@ -60,20 +60,11 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
 
     // Helpers to get all visible files in order
     const getVisibleFiles = () => {
-        // We need to return files in the order they are rendered
-        // Unassigned first, then Assigned (or whatever the rendering order is)
-        // Currently: Unassigned Section -> Assigned Section
-        // Inside sections: filtered by type
-
         const unassigned = files.filter(f => f.isParked);
         const assigned = files.filter(f => !f.isParked);
 
-        // Sorting logic inside sections matches the render logic?
-        // Render logic just maps them. They are likely in ID or creation order unless sorted.
-        // Let's assume 'files' array order is the base order, and we just filter.
-
-        // Actually, let's just concatenate them in the order sections appear
-        return [...unassigned, ...assigned];
+        // Concatenate in the order sections appear: Assigned first, then Project Pool (Unassigned)
+        return [...assigned, ...unassigned];
     };
 
     const handleSelectionClick = (fileId: string, e: React.MouseEvent) => {
@@ -423,73 +414,8 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
 
             <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
 
-                {/* Unassigned Section */}
-                <div className="mb-4">
-                    <div className="flex items-center gap-2 mb-2 px-1 w-full">
-                        <button
-                            onClick={() => setUnassignedOpen(!isUnassignedOpen)}
-                            className="flex items-center gap-1 text-left text-xs font-bold text-gray-400 uppercase hover:text-white flex-1"
-                        >
-                            {isUnassignedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            Unassigned ({unassignedFiles.length})
-                        </button>
-
-                        {/* Select All Button */}
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleSelectAllUnassigned(); }}
-                            className="text-[10px] text-gray-500 hover:text-white underline decoration-transparent hover:decoration-white transition-all"
-                            title="Select All Unassigned"
-                        >
-                            Select All
-                        </button>
-
-                        {/* Fill Slots Button (Visible if we have unassigned files) */}
-                        {onFillFreeSlots && unassignedFiles.length > 0 && (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleFillSlots(); }}
-                                className="p-1 rounded bg-gray-800 hover:bg-synthux-blue/20 text-gray-400 hover:text-synthux-blue transition-colors ml-1"
-                                title="Add all unassigned to free slots"
-                            >
-                                <ArrowRightToLine size={12} />
-                            </button>
-                        )}
-                    </div>
-
-                    {isUnassignedOpen && (
-                        <div className="pl-1">
-                            {unassignedFiles.map(file => (
-                                <FileItem
-                                    key={file.id}
-                                    file={file}
-                                    isMinified={isMinified}
-                                    isPlaying={isPlaying}
-                                    activeFileId={activeFileId}
-                                    play={play}
-                                    stop={stop}
-                                    onDragStart={handleDragStart}
-                                    onRenameFile={onRenameFile}
-                                    location={null}
-                                    getLabelStyle={getLabelStyle}
-                                    getBorderColor={getBorderColor}
-                                    isSelected={selectedFileIds.has(file.id)}
-                                    onToggleSelect={() => toggleSelection(file.id)}
-                                    onSelectionClick={(e) => handleSelectionClick(file.id, e)}
-                                    onDelete={() => {
-                                        if (onDeleteFile) onDeleteFile(file.id);
-                                    }}
-                                />
-                            ))}
-                            {unassignedFiles.length === 0 && (
-                                <div className="text-gray-600 text-xs italic px-2 py-4 border border-dashed border-gray-800 rounded">
-                                    No unassigned files
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-
                 {/* Assigned Section */}
-                <div>
+                <div className="mb-4">
                     <div className="flex items-center gap-2 mb-2 px-1 w-full">
                         <button
                             onClick={() => setAssignedOpen(!isAssignedOpen)}
@@ -539,6 +465,71 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
                             {assignedFiles.length === 0 && (
                                 <div className="text-gray-600 text-xs italic px-2 py-4 border border-dashed border-gray-800 rounded">
                                     No assigned files
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Project Pool (Unassigned Section) */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2 px-1 w-full">
+                        <button
+                            onClick={() => setUnassignedOpen(!isUnassignedOpen)}
+                            className="flex items-center gap-1 text-left text-xs font-bold text-gray-400 uppercase hover:text-white flex-1"
+                        >
+                            {isUnassignedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            Project Pool ({unassignedFiles.length})
+                        </button>
+
+                        {/* Select All Button */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleSelectAllUnassigned(); }}
+                            className="text-[10px] text-gray-500 hover:text-white underline decoration-transparent hover:decoration-white transition-all"
+                            title="Select All in Pool"
+                        >
+                            Select All
+                        </button>
+
+                        {/* Fill Slots Button (Visible if we have unassigned files) */}
+                        {onFillFreeSlots && unassignedFiles.length > 0 && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFillSlots(); }}
+                                className="p-1 rounded bg-gray-800 hover:bg-synthux-blue/20 text-gray-400 hover:text-synthux-blue transition-colors ml-1"
+                                title="Add all in pool to free slots"
+                            >
+                                <ArrowRightToLine size={12} />
+                            </button>
+                        )}
+                    </div>
+
+                    {isUnassignedOpen && (
+                        <div className="pl-1">
+                            {unassignedFiles.map(file => (
+                                <FileItem
+                                    key={file.id}
+                                    file={file}
+                                    isMinified={isMinified}
+                                    isPlaying={isPlaying}
+                                    activeFileId={activeFileId}
+                                    play={play}
+                                    stop={stop}
+                                    onDragStart={handleDragStart}
+                                    onRenameFile={onRenameFile}
+                                    location={null}
+                                    getLabelStyle={getLabelStyle}
+                                    getBorderColor={getBorderColor}
+                                    isSelected={selectedFileIds.has(file.id)}
+                                    onToggleSelect={() => toggleSelection(file.id)}
+                                    onSelectionClick={(e) => handleSelectionClick(file.id, e)}
+                                    onDelete={() => {
+                                        if (onDeleteFile) onDeleteFile(file.id);
+                                    }}
+                                />
+                            ))}
+                            {unassignedFiles.length === 0 && (
+                                <div className="text-gray-600 text-xs italic px-2 py-4 border border-dashed border-gray-800 rounded">
+                                    Project Pool is empty
                                 </div>
                             )}
                         </div>

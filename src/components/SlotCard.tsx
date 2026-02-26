@@ -21,9 +21,10 @@ interface SlotCardProps {
     onToggleSlotSelection: () => void;
     onSlotDragStart?: (e: React.DragEvent) => void;
     onRenameFile?: (fileId: string, newName: string) => void;
+    isMissing?: boolean;
 }
 
-export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile }: SlotCardProps) => {
+export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile, isMissing }: SlotCardProps) => {
     const { play, pause, isPlaying, activeFileId, currentTime, duration, seek } = useAudioPlayer();
 
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
@@ -186,6 +187,7 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                 ${isDragOver ? 'bg-white/10 scale-105 z-20' : isActive ? 'bg-[#1a1a1a] shadow-xl scale-[1.02]' : 'border-gray-700 bg-[#151515] hover:border-gray-500'}
                 ${fileRecord ? 'shadow-lg' : ''}
                 ${isDuplicate ? '!border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : ''}
+                ${isMissing ? '!border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : ''}
                 ${isSelected ? 'ring-2 ring-synthux-yellow' : ''}
             `}
             style={{
@@ -193,6 +195,14 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                 touchAction: 'none'
             }}
         >
+            {/* Missing Indicator */}
+            {isMissing && (
+                <div className="absolute inset-0 z-30 bg-red-950/40 backdrop-blur-[1px] flex items-center justify-center rounded-xl border-2 border-red-500/50">
+                    <div className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-lg rotate-[-12deg]">
+                        Missing
+                    </div>
+                </div>
+            )}
             {/* Selection Checkbox - Only show if file exists */}
             {fileRecord && (
                 <div
@@ -219,6 +229,14 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
 
             {fileRecord && currentVersion ? (
                 <>
+                    {/* Missing Indicator */}
+                    {isMissing && (
+                        <div className="absolute inset-0 z-30 bg-red-950/40 backdrop-blur-[1px] flex items-center justify-center rounded-xl border-2 border-red-500/50">
+                            <div className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-lg rotate-[-12deg]">
+                                Missing
+                            </div>
+                        </div>
+                    )}
                     {/* Top: Mini Waveform Area */}
                     <div className="flex-1 w-full bg-black/20 flex items-center justify-center relative overflow-hidden rounded-t-lg">
                         {currentVersion.blob && (

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { TapeSelector } from './components/TapeSelector';
 
 import logoImg from './assets/img/Spotykach_Logo.webp?url';
@@ -19,7 +19,7 @@ import { HelpModal } from './components/HelpModal';
 import { ExportModal } from './components/ExportModal';
 import { ExportProgressModal } from './components/ExportProgressModal';
 import { SampleBrowser } from './components/SampleBrowser';
-import { BrowserChoiceModal } from './components/BrowserChoiceModal';
+import BrowserChoiceModal from './components/BrowserChoiceModal';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
@@ -36,12 +36,10 @@ import { SetupWizard } from './components/SetupWizard';
 import { SettingsModal } from './components/SettingsModal';
 import { ExportPreviewModal } from './components/ExportPreviewModal';
 import { NotesEditor } from './components/NotesEditor';
-import { MissingFilesResolver } from './components/MissingFilesResolver';
+import { MissingFilesResolver, type MissingAsset } from './components/MissingFilesResolver';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Rnd } from 'react-rnd';
-
-// ... (Rest of component)
 
 // Confirm Action Helper
 import { loadStateFromDB, clearState } from './utils/persistence';
@@ -49,6 +47,19 @@ import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
 
 const sanitizeFilename = (name: string) => {
   return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+};
+
+const getNotePreview = (notes?: string) => {
+  if (!notes) return '';
+  const firstLine = notes.split('\n').find(line => line.trim() !== '') || '';
+  // Basic markdown removal: # title, **bold**, *italic*, [link](url), `code`
+  return firstLine
+    .replace(/^[#\s\*-\+>]+/, '') // Headers, lists, quotes
+    .replace(/(\*\*|__)(.*?)\1/g, '$2') // Bold
+    .replace(/(\*|_)(.*?)\1/g, '$2') // Italic
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Links
+    .replace(/`{1,3}(.*?)`{1,3}/g, '$1') // Code
+    .trim();
 };
 
 function App() {
@@ -70,7 +81,7 @@ function App() {
   // Track RND position explicitly for snapping
   const [projectNotesPos, setProjectNotesPos] = useState({
     x: window.innerWidth > 650 ? window.innerWidth - 620 : 20,
-    y: 56
+    y: 70
   });
   // Track where it was before minimizing
   const [projectNotesPreMinPos, setProjectNotesPreMinPos] = useState({ x: 0, y: 0 });
@@ -110,8 +121,8 @@ function App() {
     showCancel?: boolean;
   } | null>(null);
 
-  // Import State
   const [importAnalysis, setImportAnalysis] = useState<ImportAnalysis | null>(null);
+  const [missingFilesWarning, setMissingFilesWarning] = useState<MissingAsset[] | null>(null);
 
 
   // Project Manager State
@@ -122,7 +133,11 @@ function App() {
   const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(undefined);
 
   const [allViewNoteStates, setAllViewNoteStates] = useState<Record<TapeColor, 'collapsed' | 'preview' | 'expanded'>>({
-    Blue: 'preview', Green: 'preview', Pink: 'preview', Red: 'preview', Turquoise: 'preview', Yellow: 'preview'
+    Blue: 'collapsed', Green: 'collapsed', Pink: 'collapsed', Red: 'collapsed', Turquoise: 'collapsed', Yellow: 'collapsed'
+  });
+
+  const [expandedProjectTapeNotes, setExpandedProjectTapeNotes] = useState<Record<TapeColor, boolean>>({
+    Blue: false, Green: false, Pink: false, Red: false, Turquoise: false, Yellow: false
   });
 
   const toggleAllNotes = () => {
@@ -171,7 +186,6 @@ function App() {
   const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [missingFilesWarning, setMissingFilesWarning] = useState<NonNullable<AppState['loadIssues']>['missingAssets'] | null>(null);
 
   // Sync Logic State
   const [syncModalState, setSyncModalState] = useState<{
@@ -207,12 +221,18 @@ function App() {
     sourceSlotKeys?: string[];
   } | null>(null);
 
-  // User Library State
   const [userLibrary, setUserLibrary] = useState<import('./types').UserLibrary>({
     files: {},
     metadata: { artist: '', license: '' }
   });
   const [showLibraryManager, setShowLibraryManager] = useState(false);
+  const [libraryManagerInitialTab, setLibraryManagerInitialTab] = useState<'upload' | 'project' | 'manage' | 'settings'>('upload');
+  const [missingLibraryFiles, setMissingLibraryFiles] = useState<string[]>([]);
+
+  // Keep missing library files in sync if entries are removed from the index
+  useEffect(() => {
+    setMissingLibraryFiles(prev => prev.filter(id => !!userLibrary.files[id]));
+  }, [userLibrary.files]);
 
   // Visual Filters State
   const [visualFilters, setVisualFilters] = useState<import('./types').VisualFilters>(() => {
@@ -278,6 +298,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const singleFileInputRef = useRef<HTMLInputElement>(null);
   const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
+  const isSlotSampleImportInFlightRef = useRef(false);
 
   // Handle Reset
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -385,46 +406,7 @@ function App() {
         console.warn("[ProjectLoad] Failed to check for visual_settings.json", e);
       }
       if (missingAssets.length > 0) {
-        const affectedIds = Array.from(new Set(missingAssets.map(m => m.fileId)));
         const missingRefsUnique = Array.from(new Set(missingAssets.map(m => m.blobRef)));
-        const missingByFileId = missingAssets.reduce<Record<string, typeof missingAssets>>((acc, issue) => {
-          if (!acc[issue.fileId]) acc[issue.fileId] = [];
-          acc[issue.fileId].push(issue);
-          return acc;
-        }, {});
-
-        const removeMissingFilesFromState = (issuesToRemove: typeof missingAssets = missingAssets) => {
-          const idsToRemove = Array.from(new Set(issuesToRemove.map(i => i.fileId)));
-          setConfirmAction(null);
-          isSystemUpdate.current = true;
-          setState(prev => {
-            const nextFiles = { ...prev.files };
-            idsToRemove.forEach(id => delete nextFiles[id]);
-
-            const nextTapes: typeof prev.tapes = { ...prev.tapes };
-            (Object.keys(nextTapes) as (keyof typeof nextTapes)[]).forEach(color => {
-              nextTapes[color] = {
-                ...nextTapes[color],
-                slots: nextTapes[color].slots.map(slot => (
-                  slot.fileId && !nextFiles[slot.fileId]
-                    ? { ...slot, fileId: null }
-                    : slot
-                )),
-              };
-            });
-
-            return {
-              ...prev,
-              files: nextFiles,
-              tapes: nextTapes,
-              loadIssues: {
-                ...(prev.loadIssues || {}),
-                missingAssets: [],
-              },
-            };
-          });
-          setToast({ msg: `Removed ${idsToRemove.length} missing file record(s) from project state.`, type: 'success' });
-        };
 
         const resolveBackupProjectDir = async (): Promise<FileSystemDirectoryHandle | null> => {
           if (!backupHandle) return null;
@@ -464,155 +446,32 @@ function App() {
           }
         }
 
-        const fileDiagnostics = affectedIds.map((fileId) => {
-          const file = loadedState.files[fileId];
-          const issues = missingByFileId[fileId] || [];
+        const projectMissingAssets: MissingAsset[] = missingAssets.map((asset) => {
+          const file = loadedState.files[asset.fileId];
           const slotRefs: string[] = [];
 
           (Object.entries(loadedState.tapes) as [keyof typeof loadedState.tapes, typeof loadedState.tapes[keyof typeof loadedState.tapes]][]).forEach(([color, tape]) => {
             tape.slots.forEach(slot => {
-              if (slot.fileId === fileId) {
+              if (slot.fileId === asset.fileId) {
                 slotRefs.push(`${String(color).charAt(0).toUpperCase()}${slot.id}`);
               }
             });
           });
 
           return {
-            fileId,
-            fileName: file?.name || issues[0]?.fileName || fileId,
-            location: slotRefs.length > 0 ? `Assigned to slot(s): ${slotRefs.join(', ')}` : 'Unassigned (project pool)',
-            missingVersions: Array.from(new Set(issues.map(i => i.versionId))).length,
-            missingRefs: issues.map(i => i.blobRef),
-            recoverable: issues.filter(i => recoverableRefs.has(i.blobRef)).length,
+            ...asset,
+            slots: slotRefs,
+            versionCount: file?.versions.length || 1,
+            sdRecoverable: recoverableRefs.has(asset.blobRef)
           };
         });
 
-        setToast({ msg: `Project "${projectName}" loaded with ${missingAssets.length} missing asset file(s).`, type: 'info' });
-        setConfirmAction({
-          title: "Missing Project Assets",
-          message: (
-            <div className="space-y-3">
-              <p>Some asset files are missing on disk for this project.</p>
-              <p className="text-sm text-gray-400">
-                {recoverableRefs.size > 0
-                  ? 'Some missing assets were found on SD backup and can be restored.'
-                  : 'No backup matches found. You can keep references as-is and try to recover files later, or remove affected files now.'}
-              </p>
-              <p className="text-xs text-gray-500 font-mono">
-                Missing assets: {missingAssets.length} | Affected records: {affectedIds.length} | Recoverable from SD: {recoverableRefs.size}
-              </p>
-              <div className="max-h-56 overflow-y-auto rounded border border-gray-700 bg-black/30 p-2 space-y-2">
-                {fileDiagnostics.map((d) => (
-                  <div key={d.fileId} className="text-xs text-gray-300 border-b border-gray-800 last:border-b-0 pb-2 last:pb-0">
-                    <div className="font-mono text-white truncate">{d.fileName}</div>
-                    <div className="text-[11px] text-gray-400">{d.location}</div>
-                    <div className="text-[11px] text-gray-400">Missing version entries: {d.missingVersions}</div>
-                    <div className="text-[11px] text-gray-400">Recoverable from SD: {d.recoverable}/{d.missingRefs.length}</div>
-                    <div className="text-[10px] text-gray-500 font-mono break-all">
-                      {d.missingRefs.slice(0, 3).join(' | ')}
-                      {d.missingRefs.length > 3 ? ` | +${d.missingRefs.length - 3} more` : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ),
-          confirmLabel: recoverableRefs.size > 0 ? "Restore from SD Backup" : "Remove Missing Files",
-          showCancel: true,
-          isDestructive: recoverableRefs.size === 0,
-          onConfirm: async () => {
-            if (recoverableRefs.size === 0) {
-              removeMissingFilesFromState();
-              return;
-            }
-
-            setConfirmAction(null);
-            if (!workHandle) return;
-
-            setIsProcessing(true);
-            setProgressMsg('Restoring missing assets from SD backup...');
-
-            try {
-              const backupProjectDir = await resolveBackupProjectDir();
-              if (!backupProjectDir) {
-                setToast({ msg: "No matching project found on SD backup.", type: 'error' });
-                return;
-              }
-
-              const backupAssets = await backupProjectDir.getDirectoryHandle('Assets', { create: false });
-              const localProjects = await workHandle.getDirectoryHandle('Projects', { create: false });
-              const localProjectDir = await localProjects.getDirectoryHandle(projectName, { create: false });
-              const localAssets = await localProjectDir.getDirectoryHandle('Assets', { create: true });
-
-              const restoredBlobByRef = new Map<string, File>();
-              for (const blobRef of recoverableRefs) {
-                const parts = blobRef.split('/');
-                const fileName = parts[parts.length - 1];
-
-                try {
-                  const srcHandle = await backupAssets.getFileHandle(fileName, { create: false });
-                  const srcFile = await srcHandle.getFile();
-                  const dstHandle = await localAssets.getFileHandle(fileName, { create: true });
-                  // @ts-ignore
-                  const writable = await dstHandle.createWritable();
-                  await writable.write(srcFile);
-                  await writable.close();
-                  restoredBlobByRef.set(blobRef, srcFile);
-                } catch (err) {
-                  console.warn(`Restore failed for ${blobRef}`, err);
-                }
-              }
-
-              const unresolvedAfterRestore = missingAssets.filter(m => !restoredBlobByRef.has(m.blobRef));
-              const restoredCount = restoredBlobByRef.size;
-
-              isSystemUpdate.current = true;
-              setState(prev => {
-                const nextFiles = { ...prev.files };
-                Object.entries(nextFiles).forEach(([fileId, file]) => {
-                  const updatedVersions = file.versions.map(v => {
-                    const ref = (v as any).blobRef;
-                    if (ref && restoredBlobByRef.has(ref)) {
-                      return { ...v, blob: restoredBlobByRef.get(ref)! };
-                    }
-                    return v;
-                  });
-                  if (updatedVersions !== file.versions) {
-                    nextFiles[fileId] = { ...file, versions: updatedVersions };
-                  }
-                });
-
-                return {
-                  ...prev,
-                  files: nextFiles,
-                  loadIssues: {
-                    ...(prev.loadIssues || {}),
-                    missingAssets: unresolvedAfterRestore,
-                  },
-                };
-              });
-
-              setToast({ msg: `Restored ${restoredCount} missing asset file(s) from SD backup.`, type: 'success' });
-
-              if (unresolvedAfterRestore.length > 0) {
-                setConfirmAction({
-                  title: "Unresolved Missing Assets",
-                  message: `Could not restore ${unresolvedAfterRestore.length} asset file(s). Remove affected files from project state?`,
-                  confirmLabel: "Remove Missing Files",
-                  showCancel: true,
-                  isDestructive: true,
-                  onConfirm: () => removeMissingFilesFromState(unresolvedAfterRestore),
-                });
-              }
-            } catch (err: any) {
-              console.error("Restore from backup failed", err);
-              setToast({ msg: `Backup restore failed: ${err?.message || 'Unknown error'}`, type: 'error' });
-            } finally {
-              setIsProcessing(false);
-              setProgressMsg('');
-            }
-          }
+        const sdMatchCount = recoverableRefs.size;
+        setToast({
+          msg: `Project "${projectName}" loaded with ${missingAssets.length} missing asset(s).${sdMatchCount > 0 ? ` ${sdMatchCount} match(es) found on SD.` : ''}`,
+          type: 'info'
         });
+        setMissingFilesWarning(projectMissingAssets);
       } else {
         setToast({ msg: `Project "${projectName}" Loaded`, type: 'success' });
       }
@@ -1070,60 +929,75 @@ function App() {
     return () => clearTimeout(handler);
   }, [userLibrary, workHandle]);
 
-  // Bootstrap user library from workspace User_Library folder
-  useEffect(() => {
+  // Ensure User_Library directory exists when manager opens
+  const handleRefreshLibrary = async () => {
     if (!workHandle) return;
+    try {
+      const libDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
+      const diskRecords: import('./types').FileRecord[] = [];
+      const diskFileNames = new Set<string>();
 
-    const loadFromWorkspaceLibrary = async () => {
-      try {
-        const libDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
-        const diskRecords: import('./types').FileRecord[] = [];
+      // @ts-ignore
+      for await (const [, entry] of libDir.entries()) {
+        if (entry.kind !== 'file') continue;
+        diskFileNames.add(entry.name.toLowerCase());
 
-        // @ts-ignore
-        for await (const [, entry] of libDir.entries()) {
-          if (entry.kind !== 'file') continue;
-          const fh = entry as FileSystemFileHandle;
-          const file = await fh.getFile();
-          const fileId = crypto.randomUUID();
-          const versionId = crypto.randomUUID();
-          diskRecords.push({
-            id: fileId,
-            name: file.name,
-            originalName: file.name,
-            isParked: true,
-            origin: 'User Library',
-            currentVersionId: versionId,
-            versions: [{
-              id: versionId,
-              timestamp: file.lastModified || Date.now(),
-              description: 'Workspace Library',
-              blob: file,
-              duration: 0,
-            }],
-          });
+        const fh = entry as FileSystemFileHandle;
+        const file = await fh.getFile();
+        const fileId = crypto.randomUUID();
+        const versionId = crypto.randomUUID();
+        diskRecords.push({
+          id: fileId,
+          name: file.name,
+          originalName: file.name,
+          isParked: true,
+          origin: 'User Library',
+          currentVersionId: versionId,
+          versions: [{
+            id: versionId,
+            timestamp: file.lastModified || Date.now(),
+            description: 'Workspace Library',
+            blob: file,
+            duration: 0,
+          }],
+        });
+      }
+
+      setUserLibrary(prev => {
+        const missingFromDisk: string[] = [];
+        const updatedFiles = { ...prev.files };
+        Object.values(updatedFiles).forEach(file => {
+          if (!diskFileNames.has((file.name || '').toLowerCase())) {
+            missingFromDisk.push(file.id);
+          }
+        });
+
+        const byName = new Set(
+          Object.values(prev.files).map(f => (f.name || '').toLowerCase())
+        );
+        const additions = diskRecords.filter(r => !byName.has((r.name || '').toLowerCase()));
+
+        if (additions.length === 0) {
+          setMissingLibraryFiles(missingFromDisk);
+          return prev;
         }
 
-        if (diskRecords.length === 0) return;
-
-        setUserLibrary(prev => {
-          const byName = new Set(
-            Object.values(prev.files).map(f => (f.name || '').toLowerCase())
-          );
-          const additions = diskRecords.filter(r => !byName.has((r.name || '').toLowerCase()));
-          if (additions.length === 0) return prev;
-
-          const merged = { ...prev.files };
-          additions.forEach(rec => {
-            merged[rec.id] = rec;
-          });
-          return { ...prev, files: merged };
+        additions.forEach(rec => {
+          updatedFiles[rec.id] = rec;
         });
-      } catch (e) {
-        console.error('Failed to load workspace User_Library', e);
-      }
-    };
+        setMissingLibraryFiles(missingFromDisk);
+        return { ...prev, files: updatedFiles };
+      });
+    } catch (e) {
+      console.error('Failed to load workspace User_Library', e);
+    }
+  };
 
-    loadFromWorkspaceLibrary();
+  // Bootstrap user library from workspace User_Library folder
+  useEffect(() => {
+    if (workHandle) {
+      handleRefreshLibrary();
+    }
   }, [workHandle]);
 
   // Ensure User_Library directory exists when manager opens
@@ -1486,6 +1360,403 @@ function App() {
     }
 
     await executeSaveProject();
+  };
+
+  const handleSmartRelocate = async () => {
+    if (!missingFilesWarning) return;
+
+    try {
+      // @ts-ignore
+      const rootFolder = await window.showDirectoryPicker({ mode: 'read' });
+      if (!rootFolder) return;
+
+      setIsProcessing(true);
+      setProgressMsg("Scanning folder for matches...");
+
+      const foundFiles = new Map<string, File>();
+
+      const scan = async (handle: FileSystemDirectoryHandle) => {
+        // @ts-ignore
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file') {
+            if (entry.name.toLowerCase().endsWith('.wav') || entry.name.toLowerCase().endsWith('.mp3')) {
+              const file = await (entry as FileSystemFileHandle).getFile();
+              foundFiles.set(entry.name.toLowerCase(), file);
+            }
+          } else if (entry.kind === 'directory') {
+            await scan(entry as FileSystemDirectoryHandle);
+          }
+        }
+      };
+
+      await scan(rootFolder);
+
+      let resolvedCount = 0;
+      const nextFiles = { ...state.files };
+
+      missingFilesWarning.forEach(asset => {
+        const fileName = asset.fileName.toLowerCase();
+        const refParts = asset.blobRef.split('/');
+        const refName = refParts[refParts.length - 1].toLowerCase();
+
+        const match = foundFiles.get(fileName) || foundFiles.get(refName);
+
+        if (match) {
+          const fileRecord = nextFiles[asset.fileId];
+          if (fileRecord) {
+            const updatedVersions = fileRecord.versions.map(v => {
+              if (v.id === asset.versionId) {
+                return { ...v, blob: match };
+              }
+              return v;
+            });
+            nextFiles[asset.fileId] = { ...fileRecord, versions: updatedVersions };
+            resolvedCount++;
+          }
+        }
+      });
+
+      if (resolvedCount > 0) {
+        isSystemUpdate.current = true;
+        setState(prev => ({
+          ...prev,
+          files: nextFiles
+        }));
+
+        setMissingFilesWarning(prev => {
+          if (!prev) return null;
+          const remaining = prev.filter(asset => {
+            const fileName = asset.fileName.toLowerCase();
+            const refParts = asset.blobRef.split('/');
+            const refName = refParts[refParts.length - 1].toLowerCase();
+            return !foundFiles.has(fileName) && !foundFiles.has(refName);
+          });
+          return remaining.length > 0 ? remaining : null;
+        });
+
+        setToast({ msg: `Successfully relocated ${resolvedCount} file(s).`, type: 'success' });
+      } else {
+        setToast({ msg: "No matching files found in the selected folder.", type: 'info' });
+      }
+
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.error("Smart relocate failed", e);
+        setToast({ msg: "Folder scan failed.", type: 'error' });
+      }
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  const handleRecoverProjectAssetFromCache = async (asset: MissingAsset) => {
+    if (!workHandle || !currentProjectName) return;
+
+    const fileRecord = state.files[asset.fileId];
+    if (!fileRecord) return;
+
+    const version = fileRecord.versions.find(v => v.id === asset.versionId);
+    if (!version || !version.blob) {
+      setToast({ msg: "No audio data found in browser cache for this file.", type: 'error' });
+      return;
+    }
+
+    try {
+      const projectsHandle = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const projectDirHandle = await projectsHandle.getDirectoryHandle(currentProjectName, { create: true });
+      const assetsHandle = await projectDirHandle.getDirectoryHandle('Assets', { create: true });
+
+      const parts = asset.blobRef.split('/');
+      const technicalName = parts[parts.length - 1];
+      const fileHandle = await assetsHandle.getFileHandle(technicalName, { create: true });
+      // @ts-ignore
+      const writable = await fileHandle.createWritable();
+      await writable.write(version.blob);
+      await writable.close();
+
+      setToast({ msg: `Recovered ${asset.fileName} from cache.`, type: 'success' });
+
+      setMissingFilesWarning(prev => {
+        if (!prev) return null;
+        const next = prev.filter(a => a.versionId !== asset.versionId);
+        return next.length > 0 ? next : null;
+      });
+    } catch (e: any) {
+      console.error("Cache recovery failed", e);
+      setToast({ msg: "Failed to write file to disk: " + e.message, type: 'error' });
+    }
+  };
+
+  const handleRecoverAllMissingAssetsFromCache = async () => {
+    if (!missingFilesWarning || !workHandle || !currentProjectName) return;
+
+    setIsProcessing(true);
+    setProgressMsg("Restoring files from cache...");
+
+    let recoveredCount = 0;
+    try {
+      const projectsHandle = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const projectDirHandle = await projectsHandle.getDirectoryHandle(currentProjectName, { create: true });
+      const assetsHandle = await projectDirHandle.getDirectoryHandle('Assets', { create: true });
+
+      for (const asset of missingFilesWarning) {
+        const fileRecord = state.files[asset.fileId];
+        if (!fileRecord) continue;
+
+        const version = fileRecord.versions.find(v => v.id === asset.versionId);
+        if (version && version.blob) {
+          try {
+            const parts = asset.blobRef.split('/');
+            const technicalName = parts[parts.length - 1];
+            const fileHandle = await assetsHandle.getFileHandle(technicalName, { create: true });
+            // @ts-ignore
+            const writable = await fileHandle.createWritable();
+            await writable.write(version.blob);
+            await writable.close();
+            recoveredCount++;
+          } catch (err) {
+            console.error(`Failed to recover ${asset.fileName}`, err);
+          }
+        }
+      }
+
+      if (recoveredCount > 0) {
+        setToast({ msg: `Recovered ${recoveredCount} files from cache.`, type: 'success' });
+        setMissingFilesWarning(prev => {
+          if (!prev) return null;
+          const remaining = prev.filter(a => {
+            const rec = state.files[a.fileId];
+            const ver = rec?.versions.find(v => v.id === a.versionId);
+            return !ver || !ver.blob;
+          });
+          return remaining.length > 0 ? remaining : null;
+        });
+      } else {
+        setToast({ msg: "No files could be recovered from cache.", type: 'info' });
+      }
+    } catch (e: any) {
+      console.error("Bulk recovery failed", e);
+      setToast({ msg: "Recovery error: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  const handleRecoverProjectAssetFromSD = async (asset: MissingAsset) => {
+    if (!workHandle || !backupHandle || !currentProjectName) return;
+
+    try {
+      const projectsHandle = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const projectDirHandle = await projectsHandle.getDirectoryHandle(currentProjectName, { create: true });
+      const assetsHandle = await projectDirHandle.getDirectoryHandle('Assets', { create: true });
+
+      // Resolve backup dir again (cleanest approach for standalone function)
+      let backupProjectDir: FileSystemDirectoryHandle | null = null;
+      try {
+        const wb = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+        const ps = await wb.getDirectoryHandle('Projects', { create: false });
+        backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
+      } catch {
+        try {
+          const ps = await backupHandle.getDirectoryHandle('Projects', { create: false });
+          backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
+        } catch { /* ignore */ }
+      }
+
+      if (!backupProjectDir) throw new Error("Could not find project on SD backup.");
+      const backupAssets = await backupProjectDir.getDirectoryHandle('Assets', { create: false });
+
+      const parts = asset.blobRef.split('/');
+      const fileName = parts[parts.length - 1];
+      const backupFileHandle = await backupAssets.getFileHandle(fileName, { create: false });
+      const backupFile = await backupFileHandle.getFile();
+
+      const targetFileHandle = await assetsHandle.getFileHandle(fileName, { create: true });
+      // @ts-ignore
+      const writable = await targetFileHandle.createWritable();
+      await writable.write(backupFile);
+      await writable.close();
+
+      setToast({ msg: `Recovered ${asset.fileName} from SD backup.`, type: 'success' });
+
+      setMissingFilesWarning(prev => {
+        if (!prev) return null;
+        const next = prev.filter(a => a.versionId !== asset.versionId);
+        return next.length > 0 ? next : null;
+      });
+    } catch (e: any) {
+      console.error("SD recovery failed", e);
+      setToast({ msg: "Failed to recover from SD: " + e.message, type: 'error' });
+    }
+  };
+
+  const handleRecoverAllMissingAssetsFromSD = async () => {
+    if (!missingFilesWarning || !workHandle || !backupHandle || !currentProjectName) return;
+
+    setIsProcessing(true);
+    setProgressMsg("Restoring files from SD backup...");
+
+    let recoveredRefs = new Set<string>();
+    try {
+      let backupProjectDir: FileSystemDirectoryHandle | null = null;
+      try {
+        const wb = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+        const ps = await wb.getDirectoryHandle('Projects', { create: false });
+        backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
+      } catch {
+        try {
+          const ps = await backupHandle.getDirectoryHandle('Projects', { create: false });
+          backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
+        } catch { /* ignore */ }
+      }
+
+      if (!backupProjectDir) throw new Error("Could not find project on SD backup.");
+      const backupAssets = await backupProjectDir.getDirectoryHandle('Assets', { create: false });
+
+      const projectsHandle = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const projectDirHandle = await projectsHandle.getDirectoryHandle(currentProjectName, { create: true });
+      const assetsHandle = await projectDirHandle.getDirectoryHandle('Assets', { create: true });
+
+      for (const asset of missingFilesWarning) {
+        if (!asset.sdRecoverable) continue;
+
+        try {
+          const parts = asset.blobRef.split('/');
+          const fileName = parts[parts.length - 1];
+          const backupFileHandle = await backupAssets.getFileHandle(fileName, { create: false });
+          const backupFile = await backupFileHandle.getFile();
+
+          const targetFileHandle = await assetsHandle.getFileHandle(fileName, { create: true });
+          // @ts-ignore
+          const writable = await targetFileHandle.createWritable();
+          await writable.write(backupFile);
+          await writable.close();
+          recoveredRefs.add(asset.versionId);
+        } catch (err) {
+          console.error(`Failed to recover ${asset.fileName} from SD`, err);
+        }
+      }
+
+      if (recoveredRefs.size > 0) {
+        setToast({ msg: `Recovered ${recoveredRefs.size} files from SD backup.`, type: 'success' });
+        setMissingFilesWarning(prev => {
+          if (!prev) return null;
+          const remaining = prev.filter(a => !recoveredRefs.has(a.versionId));
+          return remaining.length > 0 ? remaining : null;
+        });
+      } else {
+        setToast({ msg: "No eligible files found locally on SD backup.", type: 'info' });
+      }
+    } catch (e: any) {
+      console.error("Bulk SD recovery failed", e);
+      setToast({ msg: "SD Recovery error: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  const handleLibrarySmartScan = async () => {
+    if (missingLibraryFiles.length === 0) return;
+
+    try {
+      // @ts-ignore
+      const rootFolder = await window.showDirectoryPicker({ mode: 'read' });
+      if (!rootFolder) return;
+
+      setIsProcessing(true);
+      setProgressMsg("Scanning folder for library matches...");
+
+      const foundFiles = new Map<string, File>();
+      const scan = async (handle: FileSystemDirectoryHandle) => {
+        // @ts-ignore
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file') {
+            const ext = entry.name.toLowerCase().split('.').pop();
+            if (['wav', 'mp3', 'flac'].includes(ext || '')) {
+              const file = await (entry as FileSystemFileHandle).getFile();
+              foundFiles.set(entry.name.toLowerCase(), file);
+            }
+          } else if (entry.kind === 'directory') {
+            await scan(entry as FileSystemDirectoryHandle);
+          }
+        }
+      };
+
+      await scan(rootFolder);
+
+      let resolvedCount = 0;
+      let userLibraryDir: FileSystemDirectoryHandle | null = null;
+      if (workHandle) {
+        try {
+          userLibraryDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
+        } catch (e) {
+          console.warn("Failed to get User_Library handle for relocation", e);
+        }
+      }
+
+      setUserLibrary(prev => {
+        const nextFiles = { ...prev.files };
+        const stillMissing: string[] = [...missingLibraryFiles];
+
+        missingLibraryFiles.forEach(id => {
+          const record = nextFiles[id];
+          if (!record) return;
+
+          const fileName = record.name.toLowerCase();
+          const match = foundFiles.get(fileName);
+
+          if (match) {
+            // Update blob in memory
+            const versionId = record.currentVersionId || (record.versions[0]?.id);
+            const updatedVersions = record.versions.map(v =>
+              v.id === versionId ? { ...v, blob: match } : v
+            );
+            nextFiles[id] = { ...record, versions: updatedVersions };
+
+            // Sync to disk if possible
+            if (userLibraryDir) {
+              (async () => {
+                try {
+                  const fh = await userLibraryDir!.getFileHandle(record.name, { create: true });
+                  // @ts-ignore
+                  const writable = await fh.createWritable();
+                  await writable.write(match);
+                  await writable.close();
+                } catch (err) {
+                  console.error(`Failed to write relocated file ${record.name} to disk`, err);
+                }
+              })();
+            }
+
+            resolvedCount++;
+            const idx = stillMissing.indexOf(id);
+            if (idx > -1) stillMissing.splice(idx, 1);
+          }
+        });
+
+        // Update missing state
+        setMissingLibraryFiles(stillMissing);
+        return { ...prev, files: nextFiles };
+      });
+
+      if (resolvedCount > 0) {
+        setToast({ msg: `Successfully restored ${resolvedCount} library samples!`, type: 'success' });
+      } else {
+        setToast({ msg: "No matching files found in the selected folder.", type: 'info' });
+      }
+
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.error("Library smart scan failed", e);
+        setToast({ msg: 'Scan failed: ' + e.message, type: 'error' });
+      }
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
   };
 
   const executeSaveProject = async () => {
@@ -2607,17 +2878,16 @@ function App() {
       // setViewMode('single');
     } else {
       // 3b. Open Upload
-      // We must track which tape this upload is for!
-      // currently setTargetSlotForUpload stores ID.
       setTargetSlotForUpload(slotId);
-      // IMPORTANT: Single File Input handler (line 546) uses `currentTapeColor`.
-      // Since we just set setCurrentTapeColor(color) above, React state update might not be immediate 
-      // inside the event handler if we triggered click immediately.
-      // However, setState is async.
-      // By the time `onChange` fires on the input, re-render will have happened with new `currentTapeColor`.
-      // So this is safe!
-      // USER REQUEST: Stay in All View (removed setViewMode)
-      singleFileInputRef.current?.click();
+
+      const pref = localStorage.getItem('spotykach_emptySlotPreferredBrowser');
+      if (pref === 'os') {
+        singleFileInputRef.current?.click();
+      } else if (pref === 'sample-browser') {
+        setShowSampleBrowser(true);
+      } else {
+        setShowBrowserChoiceModal(true);
+      }
     }
   };
 
@@ -2712,6 +2982,15 @@ function App() {
   };
 
   const handleSampleImport = async (url: string, name: string, origin?: string, license?: string) => {
+    const slotTarget = targetSlotForUpload;
+    const slotTargetTapeColor = currentTapeColor;
+    if (slotTarget !== null) {
+      if (isSlotSampleImportInFlightRef.current) return;
+      isSlotSampleImportInFlightRef.current = true;
+      setShowSampleBrowser(false);
+      setTargetSlotForUpload(null);
+    }
+
     setIsProcessing(true);
     setProgressMsg(`Downloading ${name}...`);
     try {
@@ -2744,7 +3023,7 @@ function App() {
         originalName: name,
         versions: [version],
         currentVersionId: versionId,
-        isParked: targetSlotForUpload === null, // Unassigned by default if not targeting a slot
+        isParked: slotTarget === null, // Unassigned by default if not targeting a slot
         origin,
         license
       };
@@ -2752,26 +3031,21 @@ function App() {
       setState(prev => {
         const nextFiles = { ...prev.files, [fileId]: newFile };
 
-        if (targetSlotForUpload !== null) {
+        if (slotTarget !== null) {
           const nextTapes = { ...prev.tapes };
-          const tape = { ...nextTapes[currentTapeColor] };
+          const tape = { ...nextTapes[slotTargetTapeColor] };
           const slots = [...tape.slots];
-          const slotIndex = slots.findIndex(s => s.id === targetSlotForUpload);
+          const slotIndex = slots.findIndex(s => s.id === slotTarget);
           if (slotIndex >= 0) {
             slots[slotIndex] = { ...slots[slotIndex], fileId };
             tape.slots = slots;
-            nextTapes[currentTapeColor] = tape;
+            nextTapes[slotTargetTapeColor] = tape;
           }
           return { ...prev, files: nextFiles, tapes: nextTapes };
         }
 
         return { ...prev, files: nextFiles };
       });
-
-      if (targetSlotForUpload !== null) {
-        setTargetSlotForUpload(null);
-        setShowSampleBrowser(false);
-      }
 
       // Feedback toast
       setToast({ msg: `Imported ${name}`, type: 'success' });
@@ -2780,10 +3054,19 @@ function App() {
       console.error(e);
       setToast({ msg: "Error importing sample", type: 'error' });
     } finally {
+      if (slotTarget !== null) {
+        isSlotSampleImportInFlightRef.current = false;
+      }
       setIsProcessing(false);
       setProgressMsg('');
     }
   };
+
+  const handleResetEmptySlotBrowserPreference = () => {
+    localStorage.removeItem('spotykach_emptySlotPreferredBrowser');
+    setToast({ msg: 'Empty slot browser preference reset', type: 'success' });
+  };
+  const missingFileIds = useMemo(() => new Set((missingFilesWarning || []).map(a => a.fileId)), [missingFilesWarning]);
 
   return (
     <ErrorBoundary>
@@ -3007,86 +3290,7 @@ function App() {
               </div>
             </header>
 
-            {showProjectNotes && (
-              <Rnd
-                position={{ x: projectNotesPos.x, y: projectNotesPos.y }}
-                onDragStop={(_e, d) => {
-                  setProjectNotesPos({ x: d.x, y: d.y });
-                  if (!isProjectNotesMinimized) {
-                    setProjectNotesPreMinPos({ x: d.x, y: d.y });
-                  }
-                }}
-                onResizeStop={(_e, _direction, ref, _delta, position) => {
-                  setProjectNotesSize({
-                    width: parseInt(ref.style.width, 10),
-                    height: parseInt(ref.style.height, 10)
-                  });
-                  setProjectNotesPos(position);
-                }}
-                size={{ width: isProjectNotesMinimized ? 300 : projectNotesSize.width, height: isProjectNotesMinimized ? 44 : projectNotesSize.height }}
-                enableResizing={!isProjectNotesMinimized}
-                minWidth={300}
-                bounds="window"
-                dragHandleClassName="notes-drag-handle"
-                className="z-[75] !fixed" // Removed transition-all duration-300 here to fix drag lag
-                style={{ position: 'fixed' }} // Force fixed to bypass any flex container containment issues
-                resizeHandleComponent={
-                  !isProjectNotesMinimized ? {
-                    bottom: (
-                      <div className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center hover:bg-white/5 transition-colors rounded-b-xl z-10 w-full" style={{ left: 0, right: 0 }}>
-                        <div className="w-8 h-1 bg-gray-600 rounded-full opacity-50 block pointer-events-none" />
-                      </div>
-                    )
-                  } : undefined
-                }
-                resizeHandleClasses={{
-                  bottom: "cursor-ns-resize"
-                }}
-              >
-                <div className="w-full flex flex-col border border-gray-700/80 rounded-xl bg-[#0f0f11] shadow-2xl overflow-hidden" style={{ height: isProjectNotesMinimized ? 44 : '100%' }}>
-                  <NotesEditor
-                    value={state.projectNotes || ''}
-                    onChange={(val) => {
-                      setState((prev: AppState) => ({ ...prev, projectNotes: val }));
-                      setHasUnsavedChanges(true);
-                    }}
-                    minHeight="100%"
-                    fullHeight={true}
-                    dragHandleClass="notes-drag-handle"
-                    title={<span className="flex items-center gap-2"><StickyNote size={14} className="text-synthux-yellow" /> Project Notes</span>}
-                    headerRightItem={
-                      <div className="flex items-center gap-1.5 ml-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!isProjectNotesMinimized) {
-                              // Minimizing: Save current, snap to bottom left
-                              setProjectNotesPreMinPos({ ...projectNotesPos });
-                              setProjectNotesPos({ x: 20, y: window.innerHeight - 60 });
-                            } else {
-                              // Expanding: Restore previous
-                              setProjectNotesPos({ ...projectNotesPreMinPos });
-                            }
-                            setIsProjectNotesMinimized(!isProjectNotesMinimized);
-                          }}
-                          className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
-                          title={isProjectNotesMinimized ? "Expand" : "Minimize"}
-                        >
-                          <ChevronDown size={14} className={`transition-transform duration-300 ${isProjectNotesMinimized ? 'rotate-180' : ''}`} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setShowProjectNotes(false); setIsProjectNotesMinimized(false); }}
-                          className="p-1 text-gray-400 hover:text-red-400 hover:bg-white/10 rounded transition-colors"
-                          title="Close Notes"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    }
-                  />
-                </div>
-              </Rnd>
-            )}
+
 
             <div className="flex flex-1 overflow-hidden">
               <FileBrowser
@@ -3229,6 +3433,7 @@ function App() {
                         onToggleSlotSelection={(color, id) => toggleSlotSelection(id, color)}
                         onSlotDragStart={handleSlotDragStart}
                         onRenameFile={handleRenameFile}
+                        missingFileIds={missingFileIds}
                       />
 
                       {/* Tape Notes */}
@@ -3330,6 +3535,7 @@ function App() {
                           setHasUnsavedChanges(true);
                         }}
                         onRenameFile={handleRenameFile}
+                        missingFileIds={missingFileIds}
                       />
                     </div>
                   )}
@@ -3682,6 +3888,7 @@ function App() {
               isOpen={showSettings}
               onClose={() => setShowSettings(false)}
               onResetApp={handleReset}
+              onResetEmptySlotBrowserPreference={handleResetEmptySlotBrowserPreference}
               visualFilters={visualFilters}
               onUpdateVisualFilters={setVisualFilters}
               onSaveVisualSettings={handleSaveVisualSettings}
@@ -4100,14 +4307,19 @@ function App() {
 
             <SampleBrowser
               isOpen={showSampleBrowser}
-              onClose={() => setShowSampleBrowser(false)}
+              onClose={() => {
+                setShowSampleBrowser(false);
+                setTargetSlotForUpload(null);
+              }}
               onImport={handleSampleImport}
               userLibrary={userLibrary}
               projects={foundProjects}
               workHandle={workHandle}
-              mode="global"
-              onOpenLibraryManager={() => {
+              mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
+              onOpenLibraryManager={(tab) => {
                 setShowSampleBrowser(false);
+                setTargetSlotForUpload(null);
+                if (tab) setLibraryManagerInitialTab(tab);
                 setShowLibraryManager(true);
               }}
               currentProjectName={currentProjectName}
@@ -4117,6 +4329,7 @@ function App() {
               isOpen={showLibraryManager}
               onClose={() => {
                 setShowLibraryManager(false);
+                setLibraryManagerInitialTab('upload');
                 setShowSampleBrowser(true);
               }}
               userLibrary={userLibrary}
@@ -4124,6 +4337,11 @@ function App() {
               projectFiles={state.files}
               projectName={currentProjectName}
               workHandle={workHandle}
+              missingLibraryFiles={missingLibraryFiles}
+              onSmartScan={handleLibrarySmartScan}
+              onRefreshLibrary={handleRefreshLibrary}
+              initialTab={libraryManagerInitialTab}
+              onResetBrowserPreference={handleResetEmptySlotBrowserPreference}
             />
 
 
@@ -4147,6 +4365,151 @@ function App() {
             )}
           </div>
         </div>
+      )}
+      {showProjectNotes && (
+        <Rnd
+          position={{ x: projectNotesPos.x, y: projectNotesPos.y }}
+          onDragStop={(_e, d) => {
+            setProjectNotesPos({ x: d.x, y: d.y });
+            if (!isProjectNotesMinimized) {
+              setProjectNotesPreMinPos({ x: d.x, y: d.y });
+            }
+          }}
+          onResizeStop={(_e, _direction, ref, _delta, position) => {
+            setProjectNotesSize({
+              width: parseInt(ref.style.width, 10),
+              height: parseInt(ref.style.height, 10)
+            });
+            setProjectNotesPos(position);
+          }}
+          size={{ width: isProjectNotesMinimized ? 300 : projectNotesSize.width, height: isProjectNotesMinimized ? 44 : projectNotesSize.height }}
+          enableResizing={!isProjectNotesMinimized}
+          minWidth={300}
+          bounds="window"
+          dragHandleClassName="notes-drag-handle"
+          className="z-[75] !fixed" // Removed transition-all duration-300 here to fix drag lag
+          resizeHandleComponent={
+            !isProjectNotesMinimized ? {
+              bottom: (
+                <div className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center hover:bg-white/5 transition-colors rounded-b-xl z-10 w-full">
+                  <div className="w-8 h-1 bg-gray-600 rounded-full opacity-50 block pointer-events-none" />
+                </div>
+              )
+            } : undefined
+          }
+          resizeHandleClasses={{
+            bottom: "cursor-ns-resize"
+          }}
+        >
+          <div className="w-full flex flex-col border border-gray-700/80 rounded-xl bg-[#0f0f11] shadow-2xl overflow-hidden" style={{ height: isProjectNotesMinimized ? 44 : '100%' }}>
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* FIXED HEADER / DRAG HANDLE */}
+              <div className="notes-drag-handle flex items-center justify-between px-3 py-2 bg-black border-b border-gray-800 cursor-move shrink-0">
+                <div className="flex items-center gap-2">
+                  <StickyNote size={14} className="text-synthux-yellow" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-300 select-none">Project Notes</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isProjectNotesMinimized) {
+                        setProjectNotesPreMinPos({ ...projectNotesPos });
+                        setProjectNotesPos({ x: 20, y: window.innerHeight - 60 });
+                      } else {
+                        setProjectNotesPos({ ...projectNotesPreMinPos });
+                      }
+                      setIsProjectNotesMinimized(!isProjectNotesMinimized);
+                    }}
+                    className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                    title={isProjectNotesMinimized ? "Expand" : "Minimize"}
+                  >
+                    <ChevronDown size={14} className={`transition-transform duration-300 ${isProjectNotesMinimized ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowProjectNotes(false); setIsProjectNotesMinimized(false); }}
+                    className="p-1 text-gray-400 hover:text-red-400 hover:bg-white/10 rounded transition-colors"
+                    title="Close Notes"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* SCROLLABLE CONTENT */}
+              {!isProjectNotesMinimized && (
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-1 text-left">
+                  <NotesEditor
+                    value={state.projectNotes || ''}
+                    onChange={(val) => {
+                      setState((prev: AppState) => ({ ...prev, projectNotes: val }));
+                      setHasUnsavedChanges(true);
+                    }}
+                    minHeight="200px"
+                    placeholder="Add main project notes here..."
+                  />
+
+                  <div className="mt-4 border-t border-gray-800 pt-4 flex flex-col gap-2 pb-4">
+                    {TAPE_COLORS.map(color => {
+                      const isExpanded = expandedProjectTapeNotes[color];
+                      const tape = state.tapes[color];
+                      const hasNotes = !!tape.notes && tape.notes.trim() !== '';
+
+                      return (
+                        <div key={color} className="border border-gray-800/50 rounded-lg overflow-hidden bg-black/20 mx-1">
+                          <button
+                            onClick={() => setExpandedProjectTapeNotes(prev => ({ ...prev, [color]: !prev[color] }))}
+                            className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors group"
+                          >
+                            <div className="flex items-center gap-2 flex-1 min-w-0 justify-start">
+                              <div className="w-28 shrink-0 flex items-center gap-2">
+                                <div className="w-5 h-5 group-hover:scale-110 transition-transform shrink-0">
+                                  <TapeIcon color={`var(--color-synthux-${color.toLowerCase()})`} className="w-full h-full" />
+                                </div>
+                                <span className="text-[10px] font-bold uppercase tracking-widest truncate text-left" style={{ color: `var(--color-synthux-${color.toLowerCase()})` }}>
+                                  {color}
+                                </span>
+                              </div>
+                              {!isExpanded && hasNotes && (
+                                <span className="text-[10px] text-gray-500 font-medium truncate flex-1 opacity-60 group-hover:opacity-100 transition-opacity text-left">
+                                  {getNotePreview(tape.notes)}
+                                </span>
+                              )}
+                              {hasNotes && !isExpanded && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-synthux-yellow animate-pulse shrink-0" />
+                              )}
+                            </div>
+                            <ChevronDown size={14} className={`text-gray-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {isExpanded && (
+                            <div className="p-2 border-t border-gray-800/50">
+                              <NotesEditor
+                                value={tape.notes || ''}
+                                onChange={(val) => {
+                                  setState(prev => ({
+                                    ...prev,
+                                    tapes: {
+                                      ...prev.tapes,
+                                      [color]: { ...prev.tapes[color], notes: val }
+                                    }
+                                  }));
+                                  setHasUnsavedChanges(true);
+                                }}
+                                minHeight="100px"
+                                placeholder={`Add notes for ${color} tape...`}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Rnd>
       )}
 
       {/* GLOBAL MODALS */}
@@ -4197,11 +4560,18 @@ function App() {
             setState((prev: AppState) => {
               const next = { ...prev, files: { ...prev.files } };
               ids.forEach(id => delete next.files[id]);
-              return next;
+              // Also clear from tapes
+              const nextTapes = { ...prev.tapes };
+              TAPE_COLORS.forEach(c => {
+                nextTapes[c] = {
+                  ...nextTapes[c],
+                  slots: nextTapes[c].slots.map(s => (s.fileId && ids.includes(s.fileId)) ? { ...s, fileId: null } : s)
+                };
+              });
+              return { ...prev, files: next.files, tapes: nextTapes };
             });
             setHasUnsavedChanges(true);
           }
-          // Skip just closes it
           setMissingFilesWarning(null);
         }}
         onRelocate={async (asset) => {
@@ -4215,7 +4585,7 @@ function App() {
               }]
             });
             const file = await handle.getFile();
-            // We fake a version blob replace
+            isSystemUpdate.current = true;
             setState((prev: AppState) => {
               const next = { ...prev, files: { ...prev.files } };
               const fileRecord = next.files[asset.fileId];
@@ -4229,10 +4599,9 @@ function App() {
             });
             setHasUnsavedChanges(true);
 
-            // Remove from the warning list
             setMissingFilesWarning(prev => {
               if (!prev) return null;
-              const next = prev.filter(a => a.fileId !== asset.fileId);
+              const next = prev.filter(a => a.versionId !== asset.versionId);
               return next.length > 0 ? next : null;
             });
           } catch (e: any) {
@@ -4242,6 +4611,11 @@ function App() {
             }
           }
         }}
+        onRecover={handleRecoverProjectAssetFromCache}
+        onRecoverAll={handleRecoverAllMissingAssetsFromCache}
+        onSmartRelocate={handleSmartRelocate}
+        onRecoverSD={handleRecoverProjectAssetFromSD}
+        onRecoverAllSD={handleRecoverAllMissingAssetsFromSD}
       />
 
       {/* PROCESSING OVERLAY */}
@@ -4262,3 +4636,5 @@ function App() {
 }
 
 export default App;
+
+

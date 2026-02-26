@@ -19,14 +19,16 @@ interface SlotGridProps {
     onToggleSlotSelection: (color: TapeColor, slotId: number) => void;
     onSlotDragStart: (e: React.DragEvent, slotId: number, color: TapeColor) => void;
     onRenameFile?: (fileId: string, newName: string) => void;
+    missingFileIds?: Set<string>;
 }
 
-export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, onSlotDrop, onSlotDropInternal, onRemoveSlot, duplicates, onDeleteFile, onBulkAssign, selectedSlots, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart, onRenameFile }: SlotGridProps) => {
+export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, onSlotDrop, onSlotDropInternal, onRemoveSlot, duplicates, onDeleteFile, onBulkAssign, selectedSlots, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart, onRenameFile, missingFileIds }: SlotGridProps) => {
     return (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-6 p-6 w-full max-w-4xl mx-auto">
             {slots.map((slot) => {
                 const fileRecord = slot.fileId ? files[slot.fileId] : null;
                 const isDuplicate = slot.fileId ? duplicates.has(slot.fileId) : false;
+                const isMissing = slot.fileId && missingFileIds ? missingFileIds.has(slot.fileId) : false;
 
                 return (
                     <SlotCard
@@ -36,6 +38,7 @@ export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, o
                         tapeColor={tapeColor}
                         isActive={activeSlotId === slot.id}
                         isDuplicate={isDuplicate}
+                        isMissing={isMissing}
                         onClick={() => onSlotClick(slot.id)}
                         onDrop={(files) => onSlotDrop(slot.id, files)}
                         onDropInternal={(fileId, source, isDuplicate, sourceSlotId, sourceSlotColor) => onSlotDropInternal(slot.id, fileId, source, isDuplicate, sourceSlotId, sourceSlotColor)}

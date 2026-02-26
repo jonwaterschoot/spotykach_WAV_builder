@@ -20,9 +20,10 @@ interface MiniSlotCardProps {
     onToggleSlotSelection: () => void;
     onSlotDragStart?: (e: React.DragEvent) => void;
     onRenameFile?: (fileId: string, newName: string) => void;
+    isMissing?: boolean;
 }
 
-export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile }: MiniSlotCardProps) => {
+export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile, isMissing }: MiniSlotCardProps) => {
     const { play, pause, isPlaying, activeFileId } = useAudioPlayer();
 
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
@@ -191,9 +192,18 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
             ${isDragOver ? 'border-synthux-blue bg-synthux-blue/10 scale-105 z-20 shadow-xl' : 'border-gray-800 hover:border-gray-500'}
             ${fileRecord ? 'cursor-grab active:cursor-grabbing' : 'opacity-80 hover:opacity-100 cursor-pointer'}
             ${fileRecord && isDuplicate ? '!border-orange-500/50' : ''}
+            ${isMissing ? '!border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : ''}
             ${selectionClass}
         `}
         >
+            {/* Missing Indicator */}
+            {isMissing && (
+                <div className="absolute inset-0 z-30 bg-red-950/40 backdrop-blur-[1px] flex items-center justify-center rounded-lg border border-red-500/50">
+                    <div className="bg-red-600 text-[8px] text-white px-1 py-0.5 rounded font-black uppercase tracking-widest shadow-lg rotate-[-10deg]">
+                        Missing
+                    </div>
+                </div>
+            )}
             {/* Selection Checkbox (Touch Target) - Only show if file exists */}
             {fileRecord && (
                 <div
