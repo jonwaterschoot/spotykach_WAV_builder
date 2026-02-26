@@ -19,9 +19,10 @@ interface MiniSlotCardProps {
     onSlotSelectionClick: (e: React.MouseEvent) => void;
     onToggleSlotSelection: () => void;
     onSlotDragStart?: (e: React.DragEvent) => void;
+    onRenameFile?: (fileId: string, newName: string) => void;
 }
 
-export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart }: MiniSlotCardProps) => {
+export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile }: MiniSlotCardProps) => {
     const { play, pause, isPlaying, activeFileId } = useAudioPlayer();
 
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
@@ -29,6 +30,22 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
 
     // Get color hex/class logic. We can reuse COLOR_MAP or just use CSS variables if set up.
     const [isDragOver, setIsDragOver] = useState(false);
+
+    // Rename state
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState("");
+
+    const handleRenameSubmit = () => {
+        if (renameValue.trim() && renameValue !== fileRecord?.name && onRenameFile && fileRecord) {
+            onRenameFile(fileRecord.id, renameValue.trim());
+        }
+        setIsRenaming(false);
+    };
+
+    const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') handleRenameSubmit();
+        if (e.key === 'Escape') setIsRenaming(false);
+    };
 
     // Selection style
     const selectionClass = isSelected ? 'ring-2 ring-white z-10' : '';
@@ -199,20 +216,22 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                     )}
                     {/* Background Waveform Area */}
                     <div className="absolute inset-0 z-0 opacity-50 overflow-hidden rounded-lg">
-                        <MiniWaveform
-                            blob={currentVersion.blob}
-                            width={100}
-                            height={60}
-                            color={isThisPlaying ? "#ffffff" : "#6b7280"} // White if playing, gray otherwise
-                            className="w-full h-full p-2"
-                        />
+                        {currentVersion.blob && (
+                            <MiniWaveform
+                                blob={currentVersion.blob}
+                                width={100}
+                                height={60}
+                                color={isThisPlaying ? "#ffffff" : "#6b7280"} // White if playing, gray otherwise
+                                className="w-full h-full p-2"
+                            />
+                        )}
                     </div>
 
                     {/* Content Overlay */}
                     <div className="relative z-10 flex flex-col justify-between h-full p-2 bg-gradient-to-t from-black/80 to-transparent rounded-lg overflow-hidden">
 
                         {/* Top Row: Play & Trash (Hidden until hover unless playing) */}
-                        <div className={`flex justify - between items - start transition - opacity duration - 200 ${isThisPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} `}>
+                        <div className={`flex justify-between items-start transition-opacity duration-200 ${isThisPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -266,9 +285,30 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
 
                         {/* Bottom Row: Filename */}
                         <div className="mt-auto pt-2">
-                            <div className="text-[9px] font-bold text-gray-300 truncate" title={fileRecord.name}>
-                                {fileRecord.name}
-                            </div>
+                            {isRenaming ? (
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={renameValue}
+                                    onChange={e => setRenameValue(e.target.value)}
+                                    onBlur={handleRenameSubmit}
+                                    onKeyDown={handleRenameKeyDown}
+                                    onClick={e => e.stopPropagation()}
+                                    className="w-full bg-[#111] text-white text-[9px] font-bold px-0.5 py-0 border border-synthux-yellow rounded outline-none"
+                                />
+                            ) : (
+                                <div
+                                    className="text-[9px] font-bold text-gray-300 truncate cursor-text hover:text-synthux-yellow transition-colors"
+                                    title={fileRecord.name}
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        setRenameValue(fileRecord.name);
+                                        setIsRenaming(true);
+                                    }}
+                                >
+                                    {fileRecord.name}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </>
@@ -281,12 +321,12 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                     >
                         {/* We use specific style injection for hover to override opacity and color */}
                         <style>{`
-        .group: hover.empty - plus {
-        color: ${getColorHex(tapeColor)} !important;
-        opacity: 1!important;
-        text - shadow: 0 0 8px ${getColorHex(tapeColor)} 40;
-    }
-    `}</style>
+                            .group:hover .empty-plus {
+                                color: ${getColorHex(tapeColor)} !important;
+                                opacity: 1 !important;
+                                text-shadow: 0 0 8px ${getColorHex(tapeColor)}40;
+                            }
+                        `}</style>
                         <span className="empty-plus transition-all duration-300">+</span>
                     </div>
                 </div>

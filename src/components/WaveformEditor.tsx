@@ -364,9 +364,10 @@ interface WaveformEditorProps {
     isDuplicate?: boolean;
     onSaveUnique?: (blob: Blob, duration: number, processing: ('normalized' | 'trimmed' | 'looped')[], createdId: string) => void;
     metadata?: WavMetadata;
+    onRenameFile?: (fileId: string, newName: string) => void;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -450,6 +451,21 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (!isDirty && isMounted.current) setIsDirty(true);
     };
 
+    // Rename state
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState("");
+
+    const handleRenameSubmit = () => {
+        if (renameValue.trim() && renameValue !== slot.name && onRenameFile && slot.fileId) {
+            onRenameFile(slot.fileId, renameValue.trim());
+        }
+        setIsRenaming(false);
+    };
+
+    const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') handleRenameSubmit();
+        if (e.key === 'Escape') setIsRenaming(false);
+    };
     // Re-initialize when currentBlob changes (e.g. loading a version)
     useEffect(() => {
         isMounted.current = true;
@@ -1179,11 +1195,16 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             previewAudio.pause();
             setPreviewingVersionId(null);
         } else {
-            const url = URL.createObjectURL(v.blob);
-            previewAudio.src = url;
-            previewAudio.play().catch(e => console.error("Preview fail", e));
-            setPreviewingVersionId(v.id);
-            previewAudio.onended = () => setPreviewingVersionId(null);
+            if (v.blob) {
+                const url = URL.createObjectURL(v.blob);
+                previewAudio.src = url;
+                previewAudio.play().catch(e => console.error("Preview fail", e));
+                setPreviewingVersionId(v.id);
+                previewAudio.onended = () => setPreviewingVersionId(null);
+            } else {
+                showToast("Cannot preview: audio file missing", "error");
+                setPreviewingVersionId(null);
+            }
         }
     };
 
@@ -1555,7 +1576,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         )}
                                     </div>
                                     <div className="text-[10px] text-gray-600 mt-1 flex justify-between items-center">
-                                        <span>{(v.duration || 0).toFixed(2)}s • {(v.blob.size / 1024).toFixed(0)}KB</span>
+                                        <span>{(v.duration || 0).toFixed(2)}s • {v.blob ? (v.blob.size / 1024).toFixed(0) : '0'}KB</span>
                                     </div>
                                 </div>
                             )
@@ -1574,9 +1595,29 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             </div>
                             <div>
                                 <div className="flex items-center gap-3">
-                                    <h2 className="text-2xl font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase">
-                                        {slot.name}
-                                    </h2>
+                                    {isRenaming ? (
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={renameValue}
+                                            onChange={e => setRenameValue(e.target.value)}
+                                            onBlur={handleRenameSubmit}
+                                            onKeyDown={handleRenameKeyDown}
+                                            className="text-2xl font-black bg-[#111] text-white tracking-tighter uppercase border border-synthux-yellow rounded outline-none px-2 py-0"
+                                        />
+                                    ) : (
+                                        <h2
+                                            className="text-2xl font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase cursor-text hover:opacity-80 transition-opacity"
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                setRenameValue(slot.name);
+                                                setIsRenaming(true);
+                                            }}
+                                            title="Double click to rename"
+                                        >
+                                            {slot.name}
+                                        </h2>
+                                    )}
                                 </div>
                                 <div className="text-xs font-bold text-gray-500 tracking-widest uppercase flex items-center gap-2">
                                     <span>Waveform Editor</span>

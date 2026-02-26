@@ -2,9 +2,10 @@ import { openDB, deleteDB } from 'idb';
 import type { AppState } from '../types';
 
 const DB_NAME = 'spotykach-wav-builder';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'app-state';
 const USER_LIBRARY_STORE = 'user-library';
+const CUSTOM_FOLDERS_STORE = 'custom-folders';
 
 const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -14,6 +15,9 @@ const initDB = async () => {
             }
             if (!db.objectStoreNames.contains(USER_LIBRARY_STORE)) {
                 db.createObjectStore(USER_LIBRARY_STORE);
+            }
+            if (!db.objectStoreNames.contains(CUSTOM_FOLDERS_STORE)) {
+                db.createObjectStore(CUSTOM_FOLDERS_STORE);
             }
         },
     });
@@ -64,5 +68,31 @@ export const loadUserLibraryFromDB = async (): Promise<import('../types').UserLi
     } catch (e) {
         console.error('Failed to load user library from DB', e);
         return null;
+    }
+};
+
+export interface CustomFolderRecord {
+    id: string;
+    name: string;
+    handle: FileSystemDirectoryHandle;
+}
+
+export const saveCustomFoldersToDB = async (folders: CustomFolderRecord[]) => {
+    try {
+        const db = await initDB();
+        await db.put(CUSTOM_FOLDERS_STORE, folders, 'current');
+    } catch (e) {
+        console.error('Failed to save custom folders to DB', e);
+    }
+};
+
+export const loadCustomFoldersFromDB = async (): Promise<CustomFolderRecord[]> => {
+    try {
+        const db = await initDB();
+        const data = await db.get(CUSTOM_FOLDERS_STORE, 'current');
+        return data || [];
+    } catch (e) {
+        console.error('Failed to load custom folders from DB', e);
+        return [];
     }
 };

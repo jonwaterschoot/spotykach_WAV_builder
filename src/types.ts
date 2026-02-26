@@ -15,9 +15,10 @@ export interface AudioVersion {
     id: string; // uuid
     timestamp: number;
     description: string; // "Original", "Trimmed", "Faded", etc.
-    blob: Blob;
+    blob: Blob | null; // Changed to allow null if file is missing/unreadable
     duration: number;
     processing?: ('normalized' | 'trimmed' | 'looped')[];
+    blobRef?: string; // Optional path reference used during load/save
 }
 
 export interface FileRecord {
@@ -59,12 +60,14 @@ export interface Slot {
 export interface Tape {
     color: TapeColor;
     slots: Slot[];
+    notes?: string;
 }
 
 // Normalized State
 export interface AppState {
     files: Record<string, FileRecord>;
     tapes: Record<TapeColor, Tape>;
+    projectNotes?: string;
     metadata?: {
         appName: string;
         version: string;

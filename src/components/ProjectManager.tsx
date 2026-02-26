@@ -25,8 +25,7 @@ interface ProjectManagerProps {
     onBuildProject?: (projectName: string) => void;
     onImportSK?: () => void;
     onImportDeviceChanges?: () => void;
-    syncUserLibrary?: boolean;
-    onToggleSyncUserLibrary?: (val: boolean) => void;
+    onSyncUserLibraryToSD?: () => void;
     activeSKProject?: string;
     deviceDiff?: import('../utils/importUtils').DeviceDiff;
     onScan: () => void;
@@ -94,8 +93,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     onBuildProject,
     onImportSK,
     onImportDeviceChanges,
-    syncUserLibrary,
-    onToggleSyncUserLibrary,
+    onSyncUserLibraryToSD,
     onDeleteBackupProject,
     activeSKProject,
     deviceDiff,
@@ -389,17 +387,15 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                         )}
                         {onChangeBackupFolder && <button onClick={onChangeBackupFolder} className="ml-auto text-xs text-orange-400 hover:underline normal-case">{backupHandle ? 'Change' : 'Connect'}</button>}
 
-                        {/* Sync User Library Toggle */}
-                        {onToggleSyncUserLibrary && (
-                            <label className="flex items-center gap-2 cursor-pointer ml-4 mr-2">
-                                <input
-                                    type="checkbox"
-                                    checked={syncUserLibrary}
-                                    onChange={(e) => onToggleSyncUserLibrary(e.target.checked)}
-                                    className="w-3 h-3 accent-orange-500"
-                                />
-                                <span className="text-[10px] text-gray-400 uppercase font-bold">Sync Lib</span>
-                            </label>
+                        {/* Sync User Library Button */}
+                        {onSyncUserLibraryToSD && backupHandle && (
+                            <button
+                                onClick={onSyncUserLibraryToSD}
+                                className="ml-4 mr-2 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 rounded text-[10px] uppercase font-bold transition-colors"
+                                title="Sync My Library to SD Card"
+                            >
+                                Sync Lib
+                            </button>
                         )}
 
                         {/* Import Device Changes (Legacy or Specific) */}

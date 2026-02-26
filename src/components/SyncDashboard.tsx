@@ -243,7 +243,11 @@ export const SyncDashboard = ({ isOpen, onClose, diff, onCommit }: SyncDashboard
                                     {/* Play Button */}
                                     {slot.localFile && (
                                         <button
-                                            onClick={() => togglePlay(slot.slotId, 'LOCAL', slot.localFile!.versions[0].blob)}
+                                            onClick={() => {
+                                                if (slot.localFile?.versions[0].blob) {
+                                                    togglePlay(slot.slotId, 'LOCAL', slot.localFile.versions[0].blob);
+                                                }
+                                            }}
                                             className={`p-1 rounded-full ${player?.slotId === slot.slotId && player.side === 'LOCAL' && player.isPlaying ? 'text-green-400 bg-white/10' : 'text-gray-600 hover:text-white group-hover/local:text-gray-400'}`}
                                         >
                                             {player?.slotId === slot.slotId && player.side === 'LOCAL' && player.isPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
@@ -253,7 +257,7 @@ export const SyncDashboard = ({ isOpen, onClose, diff, onCommit }: SyncDashboard
                                     {slot.localFile ? (
                                         <div className="flex flex-col min-w-0">
                                             <span className="text-sm font-medium text-white truncate">{slot.localFile.name}</span>
-                                            <span className="text-xs text-gray-500">{(slot.localFile.versions[0].blob.size / 1024).toFixed(1)} KB</span>
+                                            <span className="text-xs text-gray-500">{slot.localFile.versions[0].blob ? (slot.localFile.versions[0].blob.size / 1024).toFixed(1) : '0'} KB</span>
                                         </div>
                                     ) : (
                                         <span className="text-gray-700 text-sm italic ml-6">Empty</span>

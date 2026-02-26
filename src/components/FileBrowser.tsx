@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { FileAudio, GripVertical, ChevronDown, ChevronRight, Play, Square, List, LayoutList, FolderOpen, Download, Trash2, X, Check, ArrowRightToLine } from 'lucide-react';
 import type { FileRecord, AppState } from '../types';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
@@ -15,14 +15,48 @@ interface FileBrowserProps {
     onBulkUnassign?: (fileIds: string[]) => void;
     onDeleteFile?: (fileId: string) => void;
     onFillFreeSlots?: (fileIds: string[]) => void;
+    onRenameFile?: (fileId: string, newName: string) => void;
 }
-export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, duplicates, onOpenDuplicateModal, onUnassignFile, onBulkUnassign, onDeleteFile, onFillFreeSlots }: FileBrowserProps) => {
+export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, duplicates, onOpenDuplicateModal, onUnassignFile, onBulkUnassign, onDeleteFile, onFillFreeSlots, onRenameFile }: FileBrowserProps) => {
     const [isAssignedOpen, setAssignedOpen] = useState(true);
     const [isUnassignedOpen, setUnassignedOpen] = useState(true);
     const [isMinified, setIsMinified] = useState(false);
     const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null); // Focus/Last Interacted
     const [anchorId, setAnchorId] = useState<string | null>(null); // Start of Range Selection
+
+    const [width, setWidth] = useState(288);
+    const isDraggingRef = useRef(false);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDraggingRef.current) return;
+            e.preventDefault();
+            const newWidth = Math.max(288, Math.min(e.clientX, window.innerWidth * 0.75));
+            setWidth(newWidth);
+        };
+
+        const handleMouseUp = () => {
+            if (isDraggingRef.current) {
+                isDraggingRef.current = false;
+                document.body.style.cursor = '';
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+    const handleDragResizeStart = (e: React.MouseEvent) => {
+        isDraggingRef.current = true;
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+    };
 
     // Helpers to get all visible files in order
     const getVisibleFiles = () => {
@@ -311,12 +345,18 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
 
     return (
         <div
-            className="w-72 bg-synthux-browsebg border-r border-gray-800 flex flex-col h-full transition-all outline-none focus:ring-1 focus:ring-synthux-blue/50"
+            className="bg-synthux-browsebg border-r border-gray-800 flex flex-col h-full outline-none focus:ring-1 focus:ring-synthux-blue/50 shrink-0 relative"
+            style={{ width: `${width}px` }}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             tabIndex={0}
             onKeyDown={handleKeyDown}
         >
+            {/* Drag Handle */}
+            <div
+                className="absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize hover:bg-synthux-blue/50 active:bg-synthux-blue z-20"
+                onMouseDown={handleDragResizeStart}
+            />
             <div className="p-4 border-b border-gray-800 bg-synthux-panel flex items-center justify-between min-h-[60px]">
                 {selectedFileIds.size > 0 ? (
                     <div className="flex items-center gap-2 w-full animate-in fade-in slide-in-from-top-1 duration-200">
@@ -427,6 +467,7 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
                                     play={play}
                                     stop={stop}
                                     onDragStart={handleDragStart}
+                                    onRenameFile={onRenameFile}
                                     location={null}
                                     getLabelStyle={getLabelStyle}
                                     getBorderColor={getBorderColor}
@@ -482,6 +523,7 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
                                     getLabelStyle={getLabelStyle}
                                     getBorderColor={getBorderColor}
                                     isDuplicate={duplicates.has(file.id)}
+                                    onRenameFile={onRenameFile}
                                     onOpenDuplicateModal={onOpenDuplicateModal}
                                     isSelected={selectedFileIds.has(file.id)}
                                     onToggleSelect={() => toggleSelection(file.id)}
@@ -530,6 +572,7 @@ interface FileItemProps {
     isSelected: boolean;
     onToggleSelect: () => void;
     onSelectionClick: (e: React.MouseEvent) => void;
+    onRenameFile?: (fileId: string, newName: string) => void;
 }
 
 const FileItem = ({
@@ -548,9 +591,26 @@ const FileItem = ({
     onDelete,
     isSelected,
     onToggleSelect,
-    onSelectionClick
+    onSelectionClick,
+    onRenameFile
 }: FileItemProps) => {
     const isThisPlaying = isPlaying && activeFileId === file.id;
+
+    // Rename state
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState("");
+
+    const handleRenameSubmit = () => {
+        if (renameValue.trim() && renameValue !== file.name && onRenameFile) {
+            onRenameFile(file.id, renameValue.trim());
+        }
+        setIsRenaming(false);
+    };
+
+    const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') handleRenameSubmit();
+        if (e.key === 'Escape') setIsRenaming(false);
+    };
 
     // Dynamic classes based on state
     const borderClass = (isMinified && location)
@@ -606,22 +666,46 @@ const FileItem = ({
                 </button>
 
                 {/* Download Button */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        import('../utils/exportUtils').then(u => u.exportSingleFile(file));
-                    }}
-                    className="p-1.5 rounded-md transition-colors bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600"
-                    title="Download WAV"
-                >
-                    <Download size={12} />
-                </button>
+                {!isMinified && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            import('../utils/exportUtils').then(u => u.exportSingleFile(file));
+                        }}
+                        className="p-1.5 rounded-md transition-colors bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600"
+                        title="Download WAV"
+                    >
+                        <Download size={12} />
+                    </button>
+                )}
             </div>
 
             {/* Duplicate Icon - Top Right */}
 
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                <div className="font-medium truncate text-gray-200">{file.name}</div>
+            <div className={`flex-1 min-w-0 flex flex-col justify-center ${isMinified ? '' : 'pr-5'}`}>
+                {isRenaming ? (
+                    <input
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onBlur={handleRenameSubmit}
+                        onKeyDown={handleRenameKeyDown}
+                        onClick={e => e.stopPropagation()}
+                        className="w-full bg-[#111] text-white text-sm font-medium px-1 py-0 border border-synthux-yellow rounded outline-none"
+                    />
+                ) : (
+                    <div
+                        className="font-medium truncate text-gray-200 cursor-text hover:text-synthux-yellow transition-colors"
+                        onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setRenameValue(file.name);
+                            setIsRenaming(true);
+                        }}
+                    >
+                        {file.name}
+                    </div>
+                )}
 
                 {!isMinified && (
                     <>
@@ -639,7 +723,7 @@ const FileItem = ({
             </div>
 
             {/* Actions: Unassign / Delete */}
-            <div className={`flex items-center gap-1 ${isMinified ? 'ml-1' : 'ml-2'}`}>
+            <div className={`flex items-center gap-1 ${isMinified ? 'ml-1' : `absolute bottom-1.5 z-10 ${location ? 'right-12' : 'right-1'}`}`}>
                 {/* Unassign (Only if assigned/location exists) */}
                 {location && onUnassign && (
                     <button
@@ -681,7 +765,9 @@ const FileItem = ({
 
             {/* Drag Handle (Secondary) - Hidden in mini view */}
             {!isMinified && (
-                <GripVertical size={16} className="text-gray-600 mt-0.5 shrink-0 opacity-50 group-hover:opacity-100" />
+                <div className="absolute top-2 right-1 flex">
+                    <GripVertical size={16} className="text-gray-600 opacity-50 group-hover:opacity-100" />
+                </div>
             )}
         </div >
     );

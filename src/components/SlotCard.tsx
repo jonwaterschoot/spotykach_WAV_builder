@@ -20,14 +20,30 @@ interface SlotCardProps {
     onSlotSelectionClick: (e: React.MouseEvent) => void;
     onToggleSlotSelection: () => void;
     onSlotDragStart?: (e: React.DragEvent) => void;
+    onRenameFile?: (fileId: string, newName: string) => void;
 }
 
-export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart }: SlotCardProps) => {
+export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDrop, onDropInternal, onRemove, onDelete, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile }: SlotCardProps) => {
     const { play, pause, isPlaying, activeFileId, currentTime, duration, seek } = useAudioPlayer();
 
-    // Check if this slot's file is currently playing
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
     const [isDragOver, setIsDragOver] = useState(false);
+
+    // Rename state
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState("");
+
+    const handleRenameSubmit = () => {
+        if (renameValue.trim() && renameValue !== fileRecord?.name && onRenameFile && fileRecord) {
+            onRenameFile(fileRecord.id, renameValue.trim());
+        }
+        setIsRenaming(false);
+    };
+
+    const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') handleRenameSubmit();
+        if (e.key === 'Escape') setIsRenaming(false);
+    };
 
     const handleDragStart = (e: React.DragEvent) => {
         if (onSlotDragStart) {
@@ -205,21 +221,23 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                 <>
                     {/* Top: Mini Waveform Area */}
                     <div className="flex-1 w-full bg-black/20 flex items-center justify-center relative overflow-hidden rounded-t-lg">
-                        <MiniWaveform
-                            blob={currentVersion.blob}
-                            width={200}
-                            height={80}
-                            color={isActive ? "#60a5fa" : "#9ca3af"}
-                            className="w-full h-full p-4"
-                            progress={isThisPlaying && duration > 0 ? currentTime / duration : 0}
-                            onSeek={(p) => {
-                                if (isThisPlaying && duration > 0) {
-                                    seek(p * duration);
-                                } else if (fileRecord) {
-                                    play(fileRecord);
-                                }
-                            }}
-                        />
+                        {currentVersion.blob && (
+                            <MiniWaveform
+                                blob={currentVersion.blob}
+                                width={200}
+                                height={80}
+                                color={isActive ? "#60a5fa" : "#9ca3af"}
+                                className="w-full h-full p-4"
+                                progress={isThisPlaying && duration > 0 ? currentTime / duration : 0}
+                                onSeek={(p) => {
+                                    if (isThisPlaying && duration > 0) {
+                                        seek(p * duration);
+                                    } else if (fileRecord) {
+                                        play(fileRecord);
+                                    }
+                                }}
+                            />
+                        )}
 
                         {/* Version Badge (Top Right) */}
                         <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
@@ -239,9 +257,30 @@ export const SlotCard = ({ slot, fileRecord, tapeColor, isActive, onClick, onDro
                     {/* Middle: Info */}
                     <div className="px-3 py-2 border-t border-gray-800 bg-[#1e1e1e] flex items-center justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                            <div className="text-sm font-bold truncate text-white mb-0.5" title={fileRecord.name}>
-                                {fileRecord.name}
-                            </div>
+                            {isRenaming ? (
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={renameValue}
+                                    onChange={e => setRenameValue(e.target.value)}
+                                    onBlur={handleRenameSubmit}
+                                    onKeyDown={handleRenameKeyDown}
+                                    onClick={e => e.stopPropagation()}
+                                    className="w-full bg-[#111] text-white text-sm font-bold px-1 py-0 border border-synthux-yellow rounded mb-0.5 outline-none"
+                                />
+                            ) : (
+                                <div
+                                    className="text-sm font-bold truncate text-white mb-0.5 cursor-text hover:text-synthux-yellow transition-colors"
+                                    title={fileRecord.name}
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        setRenameValue(fileRecord.name);
+                                        setIsRenaming(true);
+                                    }}
+                                >
+                                    {fileRecord.name}
+                                </div>
+                            )}
                             <div className="flex items-center text-[10px] text-gray-400 font-mono uppercase tracking-wider gap-2">
                                 <span>{currentVersion.duration.toFixed(2)}s</span>
                                 {/* Short Description if not default */}

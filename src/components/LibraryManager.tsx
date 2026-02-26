@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { X, Upload, Trash2, Edit2, Check, Settings, Plus, FileAudio, FolderOpen, AlertCircle, ChevronDown, ChevronRight, Play, Square } from 'lucide-react';
 import type { FileRecord, UserLibrary, UserLibraryMetadata } from '../types';
 import { useAudioConverter } from '../utils/useAudioConverter';
+import { type CustomFolderRecord, loadCustomFoldersFromDB, saveCustomFoldersToDB } from '../utils/persistence';
+import { SmartTagInput } from './SmartTagInput';
 
 interface LibraryManagerProps {
     isOpen: boolean;
@@ -42,10 +44,22 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     const [libraryBulkName, setLibraryBulkName] = useState('');
     const [libraryBulkTagInput, setLibraryBulkTagInput] = useState('');
 
+    const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>([]);
+    const [activeCustomFolder, setActiveCustomFolder] = useState<string | null>(null);
+    const [customFolderContent, setCustomFolderContent] = useState<File[]>([]);
+    const [isReadingFolder, setIsReadingFolder] = useState(false);
+
     const { convertWavToFlac, isLoaded, load } = useAudioConverter();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
     const previewUrlRef = useRef<string | null>(null);
+
+    // --- Custom Folder Logic ---
+    useEffect(() => {
+        if (isOpen) {
+            loadCustomFoldersFromDB().then(setCustomFolders);
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -162,6 +176,113 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
             stopPreview();
         });
     };
+
+    // --- Custom Folder Handlers ---
+    const handleAddCustomFolder = async () => {
+        if (!('showDirectoryPicker' in window)) {
+            alert('Your browser does not support picking local folders.');
+            return;
+        }
+        try {
+            // @ts-ignore
+            const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+
+            // Avoid duplicates
+            if (customFolders.some(f => f.name === dirHandle.name)) {
+                alert('Folder already added.');
+                return;
+            }
+
+            const newFolder: CustomFolderRecord = {
+                id: crypto.randomUUID(),
+                name: dirHandle.name,
+                handle: dirHandle
+            };
+
+            const updated = [...customFolders, newFolder];
+            setCustomFolders(updated);
+            await saveCustomFoldersToDB(updated);
+
+        } catch (e: any) {
+            if (e.name !== 'AbortError') {
+                console.error('Add custom folder failed', e);
+                alert('Could not add folder: ' + e.message);
+            }
+        }
+    };
+
+    const handleRemoveCustomFolder = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const updated = customFolders.filter(f => f.id !== id);
+        setCustomFolders(updated);
+        await saveCustomFoldersToDB(updated);
+        if (activeCustomFolder === id) {
+            setActiveCustomFolder(null);
+            setCustomFolderContent([]);
+        }
+    };
+
+    const handleOpenCustomFolder = async (folder: CustomFolderRecord) => {
+        setActiveCustomFolder(folder.id);
+        setIsReadingFolder(true);
+        setCustomFolderContent([]);
+
+        try {
+            // Re-verify permission
+            // @ts-ignore
+            if (await folder.handle.queryPermission({ mode: 'read' }) !== 'granted') {
+                // @ts-ignore
+                if (await folder.handle.requestPermission({ mode: 'read' }) !== 'granted') {
+                    throw new Error('Permission denied to read folder.');
+                }
+            }
+
+            const files: File[] = [];
+            // @ts-ignore
+            for await (const entry of folder.handle.values()) {
+                if (entry.kind === 'file') {
+                    const name = entry.name.toLowerCase();
+                    if (name.endsWith('.wav') || name.endsWith('.mp3') || name.endsWith('.flac')) {
+                        const file = await entry.getFile();
+                        files.push(file);
+                    }
+                }
+            }
+
+            // Sort files alphabetically
+            files.sort((a, b) => a.name.localeCompare(b.name));
+            setCustomFolderContent(files);
+        } catch (e: any) {
+            console.error('Failed to read custom folder', e);
+            alert('Could not read folder. Please re-add it if permission was lost.');
+            setActiveCustomFolder(null);
+        } finally {
+            setIsReadingFolder(false);
+        }
+    };
+
+    const toggleCustomFilePreview = (file: File) => {
+        playBlobPreview(file, `custom:${file.name}`, file.name);
+    };
+
+    const importCustomFile = async (file: File) => {
+        // Send directly to the draft upload queue so text inputs and FFmpeg conversion can follow normal flow
+        const willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+
+        const newDraft: UploadDraft = {
+            id: crypto.randomUUID(),
+            file,
+            willConvert,
+            displayName: buildDraftName(file, willConvert),
+            tags: [],
+            tagInput: '',
+        };
+
+        // Append to current drafts or start a new draft list
+        setPendingUploadDrafts(prev => prev ? [...prev, newDraft] : [newDraft]);
+    };
+
+    // --- End Custom Folder Logic ---
 
     const toggleDraftPreview = (draft: UploadDraft) => {
         playBlobPreview(draft.file, `draft:${draft.id}`, draft.displayName || draft.file.name);
@@ -568,35 +689,105 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
 
                         {activeTab === 'upload' && (
                             <div className="space-y-6">
-                                <div className="bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-10 text-center hover:border-synthux-orange/50 transition-colors group">
-                                    <input
-                                        type="file"
-                                        multiple
-                                        accept="audio/*"
-                                        className="hidden"
-                                        ref={fileInputRef}
-                                        onChange={handleUpload}
-                                    />
-                                    <Upload className="mx-auto text-gray-500 group-hover:text-synthux-orange mb-4" size={48} />
-                                    <h3 className="text-lg font-bold text-white mb-2">Drag & Drop Audio Files</h3>
-                                    <p className="text-gray-400 text-sm mb-6">Import multiple samples into your global library</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Traditional Upload Box */}
+                                    <div className="bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 text-center hover:border-synthux-orange/50 transition-colors flex flex-col justify-center">
+                                        <input
+                                            type="file"
+                                            multiple
+                                            accept="audio/*"
+                                            className="hidden"
+                                            ref={fileInputRef}
+                                            onChange={handleUpload}
+                                        />
+                                        <Upload className="mx-auto text-gray-500 mb-2" size={32} />
+                                        <h3 className="text-base font-bold text-white mb-1">Upload Audio Files</h3>
+                                        <p className="text-gray-400 text-xs mb-4">Directly import files into your library</p>
 
-                                    <div className="flex flex-col items-center gap-4">
-                                        <button
-                                            onClick={() => fileInputRef.current?.click()}
-                                            disabled={isConvertingBatch}
-                                            className="px-6 py-2 bg-synthux-orange hover:bg-orange-600 text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Browse Files
-                                        </button>
+                                        <div className="flex flex-col items-center gap-3">
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                disabled={isConvertingBatch}
+                                                className="px-4 py-1.5 bg-synthux-orange hover:bg-orange-600 text-white rounded font-bold disabled:opacity-50 text-sm"
+                                            >
+                                                Browse Files
+                                            </button>
 
-                                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                                            <div className={`w-10 h-5 rounded-full p-1 transition-colors ${shouldConvert ? 'bg-synthux-orange' : 'bg-gray-700'}`}>
-                                                <div className={`bg-white w-3 h-3 rounded-full transition-transform ${shouldConvert ? 'translate-x-5' : 'translate-x-0'}`} />
+                                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${shouldConvert ? 'bg-synthux-orange' : 'bg-gray-700'}`}>
+                                                    <div className={`bg-white w-3 h-3 rounded-full transition-transform ${shouldConvert ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                </div>
+                                                <input type="checkbox" checked={shouldConvert} onChange={e => setShouldConvert(e.target.checked)} className="hidden" />
+                                                <span className="text-[10px] font-medium text-gray-300">Convert to Lossless FLAC</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* Custom Folders Box */}
+                                    <div className="bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 hover:border-synthux-blue/50 transition-colors flex flex-col">
+                                        {activeCustomFolder ? (
+                                            <div className="flex flex-col h-full">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                                        <FolderOpen className="text-synthux-blue" size={16} />
+                                                        {customFolders.find(f => f.id === activeCustomFolder)?.name}
+                                                    </h3>
+                                                    <button onClick={() => { setActiveCustomFolder(null); setCustomFolderContent([]); }} className="text-xs text-synthux-blue hover:underline font-bold">Back</button>
+                                                </div>
+                                                <div className="flex-1 bg-black/40 border border-gray-800 rounded p-2 overflow-y-auto max-h-[160px] space-y-1">
+                                                    {isReadingFolder ? (
+                                                        <div className="text-center text-gray-500 text-xs py-4">Reading folder...</div>
+                                                    ) : customFolderContent.length === 0 ? (
+                                                        <div className="text-center text-gray-500 text-xs py-4">No audio files found.</div>
+                                                    ) : (
+                                                        customFolderContent.map((file, i) => (
+                                                            <div key={i} className="flex items-center justify-between group hover:bg-white/5 p-1 rounded">
+                                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                                    <button onClick={() => toggleCustomFilePreview(file)} className="text-gray-400 hover:text-synthux-blue">
+                                                                        {playingPreviewKey === `custom:${file.name}` ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                                                                    </button>
+                                                                    <span className="text-xs text-gray-300 truncate" title={file.name}>{file.name}</span>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => importCustomFile(file)}
+                                                                    className="opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-synthux-blue text-black text-[10px] font-bold rounded"
+                                                                >
+                                                                    Import
+                                                                </button>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
                                             </div>
-                                            <input type="checkbox" checked={shouldConvert} onChange={e => setShouldConvert(e.target.checked)} className="hidden" />
-                                            <span className="text-sm font-medium text-gray-300">Convert WAV to Lossless FLAC (Level 8)</span>
-                                        </label>
+                                        ) : (
+                                            <div className="flex flex-col h-full justify-center text-center">
+                                                <FolderOpen className="mx-auto text-gray-500 mb-2" size={32} />
+                                                <h3 className="text-base font-bold text-white mb-1">Custom Folders</h3>
+                                                <p className="text-gray-400 text-[10px] mb-3">Browse local folders directly (read-only)</p>
+
+                                                {customFolders.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2 justify-center mb-3">
+                                                        {customFolders.map(folder => (
+                                                            <div key={folder.id} className="flex items-center bg-black/40 border border-gray-700 rounded-lg overflow-hidden group">
+                                                                <button onClick={() => handleOpenCustomFolder(folder)} className="px-2 py-1 text-xs text-gray-300 hover:text-white hover:bg-synthux-blue/20 transition-colors">
+                                                                    {folder.name}
+                                                                </button>
+                                                                <button onClick={(e) => handleRemoveCustomFolder(folder.id, e)} className="px-1.5 py-1 text-gray-500 hover:text-red-400 hover:bg-red-400/20 transition-colors">
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                <button
+                                                    onClick={handleAddCustomFolder}
+                                                    className="mx-auto px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded font-bold text-sm flex items-center gap-2 border border-gray-600 hover:border-synthux-blue/50 transition-colors"
+                                                >
+                                                    <Plus size={14} /> Add Local Folder
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -930,19 +1121,14 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                 Global Tags (applied to all imports)
                             </div>
                             <div className="flex gap-2">
-                                <input
+                                <SmartTagInput
                                     value={globalTagInput}
-                                    onChange={e => setGlobalTagInput(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ',') {
-                                            e.preventDefault();
-                                            if (!globalTagInput.trim()) return;
-                                            setGlobalTags(prev => appendTags(prev, globalTagInput));
-                                            setGlobalTagInput('');
-                                        }
+                                    onChange={setGlobalTagInput}
+                                    onAdd={(val) => {
+                                        setGlobalTags(prev => appendTags(prev, val));
+                                        setGlobalTagInput('');
                                     }}
                                     placeholder="Add comma-separated tags and press Enter"
-                                    className="flex-1 bg-black/50 border border-gray-700 rounded px-3 py-2 text-sm text-white"
                                 />
                                 <button
                                     onClick={() => {

@@ -170,7 +170,9 @@ export const DeviceImportModal: React.FC<DeviceImportModalProps> = ({
                                             </div>
                                             {originalFile && (
                                                 <div className="text-[10px] text-gray-600 mt-0.5">
-                                                    {(originalFile.versions[originalFile.versions.length - 1]?.blob.size / 1024).toFixed(1) || '0'} KB
+                                                    {originalFile.versions[originalFile.versions.length - 1]?.blob
+                                                        ? (originalFile.versions[originalFile.versions.length - 1].blob!.size / 1024).toFixed(1)
+                                                        : '0'} KB
                                                 </div>
                                             )}
                                         </div>

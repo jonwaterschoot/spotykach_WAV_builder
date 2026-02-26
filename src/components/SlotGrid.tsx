@@ -18,9 +18,10 @@ interface SlotGridProps {
     onSlotSelectionClick: (color: TapeColor, slotId: number, e: React.MouseEvent) => void;
     onToggleSlotSelection: (color: TapeColor, slotId: number) => void;
     onSlotDragStart: (e: React.DragEvent, slotId: number, color: TapeColor) => void;
+    onRenameFile?: (fileId: string, newName: string) => void;
 }
 
-export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, onSlotDrop, onSlotDropInternal, onRemoveSlot, duplicates, onDeleteFile, onBulkAssign, selectedSlots, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart }: SlotGridProps) => {
+export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, onSlotDrop, onSlotDropInternal, onRemoveSlot, duplicates, onDeleteFile, onBulkAssign, selectedSlots, onSlotSelectionClick, onToggleSlotSelection, onSlotDragStart, onRenameFile }: SlotGridProps) => {
     return (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-6 p-6 w-full max-w-4xl mx-auto">
             {slots.map((slot) => {
@@ -46,6 +47,7 @@ export const SlotGrid = ({ slots, files, tapeColor, activeSlotId, onSlotClick, o
                         onSlotSelectionClick={(e) => onSlotSelectionClick(tapeColor, slot.id, e)}
                         onToggleSlotSelection={() => onToggleSlotSelection(tapeColor, slot.id)}
                         onSlotDragStart={(e) => onSlotDragStart(e, slot.id, tapeColor)}
+                        onRenameFile={onRenameFile}
                     />
                 );
             })}

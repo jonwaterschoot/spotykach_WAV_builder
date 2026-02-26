@@ -7,6 +7,7 @@ import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { AppState } from '../types';
 import {
     type SlotSyncEntry,
+    type NoteSyncEntry,
     type SyncDecision,
     loadBackupProjectState,
     compareProjectStates,
@@ -42,6 +43,7 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
 }) => {
     const [phase, setPhase] = useState<Phase>('loading');
     const [entries, setEntries] = useState<SlotSyncEntry[]>([]);
+    const [noteEntries, setNoteEntries] = useState<NoteSyncEntry[]>([]);
     const [backupState, setBackupState] = useState<AppState | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [showAll, setShowAll] = useState(false);
@@ -59,8 +61,9 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
             try {
                 const bs = await loadBackupProjectState(backupHandle, projectName);
                 setBackupState(bs);
-                const diff = compareProjectStates(localState, bs);
-                setEntries(diff);
+                const { slots, notes } = compareProjectStates(localState, bs);
+                setEntries(slots);
+                setNoteEntries(notes);
                 setPhase('review');
             } catch (e: any) {
                 setLoadError(e.message ?? 'Unknown error loading backup');
@@ -72,6 +75,10 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
 
     const setDecision = useCallback((idx: number, decision: SyncDecision) => {
         setEntries(prev => prev.map((e, i) => i === idx ? { ...e, decision } : e));
+    }, []);
+
+    const setNoteDecision = useCallback((idx: number, decision: SyncDecision) => {
+        setNoteEntries(prev => prev.map((e, i) => i === idx ? { ...e, decision } : e));
     }, []);
 
     const handlePreview = useCallback((blob: Blob | null, key: string, label: string) => {
@@ -99,7 +106,7 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     const handleApply = async () => {
         setPhase('applying');
         try {
-            const newState = applyProjectSync(localState, entries);
+            const newState = applyProjectSync(localState, entries, noteEntries);
             await onApply(newState);
             setPhase('done');
         } catch (e: any) {
@@ -110,8 +117,9 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
 
     const hasRisk = entries.some(e => e.historyRisk && e.decision === 'use_backup');
     const visibleEntries = showAll ? entries : entries.filter(e => e.status !== 'same');
-    const diffCount = entries.filter(e => e.status !== 'same').length;
-    const actionableCount = entries.filter(e => e.decision !== 'skip').length;
+    const visibleNoteEntries = showAll ? noteEntries : noteEntries.filter(e => e.status !== 'same');
+    const diffCount = entries.filter(e => e.status !== 'same').length + noteEntries.filter(e => e.status !== 'same').length;
+    const actionableCount = entries.filter(e => e.decision !== 'skip').length + noteEntries.filter(e => e.decision !== 'skip').length;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -217,13 +225,75 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
                                 <div className="flex items-center gap-1 justify-end pr-2"><RiSdCardMiniLine size={12} className="text-orange-400" /><span className="text-orange-300">SD Backup</span></div>
                             </div>
 
-                            {visibleEntries.length === 0 && (
+                            {visibleEntries.length === 0 && visibleNoteEntries.length === 0 && (
                                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
                                     <Check size={32} className="text-green-500" />
-                                    <p className="font-medium text-gray-300">All slots are identical</p>
+                                    <p className="font-medium text-gray-300">All slots and notes are identical</p>
                                     <p className="text-sm">Toggle "Show all slots" to review everything.</p>
                                 </div>
                             )}
+
+                            {/* NOTE ENTRIES */}
+                            {visibleNoteEntries.map((entry) => {
+                                const realIdx = noteEntries.indexOf(entry);
+                                const dotColor = entry.id === 'project' ? '#fff' : TAPE_DOT_COLORS[entry.id] || '#888';
+
+                                const canDeleteLocal = entry.status === 'local_only' || entry.status === 'conflict';
+                                const canPushRight = entry.status === 'local_only' || entry.status === 'conflict';
+                                const canPullLeft = entry.status === 'backup_only' || entry.status === 'conflict';
+                                const canDeleteBackup = entry.status === 'backup_only' || entry.status === 'conflict';
+
+                                const DECISION_LABEL: Record<string, string> = {
+                                    delete_local: 'Delete local',
+                                    keep_local: 'Push to SD →',
+                                    use_backup: '← Pull from SD',
+                                    delete_backup: 'Delete on SD',
+                                    skip: 'Skip',
+                                };
+
+                                const iconBtn = (decision: SyncDecision, icon: React.ReactNode, enabled: boolean, activeColor: string) => {
+                                    const isActive = entry.decision === decision;
+                                    return (
+                                        <button
+                                            onClick={() => enabled && setNoteDecision(realIdx, decision)}
+                                            title={DECISION_LABEL[decision]}
+                                            className={['p-1.5 rounded transition-all', isActive ? `${activeColor} text-white shadow-sm scale-110` : enabled ? 'text-gray-500 hover:text-gray-300 hover:bg-white/10' : 'text-gray-700 cursor-default opacity-40'].join(' ')}
+                                        >{icon}</button>
+                                    );
+                                };
+
+                                return (
+                                    <div key={`note-${entry.id}`} className="grid grid-cols-[40px_1fr_80px_120px_1fr] gap-0 border-b border-white/5 hover:bg-white/[0.02] transition-colors bg-blue-500/5">
+                                        <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-white/5">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: dotColor }} />
+                                        </div>
+                                        <div className="p-3 flex flex-col justify-center border-r border-white/5 min-w-0">
+                                            <p className="text-xs text-white font-medium truncate">{entry.label}</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 truncate">{entry.localNotes ? 'Has Notes' : 'Empty'}</p>
+                                        </div>
+                                        <div className="flex items-center justify-center p-2 border-r border-white/5">
+                                            {entry.status === 'same' && <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Same</span>}
+                                            {entry.status === 'conflict' && <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><RefreshCw size={7} /> Conflict</span>}
+                                            {entry.status === 'local_only' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
+                                            {entry.status === 'backup_only' && <span className="text-[8px] text-orange-300 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowLeft size={7} /> SD only</span>}
+                                        </div>
+                                        <div className="flex flex-col items-center justify-center gap-1 p-2 border-r border-white/5">
+                                            <div className="flex items-center gap-0.5">
+                                                {iconBtn('delete_local', <Trash2 size={12} />, canDeleteLocal, 'bg-red-600')}
+                                                {iconBtn('keep_local', <ArrowRight size={12} />, canPushRight, 'bg-indigo-600')}
+                                                <span className="text-gray-700 text-[10px] mx-0.5 select-none">|</span>
+                                                {iconBtn('use_backup', <ArrowLeft size={12} />, canPullLeft, 'bg-orange-600')}
+                                                {iconBtn('delete_backup', <Trash2 size={12} />, canDeleteBackup, 'bg-red-600')}
+                                            </div>
+                                            <span className="text-[8px] text-gray-400 font-medium leading-none">{DECISION_LABEL[entry.decision] ?? 'Skip'}</span>
+                                        </div>
+                                        <div className="p-3 flex flex-col justify-center min-w-0 text-right">
+                                            <p className="text-xs text-white font-medium truncate">{entry.label}</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 truncate">{entry.backupNotes ? 'Has Notes' : 'Empty'}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
 
                             {visibleEntries.map((entry) => {
                                 const realIdx = entries.indexOf(entry);

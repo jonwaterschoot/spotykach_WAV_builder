@@ -10,6 +10,31 @@ import type { AppState } from '../types';
 // SHARED HELPERS
 // ==========================================
 
+export const verifyProjectBlobs = async (state: AppState): Promise<Array<{ fileId: string; fileName: string; versionId: string; blobRef: string; reason: string }>> => {
+    const unreadableFiles: Array<{ fileId: string; fileName: string; versionId: string; blobRef: string; reason: string }> = [];
+
+    for (const [id, file] of Object.entries(state.files)) {
+        for (const version of file.versions) {
+            if (version.blob) {
+                try {
+                    // Quick check if blob is readable.
+                    await version.blob.slice(0, 1).arrayBuffer();
+                } catch (e: any) {
+                    unreadableFiles.push({
+                        fileId: id,
+                        fileName: file.name || file.originalName || 'Unknown Audio',
+                        versionId: version.id,
+                        blobRef: version.blobRef || 'memory',
+                        reason: e.message || 'File lock or read error',
+                    });
+                    break; // One failed version is enough to flag the file
+                }
+            }
+        }
+    }
+    return unreadableFiles;
+};
+
 export const downloadBlob = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -19,6 +44,37 @@ export const downloadBlob = (blob: Blob, name: string) => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+};
+
+// Helper: Safely write a blob to a file handle. Checks size to skip redundant writes,
+// and buffers File objects into memory to prevent NotReadableError due to file locks.
+export const safeWriteBlob = async (fileHandle: FileSystemFileHandle, blob: Blob) => {
+    let shouldWrite = true;
+    try {
+        const existingFile = await fileHandle.getFile();
+        if (existingFile.size === blob.size) {
+            shouldWrite = false;
+        }
+    } catch (e) {
+        // Doesn't exist, proceed
+    }
+
+    if (shouldWrite) {
+        let dataToWrite: Blob | ArrayBuffer = blob;
+        if (blob instanceof File) {
+            try {
+                dataToWrite = await blob.arrayBuffer();
+            } catch (e) {
+                console.warn(`[SafeWrite] Failed to buffer file into memory`, e);
+            }
+        }
+        // @ts-ignore
+        const w = await fileHandle.createWritable();
+        await w.write(dataToWrite);
+        await w.close();
+        return true; // Wrote
+    }
+    return false; // Skipped
 };
 
 // Generic recursive copy/sync (Additive)
@@ -61,9 +117,7 @@ export const syncDirectory = async (
 
                 if (shouldCopy) {
                     const targetFileHandle = await targetDir.getFileHandle(name, { create: true });
-                    const writable = await (targetFileHandle as any).createWritable();
-                    await writable.write(sourceFile);
-                    await writable.close();
+                    await safeWriteBlob(targetFileHandle, sourceFile);
                 }
 
             } else if (entry.kind === 'directory') {
@@ -94,10 +148,7 @@ export const saveUserLibraryToDirectory = async (
             if (version?.blob) {
                 try {
                     const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
-                    // @ts-ignore
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(version.blob);
-                    await writable.close();
+                    await safeWriteBlob(fileHandle, version.blob);
                 } catch (e) {
                     console.warn(`Failed to write library file: ${file.name}`, e);
                 }
@@ -109,6 +160,10 @@ export const saveUserLibraryToDirectory = async (
         // @ts-ignore
         for await (const [name, entry] of userLibDir.entries()) {
             if (entry.kind !== 'file') continue;
+
+            // Skip browser temporary files to prevent NoModificationAllowedError
+            if (name.endsWith('.crswap') || name.endsWith('.tmp')) continue;
+
             if (!expectedNames.has(name)) {
                 try {
                     await userLibDir.removeEntry(name);
@@ -142,7 +197,18 @@ const generateReadme = (state: AppState): string => {
 Date: ${dateStr}
 App Version: ${__APP_VERSION__}
 
+`;
+
+    if (state.projectNotes) {
+        content += `========================================================================
+PROJECT NOTES
 ========================================================================
+${state.projectNotes}
+
+`;
+    }
+
+    content += `========================================================================
 ========================================================================
 FOLDER STRUCTURE (STRICT MODE)
 ========================================================================
@@ -156,8 +222,11 @@ This is required by the Spotykach firmware.
         const folderName = color.charAt(0).toUpperCase(); // B, G, P...
         const activeSlots = tape.slots.filter(s => s.fileId);
 
-        if (activeSlots.length > 0) {
+        if (activeSlots.length > 0 || tape.notes) {
             content += `[${color.toUpperCase()}] -> SK/${folderName}/\n`;
+            if (tape.notes) {
+                content += `  Notes:\n    ${tape.notes.split('\n').join('\n    ')}\n\n`;
+            }
             activeSlots.forEach(slot => {
                 const file = state.files[slot.fileId!];
                 content += `  Slot ${slot.id}: ${slot.id}.WAV  (Source: "${file?.originalName || file?.name || 'Unknown'}")\n`;
@@ -218,7 +287,15 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
             ...file,
             versions: file.versions.map(v => {
                 const blobName = `${v.id}.wav`;
-                if (blobsFolder) blobsFolder.file(blobName, v.blob);
+                if (blobsFolder && v.blob) {
+                    try {
+                        // In some browsers, adding an unreadable blob to jszip can crash or hang later
+                        // So we wrap it in case the user forces an export despite warnings
+                        blobsFolder.file(blobName, v.blob);
+                    } catch (e) {
+                        console.warn(`[Export] Skipping unreadable blob for ${blobName}`);
+                    }
+                }
 
                 return {
                     ...v,
@@ -233,6 +310,7 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
     const serializedState = {
         files: serializedFiles,
         tapes: state.tapes,
+        projectNotes: state.projectNotes,
         metadata: {
             appName: "Spotykach WAV Builder",
             version: __APP_VERSION__,
@@ -241,6 +319,22 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
     };
 
     zip.file("project.json", JSON.stringify(serializedState, null, 2));
+
+    // Create notes.md if notes exist
+    let notesContent = "";
+    if (state.projectNotes) {
+        notesContent += `# Project Notes\n\n${state.projectNotes}\n\n`;
+    }
+    TAPE_COLORS.forEach(color => {
+        const tapeNotes = state.tapes[color]?.notes;
+        if (tapeNotes) {
+            notesContent += `## Tape ${color} Notes\n\n${tapeNotes}\n\n`;
+        }
+    });
+
+    if (notesContent.trim() !== "") {
+        zip.file("notes.md", notesContent);
+    }
 
     if (returnZip) {
         onProgress?.("Project backup zip prepared for bundling.", 30);
@@ -420,10 +514,17 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         const version = file.versions.find(v => v.id === file.currentVersionId);
 
                         if (version?.blob) {
-                            // Collect for hardcopy
-                            if (options.backupSKToProject) {
-                                skBlobs.push({ name: `${folderName}/${fileName}`, blob: version.blob });
+                            try {
+                                // Try to read a tiny slice to verify it's valid before writing
+                                await version.blob.slice(0, 1).arrayBuffer();
+                            } catch (e) {
+                                console.warn(`[Export] Skipping unreadable blob for ${fileName}`);
+                                // We could optionally mark it as missing here or notify the user
+                                continue;
                             }
+
+                            // Collect for hardcopy
+
 
                             // Check Smart Sync (If no explicit decision forced us here)
                             const previousVersionId = manifest[color]?.[slot.id];
@@ -436,10 +537,19 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             }
 
                             onProgress?.(`  -> Writing ${fileName}`, progressBase);
-                            const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
-                            const writable = await fileHandle.createWritable();
-                            await writable.write(version.blob);
-                            await writable.close();
+                            try {
+                                const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
+                                await safeWriteBlob(fileHandle, version.blob);
+
+                                // Collect for hardcopy
+                                if (options.backupSKToProject) {
+                                    skBlobs.push({ name: `${folderName}/${fileName}`, blob: version.blob });
+                                }
+                            } catch (e) {
+                                console.error(`[Export] Failed to write ${fileName}`, e);
+                                // Skip manifest update if write fails
+                                continue;
+                            }
 
                             // Update Manifest
                             if (!manifest[color]) manifest[color] = {};
@@ -470,6 +580,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     exportDate: new Date().toISOString(),
                     projectName: options.projectName
                 },
+                projectNotes: state.projectNotes,
                 tapes: state.tapes,
                 files: Object.entries(state.files).reduce((acc, [id, f]) => {
                     const currentVer = f.versions.find(v => v.id === f.currentVersionId);
@@ -591,9 +702,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         const version = file.versions.find(v => v.id === mainVerId) || file.versions[0];
                         if (version?.blob) {
                             const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
-                            const w = await fileHandle.createWritable();
-                            await w.write(version.blob);
-                            await w.close();
+                            await safeWriteBlob(fileHandle, version.blob);
                         }
                         onProgress?.(`Syncing User Library: ${file.name}`, 80 + ((i / libFiles.length) * 10));
                     }
@@ -637,9 +746,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         const [folder, file] = item.name.split('/');
                         const folderHandle = await hardcopyDir.getDirectoryHandle(folder, { create: true });
                         const fileHandle = await folderHandle.getFileHandle(file, { create: true });
-                        const w = await fileHandle.createWritable();
-                        await w.write(item.blob);
-                        await w.close();
+                        await safeWriteBlob(fileHandle, item.blob);
                         hcCount++;
                         onProgress?.(`Writing Hardcopy ${hcCount}/${skBlobs.length}`, 90 + ((hcCount / skBlobs.length) * 10));
                     }
@@ -656,9 +763,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             const [folder, file] = item.name.split('/');
                             const folderHandle = await targetHardcopyDir.getDirectoryHandle(folder, { create: true });
                             const fileHandle = await folderHandle.getFileHandle(file, { create: true });
-                            const w = await fileHandle.createWritable();
-                            await w.write(item.blob);
-                            await w.close();
+                            await safeWriteBlob(fileHandle, item.blob);
                         }
                     } catch (e) {
                         // Ignore SD write failure
@@ -1026,6 +1131,7 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
         const serializedState = {
             files: serializedFiles,
             tapes: state.tapes,
+            projectNotes: state.projectNotes,
             metadata: {
                 appName: "Spotykach WAV Builder",
                 version: "1.2.0",
@@ -1046,6 +1152,29 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
             throw e;
         }
 
+        // 1.5 Write notes.md
+        let notesContent = "";
+        if (state.projectNotes) {
+            notesContent += `# Project Notes\n\n${state.projectNotes}\n\n`;
+        }
+        TAPE_COLORS.forEach(color => {
+            const tapeNotes = state.tapes[color]?.notes;
+            if (tapeNotes) {
+                notesContent += `## Tape ${color} Notes\n\n${tapeNotes}\n\n`;
+            }
+        });
+
+        if (notesContent.trim() !== "") {
+            try {
+                const notesHandle = await targetHandle.getFileHandle('notes.md', { create: true });
+                const notesWritable = await (notesHandle as any).createWritable();
+                await notesWritable.write(notesContent);
+                await notesWritable.close();
+            } catch (e) {
+                console.warn('[Save] Failed to write notes.md', e);
+            }
+        }
+
         // 2. Write Assets
         if (assetsPending.length > 0) {
             onProgress?.(`Saving ${assetsPending.length} assets...`, 30);
@@ -1055,11 +1184,13 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
                 try {
                     // console.log(`[Save] Writing asset ${asset.id} (${asset.blob.size} bytes)`);
                     const fileHandle = await assetsHandle.getFileHandle(asset.id, { create: true });
-                    const w = await fileHandle.createWritable();
-                    await w.write(asset.blob);
-                    await w.close();
-                } catch (e) {
+                    await safeWriteBlob(fileHandle, asset.blob);
+                } catch (e: any) {
                     console.error(`[Save] Failed to write asset ${asset.id}`, e);
+                    if (e.name === 'NotReadableError') {
+                        console.warn(`[Save] Skipping unreadable asset ${asset.id}`);
+                        continue;
+                    }
                     console.error(`[Save] Asset Details - Type: ${asset.blob.type}, Size: ${asset.blob.size}`);
                     throw e; // Rethrow to stop save (or continue? keeping behavior strict for now)
                 }

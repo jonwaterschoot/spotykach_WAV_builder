@@ -30,6 +30,15 @@ export interface SlotSyncEntry {
     decision: SyncDecision;
 }
 
+export interface NoteSyncEntry {
+    id: string; // 'project' or tape color
+    label: string;
+    localNotes: string | null;
+    backupNotes: string | null;
+    status: 'same' | 'local_only' | 'backup_only' | 'conflict';
+    decision: SyncDecision;
+}
+
 /**
  * Load a project's full AppState from a directory handle, re-hydrating
  * blobs from the Assets/ subfolder.
@@ -101,6 +110,7 @@ export const loadBackupProjectState = async (
             files: hydratedFiles,
             tapes: parsed.tapes,
             metadata: parsed.metadata,
+            projectNotes: parsed.projectNotes,
         };
     } catch (e) {
         console.warn('[loadBackupProjectState] Failed', e);
@@ -115,8 +125,25 @@ export const loadBackupProjectState = async (
 export const compareProjectStates = (
     localState: AppState,
     backupState: AppState | null
-): SlotSyncEntry[] => {
+): { slots: SlotSyncEntry[], notes: NoteSyncEntry[] } => {
     const entries: SlotSyncEntry[] = [];
+    const noteEntries: NoteSyncEntry[] = [];
+
+    const pushNote = (id: string, label: string, localN: string | undefined, backupN: string | undefined) => {
+        const l = localN || null;
+        const b = backupN || null;
+        if (!l && !b) return;
+        let status: NoteSyncEntry['status'] = 'same';
+        let decision: SyncDecision = 'skip';
+        if (l && !b) { status = 'local_only'; decision = 'keep_local'; }
+        else if (!l && b) { status = 'backup_only'; decision = 'use_backup'; }
+        else if (l && b && l !== b) { status = 'conflict'; decision = 'keep_local'; }
+        else { status = 'same'; decision = 'skip'; }
+
+        noteEntries.push({ id, label, localNotes: l, backupNotes: b, status, decision });
+    };
+
+    pushNote('project', 'Project Notes', localState.projectNotes, backupState?.projectNotes);
 
     for (const color of TAPE_COLORS) {
         const localTape = localState.tapes[color];
@@ -189,9 +216,10 @@ export const compareProjectStates = (
                 decision,
             });
         }
+        pushNote(color, `${color} Tape Notes`, localTape.notes, backupTape?.notes);
     }
 
-    return entries;
+    return { slots: entries, notes: noteEntries };
 };
 
 /**
@@ -202,10 +230,12 @@ export const compareProjectStates = (
  */
 export const applyProjectSync = (
     localState: AppState,
-    entries: SlotSyncEntry[]
+    entries: SlotSyncEntry[],
+    noteEntries: NoteSyncEntry[]
 ): AppState => {
     const newFiles = { ...localState.files };
     const newTapes = { ...localState.tapes } as Record<TapeColor, (typeof localState.tapes)[TapeColor]>;
+    let newProjectNotes = localState.projectNotes;
 
     for (const color of TAPE_COLORS) {
         newTapes[color] = {
@@ -251,5 +281,20 @@ export const applyProjectSync = (
         // 'keep_local': slot is already correct locally; caller writes identical state to backup.
     }
 
-    return { ...localState, files: newFiles, tapes: newTapes as AppState['tapes'] };
+    for (const entry of noteEntries) {
+        if (entry.decision === 'skip' || entry.decision === 'keep_local' || entry.decision === 'delete_backup') continue;
+
+        let valToSet: string | undefined = undefined;
+        if (entry.decision === 'use_backup') valToSet = entry.backupNotes || undefined;
+        else if (entry.decision === 'delete_local') valToSet = undefined;
+
+        if (entry.id === 'project') {
+            newProjectNotes = valToSet;
+        } else {
+            const color = entry.id as TapeColor;
+            newTapes[color] = { ...newTapes[color], notes: valToSet };
+        }
+    }
+
+    return { ...localState, files: newFiles, tapes: newTapes as AppState['tapes'], projectNotes: newProjectNotes };
 };

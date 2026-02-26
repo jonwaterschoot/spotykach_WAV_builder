@@ -230,7 +230,7 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-synthux-panel">
                     <h2 className="text-xl font-bold flex items-center gap-2 text-white">
-                        <FolderOpen className="text-synthux-orange" /> Sample Pack Browser
+                        <FolderOpen className="text-synthux-orange" /> Sample Browser
                     </h2>
                     <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white">
                         <X size={20} />

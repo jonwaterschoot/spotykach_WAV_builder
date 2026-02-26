@@ -18,7 +18,8 @@ import { InfoModal } from './components/InfoModal';
 import { HelpModal } from './components/HelpModal';
 import { ExportModal } from './components/ExportModal';
 import { ExportProgressModal } from './components/ExportProgressModal';
-import { SamplePackModal } from './components/SamplePackModal';
+import { SampleBrowser } from './components/SampleBrowser';
+import { BrowserChoiceModal } from './components/BrowserChoiceModal';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
@@ -26,7 +27,7 @@ import { ProjectManager } from './components/ProjectManager';
 import { ProjectSyncModal } from './components/ProjectSyncModal';
 import { DeviceImportModal } from './components/DeviceImportModal';
 import { LibraryManager } from './components/LibraryManager';
-import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight, Settings } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight, Settings, StickyNote, ScrollText, ChevronDown, X, FileText } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ConfirmModal } from './components/ConfirmModal';
@@ -34,9 +35,11 @@ import { Toast, type ToastType } from './components/Toast';
 import { SetupWizard } from './components/SetupWizard';
 import { SettingsModal } from './components/SettingsModal';
 import { ExportPreviewModal } from './components/ExportPreviewModal';
-// import { TapeSettingsModal } from './components/TapeSettingsModal'; // Removed: not used
+import { NotesEditor } from './components/NotesEditor';
+import { MissingFilesResolver } from './components/MissingFilesResolver';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Rnd } from 'react-rnd';
 
 // ... (Rest of component)
 
@@ -61,10 +64,28 @@ function App() {
 
   // Modals & UI State
   const [showInfo, setShowInfo] = useState(false);
+  const [showProjectNotes, setShowProjectNotes] = useState(false);
+  const [isProjectNotesMinimized, setIsProjectNotesMinimized] = useState(false);
+
+  // Track RND position explicitly for snapping
+  const [projectNotesPos, setProjectNotesPos] = useState({
+    x: window.innerWidth > 650 ? window.innerWidth - 620 : 20,
+    y: 56
+  });
+  // Track where it was before minimizing
+  const [projectNotesPreMinPos, setProjectNotesPreMinPos] = useState({ x: 0, y: 0 });
+
+  // Track explicit sizing for Project Notes to prevent auto-resize conflicts
+  const [projectNotesSize, setProjectNotesSize] = useState({
+    width: Math.min(600, window.innerWidth - 40),
+    height: 400
+  });
+
   const [showHelp, setShowHelp] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showExportProgress, setShowExportProgress] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
+  const [showBrowserChoiceModal, setShowBrowserChoiceModal] = useState(false);
 
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
@@ -100,11 +121,57 @@ function App() {
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
   const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(undefined);
 
+  const [allViewNoteStates, setAllViewNoteStates] = useState<Record<TapeColor, 'collapsed' | 'preview' | 'expanded'>>({
+    Blue: 'preview', Green: 'preview', Pink: 'preview', Red: 'preview', Turquoise: 'preview', Yellow: 'preview'
+  });
+
+  const toggleAllNotes = () => {
+    const vals = Object.entries(allViewNoteStates)
+      .filter(([color]) => {
+        const tape = state.tapes[color as TapeColor];
+        return !!tape.notes && tape.notes.trim() !== '';
+      })
+      .map(([_, s]) => s);
+
+    let newState: 'collapsed' | 'preview' | 'expanded' = 'preview';
+
+    if (vals.length > 0) {
+      const anyCollapsed = vals.some(s => s === 'collapsed');
+      const anyPreview = vals.some(s => s === 'preview');
+
+      if (anyCollapsed) {
+        newState = 'preview';
+      } else if (anyPreview) {
+        newState = 'expanded';
+      } else {
+        newState = 'collapsed';
+      }
+    } else {
+      // If there are no tapes with notes, just toggle between expanded and collapsed
+      // or probably just default to collapsed to hide everything empty.
+      const currentlyAnyExpanded = Object.values(allViewNoteStates).some(s => s !== 'collapsed');
+      newState = currentlyAnyExpanded ? 'collapsed' : 'expanded'; // actually probably better to just leave as collapsed
+    }
+
+    const newStates = { ...allViewNoteStates };
+    TAPE_COLORS.forEach(c => {
+      const tape = state.tapes[c];
+      const hasNotes = !!tape.notes && tape.notes.trim() !== '';
+      if (hasNotes) {
+        newStates[c] = newState;
+      } else {
+        newStates[c] = 'collapsed';
+      }
+    });
+
+    setAllViewNoteStates(newStates);
+  };
+
   // Workflow / Settings State
   const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [syncUserLibrary, setSyncUserLibrary] = useState(true); // Global Pref
+  const [missingFilesWarning, setMissingFilesWarning] = useState<NonNullable<AppState['loadIssues']>['missingAssets'] | null>(null);
 
   // Sync Logic State
   const [syncModalState, setSyncModalState] = useState<{
@@ -244,7 +311,13 @@ function App() {
   };
 
   const checkUnsavedChanges = (action: () => void) => {
-    if (hasUnsavedChanges) {
+    // Determine if the project is effectively empty
+    const hasAnyFiles = Object.keys(state.files).length > 0;
+    const hasProjectNotes = !!(state.projectNotes && state.projectNotes.trim() !== '');
+    const hasTapeNotes = TAPE_COLORS.some(color => !!(state.tapes[color]?.notes && state.tapes[color].notes!.trim() !== ''));
+    const isProjectEmpty = !hasAnyFiles && !hasProjectNotes && !hasTapeNotes;
+
+    if (hasUnsavedChanges && !isProjectEmpty) {
       setConfirmAction({
         title: "Unsaved Changes",
         message: "You have unsaved changes. Discard them?",
@@ -1375,8 +1448,47 @@ function App() {
     }
   };
 
+  // Rename File Handler
+  const handleRenameFile = (fileId: string, newName: string) => {
+    setState(prev => {
+      const file = prev.files[fileId];
+      if (!file) return prev;
+      return {
+        ...prev,
+        files: {
+          ...prev.files,
+          [fileId]: {
+            ...file,
+            name: newName
+          }
+        }
+      };
+    });
+  };
+
   // Save Project Handler
   const handleSaveProject = async () => {
+    setIsProcessing(true);
+    setProgressMsg("Checking files...");
+    try {
+      const { verifyProjectBlobs } = await import('./utils/exportUtils');
+      const missing = await verifyProjectBlobs(state);
+
+      if (missing.length > 0) {
+        setMissingFilesWarning(missing);
+        return; // Pause save, wait for user resolution
+      }
+    } catch (e) {
+      console.error("Verification failed", e);
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+
+    await executeSaveProject();
+  };
+
+  const executeSaveProject = async () => {
     // 1. If we have an active project handle (or Work Handle + Name), save
     if (workHandle && currentProjectName) {
       setIsProcessing(true);
@@ -1862,9 +1974,16 @@ function App() {
     if (slot && slot.fileId) {
       setActiveSlotId(id);
     } else {
-      // Empty slot -> Trigger Upload
+      // Empty slot -> Check preference 
       setTargetSlotForUpload(id);
-      singleFileInputRef.current?.click();
+      const pref = localStorage.getItem('spotykach_emptySlotPreferredBrowser');
+      if (pref === 'os') {
+        singleFileInputRef.current?.click();
+      } else if (pref === 'sample-browser') {
+        setShowSampleBrowser(true);
+      } else {
+        setShowBrowserChoiceModal(true);
+      }
     }
   };
 
@@ -2625,15 +2744,34 @@ function App() {
         originalName: name,
         versions: [version],
         currentVersionId: versionId,
-        isParked: true, // Unassigned by default
+        isParked: targetSlotForUpload === null, // Unassigned by default if not targeting a slot
         origin,
         license
       };
 
-      setState(prev => ({
-        ...prev,
-        files: { ...prev.files, [fileId]: newFile }
-      }));
+      setState(prev => {
+        const nextFiles = { ...prev.files, [fileId]: newFile };
+
+        if (targetSlotForUpload !== null) {
+          const nextTapes = { ...prev.tapes };
+          const tape = { ...nextTapes[currentTapeColor] };
+          const slots = [...tape.slots];
+          const slotIndex = slots.findIndex(s => s.id === targetSlotForUpload);
+          if (slotIndex >= 0) {
+            slots[slotIndex] = { ...slots[slotIndex], fileId };
+            tape.slots = slots;
+            nextTapes[currentTapeColor] = tape;
+          }
+          return { ...prev, files: nextFiles, tapes: nextTapes };
+        }
+
+        return { ...prev, files: nextFiles };
+      });
+
+      if (targetSlotForUpload !== null) {
+        setTargetSlotForUpload(null);
+        setShowSampleBrowser(false);
+      }
 
       // Feedback toast
       setToast({ msg: `Imported ${name}`, type: 'success' });
@@ -2745,6 +2883,10 @@ function App() {
               {/* RIGHT — Action buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
 
+                <button onClick={() => setShowProjectNotes(!showProjectNotes)} title="Project Notes"
+                  className={`p-1.5 rounded-md transition-colors ${showProjectNotes ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                  <StickyNote size={16} />
+                </button>
                 <button onClick={() => setShowSettings(true)} title="Settings"
                   className="p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-md transition-colors">
                   <Settings size={16} />
@@ -2865,6 +3007,87 @@ function App() {
               </div>
             </header>
 
+            {showProjectNotes && (
+              <Rnd
+                position={{ x: projectNotesPos.x, y: projectNotesPos.y }}
+                onDragStop={(_e, d) => {
+                  setProjectNotesPos({ x: d.x, y: d.y });
+                  if (!isProjectNotesMinimized) {
+                    setProjectNotesPreMinPos({ x: d.x, y: d.y });
+                  }
+                }}
+                onResizeStop={(_e, _direction, ref, _delta, position) => {
+                  setProjectNotesSize({
+                    width: parseInt(ref.style.width, 10),
+                    height: parseInt(ref.style.height, 10)
+                  });
+                  setProjectNotesPos(position);
+                }}
+                size={{ width: isProjectNotesMinimized ? 300 : projectNotesSize.width, height: isProjectNotesMinimized ? 44 : projectNotesSize.height }}
+                enableResizing={!isProjectNotesMinimized}
+                minWidth={300}
+                bounds="window"
+                dragHandleClassName="notes-drag-handle"
+                className="z-[75] !fixed" // Removed transition-all duration-300 here to fix drag lag
+                style={{ position: 'fixed' }} // Force fixed to bypass any flex container containment issues
+                resizeHandleComponent={
+                  !isProjectNotesMinimized ? {
+                    bottom: (
+                      <div className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center hover:bg-white/5 transition-colors rounded-b-xl z-10 w-full" style={{ left: 0, right: 0 }}>
+                        <div className="w-8 h-1 bg-gray-600 rounded-full opacity-50 block pointer-events-none" />
+                      </div>
+                    )
+                  } : undefined
+                }
+                resizeHandleClasses={{
+                  bottom: "cursor-ns-resize"
+                }}
+              >
+                <div className="w-full flex flex-col border border-gray-700/80 rounded-xl bg-[#0f0f11] shadow-2xl overflow-hidden" style={{ height: isProjectNotesMinimized ? 44 : '100%' }}>
+                  <NotesEditor
+                    value={state.projectNotes || ''}
+                    onChange={(val) => {
+                      setState((prev: AppState) => ({ ...prev, projectNotes: val }));
+                      setHasUnsavedChanges(true);
+                    }}
+                    minHeight="100%"
+                    fullHeight={true}
+                    dragHandleClass="notes-drag-handle"
+                    title={<span className="flex items-center gap-2"><StickyNote size={14} className="text-synthux-yellow" /> Project Notes</span>}
+                    headerRightItem={
+                      <div className="flex items-center gap-1.5 ml-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isProjectNotesMinimized) {
+                              // Minimizing: Save current, snap to bottom left
+                              setProjectNotesPreMinPos({ ...projectNotesPos });
+                              setProjectNotesPos({ x: 20, y: window.innerHeight - 60 });
+                            } else {
+                              // Expanding: Restore previous
+                              setProjectNotesPos({ ...projectNotesPreMinPos });
+                            }
+                            setIsProjectNotesMinimized(!isProjectNotesMinimized);
+                          }}
+                          className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                          title={isProjectNotesMinimized ? "Expand" : "Minimize"}
+                        >
+                          <ChevronDown size={14} className={`transition-transform duration-300 ${isProjectNotesMinimized ? 'rotate-180' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShowProjectNotes(false); setIsProjectNotesMinimized(false); }}
+                          className="p-1 text-gray-400 hover:text-red-400 hover:bg-white/10 rounded transition-colors"
+                          title="Close Notes"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    }
+                  />
+                </div>
+              </Rnd>
+            )}
+
             <div className="flex flex-1 overflow-hidden">
               <FileBrowser
                 files={Object.values(state.files)}
@@ -2877,6 +3100,7 @@ function App() {
                 onBulkUnassign={handleBulkUnassign}
                 onDeleteFile={onDeleteFile}
                 onFillFreeSlots={handleFillAllFreeSlots}
+                onRenameFile={handleRenameFile}
               />
 
               {/* Grid Area */}
@@ -2927,8 +3151,8 @@ function App() {
                         <div className="flex items-center justify-center">
                           <TapeIcon color={`var(--color-synthux-${currentTapeColor.toLowerCase()})`} size={40} />
                         </div>
-                        {/* Title */}
-                        <div className="flex-1">
+                        {/* Title and Notes Teaser */}
+                        <div className="flex-1 flex items-center gap-4 min-w-0 pr-4">
                           <h2
                             style={{ color: `var(--color-synthux-${currentTapeColor.toLowerCase()})` }}
                             className="text-4xl font-bold font-header tracking-tight uppercase drop-shadow-md shrink-0 flex items-center gap-3"
@@ -2943,6 +3167,26 @@ function App() {
                               <Download size={16} />
                             </button>
                           </h2>
+
+                          {/* Notes Teaser */}
+                          {currentTape.notes && currentTape.notes.trim() !== '' && (
+                            <div
+                              className="flex items-center gap-2 cursor-pointer group px-3 py-1.5 rounded-lg bg-gray-800/50 hover:bg-gray-800 border border-gray-700/50 hover:border-gray-600 transition-all max-w-[300px] md:max-w-[400px] hidden sm:flex shrink-0 min-w-0"
+                              onClick={() => {
+                                document.getElementById('tape-notes-section')?.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              title="Scroll to Tape Notes"
+                            >
+                              <FileText size={16} className="text-gray-400 group-hover:text-synthux-yellow transition-colors shrink-0" />
+                              <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors font-mono truncate">
+                                {(() => {
+                                  const firstLine = currentTape.notes.split('\n').map(l => l.trim()).filter(l => l.length > 0)[0]?.replace(/^#+\s*/, '').replace(/\*\*/g, '').replace(/-\s*/, '');
+                                  if (!firstLine) return 'Notes...';
+                                  return firstLine;
+                                })()}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Single View Duplicate Notification (Left Aligned next to title) */}
@@ -2984,14 +3228,53 @@ function App() {
                         onSlotSelectionClick={(color, id, e) => handleSlotSelectionClick(id, color, e)}
                         onToggleSlotSelection={(color, id) => toggleSlotSelection(id, color)}
                         onSlotDragStart={handleSlotDragStart}
+                        onRenameFile={handleRenameFile}
                       />
+
+                      {/* Tape Notes */}
+                      <div id="tape-notes-section" className="mt-8 border-t border-white/10 pt-6 px-6 relative z-10">
+                        <NotesEditor
+                          title={
+                            <span
+                              className="flex items-center gap-2 drop-shadow-sm"
+                              style={{ color: `var(--color-synthux-${currentTapeColor.toLowerCase()})` }}
+                            >
+                              <StickyNote size={14} /> Tape {currentTapeColor} Notes
+                            </span>
+                          }
+                          value={currentTape.notes || ''}
+                          onChange={(val) => {
+                            setState((prev: AppState) => ({
+                              ...prev,
+                              tapes: {
+                                ...prev.tapes,
+                                [currentTapeColor]: {
+                                  ...prev.tapes[currentTapeColor],
+                                  notes: val
+                                }
+                              }
+                            }));
+                            setHasUnsavedChanges(true);
+                          }}
+                          minHeight="150px"
+                        />
+                      </div>
                     </>
                   ) : (
                     <div className="bg-black/40 rounded-3xl p-4 border border-white/5 backdrop-blur-md">
                       <div className="flex items-center justify-between gap-3 mb-6 px-4">
-                        <h2 className="text-4xl font-bold font-header tracking-tight uppercase text-white drop-shadow-md">
-                          All Tapes
-                        </h2>
+                        <div className="flex items-center gap-4">
+                          <h2 className="text-4xl font-bold font-header tracking-tight uppercase text-white drop-shadow-md">
+                            All Tapes
+                          </h2>
+                          <button
+                            onClick={toggleAllNotes}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition-colors uppercase tracking-wider"
+                            title="Toggle All Notes"
+                          >
+                            <ScrollText size={14} /> Toggle All Notes
+                          </button>
+                        </div>
 
                         {/* All View Duplicate Notification */}
                         {duplicateFileIds.size > 0 && (
@@ -3034,6 +3317,19 @@ function App() {
                         onSlotSelectionClick={handleSlotSelectionClick}
                         onToggleSlotSelection={(id, color) => toggleSlotSelection(id, color)}
                         onSlotDragStart={handleSlotDragStart}
+                        noteStates={allViewNoteStates}
+                        setNoteStates={setAllViewNoteStates}
+                        onTapeNoteChange={(color, note) => {
+                          setState(prev => ({
+                            ...prev,
+                            tapes: {
+                              ...prev.tapes,
+                              [color]: { ...prev.tapes[color], notes: note }
+                            }
+                          }));
+                          setHasUnsavedChanges(true);
+                        }}
+                        onRenameFile={handleRenameFile}
                       />
                     </div>
                   )}
@@ -3084,6 +3380,7 @@ function App() {
                         isDuplicate={duplicateFileIds.has(activeFile.id)}
                         metadata={activeFile.metadata}
                         onClose={() => setActiveSlotId(null)}
+                        onRenameFile={handleRenameFile}
                         onSaveUnique={(newBlob, duration, processing, createdId) => {
                           if (!activeFileId || !activeSlotId) return;
 
@@ -3346,6 +3643,25 @@ function App() {
               )
             }
 
+            <BrowserChoiceModal
+              isOpen={showBrowserChoiceModal}
+              onClose={() => {
+                setShowBrowserChoiceModal(false);
+                setTargetSlotForUpload(null);
+              }}
+              onChoice={(choice, remember) => {
+                setShowBrowserChoiceModal(false);
+                if (remember) {
+                  localStorage.setItem('spotykach_emptySlotPreferredBrowser', choice);
+                }
+                if (choice === 'os') {
+                  singleFileInputRef.current?.click();
+                } else {
+                  setShowSampleBrowser(true);
+                }
+              }}
+            />
+
             {
               showDuplicateModal && (
                 <DuplicateResolveModal
@@ -3578,8 +3894,36 @@ function App() {
                   setProgressMsg('');
                 }
               }}
-              syncUserLibrary={syncUserLibrary}
-              onToggleSyncUserLibrary={setSyncUserLibrary}
+              onSyncUserLibraryToSD={async () => {
+                setConfirmAction({
+                  title: 'Sync User Library to SD?',
+                  message: (
+                    <div className="space-y-3">
+                      <p>This will copy your entire User Library to the SD card.</p>
+                      <p className="text-yellow-400"><strong>Note:</strong> Depending on the size of your library, this may take up significant space on the SD.</p>
+                    </div>
+                  ),
+                  confirmLabel: 'Sync to SD',
+                  onConfirm: async () => {
+                    setConfirmAction(null);
+                    if (!backupHandle) return;
+                    setIsProcessing(true);
+                    setProgressMsg('Syncing User Library to SD...');
+                    try {
+                      const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
+                      const { saveUserLibraryToDirectory } = await import('./utils/exportUtils');
+                      await saveUserLibraryToDirectory(userLibrary, wavBuilderDir, (msg) => setProgressMsg(msg));
+                      setToast({ msg: 'User Library successfully synced to SD card!', type: 'success' });
+                    } catch (e: any) {
+                      console.error(e);
+                      setToast({ msg: 'Library sync failed: ' + e.message, type: 'error' });
+                    } finally {
+                      setIsProcessing(false);
+                      setProgressMsg('');
+                    }
+                  }
+                });
+              }}
               activeSKProject={activeSKProject || undefined}
             />
 
@@ -3669,7 +4013,6 @@ function App() {
                         directWrite: true,
                         smartSync: options.skMode === 'overwrite',
                         skMode: options.skMode,
-                        syncUserLibrary: syncUserLibrary,
                         userLibrary: userLibrary,
                         backupSKToProject: options.backupSKToProject,
                         destinationHandle: backupHandle!,
@@ -3755,13 +4098,14 @@ function App() {
               />
             )}
 
-            <SamplePackModal
+            <SampleBrowser
               isOpen={showSampleBrowser}
               onClose={() => setShowSampleBrowser(false)}
               onImport={handleSampleImport}
               userLibrary={userLibrary}
               projects={foundProjects}
               workHandle={workHandle}
+              mode="global"
               onOpenLibraryManager={() => {
                 setShowSampleBrowser(false);
                 setShowLibraryManager(true);
@@ -3842,6 +4186,63 @@ function App() {
           />
         )
       }
+
+      {/* MISSING FILES RESOLVER */}
+      <MissingFilesResolver
+        isOpen={!!missingFilesWarning}
+        missingAssets={missingFilesWarning || []}
+        projectName={currentProjectName}
+        onResolve={(action, ids) => {
+          if (action === 'remove') {
+            setState((prev: AppState) => {
+              const next = { ...prev, files: { ...prev.files } };
+              ids.forEach(id => delete next.files[id]);
+              return next;
+            });
+            setHasUnsavedChanges(true);
+          }
+          // Skip just closes it
+          setMissingFilesWarning(null);
+        }}
+        onRelocate={async (asset) => {
+          try {
+            // @ts-ignore
+            const [handle] = await window.showOpenFilePicker({
+              multiple: false,
+              types: [{
+                description: 'Audio Files',
+                accept: { 'audio/*': ['.wav', '.mp3', '.flac'] }
+              }]
+            });
+            const file = await handle.getFile();
+            // We fake a version blob replace
+            setState((prev: AppState) => {
+              const next = { ...prev, files: { ...prev.files } };
+              const fileRecord = next.files[asset.fileId];
+              if (fileRecord) {
+                const updatedVersions = fileRecord.versions.map(v =>
+                  v.id === asset.versionId ? { ...v, blob: file } : v
+                );
+                next.files[asset.fileId] = { ...fileRecord, versions: updatedVersions };
+              }
+              return next;
+            });
+            setHasUnsavedChanges(true);
+
+            // Remove from the warning list
+            setMissingFilesWarning(prev => {
+              if (!prev) return null;
+              const next = prev.filter(a => a.fileId !== asset.fileId);
+              return next.length > 0 ? next : null;
+            });
+          } catch (e: any) {
+            if (e.name !== 'AbortError') {
+              console.error("Relocation failed", e);
+              setToast({ msg: 'Failed to relocate file: ' + e.message, type: 'error' });
+            }
+          }
+        }}
+      />
 
       {/* PROCESSING OVERLAY */}
       {
