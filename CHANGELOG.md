@@ -25,6 +25,7 @@
   - Added filtering to exclude temporary files (e.g., `.crswap`) and hidden system files from library scans.
   - Resolved "hang and rebuild loop" issues by memoizing handlers and adding mount guards.
   - Prevented autosave from writing missing file records back to disk.
+- **Project Manager**: Fixed "Backup Modified" label incorrectly appearing when content was identical — now uses content-based comparison instead of timestamps.
 - **UI/UX Refinements**:
   - Fixed recursive folder toggle logic to correctly traverse only downwards from the selected path.
   - Refined "Locate File" functionality in the Sample Browser with improved path matching and "locatePulse" animations.

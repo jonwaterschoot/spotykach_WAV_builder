@@ -98,6 +98,7 @@ export interface ProjectSummary {
     status?: 'synced' | 'local' | 'backup' | 'modified'; // NEW: Sync status
     local?: ProjectSummary;
     backup?: ProjectSummary;
+    _rawData?: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string }; // Transient: for content-based sync comparison
 }
 
 export interface VisualFilters {

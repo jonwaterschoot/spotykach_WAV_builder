@@ -1006,12 +1006,13 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
 
                         // Read meta and timestamp
                         let lastModified = 0;
+                        let json: any = null;
                         try {
                             const file = await projectFileHandle.getFile();
                             lastModified = file.lastModified; // Fallback to file system time
 
                             const text = await file.text();
-                            const json = JSON.parse(text);
+                            json = JSON.parse(text);
                             if (json.files) fileCount = Object.keys(json.files).length;
 
                             // Prefer internal metadata timestamp if available
@@ -1025,10 +1026,11 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
 
                         projects.push({
                             name,
-                            path: `${basePath}/${name}`, // This might need adjustment based on how path is used
+                            path: `${basePath}/${name}`,
                             hasMeta,
                             fileCount,
-                            lastModified
+                            lastModified,
+                            _rawData: json ? { files: json.files || {}, tapes: json.tapes || {}, projectNotes: json.projectNotes } : undefined,
                         });
                     } catch (e) {
                         console.log(`[scanForProjects] '${name}' is not a project (no project.json)`);

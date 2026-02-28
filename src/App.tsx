@@ -1326,16 +1326,21 @@ function App() {
       }
     });
 
+    const { quickCompareProjects } = await import('./utils/projectSyncUtils');
+
     const merged = Array.from(projectMap.values()).map(p => {
       let status: 'synced' | 'local' | 'backup' | 'modified' = 'local';
 
       if (p.local && p.backup) {
-        status = 'synced';
-        // Check for modifications (Local newer than Backup by > 2 seconds)
-        const localTime = p.local.lastModified || 0;
-        const backupTime = p.backup.lastModified || 0;
-        if (localTime > (backupTime + 2000)) {
-          status = 'modified';
+        // Content-based comparison: check if slot assignments, files, and notes match
+        if (p.local._rawData && p.backup._rawData) {
+          const contentMatch = quickCompareProjects(p.local._rawData, p.backup._rawData);
+          status = contentMatch ? 'synced' : 'modified';
+        } else {
+          // Fallback to timestamp if raw data not available
+          const localTime = p.local.lastModified || 0;
+          const backupTime = p.backup.lastModified || 0;
+          status = (Math.abs(localTime - backupTime) <= 2000) ? 'synced' : 'modified';
         }
       } else if (p.backup) {
         status = 'backup';

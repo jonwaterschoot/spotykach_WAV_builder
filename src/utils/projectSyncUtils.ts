@@ -298,3 +298,59 @@ export const applyProjectSync = (
 
     return { ...localState, files: newFiles, tapes: newTapes as AppState['tapes'], projectNotes: newProjectNotes };
 };
+
+/**
+ * Lightweight content comparison of two parsed project.json objects.
+ * Returns true if slot assignments, file metadata, and notes are identical.
+ * Does NOT load blobs — only uses the JSON data already read during scan.
+ */
+export const quickCompareProjects = (
+    localData: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string },
+    backupData: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string }
+): boolean => {
+    // Compare project notes
+    if ((localData.projectNotes || '') !== (backupData.projectNotes || '')) return false;
+
+    // Compare each tape's slots and notes
+    for (const color of TAPE_COLORS) {
+        const localTape = localData.tapes[color];
+        const backupTape = backupData.tapes[color];
+
+        if (!localTape && !backupTape) continue;
+        if (!localTape || !backupTape) return false;
+
+        // Compare tape notes
+        if ((localTape.notes || '') !== (backupTape.notes || '')) return false;
+
+        // Compare slots (6 slots per tape)
+        const localSlots = localTape.slots || [];
+        const backupSlots = backupTape.slots || [];
+        const maxSlots = Math.max(localSlots.length, backupSlots.length);
+
+        for (let i = 0; i < maxSlots; i++) {
+            const ls = localSlots[i];
+            const bs = backupSlots[i];
+            const localFid = ls?.fileId ?? null;
+            const backupFid = bs?.fileId ?? null;
+
+            // Both empty — same
+            if (!localFid && !backupFid) continue;
+            // One empty, one not — different
+            if (!localFid || !backupFid) return false;
+
+            // Compare file records
+            const localFile = localData.files[localFid];
+            const backupFile = backupData.files[backupFid];
+
+            if (!localFile && !backupFile) continue;
+            if (!localFile || !backupFile) return false;
+
+            // Compare key content identifiers (same as compareProjectStates)
+            if (localFile.currentVersionId !== backupFile.currentVersionId) return false;
+            if (localFile.originalName !== backupFile.originalName) return false;
+            if ((localFile.versions?.length ?? 0) !== (backupFile.versions?.length ?? 0)) return false;
+        }
+    }
+
+    return true;
+};
