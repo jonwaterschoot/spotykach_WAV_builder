@@ -1,7 +1,7 @@
 {
   "name": "spotykach-wav-builder",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
