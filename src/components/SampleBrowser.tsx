@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings, Crosshair } from 'lucide-react';
 import { SAMPLE_PACKS } from '../data/samplePacks';
+import { resolveAssetPath } from '../utils/assetUtils';
 import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../types';
 import { TAPE_COLORS } from '../types';
 import { loadProjectFromDirectory } from '../utils/exportUtils';
@@ -339,12 +340,7 @@ export const SampleBrowser = ({
     // --------------------------------------------------------------------------------
     // 7. Event Handlers
     // --------------------------------------------------------------------------------
-    const resolveSampleUrl = (path: string) => {
-        if (/^(?:[a-z]+:)?\/\//i.test(path)) return path;
-        const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
-        return `${baseUrl}${path}`;
-    };
-
+    // 7. Event Handlers
     const handlePlay = (sample: any) => {
         if (playingSample === sample.path && audioRef.current && !audioRef.current.paused) {
             audioRef.current?.pause();
@@ -362,7 +358,7 @@ export const SampleBrowser = ({
                     previewUrlRef.current = blobUrl;
                     audioRef.current.src = blobUrl;
                 } else {
-                    audioRef.current.src = resolveSampleUrl(sample.path);
+                    audioRef.current.src = resolveAssetPath(sample.path);
                 }
                 setPlaybackTime(0);
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
@@ -375,7 +371,7 @@ export const SampleBrowser = ({
     const handleImport = async (sample: any) => {
         setImportingSample(sample.path);
         try {
-            let url = resolveSampleUrl(sample.path);
+            let url = resolveAssetPath(sample.path);
             if (sample._isVirtual && sample._blob) {
                 url = URL.createObjectURL(sample._blob);
             }

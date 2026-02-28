@@ -58,7 +58,7 @@ img {
     --master-brightness: 1;
     --master-texture-opacity: 0.05;
     --master-font-size: 16px;
-    --master-texture-image: url('/img/highrestexture_tapenoisevhs_whitetrans.png');
+    --master-texture-image: url('../public/img/highrestexture_tapenoisevhs_whitetrans.png');
     --master-texture-size: cover;
     --master-texture-position: center;
 }

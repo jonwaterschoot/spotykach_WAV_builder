@@ -28,6 +28,53 @@ const resetDir = (targetDir) => {
   mkdirSync(targetDir, { recursive: true });
 };
 
+const removeAudioFilesRecursively = (baseDir) => {
+  if (!existsSync(baseDir)) return;
+  for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+    const entryPath = path.join(baseDir, entry.name);
+    if (entry.isDirectory()) {
+      removeAudioFilesRecursively(entryPath);
+      continue;
+    }
+    if (/\.(?:wav|flac)$/i.test(entry.name)) {
+      rmSync(entryPath, { force: true });
+    }
+  }
+};
+
+const rewriteSamplePaths = (distSubDir) => {
+  const assetsDir = path.join(distSubDir, 'assets');
+  if (!existsSync(assetsDir)) return;
+
+  for (const fileName of readdirSync(assetsDir)) {
+    if (!fileName.endsWith('.js')) continue;
+    const filePath = path.join(assetsDir, fileName);
+    const source = readFileSync(filePath, 'utf8');
+
+    // Only rewrite if we have a base URL, otherwise return original source
+    if (!sampleAssetBaseUrl) continue;
+
+    const rewritten = source
+      .replace(/"[^"]*\/samples\/[^"]+\.(?:wav|flac)"/gi, (match) => {
+        const rawPath = match.slice(1, -1);
+        const parts = rawPath.split('/');
+        const leafName = parts.pop();
+        // Ensure we're not just getting "samples" or empty
+        return (leafName && leafName !== 'samples') ? `"${sampleAssetBaseUrl}/${leafName}"` : match;
+      })
+      .replace(/'[^']*\/samples\/[^']+\.(?:wav|flac)'/gi, (match) => {
+        const rawPath = match.slice(1, -1);
+        const parts = rawPath.split('/');
+        const leafName = parts.pop();
+        return (leafName && leafName !== 'samples') ? `'${sampleAssetBaseUrl}/${leafName}'` : match;
+      });
+
+    if (rewritten !== source) {
+      writeFileSync(filePath, rewritten, 'utf8');
+    }
+  }
+};
+
 resetDir(tmpDir);
 resetDir(distDir);
 
@@ -41,51 +88,11 @@ if (existsSync(legacyV1Dir)) {
 }
 
 if (sampleAssetBaseUrl) {
-  const rewriteV1SamplePaths = () => {
-    const v1AssetsDir = path.join(distV1Dir, 'assets');
-    if (!existsSync(v1AssetsDir)) return;
-
-    for (const fileName of readdirSync(v1AssetsDir)) {
-      if (!fileName.endsWith('.js')) continue;
-      const filePath = path.join(v1AssetsDir, fileName);
-      const source = readFileSync(filePath, 'utf8');
-      const rewritten = source
-        .replace(/"\/samples\/[^"]+\.wav"/gi, (match) => {
-          const rawPath = match.slice(1, -1);
-          const leafName = rawPath.split('/').pop();
-          return leafName ? `"${sampleAssetBaseUrl}/${leafName}"` : match;
-        })
-        .replace(/'\/samples\/[^']+\.wav'/gi, (match) => {
-          const rawPath = match.slice(1, -1);
-          const leafName = rawPath.split('/').pop();
-          return leafName ? `'${sampleAssetBaseUrl}/${leafName}'` : match;
-        });
-
-      if (rewritten !== source) {
-        writeFileSync(filePath, rewritten, 'utf8');
-      }
-    }
-  };
-
-  const removeAudioFilesRecursively = (baseDir) => {
-    if (!existsSync(baseDir)) return;
-    for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
-      const entryPath = path.join(baseDir, entry.name);
-      if (entry.isDirectory()) {
-        removeAudioFilesRecursively(entryPath);
-        continue;
-      }
-      if (/\.wav$/i.test(entry.name)) {
-        rmSync(entryPath, { force: true });
-      }
-    }
-  };
-
-  rewriteV1SamplePaths();
-
-  removeAudioFilesRecursively(path.join(distV1Dir, 'samples'));
-  removeAudioFilesRecursively(path.join(distV2Dir, 'samples'));
+  rewriteSamplePaths(distV1Dir);
+  rewriteSamplePaths(distV2Dir);
 }
 
-rmSync(tmpDir, { recursive: true, force: true });
+removeAudioFilesRecursively(path.join(distV1Dir, 'samples'));
+removeAudioFilesRecursively(path.join(distV2Dir, 'samples'));
 
+rmSync(tmpDir, { recursive: true, force: true });

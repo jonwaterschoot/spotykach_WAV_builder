@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { HardDrive, FolderOpen, ArrowRight, Check, Save } from 'lucide-react';
+import { resolveAssetPath } from '../utils/assetUtils';
 
 const OVERLAYS = [
     { name: 'None', svg: '' },
@@ -18,7 +19,7 @@ type WizardStep = 'INTRO' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'CONFIRM';
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, restorableHandles, onRestore }) => {
     const [step, setStep] = useState<WizardStep>('INTRO');
     const overlayIdx = 1;
-    const [isMuted, setIsMuted] = useState(false);
+    const [isMuted, setIsMuted] = useState(true);
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
@@ -339,7 +340,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 muted={isMuted}
                 playsInline
                 className="col-start-1 row-start-1 w-full h-full object-cover z-0 opacity-80 pointer-events-none"
-                src="/vid/wavbuilderfullscreen_1.mp4"
+                src={resolveAssetPath('/vid/wavbuilderfullscreen_1.mp4')}
             />
             <div className="col-start-1 row-start-1 w-full h-full z-0 pointer-events-none" style={overlayStyle} />
 

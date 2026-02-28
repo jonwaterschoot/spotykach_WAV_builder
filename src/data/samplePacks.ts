@@ -1,3 +1,5 @@
+import { resolveAssetPath } from '../utils/assetUtils';
+
 export interface Sample {
     name: string;
     path: string;
@@ -132,25 +134,11 @@ Everyone is permitted to copy and distribute verbatim or modified copies of this
     }
 ];
 
-const externalSampleAssetBaseUrl = (import.meta.env.VITE_SAMPLE_ASSET_BASE_URL || '').replace(/\/+$/, '');
-const absoluteUrlPattern = /^(?:[a-z]+:)?\/\//i;
-const audioSamplePathPattern = /^\/samples\/.+\.(?:wav|flac)$/i;
-
-const resolveSampleAssetPath = (path: string): string => {
-    if (absoluteUrlPattern.test(path) || !audioSamplePathPattern.test(path)) {
-        return path;
-    }
-    const fileName = path.split('/').pop();
-    return externalSampleAssetBaseUrl && fileName
-        ? `${externalSampleAssetBaseUrl}/${fileName}`
-        : path;
-};
-
 export const SAMPLE_PACKS: SamplePack[] = RAW_SAMPLE_PACKS.map(pack => ({
     ...pack,
-    coverImage: pack.coverImage,
+    coverImage: resolveAssetPath(pack.coverImage || ''),
     samples: pack.samples.map(sample => ({
         ...sample,
-        path: resolveSampleAssetPath(sample.path)
+        path: resolveAssetPath(sample.path)
     }))
 }));

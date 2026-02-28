@@ -37,13 +37,13 @@ import { SettingsModal } from './components/SettingsModal';
 import { ExportPreviewModal } from './components/ExportPreviewModal';
 import { NotesEditor } from './components/NotesEditor';
 import { MissingFilesResolver, type MissingAsset } from './components/MissingFilesResolver';
-
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Rnd } from 'react-rnd';
 
 // Confirm Action Helper
 import { loadStateFromDB, clearState } from './utils/persistence';
 import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
+import { resolveAssetPath } from './utils/assetUtils';
 
 const sanitizeFilename = (name: string) => {
   return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
@@ -274,8 +274,8 @@ function App() {
     root.style.setProperty('--master-brightness', String(visualFilters.brightness));
     root.style.setProperty('--master-texture-opacity', String(visualFilters.textureOpacity));
     root.style.setProperty('--master-font-size', `${visualFilters.fontSize * 16}px`);
-    const imgPath = visualFilters.textureImage.endsWith('.gif') ? '/vid/' : '/img/';
-    root.style.setProperty('--master-texture-image', `url('${imgPath}${visualFilters.textureImage}')`);
+    const imgDir = visualFilters.textureImage.endsWith('.mp4') || visualFilters.textureImage.endsWith('.gif') ? '/vid/' : '/img/';
+    root.style.setProperty('--master-texture-image', `url('${resolveAssetPath(`${imgDir}${visualFilters.textureImage}`)}')`);
     root.style.setProperty('--master-texture-size', visualFilters.textureSize || 'cover');
     root.style.setProperty('--master-texture-position', visualFilters.texturePosition || 'center');
   }, [visualFilters]);

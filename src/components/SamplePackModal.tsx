@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Edit2 } from 'lucide-react';
 import { SAMPLE_PACKS } from '../data/samplePacks';
+import { resolveAssetPath } from '../utils/assetUtils';
 import type { UserLibrary, ProjectSummary, FileRecord } from '../types';
 import { loadProjectFromDirectory } from '../utils/exportUtils';
 
@@ -165,12 +166,6 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
 
     if (!isOpen) return null;
 
-    const resolveSampleUrl = (path: string) => {
-        if (/^(?:[a-z]+:)?\/\//i.test(path)) return path;
-        const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
-        return `${baseUrl}${path}`;
-    };
-
     const handlePlay = (sample: any) => {
         if (playingSample === sample.path && audioRef.current && !audioRef.current.paused) {
             // Stop
@@ -191,7 +186,7 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
                     previewUrlRef.current = blobUrl;
                     audioRef.current.src = blobUrl;
                 } else {
-                    audioRef.current.src = resolveSampleUrl(sample.path);
+                    audioRef.current.src = resolveAssetPath(sample.path);
                 }
                 setPlaybackTime(0);
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
@@ -204,7 +199,7 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
     const handleImport = async (sample: any) => {
         setImportingSample(sample.path);
         try {
-            let url = resolveSampleUrl(sample.path);
+            let url = resolveAssetPath(sample.path);
             if (sample._isVirtual && sample._blob) {
                 url = URL.createObjectURL(sample._blob);
             }
