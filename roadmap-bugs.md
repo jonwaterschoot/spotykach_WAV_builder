@@ -16,6 +16,32 @@ Is this related to the tweak we tried for eleminating the gap during loop playba
 
 ---
 
+### Priority Features
+- **Editor Improvements** 
+    - **Audio Processor**:
+        - add 3 band EQ (automated)
+        - add limiter
+    - **Cutting tool**:
+        - Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
+    - **Slicer tool**:
+        - A slicer tool with up to 32 slices - to be implemented in furture SK firmware.
+- **History & Trashcan**:
+    - Dedicated trashcan for deleted files with Restore capability.
+    - Undo/Redo for editor actions (Normalize, etc.).
+    - cleanup of unused files in project (only keep original files, not history files)
+- **Right-Click Context Menu**:
+    - For quick actions (Edit, Move, Delete) on cards.
+
+### Long Term
+
+- **Desktop App**: Electron/PWA wrapper for offline use.
+- **Cloud Sync**: Google Drive/Dropbox integration?
+- **Mobile Optimization**: improved layout for tablets/phones.
+
+----
+
+
+
 # new features / new functions / improvements / ideas:
 
 ## prepare SD card for Spotykach with an empty project 

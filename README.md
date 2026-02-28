@@ -4,23 +4,21 @@
 
 > **⚠️ Desktop Only:** This application is optimized for **Desktop Chrome/Edge** browsers. It is **not supported on mobile devices** due to the complex audio processing and file system interactions.
 
-A specialized tool for preparing audio files for the **Spotykach sampler**. It streamlines the process of converting, trimming, and organizing samples to meet the strict firmware requirements (48kHz Stereo WAV).
+A specialized tool for preparing audio files for the **Synthux Spotykach Looper playground**. It streamlines the process of converting, trimming, and organizing samples and projects to meet the strict firmware requirements (48kHz Stereo WAV).
 
 ## Features
 
--   **Automatic Conversion**: Drag & drop any audio file; it gets converted to 48kHz 16-bit Stereo WAV automatically.
--   **Tape Management**: Organize samples into 6 color-coded "Tapes", matching the hardware interface.
--   **Waveform Editor**: 
-    -   Trim and Normalize samples.
-    -   Apply Fade In/Out curves.
-    -   Create Seamless Loops with crossfading.
-    -   **42s Limit**: Visual indicators to keep samples within the hardware's 42-second buffer limit.
--   **Export Options**:
-    -   **Project JSON**: Save your work state.
-    -   **SD Card ZIP**: Export the exact folder structure required by the Spotykach SD card (`SK/BLUE`, `SK/RED`, etc.).
-    -   **Direct SD Write**: Write directly to a connected SD card (Chrome/Edge only).
-    -   **Sample Packs**: Browse and import curated samples from the community.
--   **Touch Support**: Basic drag-and-drop support for touch devices.
+-   **Seamless SD Card Integration**: Sync projects directly with the Spotykach hardware SD card using the File System Access API (Chrome/Edge) or export as a structured ZIP file.
+-   **Automatic Audio Processing**: Drag and drop any audio format for automatic conversion to the required 48kHz 16-bit Stereo WAV format.
+-   **Tape-Based Organization**: Manage samples across 6 color-coded "Tapes" that mirror the physical hardware interface.
+-   **Advanced Waveform Editor**:
+    -   **Precision Trimming**: Trim, normalize, and apply volume automation.
+    -   **Loop Tools**: Create seamless loops with configurable crossfading and fade-in/out curves.
+    -   **Hardware Constraints**: Visual indicators for the strictly enforced 42-second hardware buffer limit.
+-   **Comprehensive Sample Browser**:
+    -   **Curated Packs**: Browse and import community-contributed sample packs.
+    -   **Library Management**: Build a persistent user library and pull samples from other local projects.
+-   **Project Portability**: Save and restore work states via Project JSON or create full backups to local storage and SD cards.
 
 ## Technology Stack
 
@@ -90,21 +88,25 @@ Notes:
 ## Roadmap
 
 ### Priority Features
-- **Export Improvements**:
-    - Date-based folder naming.
-    - specialized Export Modal (SD Card vs Raw Files vs Project Bundle).
-    - Automatic README generation for exports.
+- **Editor Improvements** 
+    - **Audio Processor**:
+        - add 3 band EQ (automated)
+        - add limiter
+    - **Cutting tool**:
+        - Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
+    - **Slicer tool**:
+        - A slicer tool with up to 32 slices - to be implemented in furture SK firmware.
 - **History & Trashcan**:
     - Dedicated trashcan for deleted files with Restore capability.
     - Undo/Redo for editor actions (Normalize, etc.).
+    - cleanup of unused files in project (only keep original files, not history files)
 - **Right-Click Context Menu**:
     - For quick actions (Edit, Move, Delete) on cards.
 
 ### Long Term
-- **Multi-Project Support**: Save/Load multiple projects.
-- **Shared Sample Pool**: Central library shared across projects.
+
 - **Desktop App**: Electron/PWA wrapper for offline use.
-- **Cloud Sync**: Google Drive/Dropbox integration.
+- **Cloud Sync**: Google Drive/Dropbox integration?
 - **Mobile Optimization**: improved layout for tablets/phones.
 
 ## Contributing
