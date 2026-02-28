@@ -3,11 +3,7 @@ import { HardDrive, FolderOpen, ArrowRight, Check, Save } from 'lucide-react';
 
 const OVERLAYS = [
     { name: 'None', svg: '' },
-    { name: 'Sq 3x3 gap 2', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='5' height='5'><rect width='3' height='3' fill='rgba(0,0,0,0.5)'/></svg>` },
-    { name: 'Sq 2x2 gap 3', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='5' height='5'><rect width='2' height='2' fill='rgba(0,0,0,0.5)'/></svg>` },
-    { name: 'Circ r=2 gap 3', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='7' height='7'><circle cx='2.5' cy='2.5' r='2' fill='rgba(0,0,0,0.5)'/></svg>` },
-    { name: 'Circ r=1 gap 4', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='6' height='6'><circle cx='1.5' cy='1.5' r='1' fill='rgba(0,0,0,0.5)'/></svg>` },
-    { name: 'Sq 4x4 gap 4', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><rect width='4' height='4' fill='rgba(0,0,0,0.5)'/></svg>` }
+    { name: 'Sq 2x2 gap 3', svg: `<svg xmlns='http://www.w3.org/2000/svg' width='5' height='5'><rect width='2' height='2' fill='rgba(0,0,0,0.5)'/></svg>` }
 ];
 
 interface SetupWizardProps {
@@ -21,7 +17,7 @@ type WizardStep = 'INTRO' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'CONFIRM';
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, restorableHandles, onRestore }) => {
     const [step, setStep] = useState<WizardStep>('INTRO');
-    const [overlayIdx, setOverlayIdx] = useState(2);
+    const overlayIdx = 1;
     const [isMuted, setIsMuted] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -126,14 +122,22 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 {restorableHandles && onRestore && (
                     <button
                         onClick={onRestore}
-                        className="w-full py-4 bg-gradient-to-r from-emerald-600/60 to-teal-600/60 hover:from-emerald-500/80 hover:to-teal-500/80 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-emerald-500/20 mb-2"
+                        className="w-full py-5 bg-gradient-to-r from-emerald-600/60 to-teal-600/60 hover:from-emerald-500/80 hover:to-teal-500/80 rounded-2xl font-bold text-white text-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-emerald-500/20 mb-4"
                     >
-                        <HardDrive size={24} />
-                        <div className="text-left leading-tight">
-                            <div className="text-xs font-normal opacity-80 uppercase tracking-wider">Resume Session</div>
-                            <div className="truncate max-w-[200px] text-sm">{restorableHandles.work.name}</div>
+                        <div className="flex items-center gap-3">
+                            <HardDrive size={24} />
+                            <div className="text-left leading-tight">
+                                <div className="text-xs font-normal opacity-80 uppercase tracking-wider">Resume Session</div>
+                                <div className="truncate max-w-[200px] text-sm">{restorableHandles.work.name}</div>
+                            </div>
+                            <ArrowRight />
                         </div>
-                        <ArrowRight />
+                        <div className="px-4 py-1 mt-1 bg-black/20 rounded-lg">
+                            <p className="text-xs text-orange-300 font-medium leading-tight">
+                                Note: Possible conflict with previous versions. <br />
+                                We recommend making manual backups for crucial work.
+                            </p>
+                        </div>
                     </button>
                 )}
 
@@ -177,10 +181,22 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 <span className="text-lg font-medium text-gray-300 group-hover:text-white">Choose Local Folder...</span>
             </button>
 
-            <div className="flex justify-center gap-3">
-                <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
-                <div className="w-3 h-3 rounded-full bg-white/10"></div>
-                <div className="w-3 h-3 rounded-full bg-white/10"></div>
+            <div className="flex flex-col items-center gap-6">
+                <div className="flex justify-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-white/10"></div>
+                    <div className="w-3 h-3 rounded-full bg-white/10"></div>
+                </div>
+
+                <button
+                    onClick={() => setStep('INTRO')}
+                    className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to Start
+                </button>
             </div>
         </div>
     );
@@ -218,10 +234,22 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 </button>
             </div>
 
-            <div className="flex justify-center gap-3">
-                <div className="w-3 h-3 rounded-full bg-indigo-900/50"></div>
-                <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                <div className="w-3 h-3 rounded-full bg-white/10"></div>
+            <div className="flex flex-col items-center gap-6">
+                <div className="flex justify-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-indigo-900/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-white/10"></div>
+                </div>
+
+                <button
+                    onClick={() => setStep('SELECT_WORK')}
+                    className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to Project Selection
+                </button>
             </div>
         </div>
     );
@@ -278,10 +306,22 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 Enter Studio
             </button>
 
-            <div className="flex justify-center gap-3">
-                <div className="w-3 h-3 rounded-full bg-indigo-900/50"></div>
-                <div className="w-3 h-3 rounded-full bg-orange-900/50"></div>
-                <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            <div className="flex flex-col items-center gap-6">
+                <div className="flex justify-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-indigo-900/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-orange-900/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                </div>
+
+                <button
+                    onClick={() => setStep('SELECT_BACKUP')}
+                    className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to SD Setup
+                </button>
             </div>
         </div>
     );
@@ -311,28 +351,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
             </div>
 
             <div className="col-start-1 row-start-1 z-20 self-end justify-self-center mb-12 flex gap-4 pointer-events-auto">
-                {OVERLAYS.map((o, idx) => {
-                    const isSoundToggle = idx === 0;
-                    return (
-                        <button
-                            key={idx}
-                            onClick={() => {
-                                if (isSoundToggle) setIsMuted(!isMuted);
-                                else setOverlayIdx(idx);
-                            }}
-                            className={`w-12 h-12 rounded-full border-2 overflow-hidden flex items-center justify-center transition-all ${(!isSoundToggle && idx === overlayIdx) ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-white/20 hover:border-white/50 bg-black/50'}`}
-                            title={isSoundToggle ? (isMuted ? "Unmute Sound" : "Mute Sound") : o.name}
-                            style={(!isSoundToggle && o.svg) ? { backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(o.svg)}")` } : { backgroundColor: '#111' }}
-                        >
-                            {isSoundToggle && (
-                                <div className="text-[9px] font-bold text-gray-400 flex flex-col items-center leading-none pointer-events-none">
-                                    <span>SND</span>
-                                    <span>{isMuted ? "OFF" : "ON"}</span>
-                                </div>
-                            )}
-                        </button>
-                    );
-                })}
+                <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className={`w-12 h-12 rounded-full border-2 overflow-hidden flex items-center justify-center transition-all border-white/20 hover:border-white/50 bg-black/50`}
+                    title={isMuted ? "Unmute Sound" : "Mute Sound"}
+                >
+                    <div className="text-[9px] font-bold text-gray-400 flex flex-col items-center leading-none pointer-events-none">
+                        <span>SND</span>
+                        <span>{isMuted ? "OFF" : "ON"}</span>
+                    </div>
+                </button>
             </div>
         </div>
     );

@@ -104,6 +104,15 @@ img {
     }
 }
 
+@keyframes locatePulse {
+    0%, 100% {
+        box-shadow: 0 0 8px 1px rgba(245, 139, 68, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 18px 4px rgba(245, 139, 68, 0.6);
+    }
+}
+
 @keyframes slow-spin {
     from {
         transform: rotate(0deg);
@@ -268,3 +277,20 @@ img {
         background: #555;
     }
 }
+
+/* Fix react-rnd handles bleeding outside container causing scrollbars */
+.react-resizable-handle {
+    position: absolute !important;
+}
+
+/* Ensure handles don't bleed out by neutralizing the default react-rnd -5px offset */
+.react-resizable-handle-n { margin-top: 0 !important; top: 0 !important; }
+.react-resizable-handle-s { margin-bottom: 0 !important; bottom: 0 !important; }
+.react-resizable-handle-e { margin-right: 0 !important; right: 0 !important; }
+.react-resizable-handle-w { margin-left: 0 !important; left: 0 !important; }
+
+/* Corners */
+.react-resizable-handle-se { bottom: 0 !important; right: 0 !important; margin: 0 !important; }
+.react-resizable-handle-sw { bottom: 0 !important; left: 0 !important; margin: 0 !important; }
+.react-resizable-handle-ne { top: 0 !important; right: 0 !important; margin: 0 !important; }
+.react-resizable-handle-nw { top: 0 !important; left: 0 !important; margin: 0 !important; }

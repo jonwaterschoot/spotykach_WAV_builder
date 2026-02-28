@@ -32,6 +32,8 @@ export interface FileRecord {
     license?: string; // e.g., "CC-BY 4.0"
     tags?: string[]; // User tags for filtering/organization
     metadata?: WavMetadata;
+    sourceFileId?: string; // NEW: Source project file ID
+    sourceVersionId?: string; // NEW: Source project version ID
 }
 
 export interface WavMetadata {

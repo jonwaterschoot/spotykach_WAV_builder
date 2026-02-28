@@ -8,7 +8,7 @@ interface DeviceImportModalProps {
     onClose: () => void;
     diff: DeviceDiff | null;
     projectState: AppState;
-    onImport: (selectedFiles: DeviceFileChange[]) => Promise<void>;
+    onImport: (selectedFiles: DeviceFileChange[], toPoolOnly: boolean) => Promise<void>;
 }
 
 export const DeviceImportModal: React.FC<DeviceImportModalProps> = ({
@@ -20,6 +20,7 @@ export const DeviceImportModal: React.FC<DeviceImportModalProps> = ({
 }) => {
     const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
     const [isImporting, setIsImporting] = useState(false);
+    const [importToPoolOnly, setImportToPoolOnly] = useState(false);
 
     // Initial selection - select all by default
     React.useEffect(() => {
@@ -67,7 +68,7 @@ export const DeviceImportModal: React.FC<DeviceImportModalProps> = ({
     const handleConfirmImport = async () => {
         setIsImporting(true);
         const filesToImport = allChanges.filter(f => selectedSlots.has(f.slot));
-        await onImport(filesToImport);
+        await onImport(filesToImport, importToPoolOnly);
         setIsImporting(false);
         onClose();
     };
@@ -115,6 +116,17 @@ export const DeviceImportModal: React.FC<DeviceImportModalProps> = ({
                         {selectedSlots.size === allChanges.length ? <CheckSquare size={16} /> : <Square size={16} />}
                         <span>{selectedSlots.size === allChanges.length ? "Deselect All" : "Select All"}</span>
                     </button>
+                    <div className="flex items-center gap-4 ml-auto">
+                        <label className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={importToPoolOnly}
+                                onChange={e => setImportToPoolOnly(e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-blue-500 focus:ring-0"
+                            />
+                            <span className="font-bold">Import to Pool Only</span>
+                        </label>
+                    </div>
                 </div>
 
                 {/* LIST CONTENT */}

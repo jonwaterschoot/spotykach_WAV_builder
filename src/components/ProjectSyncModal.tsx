@@ -30,6 +30,7 @@ interface ProjectSyncModalProps {
     backupHandle: FileSystemDirectoryHandle;
     onApply: (newState: AppState) => Promise<void>;
     onClose: () => void;
+    onChangeSDCard?: () => void;
 }
 
 type Phase = 'loading' | 'review' | 'applying' | 'done';
@@ -40,6 +41,7 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     backupHandle,
     onApply,
     onClose,
+    onChangeSDCard
 }) => {
     const [phase, setPhase] = useState<Phase>('loading');
     const [entries, setEntries] = useState<SlotSyncEntry[]>([]);
@@ -132,12 +134,23 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
                             <ArrowLeftRight size={22} className="text-indigo-400" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-white">Sync Project: <span className="text-indigo-300">{projectName}</span></h2>
+                            <h2 className="text-xl font-bold text-white">Project Sync</h2>
                             <p className="text-gray-400 text-sm flex items-center gap-2 mt-0.5">
-                                <span className="text-indigo-300">Work Folder</span>
-                                <ArrowLeftRight size={12} className="text-gray-500" />
                                 <RiSdCardMiniLine size={14} className="text-orange-400" />
-                                <span className="text-orange-300">SD Card Backup</span>
+                                <span>Syncing with SD Card Backup</span>
+                                {backupHandle && (
+                                    <span className="text-[10px] bg-orange-500/10 px-1.5 py-0.5 rounded text-orange-300 font-mono">
+                                        {backupHandle.name}
+                                    </span>
+                                )}
+                                {onChangeSDCard && (
+                                    <button
+                                        onClick={onChangeSDCard}
+                                        className="ml-2 text-[10px] text-orange-400 hover:text-orange-300 underline font-bold uppercase tracking-wider"
+                                    >
+                                        Change
+                                    </button>
+                                )}
                             </p>
                         </div>
                     </div>

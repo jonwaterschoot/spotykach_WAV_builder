@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.3.0] - 2026-02-28
+
+### Added
+- **SD Card Sync Enhancements**:
+  - Added option to browse and reselect the SD card within the sync window.
+  - Added "Clear All" for preset import options to allow selective file importing.
+  - Implemented functionality to import only selected files to the project pool.
+- **Onboarding & Setup Improvements**:
+  - Added "Back" buttons to all onboarding steps for better navigation.
+  - Implemented a "Resume" feature that detects previous work and warns about potential version conflicts.
+  - Cleaned up onboarding UI by removing redundant style options and keeping essential toggles.
+- **Sample Browser & Window Management**:
+  - Implemented resizable and draggable functionality for the **Sample Browser** window using `react-rnd`.
+  - Added a pencil (edit) icon to library files to quickly locate and highlight them in the manager.
+  - Fixed resize handle overflow that caused unwanted scrollbars at viewport edges.
+  - Improved action bar positioning to correctly overlay the component regardless of scroll state.
+- **Advanced Search**:
+  - Implemented "Advanced" search mode in the local folder browser with persistent filters and warnings.
+
+### Fixed
+- **Library Manager Stability**:
+  - Implemented physical disk deletion sync to ensure deleted files are removed from the drive.
+  - Added filtering to exclude temporary files (e.g., `.crswap`) and hidden system files from library scans.
+  - Resolved "hang and rebuild loop" issues by memoizing handlers and adding mount guards.
+  - Prevented autosave from writing missing file records back to disk.
+- **UI/UX Refinements**:
+  - Fixed recursive folder toggle logic to correctly traverse only downwards from the selected path.
+  - Refined "Locate File" functionality in the Sample Browser with improved path matching and "locatePulse" animations.
+  - Improved play button interaction on file rows to handle toggle play/pause state correctly.
+
 ## [2.2.0] - 2026-02-26
 
 ### Added

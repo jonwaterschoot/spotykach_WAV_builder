@@ -1,20 +1,22 @@
-import { useState, useRef, useEffect } from 'react';
-import { X, Upload, Trash2, Edit2, Check, Settings, Plus, FileAudio, FolderOpen, AlertCircle, Info, ChevronDown, ChevronRight, Play, Square, RotateCcw, RefreshCw } from 'lucide-react';
-import type { FileRecord, UserLibrary, UserLibraryMetadata } from '../types';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { X, Upload, Trash2, Edit2, Check, Settings, Plus, FileAudio, FolderOpen, AlertCircle, Info, ChevronDown, ChevronRight, Play, Pause, Square, RotateCcw, RefreshCw } from 'lucide-react';
+import type { FileRecord, UserLibrary, UserLibraryMetadata, AudioVersion } from '../types';
 import { useAudioConverter } from '../utils/useAudioConverter';
 import { type CustomFolderRecord, loadCustomFoldersFromDB, saveCustomFoldersToDB } from '../utils/persistence';
 import { SmartTagInput } from './SmartTagInput';
 import { NotesEditor } from './NotesEditor';
+import { LocalFolderBrowser } from './LocalFolderBrowser';
 import { saveKnownTags } from '../utils/tagStore';
 
 const COMMON_LICENSES = [
-    { label: "Standard Copyright / All Rights Reserved", value: "" },
-    { label: "Creative Commons Attribution (CC BY 4.0)", value: "This work is licensed under CC BY 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/4.0/" },
-    { label: "Creative Commons Attribution-ShareAlike (CC BY-SA 4.0)", value: "This work is licensed under CC BY-SA 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-sa/4.0/" },
-    { label: "Creative Commons Attribution-NonCommercial (CC BY-NC 4.0)", value: "This work is licensed under CC BY-NC 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-nc/4.0/" },
-    { label: "Creative Commons Zero (CC0 - Public Domain)", value: "This work has been marked as being free of known restrictions under copyright law, including all related and neighboring rights." },
-    { label: "MIT License", value: "Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software..." },
-    { label: "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE", value: "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed." },
+    { label: "Standard Copyright / All Rights Reserved", value: "", short: "ARR" },
+    { label: "Creative Commons Attribution 4.0 International (CC-BY 4.0)", value: "Creative Commons Attribution 4.0 International (CC-BY 4.0)\n\nThis license allows reusers to distribute, remix, adapt, and build upon the material in any medium or format, so long as attribution is given to the creator. The license allows for commercial use.", short: "CC-BY" },
+    { label: "Creative Commons Attribution-ShareAlike 4.0 (CC-BY-SA 4.0)", value: "Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA 4.0)\n\nThis license allows reusers to distribute, remix, adapt, and build upon the material in any medium or format, so long as attribution is given to the creator. If you remix, adapt, or build upon the material, you must license the modified material under identical terms. The license allows for commercial use.", short: "CC-BY-SA" },
+    { label: "Creative Commons Attribution-NonCommercial 4.0 (CC-BY-NC 4.0)", value: "Creative Commons Attribution-NonCommercial 4.0 International (CC-BY-NC 4.0)\n\nThis license allows reusers to distribute, remix, adapt, and build upon the material in any medium or format for noncommercial purposes only, and only so long as attribution is given to the creator.", short: "CC-BY-NC" },
+    { label: "Creative Commons Attribution-NoDerivs 4.0 (CC-BY-ND 4.0)", value: "Creative Commons Attribution-NoDerivs 4.0 International (CC-BY-ND 4.0)\n\nThis license allows reusers to copy and distribute the material in any medium or format in unadapted form only, and only so long as attribution is given to the creator. The license allows for commercial use.", short: "CC-BY-ND" },
+    { label: "Public Domain Dedication (CC0 1.0)", value: "CC0 1.0 Universal (CC0 1.0) Public Domain Dedication\n\nThe person who associated a work with this deed has dedicated the work to the public domain by waiving all of his or her rights to the work worldwide under copyright law, including all related and neighboring rights, to the extent allowed by law. You can copy, modify, distribute and perform the work, even for commercial purposes, all without asking permission.", short: "CC0" },
+    { label: "MIT License", value: "MIT License\n\nCopyright (c) [year] [fullname]\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.", short: "MIT" },
+    { label: "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE", value: "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.", short: "WTFPL" },
 ];
 
 interface LibraryManagerProps {
@@ -28,7 +30,9 @@ interface LibraryManagerProps {
     missingLibraryFiles: string[];
     onSmartScan: () => void;
     onRefreshLibrary: () => Promise<void>;
+    onDeleteLibraryFile?: (id: string) => Promise<void>;
     initialTab?: 'upload' | 'project' | 'manage' | 'settings';
+    initialHighlightFileId?: string | null;
     onResetBrowserPreference?: () => void;
 }
 
@@ -41,7 +45,13 @@ interface UploadDraft {
     tagInput: string;
 }
 
-const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy }: { file: FileRecord; isExpanded: boolean; onToggle: () => void; onCopy: (file: FileRecord, name?: string) => void; }) => {
+const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy, status }: {
+    file: FileRecord;
+    isExpanded: boolean;
+    onToggle: () => void;
+    onCopy: (file: FileRecord, name?: string) => void;
+    status: 'missing' | 'synced' | 'changed';
+}) => {
     const [editName, setEditName] = useState(false);
     const [newName, setNewName] = useState(file.name);
 
@@ -84,10 +94,28 @@ const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy }: { file: FileReco
                 </div>
 
                 <button
-                    onClick={() => onCopy(file, newName)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-synthux-orange text-gray-300 hover:text-white rounded text-xs font-bold transition-all"
+                    onClick={() => status !== 'synced' && onCopy(file, newName)}
+                    disabled={status === 'synced'}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-all ${status === 'synced'
+                        ? 'bg-synthux-green/20 text-synthux-green/60 cursor-default cursor-not-allowed'
+                        : status === 'changed'
+                            ? 'bg-synthux-orange hover:bg-synthux-orange/80 text-white'
+                            : 'bg-gray-800 hover:bg-synthux-orange text-gray-300 hover:text-white'
+                        }`}
                 >
-                    <Plus size={14} /> Copy to Library
+                    {status === 'synced' ? (
+                        <>
+                            <Check size={14} /> In Library
+                        </>
+                    ) : status === 'changed' ? (
+                        <>
+                            <RefreshCw size={14} className="animate-pulse" /> Update Library
+                        </>
+                    ) : (
+                        <>
+                            <Plus size={14} /> Copy to Library
+                        </>
+                    )}
                 </button>
             </div>
 
@@ -109,7 +137,7 @@ const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy }: { file: FileReco
     );
 };
 
-export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, projectFiles, projectName, workHandle, missingLibraryFiles, onSmartScan, onRefreshLibrary, initialTab = 'upload', onResetBrowserPreference }: LibraryManagerProps) => {
+export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, projectFiles, projectName, workHandle, missingLibraryFiles, onSmartScan, onRefreshLibrary, onDeleteLibraryFile, initialTab = 'upload', initialHighlightFileId, onResetBrowserPreference }: LibraryManagerProps) => {
     const [activeTab, setActiveTab] = useState<'upload' | 'project' | 'manage' | 'settings'>(initialTab);
     const [isConvertingBatch, setIsConvertingBatch] = useState(false);
     const [batchProgress, setBatchProgress] = useState(0);
@@ -132,22 +160,61 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
 
     const [customFolders, setCustomFolders] = useState<CustomFolderRecord[]>([]);
     const [activeCustomFolder, setActiveCustomFolder] = useState<string | null>(null);
-    const [customFolderContent, setCustomFolderContent] = useState<File[]>([]);
-    const [isReadingFolder, setIsReadingFolder] = useState(false);
     const [showSavedCheck, setShowSavedCheck] = useState(false);
+    const [isPlaybackActive, setIsPlaybackActive] = useState(false);
 
     const { convertWavToFlac, isLoaded, load } = useAudioConverter();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
     const previewUrlRef = useRef<string | null>(null);
+    const manageListRef = useRef<HTMLDivElement>(null);
+    const [highlightedFileId, setHighlightedFileId] = useState<string | null>(null);
+    const hasAutoRefreshed = useRef(false);
+
+    // --- Computed Project Library Status ---
+    const projectLibraryStatus = useMemo(() => {
+        const statusMap: Record<string, 'missing' | 'synced' | 'changed'> = {};
+        const libraryFiles = Object.values(userLibrary.files);
+
+        Object.values(projectFiles).forEach(file => {
+            const existingInLibrary = libraryFiles.find(libFile => libFile.sourceFileId === file.id);
+
+            if (!existingInLibrary) {
+                statusMap[file.id] = 'missing';
+            } else if (existingInLibrary.sourceVersionId === file.currentVersionId) {
+                statusMap[file.id] = 'synced';
+            } else {
+                statusMap[file.id] = 'changed';
+            }
+        });
+
+        return statusMap;
+    }, [userLibrary.files, projectFiles]);
 
     // --- Custom Folder Logic ---
     useEffect(() => {
         if (isOpen) {
             loadCustomFoldersFromDB().then(setCustomFolders);
             if (initialTab) setActiveTab(initialTab);
+
+            if (!hasAutoRefreshed.current) {
+                onRefreshLibrary?.(); // Auto-sync with disk on open
+                hasAutoRefreshed.current = true;
+            }
+        } else {
+            hasAutoRefreshed.current = false;
         }
-    }, [isOpen, initialTab]);
+    }, [isOpen, initialTab, onRefreshLibrary]);
+
+    const getLicenseAbbr = (licenseText?: string) => {
+        if (!licenseText) return '';
+        const found = COMMON_LICENSES.find(l => l.value === licenseText);
+        if (found) return found.short;
+        // Basic heuristic for abbreviations if it's a custom string
+        const match = licenseText.match(/\(([^)]+)\)/);
+        if (match) return match[1];
+        return 'Custom';
+    };
 
     const allLibraryTags = Array.from(
         new Set(Object.values(userLibrary.files).flatMap(file => file.tags || []))
@@ -159,6 +226,34 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
             saveKnownTags(allLibraryTags);
         }
     }, [allLibraryTags]);
+
+    // --- Highlight file from external navigation (e.g. pencil icon in Sample Browser) ---
+    useEffect(() => {
+        if (!isOpen || !initialHighlightFileId) return;
+
+        // Switch to manage tab and pre-select the file
+        setActiveTab('manage');
+        setSelectedLibraryIds(new Set([initialHighlightFileId]));
+        setHighlightedFileId(initialHighlightFileId);
+
+        // Populate the edit panel
+        const file = userLibrary.files[initialHighlightFileId];
+        if (file) {
+            setLibraryBulkName(file.name);
+            setLibraryBulkLicense(file.license || '');
+        }
+
+        // Scroll to the highlighted file after a short delay (DOM needs to render)
+        const timer = setTimeout(() => {
+            if (!manageListRef.current) return;
+            const fileEl = manageListRef.current.querySelector(`[data-library-file-id="${CSS.escape(initialHighlightFileId)}"]`);
+            if (fileEl) {
+                fileEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [isOpen, initialHighlightFileId]);
 
     if (!isOpen) return null;
 
@@ -317,14 +412,11 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
         await saveCustomFoldersToDB(updated);
         if (activeCustomFolder === id) {
             setActiveCustomFolder(null);
-            setCustomFolderContent([]);
         }
     };
 
     const handleOpenCustomFolder = async (folder: CustomFolderRecord) => {
         setActiveCustomFolder(folder.id);
-        setIsReadingFolder(true);
-        setCustomFolderContent([]);
 
         try {
             // Re-verify permission
@@ -335,28 +427,10 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                     throw new Error('Permission denied to read folder.');
                 }
             }
-
-            const files: File[] = [];
-            // @ts-ignore
-            for await (const entry of folder.handle.values()) {
-                if (entry.kind === 'file') {
-                    const name = entry.name.toLowerCase();
-                    if (name.endsWith('.wav') || name.endsWith('.mp3') || name.endsWith('.flac')) {
-                        const file = await entry.getFile();
-                        files.push(file);
-                    }
-                }
-            }
-
-            // Sort files alphabetically
-            files.sort((a, b) => a.name.localeCompare(b.name));
-            setCustomFolderContent(files);
         } catch (e: any) {
             console.error('Failed to read custom folder', e);
             alert('Could not read folder. Please re-add it if permission was lost.');
             setActiveCustomFolder(null);
-        } finally {
-            setIsReadingFolder(false);
         }
     };
 
@@ -379,6 +453,22 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
 
         // Append to current drafts or start a new draft list
         setPendingUploadDrafts(prev => prev ? [...prev, newDraft] : [newDraft]);
+    };
+
+    const handleBulkImport = async (files: { file: File, path: string }[]) => {
+        const drafts: UploadDraft[] = [];
+        for (const { file } of files) {
+            const willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+            drafts.push({
+                id: crypto.randomUUID(),
+                file,
+                willConvert,
+                displayName: buildDraftName(file, willConvert),
+                tags: [],
+                tagInput: '',
+            });
+        }
+        setPendingUploadDrafts(prev => prev ? [...prev, ...drafts] : drafts);
     };
 
     // --- End Custom Folder Logic ---
@@ -414,6 +504,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     const selectedLibraryFiles = filteredLibraryFiles.filter(file => selectedLibraryIds.has(file.id));
 
     const toggleLibrarySelection = (id: string) => {
+        setHighlightedFileId(null);
         setSelectedLibraryIds(prev => {
             const next = new Set(prev);
             if (next.has(id)) next.delete(id);
@@ -437,6 +528,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     };
 
     const selectSingleLibraryFile = (id: string) => {
+        setHighlightedFileId(null);
         setSelectedLibraryIds(new Set([id]));
         const file = userLibrary.files[id];
         if (file) {
@@ -643,32 +735,54 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                     setBatchLog(prev => [...prev, "   -> Not an uncompressed WAV. Keeping original format."]);
                 }
 
-                const fileId = crypto.randomUUID();
-                const versionId = crypto.randomUUID();
+                // Check for existing record with the same name (robust de-duplication)
+                const existingId = Object.keys(userLibrary.files).find(id =>
+                    userLibrary.files[id].name.toLowerCase() === finalName.toLowerCase()
+                );
 
-                const newRecord: FileRecord = {
-                    id: fileId,
-                    name: finalName,
-                    originalName: file.name,
-                    isParked: true,
-                    origin: 'User Upload',
-                    license: userLibrary.metadata.license,
-                    tags: Array.from(new Set([...tagsForAll, ...draft.tags])),
-                    currentVersionId: versionId,
-                    versions: [{
-                        id: versionId,
-                        timestamp: Date.now(),
-                        description: 'Original Upload',
-                        blob: finalBlob,
-                        duration: 0
-                    }]
+                const versionId = crypto.randomUUID();
+                const newVersion: AudioVersion = {
+                    id: versionId,
+                    timestamp: Date.now(),
+                    description: 'Original Upload',
+                    blob: finalBlob,
+                    duration: 0
                 };
 
-                // Update state incrementally so user sees files appearing
-                setUserLibrary(prev => ({
-                    ...prev,
-                    files: { ...prev.files, [fileId]: newRecord }
-                }));
+                if (existingId) {
+                    setBatchLog(prev => [...prev, `   -> Existing entry found: "${finalName}". Adding as new version.`]);
+                    const existingRecord = userLibrary.files[existingId];
+                    const updatedRecord: FileRecord = {
+                        ...existingRecord,
+                        currentVersionId: versionId,
+                        versions: [newVersion, ...existingRecord.versions],
+                        // Merge tags
+                        tags: Array.from(new Set([...(existingRecord.tags || []), ...tagsForAll, ...draft.tags]))
+                    };
+                    setUserLibrary(prev => ({
+                        ...prev,
+                        files: { ...prev.files, [existingId]: updatedRecord }
+                    }));
+                } else {
+                    const fileId = crypto.randomUUID();
+                    const newRecord: FileRecord = {
+                        id: fileId,
+                        name: finalName,
+                        originalName: file.name,
+                        isParked: true,
+                        origin: 'User Upload',
+                        license: userLibrary.metadata.license,
+                        tags: Array.from(new Set([...tagsForAll, ...draft.tags])),
+                        currentVersionId: versionId,
+                        versions: [newVersion]
+                    };
+
+                    // Update state incrementally so user sees files appearing
+                    setUserLibrary(prev => ({
+                        ...prev,
+                        files: { ...prev.files, [fileId]: newRecord }
+                    }));
+                }
 
                 if (userLibraryDir) {
                     try {
@@ -718,42 +832,83 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     };
 
     const handleCopyToLibrary = (file: FileRecord, customName?: string) => {
-        const fileId = crypto.randomUUID();
         const mainVersion = file.versions.find(v => v.id === file.currentVersionId) || file.versions[0];
 
-        const newRecord: FileRecord = {
-            ...file,
-            id: fileId,
-            name: customName || file.name,
-            isParked: true,
-            origin: `Project: ${projectName || 'Unknown'}`,
-            license: userLibrary.metadata.license || file.license,
-            versions: [{
-                ...mainVersion,
-                id: crypto.randomUUID(),
-                timestamp: Date.now(),
-                description: `Copied from ${projectName || 'Project'}`
-            }],
-            currentVersionId: '' // Will set below
-        };
-        newRecord.currentVersionId = newRecord.versions[0].id;
-
-        setUserLibrary(prev => ({
-            ...prev,
-            files: { ...prev.files, [fileId]: newRecord }
-        }));
-    };
-
-    const handleRemoveFromLibrary = (id: string) => {
         setUserLibrary(prev => {
-            const nextFiles = { ...prev.files };
-            delete nextFiles[id];
-            return { ...prev, files: nextFiles };
+            const existingId = Object.keys(prev.files).find(id => prev.files[id].sourceFileId === file.id);
+
+            if (existingId) {
+                // Update existing record
+                const existingRecord = prev.files[existingId];
+                // Check if this version already exists in the library record
+                const alreadyHasVersion = existingRecord.versions.some(v => v.id === mainVersion.id);
+
+                const updatedRecord: FileRecord = {
+                    ...existingRecord,
+                    name: customName || existingRecord.name,
+                    sourceVersionId: file.currentVersionId || mainVersion.id,
+                };
+
+                if (!alreadyHasVersion) {
+                    updatedRecord.versions = [
+                        ...existingRecord.versions,
+                        {
+                            ...mainVersion,
+                            timestamp: Date.now(),
+                            description: `Updated from ${projectName || 'Project'}`
+                        }
+                    ];
+                    updatedRecord.currentVersionId = mainVersion.id;
+                }
+
+                return {
+                    ...prev,
+                    files: { ...prev.files, [existingId]: updatedRecord }
+                };
+            }
+
+            // Create new record
+            const fileId = crypto.randomUUID();
+            const newRecord: FileRecord = {
+                ...file,
+                id: fileId,
+                name: customName || file.name,
+                isParked: true,
+                origin: `Project: ${projectName || 'Unknown'}`,
+                license: userLibrary.metadata.license || file.license,
+                sourceFileId: file.id,
+                sourceVersionId: file.currentVersionId || mainVersion.id,
+                versions: [{
+                    ...mainVersion,
+                    id: mainVersion.id, // Keep source version ID
+                    timestamp: Date.now(),
+                    description: `Copied from ${projectName || 'Project'}`
+                }],
+                currentVersionId: mainVersion.id
+            };
+
+            return {
+                ...prev,
+                files: { ...prev.files, [fileId]: newRecord }
+            };
         });
     };
 
+    const handleRemoveFromLibrary = (id: string) => {
+        if (onDeleteLibraryFile) {
+            onDeleteLibraryFile(id);
+        } else {
+            setUserLibrary(prev => {
+                const nextFiles = { ...prev.files };
+                delete nextFiles[id];
+                return { ...prev, files: nextFiles };
+            });
+        }
+    };
+
     const handleDeleteAllMissing = () => {
-        if (!confirm(`Are you sure you want to remove all ${missingLibraryFiles.length} missing files from your library index? This cannot be undone.`)) return;
+        const count = missingLibraryFiles.length;
+        if (!confirm(`Are you sure you want to remove all ${count} missing files from your library index? This cannot be undone.`)) return;
 
         setUserLibrary(prev => {
             const nextFiles = { ...prev.files };
@@ -969,44 +1124,23 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                         </div>
                                     </div>
 
-                                    {/* Custom Folders Box */}
-                                    <div className="md:col-span-2 bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 hover:border-synthux-blue/50 transition-colors flex flex-col">
+                                    {/* Custom Folders Browser */}
+                                    <div className="md:col-span-2 bg-black/20 border-2 border-dashed border-gray-700 rounded-xl overflow-hidden hover:border-synthux-blue/50 transition-colors flex flex-col min-h-[400px]">
                                         {activeCustomFolder ? (
-                                            <div className="flex flex-col h-full">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                                                        <FolderOpen className="text-synthux-blue" size={16} />
-                                                        {customFolders.find(f => f.id === activeCustomFolder)?.name}
-                                                    </h3>
-                                                    <button onClick={() => { setActiveCustomFolder(null); setCustomFolderContent([]); }} className="text-xs text-synthux-blue hover:underline font-bold">Back</button>
-                                                </div>
-                                                <div className="flex-1 bg-black/40 border border-gray-800 rounded p-2 overflow-y-auto max-h-[160px] space-y-1">
-                                                    {isReadingFolder ? (
-                                                        <div className="text-center text-gray-500 text-xs py-4">Reading folder...</div>
-                                                    ) : customFolderContent.length === 0 ? (
-                                                        <div className="text-center text-gray-500 text-xs py-4">No audio files found.</div>
-                                                    ) : (
-                                                        customFolderContent.map((file, i) => (
-                                                            <div key={i} className="flex items-center justify-between group hover:bg-white/5 p-1 rounded">
-                                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                                    <button onClick={() => toggleCustomFilePreview(file)} className="text-gray-400 hover:text-synthux-blue">
-                                                                        {playingPreviewKey === `custom:${file.name}` ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-                                                                    </button>
-                                                                    <span className="text-xs text-gray-300 truncate" title={file.name}>{file.name}</span>
-                                                                </div>
-                                                                <button
-                                                                    onClick={() => importCustomFile(file)}
-                                                                    className="opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-synthux-blue text-black text-[10px] font-bold rounded"
-                                                                >
-                                                                    Import
-                                                                </button>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            </div>
+                                            <LocalFolderBrowser
+                                                rootHandle={customFolders.find(f => f.id === activeCustomFolder)!.handle as FileSystemDirectoryHandle}
+                                                rootName={customFolders.find(f => f.id === activeCustomFolder)!.name}
+                                                mode="import"
+                                                onPreview={(file) => toggleCustomFilePreview(file)}
+                                                onImport={async (file) => importCustomFile(file)}
+                                                onBulkImport={handleBulkImport}
+                                                bulkActionLabel="Review"
+                                                playingFileId={playingPreviewKey?.startsWith('custom:') ? playingPreviewKey.split('custom:')[1] : undefined}
+                                                isPreviewPlaying={!!playingPreviewKey}
+                                                onCloseFolder={() => setActiveCustomFolder(null)}
+                                            />
                                         ) : (
-                                            <div className="flex flex-col h-full justify-center text-center">
+                                            <div className="flex flex-col h-full justify-center text-center p-6">
                                                 <FolderOpen className="mx-auto text-gray-500 mb-2" size={32} />
                                                 <h3 className="text-base font-bold text-white mb-1">Custom Folders</h3>
                                                 <p className="text-gray-400 text-[10px] mb-3">Browse local folders directly (read-only)</p>
@@ -1061,6 +1195,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                 isExpanded={expandedFiles.has(file.id)}
                                                 onToggle={() => toggleExpand(file.id)}
                                                 onCopy={handleCopyToLibrary}
+                                                status={projectLibraryStatus[file.id] || 'missing'}
                                             />
                                         ))}
                                     </div>
@@ -1077,6 +1212,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                 isExpanded={expandedFiles.has(file.id)}
                                                 onToggle={() => toggleExpand(file.id)}
                                                 onCopy={handleCopyToLibrary}
+                                                status={projectLibraryStatus[file.id] || 'missing'}
                                             />
                                         ))}
                                     </div>
@@ -1293,50 +1429,77 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                 </button>
                                                 <div className="text-[10px] text-gray-500 font-mono">{filteredLibraryFiles.length} shown</div>
                                             </div>
-                                            <div className="max-h-[340px] overflow-y-auto divide-y divide-gray-800/70">
+                                            <div ref={manageListRef} className="max-h-[600px] min-h-[400px] overflow-y-auto divide-y divide-gray-800/70">
                                                 {filteredLibraryFiles.length === 0 && (
                                                     <div className="p-3 text-xs text-gray-500">No library files match your tag filter.</div>
                                                 )}
-                                                {filteredLibraryFiles.map(file => (
-                                                    <div key={file.id} className="px-3 py-2 flex items-center gap-2">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedLibraryIds.has(file.id)}
-                                                            onChange={() => toggleLibrarySelection(file.id)}
-                                                            className="accent-synthux-orange"
-                                                        />
-                                                        <button
-                                                            onClick={() => toggleLibraryPreview(file)}
-                                                            className={`w-7 h-7 rounded-full flex items-center justify-center ${playingPreviewKey === `library:${file.id}` ? 'text-synthux-orange bg-synthux-orange/10' : 'text-gray-400 bg-gray-800 hover:bg-gray-700 hover:text-white'}`}
-                                                            title="Audition"
+                                                {filteredLibraryFiles.map(file => {
+                                                    const isHighlighted = highlightedFileId === file.id;
+                                                    return (
+                                                        <div
+                                                            key={file.id}
+                                                            data-library-file-id={file.id}
+                                                            onClick={() => toggleLibrarySelection(file.id)}
+                                                            className={`px-3 py-2 flex items-center gap-2 transition-all cursor-pointer group/row ${isHighlighted ? 'bg-synthux-orange/10 border-2 border-synthux-orange/50 rounded-lg' : 'hover:bg-white/5'}`}
+                                                            style={isHighlighted ? { animation: 'locatePulse 2s ease-in-out infinite' } : undefined}
                                                         >
-                                                            {playingPreviewKey === `library:${file.id}` ? <Square size={11} fill="currentColor" /> : <Play size={11} fill="currentColor" />}
-                                                        </button>
-                                                        <div className="min-w-0 flex-1 pr-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="text-sm text-white truncate font-mono">{file.name}</div>
-                                                                {missingLibraryFiles.includes(file.id) && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-500 text-[9px] font-bold uppercase tracking-wider border border-red-500/30 shrink-0">Missing</span>
-                                                                )}
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedLibraryIds.has(file.id)}
+                                                                onChange={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleLibrarySelection(file.id);
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="accent-synthux-orange cursor-pointer"
+                                                            />
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleLibraryPreview(file);
+                                                                }}
+                                                                className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${playingPreviewKey === `library:${file.id}` ? 'text-synthux-orange bg-synthux-orange/10' : 'text-gray-400 bg-gray-800 group-hover/row:bg-gray-700 hover:text-white'}`}
+                                                                title="Audition"
+                                                            >
+                                                                {playingPreviewKey === `library:${file.id}` && isPlaybackActive ? <Pause size={11} fill="currentColor" /> : <Play size={11} fill="currentColor" />}
+                                                            </button>
+                                                            <div className="min-w-0 flex-1 pr-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="text-sm text-white truncate font-mono">{file.name}</div>
+                                                                    {missingLibraryFiles.includes(file.id) && (
+                                                                        <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-500 text-[9px] font-bold uppercase tracking-wider border border-red-500/30 shrink-0">Missing</span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[10px] truncate flex items-center gap-2">
+                                                                    {file.license && (
+                                                                        <span className="text-synthux-orange font-bold uppercase tracking-wider">{getLicenseAbbr(file.license)}</span>
+                                                                    )}
+                                                                    <span className="text-gray-500">{(file.tags || []).join(', ') || 'No tags'}</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="text-[10px] text-gray-500 truncate">{(file.tags || []).join(', ') || 'No tags'}</div>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    selectSingleLibraryFile(file.id);
+                                                                }}
+                                                                className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded transition-colors"
+                                                                title="Edit selected"
+                                                            >
+                                                                <Edit2 size={12} />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRemoveFromLibrary(file.id);
+                                                                }}
+                                                                className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 size={12} />
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            onClick={() => selectSingleLibraryFile(file.id)}
-                                                            className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded"
-                                                            title="Edit selected"
-                                                        >
-                                                            <Edit2 size={12} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleRemoveFromLibrary(file.id)}
-                                                            className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={12} />
-                                                        </button>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 
@@ -1454,29 +1617,55 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                         </div>
                                     </div>
 
-                                    <div className="bg-black/30 border border-gray-800 rounded-lg p-3">
-                                        <div className="flex items-center justify-between text-xs text-gray-400">
-                                            <div className="truncate font-mono">
-                                                {playingPreviewKey?.startsWith('library:') ? `Preview: ${playingPreviewLabel}` : 'Select a library file to audition'}
+                                    <div className="sticky bottom-0 bg-synthux-panel/95 backdrop-blur-md border border-gray-800 rounded-lg p-3 shadow-2xl z-20 -mx-1">
+                                        <div className="flex items-center gap-4">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (!previewAudioRef.current) return;
+                                                    if (previewAudioRef.current.paused) previewAudioRef.current.play();
+                                                    else previewAudioRef.current.pause();
+                                                }}
+                                                disabled={!playingPreviewKey}
+                                                className="w-10 h-10 rounded-full flex items-center justify-center bg-synthux-orange text-white hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 shadow-lg"
+                                            >
+                                                {isPlaybackActive ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5" />}
+                                            </button>
+
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+                                                    <div className="truncate font-mono">
+                                                        {playingPreviewKey?.startsWith('library:') ? `Preview: ${playingPreviewLabel}` : 'Select a library file to audition'}
+                                                    </div>
+                                                    <div className="font-mono tabular-nums">
+                                                        {Math.floor(playbackTime)}s / {Math.floor(playbackDuration)}s
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={playbackDuration || 0}
+                                                    value={playbackTime}
+                                                    disabled={!playingPreviewKey || playbackDuration <= 0}
+                                                    onChange={(e) => {
+                                                        const t = Number(e.target.value);
+                                                        if (!previewAudioRef.current) return;
+                                                        previewAudioRef.current.currentTime = t;
+                                                        setPlaybackTime(t);
+                                                    }}
+                                                    className="w-full accent-synthux-orange disabled:opacity-40"
+                                                />
                                             </div>
-                                            <div className="font-mono">
-                                                {Math.floor(playbackTime)}s / {Math.floor(playbackDuration)}s
-                                            </div>
+
+                                            <button
+                                                onClick={stopPreview}
+                                                disabled={!playingPreviewKey}
+                                                className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-800 text-gray-400 hover:text-white transition-colors disabled:opacity-40 shrink-0"
+                                                title="Stop"
+                                            >
+                                                <Square size={14} fill="currentColor" />
+                                            </button>
                                         </div>
-                                        <input
-                                            type="range"
-                                            min={0}
-                                            max={playbackDuration || 0}
-                                            value={playbackTime}
-                                            disabled={!playingPreviewKey?.startsWith('library:') || playbackDuration <= 0}
-                                            onChange={(e) => {
-                                                const t = Number(e.target.value);
-                                                if (!previewAudioRef.current) return;
-                                                previewAudioRef.current.currentTime = t;
-                                                setPlaybackTime(t);
-                                            }}
-                                            className="w-full mt-2 accent-synthux-orange disabled:opacity-40"
-                                        />
                                     </div>
                                 </div>
                             </div>
@@ -1567,6 +1756,44 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                         >
                                             <RotateCcw size={14} className="group-hover:rotate-180 transition-transform duration-500" /> Reset Preference
                                         </button>
+                                    </div>
+
+                                    {/* Local Folders Management */}
+                                    <div className="bg-black/20 p-4 rounded-xl border border-gray-800/50 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <h4 className="text-white font-bold text-sm">Local Folders</h4>
+                                                <p className="text-xs text-gray-400">Manage mounted folders shown in the Sample Browser.</p>
+                                            </div>
+                                            <button
+                                                onClick={handleAddCustomFolder}
+                                                className="px-3 py-1.5 bg-synthux-blue/20 hover:bg-synthux-blue text-synthux-blue hover:text-black border border-synthux-blue/30 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                                            >
+                                                <Plus size={14} /> Add Folder
+                                            </button>
+                                        </div>
+
+                                        {customFolders.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {customFolders.map(folder => (
+                                                    <div key={folder.id} className="flex items-center justify-between bg-black/40 p-2 rounded-lg border border-gray-800 group transition-colors hover:border-gray-700">
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <FolderOpen size={16} className="text-gray-500 shrink-0" />
+                                                            <span className="text-xs text-gray-300 truncate" title={folder.name}>{folder.name}</span>
+                                                        </div>
+                                                        <button
+                                                            onClick={(e) => handleRemoveCustomFolder(folder.id, e)}
+                                                            className="p-1 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                                            title="Remove Folder"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-center py-4 text-xs text-gray-600 italic border border-dashed border-gray-800 rounded-lg">No folders mounted.</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1780,7 +2007,12 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                 if (!previewAudioRef.current) return;
                                 setPlaybackTime(previewAudioRef.current.currentTime || 0);
                             }}
-                            onEnded={stopPreview}
+                            onPlay={() => setIsPlaybackActive(true)}
+                            onPause={() => setIsPlaybackActive(false)}
+                            onEnded={() => {
+                                setIsPlaybackActive(false);
+                                stopPreview();
+                            }}
                         />
                     </div>
                 </div>

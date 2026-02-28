@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { TapeSelector } from './components/TapeSelector';
 
 import logoImg from './assets/img/Spotykach_Logo.webp?url';
@@ -96,6 +96,14 @@ function App() {
   const [showExport, setShowExport] = useState(false);
   const [showExportProgress, setShowExportProgress] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
+  const [sampleBrowserPos, setSampleBrowserPos] = useState({
+    x: Math.max(20, (window.innerWidth - 1000) / 2),
+    y: 50
+  });
+  const [sampleBrowserSize, setSampleBrowserSize] = useState({
+    width: Math.min(1000, window.innerWidth - 40),
+    height: Math.min(window.innerHeight * 0.85, 800)
+  });
   const [showBrowserChoiceModal, setShowBrowserChoiceModal] = useState(false);
 
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -227,6 +235,7 @@ function App() {
   });
   const [showLibraryManager, setShowLibraryManager] = useState(false);
   const [libraryManagerInitialTab, setLibraryManagerInitialTab] = useState<'upload' | 'project' | 'manage' | 'settings'>('upload');
+  const [libraryManagerHighlightFileId, setLibraryManagerHighlightFileId] = useState<string | null>(null);
   const [missingLibraryFiles, setMissingLibraryFiles] = useState<string[]>([]);
 
   // Keep missing library files in sync if entries are removed from the index
@@ -484,8 +493,8 @@ function App() {
     }
   };
 
-  const handleImportDeviceChanges = async (selectedFiles: import('./utils/importUtils').DeviceFileChange[]) => {
-    console.log("[DeviceImport] Starting import for", selectedFiles.length, "files");
+  const handleImportDeviceChanges = async (selectedFiles: import('./utils/importUtils').DeviceFileChange[], toPoolOnly: boolean = false) => {
+    console.log("[DeviceImport] Starting import for", selectedFiles.length, "files", toPoolOnly ? "(Pool Only)" : "");
 
     const newFiles: Record<string, import('./types').FileRecord> = {};
     const newTapes = { ...state.tapes };
@@ -551,12 +560,12 @@ function App() {
               duration: 0
             }],
             currentVersionId: versionId,
-            isParked: false
+            isParked: toPoolOnly
           };
           newFiles[newId] = newFile;
 
-          // Assign to Slot if color/slotId available
-          if (change.color && change.slotId) {
+          // Assign to Slot if color/slotId available AND not toPoolOnly
+          if (!toPoolOnly && change.color && change.slotId) {
             const tapeColor = change.color as import('./types').TapeColor;
             const slotIndex = change.slotId - 1; // 0-based
 
@@ -920,78 +929,140 @@ function App() {
       if (workHandle) {
         try {
           const { saveUserLibraryToDirectory } = await import('./utils/exportUtils');
-          await saveUserLibraryToDirectory(userLibrary, workHandle);
+          const skipIds = new Set(missingLibraryFiles);
+          await saveUserLibraryToDirectory(userLibrary, workHandle, skipIds);
         } catch (e) {
           console.error("Local Library Sync Failed", e);
         }
       }
     }, 2000);
     return () => clearTimeout(handler);
-  }, [userLibrary, workHandle]);
+  }, [userLibrary, workHandle, missingLibraryFiles]);
 
   // Ensure User_Library directory exists when manager opens
-  const handleRefreshLibrary = async () => {
+  const handleRefreshLibrary = useCallback(async () => {
     if (!workHandle) return;
     try {
       const libDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
-      const diskRecords: import('./types').FileRecord[] = [];
-      const diskFileNames = new Set<string>();
+      const diskFiles = new Map<string, File>();
 
       // @ts-ignore
-      for await (const [, entry] of libDir.entries()) {
+      for await (const [name, entry] of libDir.entries()) {
         if (entry.kind !== 'file') continue;
-        diskFileNames.add(entry.name.toLowerCase());
+
+        // Skip temporary browser files and hidden files
+        if (name.startsWith('.') || name.endsWith('.crswap') || name.endsWith('.tmp')) {
+          continue;
+        }
 
         const fh = entry as FileSystemFileHandle;
         const file = await fh.getFile();
-        const fileId = crypto.randomUUID();
-        const versionId = crypto.randomUUID();
-        diskRecords.push({
-          id: fileId,
-          name: file.name,
-          originalName: file.name,
-          isParked: true,
-          origin: 'User Library',
-          currentVersionId: versionId,
-          versions: [{
-            id: versionId,
-            timestamp: file.lastModified || Date.now(),
-            description: 'Workspace Library',
-            blob: file,
-            duration: 0,
-          }],
-        });
+        diskFiles.set(file.name.toLowerCase(), file);
       }
 
+      let missingFromDisk: string[] = [];
       setUserLibrary(prev => {
-        const missingFromDisk: string[] = [];
-        const updatedFiles = { ...prev.files };
-        Object.values(updatedFiles).forEach(file => {
-          if (!diskFileNames.has((file.name || '').toLowerCase())) {
-            missingFromDisk.push(file.id);
-          }
+        const nextFiles: Record<string, FileRecord> = {};
+        const diskFileNamesProcessed = new Set<string>();
+        missingFromDisk = []; // reset for this run
+
+        // Group existing records by name to identify duplicates
+        const recordsByName: Record<string, FileRecord[]> = {};
+        Object.values(prev.files).forEach(f => {
+          const lowerName = (f.name || '').toLowerCase();
+          if (!recordsByName[lowerName]) recordsByName[lowerName] = [];
+          recordsByName[lowerName].push(f);
         });
 
-        const byName = new Set(
-          Object.values(prev.files).map(f => (f.name || '').toLowerCase())
-        );
-        const additions = diskRecords.filter(r => !byName.has((r.name || '').toLowerCase()));
+        // 1. Process existing records and reconcile with disk
+        for (const [lowerName, records] of Object.entries(recordsByName)) {
+          const diskFile = diskFiles.get(lowerName);
 
-        if (additions.length === 0) {
-          setMissingLibraryFiles(missingFromDisk);
-          return prev;
+          // Merge duplicates if they exist (keep the first ID, combine versions)
+          let canonical = records[0];
+          if (records.length > 1) {
+            const allVersions = records.flatMap(r => r.versions);
+            // Unique versions by ID
+            const versionMap = new Map<string, AudioVersion>();
+            allVersions.forEach(v => {
+              if (!versionMap.has(v.id)) versionMap.set(v.id, v);
+            });
+            const uniqueVersions = Array.from(versionMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+
+            canonical = {
+              ...canonical,
+              versions: uniqueVersions,
+              currentVersionId: uniqueVersions[0]?.id || canonical.currentVersionId
+            };
+          }
+
+          if (diskFile) {
+            // Found on disk: update blob of current version to point to the live File object
+            const updatedVersions = canonical.versions.map(v =>
+              v.id === canonical.currentVersionId ? { ...v, blob: diskFile } : v
+            );
+            nextFiles[canonical.id] = { ...canonical, versions: updatedVersions };
+            diskFileNamesProcessed.add(lowerName);
+          } else {
+            // Not on disk: keep in index but mark as missing
+            nextFiles[canonical.id] = canonical;
+            missingFromDisk.push(canonical.id);
+          }
         }
 
-        additions.forEach(rec => {
-          updatedFiles[rec.id] = rec;
-        });
-        setMissingLibraryFiles(missingFromDisk);
-        return { ...prev, files: updatedFiles };
+        // 2. Add new files from disk (those not already in index)
+        for (const [lowerName, file] of diskFiles.entries()) {
+          if (!diskFileNamesProcessed.has(lowerName)) {
+            const fileId = crypto.randomUUID();
+            const versionId = crypto.randomUUID();
+            nextFiles[fileId] = {
+              id: fileId,
+              name: file.name,
+              originalName: file.name,
+              isParked: true,
+              origin: 'User Library',
+              currentVersionId: versionId,
+              versions: [{
+                id: versionId,
+                timestamp: file.lastModified || Date.now(),
+                description: 'Workspace Library',
+                blob: file,
+                duration: 0
+              }],
+              tags: []
+            };
+          }
+        }
+
+        return { ...prev, files: nextFiles };
       });
+      setMissingLibraryFiles(missingFromDisk);
     } catch (e) {
       console.error('Failed to load workspace User_Library', e);
     }
-  };
+  }, [workHandle]);
+
+  const handleRemoveLibraryFile = useCallback(async (id: string) => {
+    const fileRec = userLibrary.files[id];
+    if (!fileRec) return;
+
+    // 1. Remove from state
+    setUserLibrary(prev => {
+      const nextFiles = { ...prev.files };
+      delete nextFiles[id];
+      return { ...prev, files: nextFiles };
+    });
+
+    // 2. Remove from physical disk if possible
+    if (workHandle) {
+      try {
+        const libDir = await workHandle.getDirectoryHandle('User_Library', { create: false });
+        await libDir.removeEntry(fileRec.name);
+      } catch (e) {
+        // Might be already gone or no permission, that's okay.
+      }
+    }
+  }, [workHandle, userLibrary.files]);
 
   // Bootstrap user library from workspace User_Library folder
   useEffect(() => {
@@ -1658,14 +1729,13 @@ function App() {
     }
   };
 
-  const handleLibrarySmartScan = async () => {
+  const handleLibrarySmartScan = useCallback(async () => {
     if (missingLibraryFiles.length === 0) return;
 
     try {
       // @ts-ignore
       const rootFolder = await window.showDirectoryPicker({ mode: 'read' });
       if (!rootFolder) return;
-
       setIsProcessing(true);
       setProgressMsg("Scanning folder for library matches...");
 
@@ -1673,6 +1743,11 @@ function App() {
       const scan = async (handle: FileSystemDirectoryHandle) => {
         // @ts-ignore
         for await (const entry of handle.values()) {
+          // Skip temporary browser files and hidden files
+          if (entry.name.startsWith('.') || entry.name.endsWith('.crswap') || entry.name.endsWith('.tmp')) {
+            continue;
+          }
+
           if (entry.kind === 'file') {
             const ext = entry.name.toLowerCase().split('.').pop();
             if (['wav', 'mp3', 'flac'].includes(ext || '')) {
@@ -1687,67 +1762,37 @@ function App() {
 
       await scan(rootFolder);
 
-      let resolvedCount = 0;
-      let userLibraryDir: FileSystemDirectoryHandle | null = null;
-      if (workHandle) {
-        try {
-          userLibraryDir = await workHandle.getDirectoryHandle('User_Library', { create: true });
-        } catch (e) {
-          console.warn("Failed to get User_Library handle for relocation", e);
-        }
-      }
+      let matchesCount = 0;
+      let missingFromDisk: string[] = [];
 
       setUserLibrary(prev => {
         const nextFiles = { ...prev.files };
-        const stillMissing: string[] = [...missingLibraryFiles];
+        missingFromDisk = [];
 
-        missingLibraryFiles.forEach(id => {
-          const record = nextFiles[id];
-          if (!record) return;
+        Object.values(nextFiles).forEach(file => {
+          const lowerName = file.name.toLowerCase();
+          const diskFile = foundFiles.get(lowerName);
 
-          const fileName = record.name.toLowerCase();
-          const match = foundFiles.get(fileName);
-
-          if (match) {
-            // Update blob in memory
-            const versionId = record.currentVersionId || (record.versions[0]?.id);
-            const updatedVersions = record.versions.map(v =>
-              v.id === versionId ? { ...v, blob: match } : v
-            );
-            nextFiles[id] = { ...record, versions: updatedVersions };
-
-            // Sync to disk if possible
-            if (userLibraryDir) {
-              (async () => {
-                try {
-                  const fh = await userLibraryDir!.getFileHandle(record.name, { create: true });
-                  // @ts-ignore
-                  const writable = await fh.createWritable();
-                  await writable.write(match);
-                  await writable.close();
-                } catch (err) {
-                  console.error(`Failed to write relocated file ${record.name} to disk`, err);
-                }
-              })();
+          if (diskFile) {
+            const currentVer = file.versions.find(v => v.id === file.currentVersionId);
+            if (currentVer) {
+              currentVer.blob = diskFile;
+              matchesCount++;
             }
-
-            resolvedCount++;
-            const idx = stillMissing.indexOf(id);
-            if (idx > -1) stillMissing.splice(idx, 1);
+          } else {
+            missingFromDisk.push(file.id);
           }
         });
 
-        // Update missing state
-        setMissingLibraryFiles(stillMissing);
         return { ...prev, files: nextFiles };
       });
 
-      if (resolvedCount > 0) {
-        setToast({ msg: `Successfully restored ${resolvedCount} library samples!`, type: 'success' });
+      setMissingLibraryFiles(missingFromDisk);
+      if (matchesCount > 0) {
+        setToast({ msg: `Smart Scan Complete: Linked ${matchesCount} samples.`, type: 'success' });
       } else {
         setToast({ msg: "No matching files found in the selected folder.", type: 'info' });
       }
-
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error("Library smart scan failed", e);
@@ -1757,7 +1802,7 @@ function App() {
       setIsProcessing(false);
       setProgressMsg('');
     }
-  };
+  }, [userLibrary.files, missingLibraryFiles]);
 
   const executeSaveProject = async () => {
     // 1. If we have an active project handle (or Work Handle + Name), save
@@ -3062,6 +3107,109 @@ function App() {
     }
   };
 
+  // Import files directly to pool (unassigned)
+  const handleImportToPool = async (files: { file: File, path: string }[]) => {
+    setIsProcessing(true);
+    setProgressMsg(`Adding ${files.length} file(s) to pool...`);
+    try {
+      for (const { file } of files) {
+        const { buffer, blob: processedBlob } = await audioEngine.loadAndProcessAudio(file);
+        const fileId = generateId();
+        const versionId = generateId();
+        const safeName = sanitizeFilename(file.name);
+
+        const version: AudioVersion = {
+          id: versionId,
+          timestamp: Date.now(),
+          description: 'Imported Sample',
+          blob: processedBlob,
+          duration: buffer.duration
+        };
+
+        const newFile: FileRecord = {
+          id: fileId,
+          name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
+          originalName: file.name,
+          versions: [version],
+          currentVersionId: versionId,
+          isParked: true, // Always to pool
+          origin: 'Local Folder'
+        };
+
+        setState(prev => ({
+          ...prev,
+          files: { ...prev.files, [fileId]: newFile }
+        }));
+      }
+      setToast({ msg: `Added ${files.length} file(s) to pool`, type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: 'Import to pool failed', type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  // Import files targeting a specific tape
+  const handleImportToTape = async (files: { file: File, path: string }[], targetTape: TapeColor) => {
+    setIsProcessing(true);
+    setProgressMsg(`Adding ${files.length} file(s) to Tape ${targetTape}...`);
+    try {
+      for (const { file } of files) {
+        const { buffer, blob: processedBlob } = await audioEngine.loadAndProcessAudio(file);
+        const fileId = generateId();
+        const versionId = generateId();
+        const safeName = sanitizeFilename(file.name);
+
+        const version: AudioVersion = {
+          id: versionId,
+          timestamp: Date.now(),
+          description: 'Imported Sample',
+          blob: processedBlob,
+          duration: buffer.duration
+        };
+
+        const newFile: FileRecord = {
+          id: fileId,
+          name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
+          originalName: file.name,
+          versions: [version],
+          currentVersionId: versionId,
+          isParked: false,
+          origin: 'Local Folder'
+        };
+
+        setState(prev => {
+          const nextFiles = { ...prev.files, [fileId]: newFile };
+          const nextTapes = { ...prev.tapes };
+          const tape = { ...nextTapes[targetTape] };
+          const slots = [...tape.slots];
+
+          // Find first free slot on this tape
+          const freeIdx = slots.findIndex(s => s.fileId === null);
+          if (freeIdx >= 0) {
+            slots[freeIdx] = { ...slots[freeIdx], fileId };
+            tape.slots = slots;
+            nextTapes[targetTape] = tape;
+          } else {
+            // Tape full — park it instead
+            nextFiles[fileId] = { ...nextFiles[fileId], isParked: true };
+          }
+
+          return { ...prev, files: nextFiles, tapes: nextTapes };
+        });
+      }
+      setToast({ msg: `Added ${files.length} file(s) to Tape ${targetTape}`, type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setToast({ msg: `Import to Tape ${targetTape} failed`, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
   const handleResetEmptySlotBrowserPreference = () => {
     localStorage.removeItem('spotykach_emptySlotPreferredBrowser');
     setToast({ msg: 'Empty slot browser preference reset', type: 'success' });
@@ -4119,7 +4267,7 @@ function App() {
                     try {
                       const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
                       const { saveUserLibraryToDirectory } = await import('./utils/exportUtils');
-                      await saveUserLibraryToDirectory(userLibrary, wavBuilderDir, (msg) => setProgressMsg(msg));
+                      await saveUserLibraryToDirectory(userLibrary, wavBuilderDir, new Set(missingLibraryFiles), (msg) => setProgressMsg(msg));
                       setToast({ msg: 'User Library successfully synced to SD card!', type: 'success' });
                     } catch (e: any) {
                       console.error(e);
@@ -4139,6 +4287,7 @@ function App() {
                 projectName={syncProjectTarget}
                 localState={state}
                 backupHandle={backupHandle}
+                onChangeSDCard={handleSetBackupFolder}
                 onClose={() => setSyncProjectTarget(null)}
                 onApply={async (newState) => {
                   if (!workHandle || !backupHandle || !syncProjectTarget) return;
@@ -4195,6 +4344,7 @@ function App() {
                 projectName={syncModalState?.projectName || ''}
                 diff={syncModalState.diff}
                 defaultMode={syncModalState.defaultMode ?? 'push'}
+                onChangeSDCard={handleSetBackupFolder}
                 onRefresh={handleSKRefresh}
                 isRefreshing={isProcessing}
                 onClose={() => setSyncModalState(null)}
@@ -4305,31 +4455,65 @@ function App() {
               />
             )}
 
-            <SampleBrowser
-              isOpen={showSampleBrowser}
-              onClose={() => {
-                setShowSampleBrowser(false);
-                setTargetSlotForUpload(null);
-              }}
-              onImport={handleSampleImport}
-              userLibrary={userLibrary}
-              projects={foundProjects}
-              workHandle={workHandle}
-              mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
-              onOpenLibraryManager={(tab) => {
-                setShowSampleBrowser(false);
-                setTargetSlotForUpload(null);
-                if (tab) setLibraryManagerInitialTab(tab);
-                setShowLibraryManager(true);
-              }}
-              currentProjectName={currentProjectName}
-            />
+            {showSampleBrowser && (
+              <Rnd
+                position={{ x: sampleBrowserPos.x, y: sampleBrowserPos.y }}
+                onDragStop={(_e, d) => setSampleBrowserPos({ x: d.x, y: d.y })}
+                onResizeStop={(_e, _direction, ref, _delta, position) => {
+                  setSampleBrowserSize({
+                    width: parseInt(ref.style.width, 10),
+                    height: parseInt(ref.style.height, 10)
+                  });
+                  setSampleBrowserPos(position);
+                }}
+                size={{ width: sampleBrowserSize.width, height: sampleBrowserSize.height }}
+                minWidth={600}
+                minHeight={400}
+                bounds="window"
+                dragHandleClassName="sample-browser-drag-handle"
+                className="z-[70] !fixed"
+                resizeHandleStyles={{
+                  top: { top: '0', height: '10px' },
+                  bottom: { bottom: '0', height: '10px' },
+                  left: { left: '0', width: '10px' },
+                  right: { right: '0', width: '10px' },
+                  topRight: { top: '0', right: '0', width: '15px', height: '15px' },
+                  bottomRight: { bottom: '0', right: '0', width: '15px', height: '15px' },
+                  bottomLeft: { bottom: '0', left: '0', width: '15px', height: '15px' },
+                  topLeft: { top: '0', left: '0', width: '15px', height: '15px' },
+                }}
+              >
+                <SampleBrowser
+                  isOpen={showSampleBrowser}
+                  onClose={() => {
+                    setShowSampleBrowser(false);
+                    setTargetSlotForUpload(null);
+                  }}
+                  onImport={handleSampleImport}
+                  userLibrary={userLibrary}
+                  projects={foundProjects}
+                  workHandle={workHandle}
+                  mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
+                  onOpenLibraryManager={(tab, highlightFileId) => {
+                    setShowSampleBrowser(false);
+                    setTargetSlotForUpload(null);
+                    if (tab) setLibraryManagerInitialTab(tab);
+                    setLibraryManagerHighlightFileId(highlightFileId || null);
+                    setShowLibraryManager(true);
+                  }}
+                  currentProjectName={currentProjectName}
+                  onImportToPool={handleImportToPool}
+                  onImportToTape={handleImportToTape}
+                />
+              </Rnd>
+            )}
 
             <LibraryManager
               isOpen={showLibraryManager}
               onClose={() => {
                 setShowLibraryManager(false);
                 setLibraryManagerInitialTab('upload');
+                setLibraryManagerHighlightFileId(null);
                 setShowSampleBrowser(true);
               }}
               userLibrary={userLibrary}
@@ -4340,7 +4524,9 @@ function App() {
               missingLibraryFiles={missingLibraryFiles}
               onSmartScan={handleLibrarySmartScan}
               onRefreshLibrary={handleRefreshLibrary}
+              onDeleteLibraryFile={handleRemoveLibraryFile}
               initialTab={libraryManagerInitialTab}
+              initialHighlightFileId={libraryManagerHighlightFileId}
               onResetBrowserPreference={handleResetEmptySlotBrowserPreference}
             />
 
@@ -4388,6 +4574,16 @@ function App() {
           bounds="window"
           dragHandleClassName="notes-drag-handle"
           className="z-[75] !fixed" // Removed transition-all duration-300 here to fix drag lag
+          resizeHandleStyles={{
+            top: { top: '0', height: '10px' },
+            bottom: { bottom: '0', height: '10px' },
+            left: { left: '0', width: '10px' },
+            right: { right: '0', width: '10px' },
+            topRight: { top: '0', right: '0', width: '15px', height: '15px' },
+            bottomRight: { bottom: '0', right: '0', width: '15px', height: '15px' },
+            bottomLeft: { bottom: '0', left: '0', width: '15px', height: '15px' },
+            topLeft: { top: '0', left: '0', width: '15px', height: '15px' },
+          }}
           resizeHandleComponent={
             !isProjectNotesMinimized ? {
               bottom: (

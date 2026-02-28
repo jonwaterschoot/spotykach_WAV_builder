@@ -133,15 +133,21 @@ export const syncDirectory = async (
 export const saveUserLibraryToDirectory = async (
     library: import('../types').UserLibrary,
     rootHandle: FileSystemDirectoryHandle,
+    skipIds?: Set<string>,
     onProgress?: (msg: string) => void
 ) => {
     try {
         const userLibDir = await rootHandle.getDirectoryHandle('User_Library', { create: true });
         const files = Object.values(library.files);
-        const expectedNames = new Set(files.map(f => f.name));
+        const expectedNames = new Set(files.filter(f => !skipIds?.has(f.id)).map(f => f.name));
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
+            if (skipIds?.has(file.id)) {
+                onProgress?.(`Skipping missing file: ${file.name}`);
+                continue;
+            }
+
             const mainVerId = file.currentVersionId;
             const version = file.versions.find(v => v.id === mainVerId) || file.versions[0];
 
@@ -987,6 +993,7 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
 
             // @ts-ignore
             for await (const [name, handle] of projectsDir.entries()) {
+                if (name === '__MACOSX') continue;
                 console.log(`[scanForProjects] Checking entry: ${name}, kind: ${handle.kind}`);
                 if (handle.kind === 'directory') {
                     let hasMeta = false;

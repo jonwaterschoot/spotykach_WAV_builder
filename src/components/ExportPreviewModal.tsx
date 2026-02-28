@@ -59,6 +59,7 @@ interface ExportPreviewModalProps {
     defaultMode?: 'import' | 'push';
     onRefresh?: () => void;
     isRefreshing?: boolean;
+    onChangeSDCard?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ const PRIMARY_LABEL: Record<SKPrimaryDecision, string> = {
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     isOpen, onClose, onConfirm, diff, projectName, defaultMode = 'push',
-    onRefresh, isRefreshing
+    onRefresh, isRefreshing, onChangeSDCard
 }) => {
     const initialPreset: QuickPreset = defaultMode === 'import' ? 'import_only' : 'erase_replace';
 
@@ -174,6 +175,15 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     }, []);
 
     const applyPreset = useCallback((preset: QuickPreset) => {
+        if (preset === 'custom') {
+            // "Clear All" logic: skip everything, no pool
+            setRows(prev => prev.map(r => ({
+                ...r,
+                primary: 'skip' as const,
+                toPool: false,
+            })));
+            return;
+        }
         setRows(prev => prev.map(r => ({
             ...r,
             primary: defaultPrimary(r.status, preset),
@@ -283,6 +293,14 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 <ArrowLeftRight size={12} className="text-gray-500" />
                                 <RiSdCardMiniLine size={14} className="text-orange-400" />
                                 <span className="text-orange-300">SK Hardware Folder</span>
+                                {onChangeSDCard && (
+                                    <button
+                                        onClick={onChangeSDCard}
+                                        className="ml-2 text-[10px] text-orange-400 hover:text-orange-300 underline font-bold uppercase tracking-wider"
+                                    >
+                                        Change
+                                    </button>
+                                )}
                             </p>
                         </div>
                     </div>
@@ -322,8 +340,20 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 {label}
                             </button>
                         ))}
+                        <button
+                            onClick={() => applyPreset('custom')}
+                            className={[
+                                'px-3 py-1 rounded-full text-xs font-bold transition-all border',
+                                currentPreset === 'custom'
+                                    ? `bg-gray-700 text-white border-transparent`
+                                    : 'text-gray-400 border-white/10 hover:border-white/20 hover:text-white',
+                            ].join(' ')}
+                            title="Reset all decisions to 'Skip'"
+                        >
+                            Clear All
+                        </button>
                         {currentPreset === 'custom' && (
-                            <span className="text-[10px] text-orange-400 italic px-2">Custom — drag to resolve</span>
+                            <span className="text-[10px] text-orange-400 italic px-2">Custom / Cleared</span>
                         )}
                     </div>
                     <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none hover:text-white">
