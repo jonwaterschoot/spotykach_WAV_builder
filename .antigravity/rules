@@ -1,0 +1,7 @@
+# Spotykach Rules - Executive Mode
+
+## Interaction Style
+
+## Workflow Optimization
+- **No Browser/Verfication:** Do not use the integrated browser to test UI. I handle manual verification.
+- **Complexity Threshold:** If a task involves major architectural changes (e.g., changing global state or audio engine structure), ask for a 1-sentence confirmation of the approach *before* writing the code.

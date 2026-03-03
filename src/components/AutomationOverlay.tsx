@@ -15,6 +15,7 @@ interface AutomationOverlayProps {
     onPointsChange: (points: AutomationPoint[]) => void;
     onSeek: (time: number) => void;
     smooth?: boolean;
+    active?: boolean;
 }
 
 export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
@@ -24,8 +25,10 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     height,
     onPointsChange,
     onSeek,
-    smooth = false
+    smooth = false,
+    active = true
 }) => {
+    if (!active) return null;
     const svgRef = useRef<SVGSVGElement>(null);
     const [draggingPointId, setDraggingPointId] = useState<string | null>(null);
     const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null);
@@ -36,9 +39,6 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     // Store initial state for group dragging
     const initialPointsRef = useRef<AutomationPoint[]>([]);
 
-    const PADDING_PERCENT = 0.2;
-    const WORKABLE_PERCENT = 0.6;
-
     const COLOR_MAIN = "#FF5500";
     const COLOR_SELECTED = "#CC4400";
     const COLOR_SEGMENT = "#FF5500";
@@ -48,18 +48,18 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     const timeToX = (time: number) => (time / duration) * width;
     const xToTime = (x: number) => (x / width) * duration;
 
-    const paddingPx = height * PADDING_PERCENT;
-    const workableHeight = height * WORKABLE_PERCENT;
+    // UNIPOLAR coordinate system (Bottom = Silence, Top = +12dB)
+    const MAX_GAIN_VAL = 3.981; // +12dB
 
     const valueToY = (val: number) => {
-        const normalized = val / 2.0;
-        return (height - paddingPx) - (normalized * workableHeight);
+        // val=0 is silence (bottom), val=MAX_GAIN_VAL is +12dB (top)
+        return height - (val / MAX_GAIN_VAL) * height;
     };
 
     const yToValue = (y: number) => {
-        const relativeY = (height - paddingPx) - y;
-        const normalized = relativeY / workableHeight;
-        return Math.max(0, Math.min(2.0, normalized * 2.0));
+        // Inverse of above
+        const val = ((height - y) / height) * MAX_GAIN_VAL;
+        return Math.max(0, Math.min(MAX_GAIN_VAL, val));
     };
 
     const sortedPoints = [...points].sort((a, b) => a.time - b.time);
@@ -84,12 +84,12 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                     const dy = y - dragStart.y;
 
                     const dt = xToTime(dx);
-                    const dVal = - (dy / workableHeight) * 2.0;
+                    const dVal = - (dy / height) * MAX_GAIN_VAL;
 
                     const newPoints = initialPointsRef.current.map(initialPoint => {
                         if (initialPoint.selected) {
                             let newTime = Math.max(0, Math.min(duration, initialPoint.time + dt));
-                            let newValue = Math.max(0, Math.min(2.0, initialPoint.value + dVal));
+                            let newValue = Math.max(0, Math.min(MAX_GAIN_VAL, initialPoint.value + dVal));
 
                             // Snap to other points (Merging)
                             const SNAP_THRESHOLD_PX = 10;
@@ -201,7 +201,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
             window.removeEventListener('mousemove', handleGlobalMove);
             window.removeEventListener('mouseup', handleGlobalUp);
         };
-    }, [dragStart, isDragging, draggingPointId, selectionBox, points, duration, width, height, workableHeight, onPointsChange, onSeek]);
+    }, [dragStart, isDragging, draggingPointId, selectionBox, points, duration, width, height, onPointsChange, onSeek, MAX_GAIN_VAL]);
 
 
     // Keyboard Nudge logic preserved...
@@ -235,7 +235,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                         return {
                             ...p,
                             time: Math.max(0, Math.min(duration, p.time + dTime)),
-                            value: Math.max(0, Math.min(2.0, p.value + dValue))
+                            value: Math.max(0, Math.min(MAX_GAIN_VAL, p.value + dValue))
                         };
                     }
                     return p;
@@ -252,9 +252,6 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         const rect = svgRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-
-        const relY = y / height;
-        if (relY < PADDING_PERCENT || relY > (1 - PADDING_PERCENT)) return;
 
         if (!e.shiftKey) {
             onPointsChange(points.map(p => ({ ...p, selected: false })));
@@ -324,9 +321,6 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         const rect = svgRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-
-        const relY = y / height;
-        if (relY < PADDING_PERCENT || relY > (1 - PADDING_PERCENT)) return;
 
         const t = xToTime(x);
         const val = yToValue(y);
@@ -460,82 +454,108 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     };
 
     return (
-        <svg
-            ref={svgRef}
-            width={width}
-            height={height}
-            className="absolute top-0 left-0 z-20 overflow-visible"
-            onDoubleClick={handleDoubleClick}
-            // Global listeners handle moves/ups. We just need MouseDown.
-            onMouseDown={handleMouseDown}
-            style={{
-                pointerEvents: 'none',
-                userSelect: 'none'
-            }}
-        >
-            <defs>
-                <clipPath id="workable-clip">
-                    <rect x="0" y={height * PADDING_PERCENT} width={width} height={height * (1 - 2 * PADDING_PERCENT)} />
-                </clipPath>
-            </defs>
-
-            <rect
-                x={0}
-                y={height * PADDING_PERCENT}
+        <div className="absolute inset-0 pointer-events-none">
+            <svg
+                ref={svgRef}
                 width={width}
-                height={height * (1 - 2 * PADDING_PERCENT)}
-                fill="transparent"
-                style={{ pointerEvents: 'all' }}
-            />
-
-            <line
-                x1="0" y1={valueToY(1.0)}
-                x2={width} y2={valueToY(1.0)}
-                stroke="rgba(255,255,255,0.2)"
-                strokeDasharray="4 4"
-                strokeWidth="1"
-                pointerEvents="none"
-            />
-
-            <g style={{ pointerEvents: 'all' }}>
-                {renderLines()}
-            </g>
-
-            <g style={{ pointerEvents: 'all' }}>
-                {points.map(p => (
-                    <g key={p.id} transform={`translate(${timeToX(p.time)}, ${valueToY(p.value)})`}>
-                        <circle
-                            r="12"
-                            fill="transparent"
-                            onMouseDown={(e) => handlePointMouseDown(e, p.id)}
-                            className="cursor-pointer"
-                        />
-                        <circle
-                            r={p.selected ? 6 : 4}
-                            fill={p.selected ? "#FFFFFF" : COLOR_MAIN} // White center if selected (Or just white fill with colored stroke?) "I liked the white center"
-                            // If selected: Fill White, Stroke Dark Orange
-                            // If normal: Fill Orange, Stroke None
-                            stroke={p.selected ? COLOR_SELECTED : "transparent"}
-                            strokeWidth={p.selected ? "3" : "0"}
-                            pointerEvents="none"
-                        />
-                    </g>
-                ))}
-            </g>
-
-            {/* Selection Box */}
-            {selectionBox && (
+                height={height}
+                className="absolute top-0 left-0 z-20"
+                onDoubleClick={handleDoubleClick}
+                onMouseDown={handleMouseDown}
+                style={{
+                    pointerEvents: 'none',
+                    userSelect: 'none'
+                }}
+            >
                 <rect
-                    x={selectionBox.x}
-                    y={selectionBox.y}
-                    width={selectionBox.w}
-                    height={selectionBox.h}
-                    fill={`${COLOR_MAIN}20`}
-                    stroke={`${COLOR_MAIN}80`}
-                    strokeDasharray="2 2"
+                    x={0}
+                    y={0}
+                    width={width}
+                    height={height}
+                    fill="transparent"
+                    style={{ pointerEvents: 'all' }}
+                />
+
+                <line
+                    x1="0" y1={valueToY(1.0)}
+                    x2={width} y2={valueToY(1.0)}
+                    stroke="rgba(255,255,255,0.4)"
+                    strokeDasharray="4 4"
+                    strokeWidth="1.5"
                     pointerEvents="none"
                 />
-            )}
-        </svg>
+
+                <g style={{ pointerEvents: 'all' }}>
+                    {renderLines()}
+                </g>
+
+                <g style={{ pointerEvents: 'all' }}>
+                    {points.map(p => (
+                        <g key={p.id} transform={`translate(${timeToX(p.time)}, ${valueToY(p.value)})`}>
+                            <circle
+                                r="12"
+                                fill="transparent"
+                                onMouseDown={(e) => handlePointMouseDown(e, p.id)}
+                                className="cursor-pointer"
+                            />
+                            <circle
+                                r={p.selected ? 6 : 4}
+                                fill={p.selected ? "#FFFFFF" : COLOR_MAIN}
+                                stroke={p.selected ? COLOR_SELECTED : "transparent"}
+                                strokeWidth={p.selected ? "3" : "0"}
+                                pointerEvents="none"
+                            />
+                        </g>
+                    ))}
+                </g>
+
+                {/* Selection Box */}
+                {selectionBox && (
+                    <rect
+                        x={selectionBox.x}
+                        y={selectionBox.y}
+                        width={selectionBox.w}
+                        height={selectionBox.h}
+                        fill={`${COLOR_MAIN}20`}
+                        stroke={`${COLOR_MAIN}80`}
+                        strokeDasharray="2 2"
+                        pointerEvents="none"
+                    />
+                )}
+            </svg>
+
+            {/* Sticky dB Labels Overlay */}
+            <div
+                className="sticky left-0 top-0 h-full z-50 pointer-events-none overflow-visible"
+                style={{ width: 0 }}
+            >
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex flex-col pointer-events-none">
+                    {[
+                        { db: 12, val: 3.981, label: '+12' },
+                        { db: 9, val: 2.818, label: '+9' },
+                        { db: 6, val: 1.995, label: '+6' },
+                        { db: 3, val: 1.413, label: '+3' },
+                        { db: 0, val: 1.0, label: '0dB', highlight: true },
+                        { db: -6, val: 0.501, label: '-6' },
+                        { db: -12, val: 0.251, label: '-12' },
+                        { db: -Infinity, val: 0, label: '-inf' }
+                    ].map((tick) => {
+                        const y = valueToY(tick.val);
+                        // Center label relative to its line position
+                        // For +12dB at y=0, we push it down 1px to avoid clipping
+                        const offset = tick.val === 3.981 ? 1 : -6;
+                        return (
+                            <div
+                                key={tick.label}
+                                className={`absolute left-0 px-1 py-0 rounded-r bg-black/60 text-[9px] font-bold font-mono whitespace-nowrap select-none border-l border-white/10 ${tick.highlight ? 'text-synthux-orange border-l-synthux-orange z-10' : 'text-white/80'}`}
+                                style={{ top: y + offset }}
+                            >
+                                {tick.label}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
     );
 };

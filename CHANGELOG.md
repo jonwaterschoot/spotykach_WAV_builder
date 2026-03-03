@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.0.0] - 2026-03-03
+
+### Added
+- **Major Waveform Editor Overhaul**: All tools are now consolidated into a single bar with contextual options appearing below. Resetting is now handled on a per-tool level.
+- **New Tools**:
+    - **EQ**: Basic 3-band 12dB controls with an advanced modal popup featuring 10-band 24dB precision.
+    - **Limiter**: Toggle between **Auto** (basic upwards compression) and **Peak** (hard limiter with draggable waveform threshold).
+    - **Cutter**: Erase audio segments by double-clicking to add regions, with 0-100ms fades to prevent clicks.
+    - **Slicer**: Add up to 32 slice CUE points (Note: Implementation on Spotykach hardware pending).
+    - **Stereo**: Split-view for stereo files with color-coded superimposed mode to visualize L/R differences.
+- **Updated Tools**:
+    - **Trim / Fades**: Enhanced precision for start/end points with automatic 42s limit logic and custom fade curves.
+    - **Loop**: Create perfect loops with custom crossfades (includes logic to shorten result for seamless playback).
+    - **Automation (Volume)**: Manual volume tweaking with optional normalization and a new visual dB scale guide.
+    - **Normalize**: Added level selection options.
+
 ## [2.3.0] - 2026-02-28
 
 ### Added
