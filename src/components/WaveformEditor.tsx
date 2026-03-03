@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music } from 'lucide-react';
+import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
 import { v4 as uuidv4 } from 'uuid';
@@ -11,6 +12,13 @@ import { ConfirmModal } from './ConfirmModal';
 import { AutomationOverlay } from './AutomationOverlay';
 import type { AutomationPoint } from './AutomationOverlay';
 import { PlayheadRuler } from './PlayheadRuler';
+import CutterOverlay from './CutterOverlay';
+import type { CutRegion } from './CutterOverlay';
+import SlicerOverlay from './SlicerOverlay';
+import PitchOverlay from './PitchOverlay';
+import type { PitchRegion } from './PitchOverlay';
+import { DbScale } from './DbScale';
+import { LimiterOverlay } from './LimiterOverlay';
 
 // Fade Overlay Component
 interface FadeOverlayProps {
@@ -21,10 +29,11 @@ interface FadeOverlayProps {
     duration: number;
     region: { start: number, end: number };
     onFadeChange?: (type: 'in' | 'out', duration: number) => void;
+    active?: boolean;
     onRegionChange?: (start: number, end: number) => void;
 }
 
-const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, onFadeChange, onRegionChange }: FadeOverlayProps) => {
+const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active = true, onFadeChange, onRegionChange }: FadeOverlayProps) => {
     if (duration <= 0) return null;
 
     const pxPerSec = width / duration;
@@ -50,6 +59,7 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, onFadeC
     const svgRef = useRef<SVGSVGElement>(null);
 
     const handlePointerDown = (type: 'in' | 'out' | 'move' | 'resize-start' | 'resize-end', e: React.PointerEvent) => {
+        if (!active) return;
         e.preventDefault();
         e.stopPropagation();
         setDragging(type);
@@ -355,7 +365,7 @@ interface WaveformEditorProps {
     versions: AudioVersion[];
     activeVersionId: string;
     onClose: () => void;
-    onSave: (blob: Blob, duration: number, description: string, isDirty: boolean, processing?: ('normalized' | 'trimmed' | 'looped')[]) => void;
+    onSave: (blob: Blob, duration: number, description: string, isDirty: boolean, processing?: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[]) => void;
     onSaveAsCopy: (blob: Blob, duration: number, createdId: string) => void;
     onDeleteVersion?: (versionId: string) => void;
     onAssignVersion?: (versionId: string) => void;
@@ -374,16 +384,16 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const regions = useRef<any>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [zoom, setZoom] = useState(10);
+    const [vZoom, setVZoom] = useState(1); // Vertical Zoom (Visual Gain)
     const [fadeIn, setFadeIn] = useState(0);
     const [fadeOut, setFadeOut] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
     const [loopCrossfade, setLoopCrossfade] = useState(0.2); // Default 0.2s
-    const [showLoopPanel, setShowLoopPanel] = useState(false);
     // Notification State
-    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' | 'warning' } | null>(null);
     const notificationTimeout = useRef<NodeJS.Timeout | null>(null);
 
-    const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
         if (notificationTimeout.current) clearTimeout(notificationTimeout.current);
         setNotification({ message, type });
         notificationTimeout.current = setTimeout(() => {
@@ -392,6 +402,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     };
     const [isProcessing, setIsProcessing] = useState(false);
     const [helpText, setHelpText] = useState("");
+    const [showDbScale, setShowDbScale] = useState(true);
+    const [viewportWidth, setViewportWidth] = useState(0);
 
     // Dirty State & Version Management
     const [isDirty, setIsDirty] = useState(false);
@@ -419,12 +431,79 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // Normalization & Processing State
     const [hasNormalized, setHasNormalized] = useState(false);
+    const [normalizationLevel, setNormalizationLevel] = useState<number>(-1);
     const [hasTrimmed, setHasTrimmed] = useState(false);
 
     // Automation State (New)
     const [automationPoints, setAutomationPoints] = useState<AutomationPoint[]>([]);
     const [smooth, setSmooth] = useState(false);
-    const [showAutomationPanel, setShowAutomationPanel] = useState(false);
+
+    // EQ State
+    const [eqLow, setEqLow] = useState(0);
+    const [eqMid, setEqMid] = useState(0);
+    const [eqHigh, setEqHigh] = useState(0);
+    const [isAdvancedEQ, setIsAdvancedEQ] = useState(false);
+    const [advancedEQBands, setAdvancedEQBands] = useState<number[]>(new Array(10).fill(0));
+    const [showAdvancedEQModal, setShowAdvancedEQModal] = useState(false);
+    const [advancedEQPos, setAdvancedEQPos] = useState({ x: 20, y: 100 });
+    const [draggingSliderIdx, setDraggingSliderIdx] = useState<number | null>(null);
+    const [eqNormalize, setEqNormalize] = useState(false);
+    const [automationNormalize, setAutomationNormalize] = useState(false);
+    const ADVANCED_EQ_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    const [isPreviewingEQ, setIsPreviewingEQ] = useState(false);
+
+    const [limiterCeiling, setLimiterCeiling] = useState(-0.3);
+    const [limiterThreshold, setLimiterThreshold] = useState(-6);
+    const [limiterMode, setLimiterMode] = useState<'compressor' | 'peak'>('compressor');
+    const [isPreviewingLimiter, setIsPreviewingLimiter] = useState(false);
+
+    // Cutter State
+    const [cutRegions, setCutRegions] = useState<CutRegion[]>([]);
+    const [cutCrossfade, setCutCrossfade] = useState(0.01);
+    const [isPreviewingCut, setIsPreviewingCut] = useState(false);
+
+    // Pitch State
+    const [pitchSemitones, setPitchSemitones] = useState(0);
+    const [detectedPitch, setDetectedPitch] = useState<number | null>(null);
+    const [pitchRegions, setPitchRegions] = useState<PitchRegion[]>([]);
+    const [previewPitchRegions, setPreviewPitchRegions] = useState<PitchRegion[]>([]);
+    const [previewDuration, setPreviewDuration] = useState<number | null>(null);
+    const lastSelectedPitchId = useRef<string | null>(null);
+    const prevPitchRegionsRef = useRef<PitchRegion[]>([]);
+    const [slicePoints, setSlicePoints] = useState<number[]>([]);
+
+    // Active Tool (for toolbar UI — only one expanded at a time)
+    type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | null;
+    const [activeTool, setActiveTool] = useState<ToolId>('trim');
+    const [stereoSplitView, setStereoSplitView] = useState(false);
+
+
+    // Sync individual show states with activeTool
+    const toggleTool = (tool: ToolId) => {
+        const next = activeTool === tool ? null : tool;
+        setActiveTool(next);
+
+        // Auto-create automation points when toggling on
+        if (next === 'automation' && automationPoints.length === 0) {
+            setAutomationPoints([
+                { id: 'start', time: 0, value: 1, selected: false },
+                { id: 'end', time: editorDuration, value: 1, selected: false }
+            ]);
+        }
+
+        // Auto-create 15% middle selection for Pitch Tool
+        if (next === 'pitch' && pitchRegions.length === 0 && editorDuration > 0) {
+            const start = editorDuration * 0.425; // Middle 15% (0.5 - 0.075)
+            const end = editorDuration * 0.575;
+            setPitchRegions([{
+                id: `pitch-init`,
+                start,
+                end,
+                semitones: 0,
+                selected: true
+            }]);
+        }
+    };
 
 
     // Playhead Seeking State
@@ -435,7 +514,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     // const [volumeGain, setVolumeGain] = useState(0); 
 
     // UI States
-    const [showResetConfirm, setShowResetConfirm] = useState(false);
+
     const [selectedVersionIds, setSelectedVersionIds] = useState<Set<string>>(new Set());
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showMoveConfirm, setShowMoveConfirm] = useState(false);
@@ -500,7 +579,15 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             setHasNormalized(false);
             setHasTrimmed(false);
         }
-        // Region is reset in initEditor
+
+        // Clear tool states on blob change
+        setPitchRegions([]);
+        setPreviewPitchRegions([]);
+        setIsPreviewing(false);
+        setPreviewDuration(null);
+        setSlicePoints([]);
+        setCutRegions([]);
+        setAutomationPoints([]);
     }, [currentBlob, loadedVersionId, versions]);
 
     // If slot.blob changes from parent (e.g. external update?), sync it.
@@ -517,14 +604,97 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     }, [activeVersionId]);
 
+    // Robust Trim Region Visibility Sync
+    useEffect(() => {
+        if (regions.current) {
+            const list = regions.current.getRegions();
+            const r = list.find((reg: any) => reg.id === 'trim-region');
+            if (r) {
+                if (activeTool === 'trim') {
+                    r.setOptions({
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        resize: true,
+                        drag: true,
+                        loop: isLooping // Restore region loop if tool active
+                    });
+                } else {
+                    r.setOptions({
+                        color: 'transparent',
+                        resize: false,
+                        drag: false,
+                        loop: false // Disable region loop when switching tools
+                    });
+                }
+            }
+        }
+    }, [activeTool, editorDuration, isLooping]);
+
     useEffect(() => {
         if (wavesurfer.current) {
             wavesurfer.current.zoom(zoom);
         }
     }, [zoom]);
 
+    useEffect(() => {
+        if (wavesurfer.current) {
+            wavesurfer.current.setOptions({ barHeight: vZoom });
+        }
+    }, [vZoom]);
+
+    useEffect(() => {
+        if (wavesurfer.current) {
+            const isStereo = (originalBuffer?.numberOfChannels || 0) > 1;
+            const inStereoTool = activeTool === 'stereo';
+
+            if (inStereoTool && isStereo) {
+                const options = [
+                    { waveColor: 'rgba(0, 163, 255, 0.5)', progressColor: '#00A3FF', overlay: !stereoSplitView }, // L - Blue
+                    { waveColor: 'rgba(255, 185, 0, 0.5)', progressColor: '#FFB900', overlay: !stereoSplitView }  // R - Yellow
+                ];
+                wavesurfer.current.setOptions({ splitChannels: options as any });
+            } else {
+                wavesurfer.current.setOptions({
+                    splitChannels: false as any,
+                    waveColor: 'rgba(255, 185, 0, 0.5)',
+                    progressColor: '#FFDF9B'
+                });
+            }
+        }
+    }, [activeTool, stereoSplitView, originalBuffer]);
+
+
+    // Handle container resize to update minZoom and potentially adjust current zoom
+    useEffect(() => {
+        if (!scrollContainerRef.current) return;
+
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry && editorDuration > 0) {
+                const newWidth = entry.contentRect.width;
+                const newFitZoom = newWidth / editorDuration;
+
+                setMinZoom(newFitZoom);
+                setViewportWidth(newWidth);
+
+                // If we were at "Fit View" (using old minZoom), sync with the new one
+                setZoom(prevZoom => {
+                    // Check if current zoom is within 5% of previous minZoom to assume it was "fitted"
+                    const wasFitted = Math.abs(prevZoom - minZoom) < (minZoom * 0.05);
+                    if (wasFitted || prevZoom < newFitZoom) {
+                        return newFitZoom;
+                    }
+                    return prevZoom;
+                });
+            }
+        });
+
+        observer.observe(scrollContainerRef.current);
+        return () => observer.disconnect();
+    }, [editorDuration, minZoom]);
+
     // Refs for state accessible in event listeners
     const isLoopingRef = useRef(false);
+    const activeToolRef = useRef<ToolId>(activeTool);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     const regionsRef = useRef<any>(null); // Keep track of regions plugin
 
@@ -533,6 +703,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         isLoopingRef.current = isLooping;
     }, [isLooping]);
 
+    useEffect(() => {
+        activeToolRef.current = activeTool;
+    }, [activeTool]);
+
     const initEditor = async () => {
         if (!containerRef.current || !currentBlob || !isMounted.current) return;
 
@@ -540,6 +714,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (wavesurfer.current) {
             wavesurfer.current.destroy();
             wavesurfer.current = null;
+            setIsPlaying(false);
         }
 
         try {
@@ -547,7 +722,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             const ws = WaveSurfer.create({
                 container: containerRef.current,
-                waveColor: '#ffb900',
+                waveColor: 'rgba(255, 185, 0, 0.5)', // More transparent yellow
                 progressColor: '#FFDF9B',
                 url: blobUrl,
                 height: 256,
@@ -555,7 +730,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 interact: true,
                 dragToSeek: true, // Allow seeking on drag, disable region creation via dragging
                 autoScroll: false,
+                hideScrollbar: true,
+                barHeight: vZoom,
+                splitChannels: (activeTool === 'stereo' && (originalBuffer?.numberOfChannels || 0) > 1) ? [
+                    { waveColor: 'rgba(0, 163, 255, 0.5)', progressColor: '#00A3FF', overlay: !stereoSplitView },
+                    { waveColor: 'rgba(255, 185, 0, 0.5)', progressColor: '#FFB900', overlay: !stereoSplitView }
+                ] as any : false,
             });
+
 
             wavesurfer.current = ws;
             wavesurferRef.current = ws;
@@ -581,9 +763,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 setEditorDuration(duration);
 
                 // Auto-Fit Initial Zoom
-                if (containerRef.current) {
-                    const width = containerRef.current.clientWidth;
-                    const fitZoom = width / duration;
+                if (scrollContainerRef.current) {
+                    const width = scrollContainerRef.current.clientWidth;
+                    const fitZoom = (width - 16) / duration;
                     setMinZoom(fitZoom);
                     setZoom(fitZoom);
                     ws.zoom(fitZoom);
@@ -636,6 +818,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // Clear selection on background click (handled by interaction handler below or WaveSurfer default?)
             // WaveSurfer default interaction handles seek.
             // We need to listen to 'interaction' to clear volume selection if strictly outside.
+            // Implementation: If we start a new region drag, 'region-created' fires.
             ws.on('interaction', () => {
                 // If we just clicked (not dragged), we might want to clear selection?
                 // Actually, dragging creates a region. Clicking moves playhead.
@@ -643,7 +826,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 // Let's rely on manual "Cancel" or creating a new one for now to be safe.
                 // But user said: "just clicking in the waveform changes the playhead position."
                 // So we should probably clear selection if they click away.
-                // Implementation: If we start a new region drag, 'region-created' fires.
             });
 
             wsRegions.on('region-created', (r: any) => {
@@ -656,7 +838,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             // GAPLESS LOOPING: Trigger immediately when leaving the region
             wsRegions.on('region-out', (r: any) => {
-                if (r.id === 'trim-region' && isLoopingRef.current && isMounted.current) {
+                // Only force loop to region start if TRIM TOOL is active
+                if (r.id === 'trim-region' && isLoopingRef.current && isMounted.current && activeToolRef.current === 'trim') {
                     // Force seek to start and play range for gapless loop
                     ws.play(r.start, r.end);
                 }
@@ -677,9 +860,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // FINISH HANDLER: Check if we need to loop (Edge case where region ends at file end)
             ws.on('finish', () => {
                 if (isLoopingRef.current && isMounted.current) {
-                    // Find active region and restart
-                    if (regionsRef.current) {
-                        // Find trim region specifically
+                    // If TRIM tool is active, loop the region
+                    if (activeToolRef.current === 'trim' && regionsRef.current) {
                         const list = regionsRef.current.getRegions();
                         const trimRegion = list.find((r: any) => r.id === 'trim-region');
 
@@ -688,8 +870,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             return;
                         }
                     }
-                    // Fallback for full file loop
-                    ws.play();
+                    // Otherwise (or fallback), loop full file
+                    ws.play(0);
                 } else if (isMounted.current) {
                     setIsPlaying(false);
                 }
@@ -771,7 +953,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // Auto-Loop Switch Logic
     useEffect(() => {
-        if (showLoopPanel && !isLooping) {
+        if (activeTool === 'loop' && !isLooping) {
             setIsLooping(true);
             if (regions.current) {
                 const list = regions.current.getRegions();
@@ -780,7 +962,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 }
             }
         }
-    }, [showLoopPanel]);
+    }, [activeTool]);
 
 
     // Keyboard shortcuts
@@ -799,23 +981,49 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // Zoom Handlers
     // Zoom Handlers
-    const setZoomCentered = (newZoom: number, time?: number) => {
-        // Enforce minZoom
+    const setZoomCentered = (newZoom: number, targetPx?: number) => {
+        if (!scrollContainerRef.current || !wavesurfer.current) return;
+
         const clampedZoom = Math.max(newZoom, minZoom);
+        const oldZoom = zoom;
+        const scrollContainer = scrollContainerRef.current;
+        const viewportWidth = scrollContainer.clientWidth;
+
+        // Determine the point we want to keep fixed in the viewport
+        // targetPx is the absolute pixel position across the whole contentWidth
+        let fixedAbsPx: number;
+        if (targetPx !== undefined) {
+            fixedAbsPx = targetPx;
+        } else {
+            // Default: center of the current viewport
+            fixedAbsPx = scrollContainer.scrollLeft + (viewportWidth / 2);
+            // If playhead is visible, maybe center on playhead instead?
+            // Actually, centering on viewport is more standard for slider zoom.
+            const playheadPx = wavesurfer.current.getCurrentTime() * oldZoom;
+            const isPlayheadVisible = playheadPx >= scrollContainer.scrollLeft && playheadPx <= (scrollContainer.scrollLeft + viewportWidth);
+            if (isPlayheadVisible) {
+                fixedAbsPx = playheadPx;
+            }
+        }
+
+        // Calculate where that fixed point is relative to the viewport left edge
+        const viewportRelativeOffset = fixedAbsPx - scrollContainer.scrollLeft;
+
+        // Apply new zoom
         setZoom(clampedZoom);
 
-        // Scroll to keep playhead centered
-        if (wavesurfer.current && scrollContainerRef.current && containerRef.current) {
-            const targetTime = time !== undefined ? time : wavesurfer.current.getCurrentTime();
-            const viewportWidth = scrollContainerRef.current.clientWidth;
-            const newScroll = (targetTime * clampedZoom) - (viewportWidth / 2);
+        // Calculate new absolute pixel position for the same time point
+        const timeAtFixedPoint = fixedAbsPx / oldZoom;
+        const newAbsPx = timeAtFixedPoint * clampedZoom;
 
-            // We need to wait for layout update since contentWidth depends on zoom
-            requestAnimationFrame(() => {
-                if (scrollContainerRef.current)
-                    scrollContainerRef.current.scrollLeft = Math.max(0, newScroll);
-            });
-        }
+        // Adjust scroll to keep the relative offset the same
+        const newScrollLeft = newAbsPx - viewportRelativeOffset;
+
+        requestAnimationFrame(() => {
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollLeft = Math.max(0, newScrollLeft);
+            }
+        });
     };
 
     const handleZoomIn = () => setZoomCentered(Math.min(zoom * 1.25, 500));
@@ -824,9 +1032,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const handleFitView = () => {
         if (!scrollContainerRef.current || !editorDuration) return;
         const width = scrollContainerRef.current.clientWidth;
-        // Fit all: zoom = width / duration
-        const fitZoom = width / editorDuration;
-        // Ensure we update minZoom just in case (e.g. resize)
+        // Fit all: zoom = width / editorDuration
+        const fitZoom = (width - 16) / editorDuration; // -16 for px-2 padding
         setMinZoom(fitZoom);
         setZoom(fitZoom);
         // Scroll to 0
@@ -839,9 +1046,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         const regionDuration = regionState.end - regionState.start;
         if (regionDuration <= 0) return;
 
-        // Add margin (90% width usage = 5% margin aside)
+        // Add margin (90% usable width = 5% margin aside)
         // This ensures the region is comfortably visible
-        const safeWidth = width * 0.9;
+        const safeWidth = (width - 16) * 0.9;
         const newZoom = safeWidth / regionDuration;
 
         const finalZoom = Math.max(newZoom, minZoom);
@@ -866,10 +1073,17 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const factor = 1.1;
 
             let newZoom = zoom;
-            if (delta > 0) newZoom = Math.min(zoom * factor, 500);
+            if (delta > 0) newZoom = Math.min(zoom * factor, 1200); // Increased max zoom
             else newZoom = Math.max(zoom / factor, minZoom);
 
-            setZoomCentered(newZoom);
+            if (scrollContainerRef.current) {
+                const rect = scrollContainerRef.current.getBoundingClientRect();
+                const mouseIdx = e.clientX - rect.left;
+                const absolutePx = scrollContainerRef.current.scrollLeft + mouseIdx;
+                setZoomCentered(newZoom, absolutePx);
+            } else {
+                setZoomCentered(newZoom);
+            }
         }
     };
 
@@ -880,88 +1094,27 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             wavesurfer.current.pause();
         } else {
             const regionList = regions.current?.getRegions();
-            if (regionList && regionList.length > 0) {
-                const region = regionList[0];
+            const trimRegion = regionList?.find((r: any) => r.id === 'trim-region');
+
+            // Only bind playback to trim region if the TRIM TOOL is active
+            if (activeTool === 'trim' && trimRegion) {
                 const currentTime = wavesurfer.current.getCurrentTime();
-                const tolerance = 0.05; // 50ms tolerance for "at end"
+                const tolerance = 0.05;
 
-                // Ensure we play within the region bounds.
-                // region.play() plays from start to end. 
-                // ws.play(start, end) plays range.
-
-                // 1. If at the end (or past), jump to start
-                if (currentTime >= region.end - tolerance) {
-                    wavesurfer.current.play(region.start, region.end);
+                if (currentTime >= trimRegion.end - tolerance) {
+                    wavesurfer.current.play(trimRegion.start, trimRegion.end);
                 }
-                // 2. If inside, resume from current pos to end
-                else if (currentTime >= region.start && currentTime < region.end) {
-                    wavesurfer.current.play(currentTime, region.end);
+                else if (currentTime >= trimRegion.start && currentTime < trimRegion.end) {
+                    wavesurfer.current.play(currentTime, trimRegion.end);
                 }
-                // 3. If before, jump to start
                 else {
-                    wavesurfer.current.play(region.start, region.end);
+                    wavesurfer.current.play(trimRegion.start, trimRegion.end);
                 }
             } else {
+                // Regular playback (full file)
                 wavesurfer.current.play();
             }
         }
-    };
-
-    // Helper: Add Smart Point
-    const addSmartPoint = () => {
-        if (!editorDuration) return;
-
-        const points = [...automationPoints].sort((a, b) => a.time - b.time);
-        const selected = points.filter(p => p.selected);
-        let newTime = currentTime; // Default fallback
-        let newVal = 1.0;
-
-        if (selected.length === 2) {
-            // 1. Middle of selected segment
-            newTime = (selected[0].time + selected[1].time) / 2;
-            newVal = (selected[0].value + selected[1].value) / 2;
-        } else if (selected.length === 1) {
-            // 2. Middle of segment to the RIGHT
-            const idx = points.findIndex(p => p.id === selected[0].id);
-            if (idx !== -1 && idx < points.length - 1) {
-                const next = points[idx + 1];
-                newTime = (selected[0].time + next.time) / 2;
-                newVal = (selected[0].value + next.value) / 2;
-            } else {
-                // No point to right, add halfway to end?
-                newTime = (selected[0].time + editorDuration) / 2;
-                newVal = selected[0].value;
-            }
-        } else if (points.length > 0) {
-            // 3. No selection: Middle of first segment (or start->first)
-            if (points[0].time > 0) {
-                newTime = points[0].time / 2;
-                newVal = points[0].value;
-            } else if (points.length > 1) {
-                newTime = (points[0].time + points[1].time) / 2;
-                newVal = (points[0].value + points[1].value) / 2;
-            } else {
-                newTime = (points[0].time + editorDuration) / 2;
-            }
-        } else {
-            // Empty: Add at playhead
-            newTime = currentTime;
-        }
-
-        // Clamp
-        newTime = Math.max(0, Math.min(editorDuration, newTime));
-
-        const newPoint = {
-            id: Math.random().toString(36).substr(2, 9),
-            time: newTime,
-            value: newVal,
-            selected: true
-        };
-
-        // Deselect others
-        const newPts = points.map(p => ({ ...p, selected: false })).concat(newPoint);
-        setAutomationPoints(newPts);
-        handleDirtyChange();
     };
 
     // Automation Handlers
@@ -969,26 +1122,21 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (!originalBuffer || automationPoints.length === 0) return;
         setIsProcessing(true);
         try {
-            // 1. Apply Envelope to the FULL buffer (or we should trim first? No, logic is Apply -> Trim usually, but handleSave does Apply -> Trim)
-            // But if we "Apply" here, we are "Baking it in".
-            // Let's Bake it into the original buffer? Or create new version?
-            // "Apply" implies committing. 
-            // Logic in handleSave: processed = applyEnvelope(original).
+            let processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
 
-            // So here:
-            const processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
-            // Verify: Should we also trim/fade if those are set?
-            // User wants to "Apply Automation". Usually this means "Render loudness" but keep the region?
-            // If we save as new version, we just save the processed buffer.
+            if (automationNormalize) {
+                processed = await audioProcessor.normalize(processed);
+            }
 
             const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
             const newBlob = encodeWAV(processed, meta);
             onSave(newBlob, processed.duration, "Automation Applied", true, ['normalized']);
 
-            // Reset points
-            setAutomationPoints([]);
-            setShowAutomationPanel(false);
-            showToast("Automation Applied!", "success");
+            setAutomationPoints([
+                { id: 'start', time: 0, value: 1, selected: false },
+                { id: 'end', time: editorDuration, value: 1, selected: false }
+            ]);
+            showToast("Automation Reset", "success");
         } catch (e) {
             console.error(e);
             showToast("Failed to apply automation", "error");
@@ -997,27 +1145,493 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
-    const handleStopPreview = async () => {
-        if (!wavesurfer.current || !currentBlob) return;
+    // EQ Handlers
+    const handlePreviewEQ = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
         try {
-            await wavesurfer.current.loadBlob(currentBlob);
-            setIsPreviewing(false);
+            setIsProcessing(true);
+            let processed = isAdvancedEQ
+                ? await audioProcessor.applyAdvancedEQ(originalBuffer, ADVANCED_EQ_FREQS.map((f, i) => ({ freq: f, gain: advancedEQBands[i] })))
+                : await audioProcessor.applyEQ(originalBuffer, eqLow, eqMid, eqHigh);
+
+            if (eqNormalize) {
+                processed = await audioProcessor.normalize(processed);
+            }
+
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const newBlob = await audioProcessor.toWav(processed, meta);
+            if (wavesurfer.current) {
+                wavesurfer.current.pause();
+                await wavesurfer.current.loadBlob(newBlob);
+                wavesurfer.current.play();
+            }
+            setIsPreviewingEQ(true);
+            showToast("Previewing EQ...", "success");
         } catch (e) {
             console.error(e);
+            showToast("Failed to preview EQ", "error");
+        } finally {
+            setIsProcessing(false);
         }
+    };
+
+    const handleApplyEQ = async () => {
+        if (!originalBuffer) return;
+        const hasChanges = isAdvancedEQ
+            ? advancedEQBands.some(v => v !== 0)
+            : (eqLow !== 0 || eqMid !== 0 || eqHigh !== 0);
+
+        if (!hasChanges) {
+            showToast("No EQ changes to apply", "error");
+            return;
+        }
+        setIsProcessing(true);
+        try {
+            let processed = isAdvancedEQ
+                ? await audioProcessor.applyAdvancedEQ(originalBuffer, ADVANCED_EQ_FREQS.map((f, i) => ({ freq: f, gain: advancedEQBands[i] })))
+                : await audioProcessor.applyEQ(originalBuffer, eqLow, eqMid, eqHigh);
+
+            if (eqNormalize) {
+                processed = await audioProcessor.normalize(processed);
+            }
+
+            const desc = isAdvancedEQ
+                ? `Advanced EQ (10 bands)`
+                : `EQ (L:${eqLow > 0 ? '+' : ''}${eqLow} M:${eqMid > 0 ? '+' : ''}${eqMid} H:${eqHigh > 0 ? '+' : ''}${eqHigh})`;
+
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['eq' as const] };
+            const newBlob = encodeWAV(processed, meta);
+            onSave(newBlob, processed.duration, desc, true, ['eq']);
+
+            setEqLow(0); setEqMid(0); setEqHigh(0);
+            setAdvancedEQBands(new Array(10).fill(0));
+            setActiveTool(null);
+            setIsPreviewingEQ(false);
+            setHasNormalized(false);
+            showToast("EQ Applied!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to apply EQ", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+
+    const handleSliderPointerDown = (idx: number, e: React.PointerEvent) => {
+        setDraggingSliderIdx(idx);
+        (e.target as Element).setPointerCapture(e.pointerId);
+    };
+
+    const handleSliderPointerMove = (idx: number, e: React.PointerEvent) => {
+        if (draggingSliderIdx !== idx) return;
+
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const height = rect.height;
+
+        // Map Y position (0 to height) to dB (+24 to -24)
+        // Y=0 is +24dB, Y=height is -24dB
+        let rawVal = 24 - (y / height) * 48;
+        let val = Math.round(rawVal * 2) / 2; // Step 0.5
+        val = Math.max(-24, Math.min(24, val));
+
+        const newBands = [...advancedEQBands];
+        newBands[idx] = val;
+        setAdvancedEQBands(newBands);
+        handleDirtyChange();
+    };
+
+    const handleSliderPointerUp = () => {
+        setDraggingSliderIdx(null);
+    };
+
+    const handleResetEQ = () => {
+        setEqLow(0); setEqMid(0); setEqHigh(0);
+        setAdvancedEQBands(new Array(10).fill(0));
+        setIsAdvancedEQ(false);
+        setIsPreviewingEQ(false);
+        if (isPreviewingEQ && currentBlob && wavesurfer.current) {
+            setIsPlaying(false);
+            wavesurfer.current.loadBlob(currentBlob);
+        }
+    };
+
+    // Limiter Handlers
+    const handlePreviewLimiter = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
+        try {
+            setIsProcessing(true);
+            const processed = limiterMode === 'peak'
+                ? await audioProcessor.applyHardLimiter(originalBuffer, limiterThreshold)
+                : await audioProcessor.applyLimiter(originalBuffer, limiterCeiling, limiterThreshold);
+
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const newBlob = await audioProcessor.toWav(processed, meta);
+            if (wavesurfer.current) {
+                wavesurfer.current.pause();
+                await wavesurfer.current.loadBlob(newBlob);
+                wavesurfer.current.play();
+            }
+            setIsPreviewingLimiter(true);
+            showToast(`Previewing ${limiterMode === 'peak' ? 'Peak Limiter' : 'Limiter'}...`, "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to preview Limiter", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleApplyLimiter = async () => {
+        if (!originalBuffer) return;
+        setIsProcessing(true);
+        try {
+            const processed = limiterMode === 'peak'
+                ? await audioProcessor.applyHardLimiter(originalBuffer, limiterThreshold)
+                : await audioProcessor.applyLimiter(originalBuffer, limiterCeiling, limiterThreshold);
+
+            const desc = limiterMode === 'peak'
+                ? `Peak Limited (${limiterThreshold}dB)`
+                : `Limited (T:${limiterThreshold}dB C:${limiterCeiling}dB)`;
+
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['limited'] };
+            const newBlob = encodeWAV(processed, meta);
+            onSave(newBlob, processed.duration, desc, true, ['limited']);
+
+            setLimiterThreshold(-6); setLimiterCeiling(-0.3);
+            setActiveTool(null);
+            setIsPreviewingLimiter(false);
+            setHasNormalized(false);
+            showToast("Limiter Applied!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to apply Limiter", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleApplyNormalization = async (level: number = -1) => {
+        if (!originalBuffer) return;
+        // STOP PLAYBACK IMMEDIATELY
+        if (wavesurfer.current) {
+            wavesurfer.current.pause();
+            setIsPlaying(false);
+        }
+        setIsProcessing(true);
+        try {
+            // Normalize to -1dB
+            const normalized = await audioProcessor.normalize(originalBuffer, level);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
+            const newBlob = await audioProcessor.toWav(normalized, meta);
+            // Normalization is a specific action
+            onSave(newBlob, normalized.duration, `Normalized (${level}dB)`, true, ['normalized']);
+            setHasNormalized(true);
+            setActiveTool(null);
+            showToast(`Normalized to ${level}dB!`, "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Normalization Failed", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleResetLimiter = () => {
+        setLimiterThreshold(-6); setLimiterCeiling(-0.3);
+        setIsPreviewingLimiter(false);
+        if (isPreviewingLimiter && currentBlob && wavesurfer.current) {
+            setIsPlaying(false);
+            wavesurfer.current.loadBlob(currentBlob);
+        }
+    };
+
+    // Cutter Handlers
+    const handlePreviewCut = async () => {
+        if (!originalBuffer || !wavesurfer.current || cutRegions.length === 0) return;
+        try {
+            setIsProcessing(true);
+            const regionsToRemove = cutRegions.map(r => ({ start: r.start, end: r.end }));
+            const processed = await audioProcessor.cutAndMerge(originalBuffer, regionsToRemove, cutCrossfade);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const newBlob = await audioProcessor.toWav(processed, meta);
+            if (wavesurfer.current) {
+                wavesurfer.current.pause();
+                await wavesurfer.current.loadBlob(newBlob);
+                wavesurfer.current.play();
+            }
+            setIsPreviewingCut(true);
+            showToast("Previewing Cut...", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to preview cut", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleApplyCut = async () => {
+        if (!originalBuffer || cutRegions.length === 0) return;
+        setIsProcessing(true);
+        try {
+            const regionsToRemove = cutRegions.map(r => ({ start: r.start, end: r.end }));
+            const processed = await audioProcessor.cutAndMerge(originalBuffer, regionsToRemove, cutCrossfade);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['cut'] };
+            const newBlob = encodeWAV(processed, meta);
+
+            const removedDuration = cutRegions.reduce((sum, r) => sum + (r.end - r.start), 0);
+            onSave(newBlob, processed.duration, `Cut (${cutRegions.length} region${cutRegions.length > 1 ? 's' : ''}, -${removedDuration.toFixed(1)}s)`, true, ['cut']);
+
+            setCutRegions([]);
+            setActiveTool(null);
+            setIsPreviewingCut(false);
+            setHasNormalized(false);
+            showToast("Cut Applied!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to apply cut", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleResetCut = () => {
+        setCutRegions([]);
+        setCutCrossfade(0.01);
+        setIsPreviewingCut(false);
+        if (isPreviewingCut && currentBlob && wavesurfer.current) {
+            setIsPlaying(false);
+            wavesurfer.current.loadBlob(currentBlob);
+        }
+    };
+
+    // Slicer Handlers
+    const handleAutoSlice = (count: number) => {
+        if (editorDuration <= 0 || count < 1) return;
+        const step = editorDuration / (count + 1);
+        const points: number[] = [];
+        for (let i = 1; i <= count; i++) {
+            points.push(+(step * i).toFixed(3));
+        }
+        setSlicePoints(points);
+        handleDirtyChange();
+    };
+
+    const handleApplySlicer = async () => {
+        if (!originalBuffer || slicePoints.length === 0) return;
+        // Save slice markers into metadata — doesn't modify audio
+        setIsProcessing(true);
+        try {
+            const meta = {
+                ...(metadata || {}),
+                id: metadata?.id || slot.fileId || uuidv4(),
+                processing: ['sliced'],
+                slicePoints: slicePoints.sort((a, b) => a - b),
+            };
+            const newBlob = encodeWAV(originalBuffer, meta);
+            onSave(newBlob, originalBuffer.duration, `Sliced (${slicePoints.length} markers)`, true, ['sliced']);
+
+            setSlicePoints([]);
+            setActiveTool(null);
+            showToast("Slice Markers Saved!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to save slice markers", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleResetSlicer = () => {
+        setSlicePoints([]);
+    };
+
+    // Sync pitchSemitones with selected region
+    useEffect(() => {
+        if (activeTool === 'pitch' && !isPreviewing) {
+            const selected = pitchRegions.find(r => r.selected);
+            if (selected) {
+                // Only update if the value is different to avoid recursive loops
+                if (selected.semitones !== pitchSemitones || selected.id !== lastSelectedPitchId.current) {
+                    setPitchSemitones(selected.semitones);
+                    lastSelectedPitchId.current = selected.id;
+                }
+            } else {
+                lastSelectedPitchId.current = null;
+            }
+        }
+    }, [pitchRegions, activeTool, isPreviewing]);
+
+    // Auto-clear detected pitch if region bounds change
+    useEffect(() => {
+        if (activeTool === 'pitch') {
+            const hasChangedBounds = pitchRegions.some(r => {
+                const prev = prevPitchRegionsRef.current.find(p => p.id === r.id);
+                return prev && (prev.start !== r.start || prev.end !== r.end);
+            });
+
+            if (hasChangedBounds) {
+                setPitchRegions(prev => prev.map(r => {
+                    const old = prevPitchRegionsRef.current.find(p => p.id === r.id);
+                    if (old && (old.start !== r.start || old.end !== r.end)) {
+                        return { ...r, detectedNote: undefined, detectedFreq: undefined, confidence: undefined };
+                    }
+                    return r;
+                }));
+            }
+            prevPitchRegionsRef.current = pitchRegions;
+        }
+    }, [pitchRegions, activeTool]);
+
+    const handlePitchSliderChange = (val: number) => {
+        setPitchSemitones(val);
+        setPitchRegions(prev => prev.map(r => r.selected ? { ...r, semitones: val } : r));
+        handleDirtyChange();
+    };
+
+    const handleDetectPitch = async () => {
+        if (!originalBuffer) return;
+
+        // Find active region or use whole file
+        const activeRegion = pitchRegions.find(r => r.selected);
+        const start = activeRegion ? activeRegion.start : 0;
+        const end = activeRegion ? activeRegion.end : editorDuration;
+
+        setIsProcessing(true);
+        try {
+            const { frequency, confidence } = await audioProcessor.detectPitch(originalBuffer, start, end);
+            setDetectedPitch(frequency);
+
+            if (activeRegion && frequency > 0) {
+                const note = audioProcessor.freqToNote(frequency);
+                setPitchRegions(prev => prev.map(r => r.id === activeRegion.id ? {
+                    ...r,
+                    detectedFreq: frequency,
+                    detectedNote: note,
+                    confidence: confidence
+                } : r));
+
+                if (confidence > 0.7) {
+                    showToast(`Detected: ${note} (${frequency.toFixed(1)} Hz) - ${Math.round(confidence * 100)}% confidence`, "success");
+                } else {
+                    showToast(`Uncertain detection: ${frequency.toFixed(1)} Hz (${Math.round(confidence * 100)}%)`, "warning");
+                }
+            } else if (frequency > 0) {
+                const note = audioProcessor.freqToNote(frequency);
+                showToast(`Detected (Global): ${note} (${frequency.toFixed(1)} Hz)`, "success");
+            } else {
+                showToast("No clear pitch detected in selection", "warning");
+            }
+        } catch (e) {
+            console.error(e);
+            showToast("Pitch detection failed", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handlePreviewPitch = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
+        setIsProcessing(true);
+        try {
+            const { buffer: processed, previewRegions } = await audioProcessor.applyMultiPitchShift(originalBuffer, pitchRegions);
+            const blob = await audioProcessor.toWav(processed);
+            if (wavesurfer.current) {
+                wavesurfer.current.pause();
+                await wavesurfer.current.loadBlob(blob);
+                wavesurfer.current.play();
+            }
+            setPreviewPitchRegions(previewRegions.map(r => ({ ...r, selected: false })));
+            setPreviewDuration(processed.duration);
+            setIsPreviewing(true);
+            showToast("Previewing Pitch...", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Pitch preview failed", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleApplyPitch = async () => {
+        if (!originalBuffer) return;
+
+        setIsProcessing(true);
+        try {
+            const { buffer: processed } = await audioProcessor.applyMultiPitchShift(originalBuffer, pitchRegions);
+
+            const newId = uuidv4();
+            const meta = { ...(metadata || {}), id: newId, processing: ['normalized'] };
+            const newBlob = encodeWAV(processed, meta);
+
+            const numRegions = pitchRegions.filter(r => r.semitones !== 0).length;
+            onSave(newBlob, processed.duration, `Pitch Tuning (${numRegions} regions)`, true, ['normalized']);
+
+            setPitchSemitones(0);
+            setDetectedPitch(null);
+            setPitchRegions([]);
+            setPreviewPitchRegions([]);
+            setPreviewDuration(null);
+            setIsPreviewing(false);
+            setActiveTool(null);
+            showToast("Pitch Tuning Applied!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to apply pitch shift", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleResetPitch = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
+
+        // If we were previewing, we need to reload the original buffer
+        if (isPreviewing) {
+            const blob = await audioProcessor.toWav(originalBuffer, metadata);
+            setIsPlaying(false);
+            await wavesurfer.current.loadBlob(blob);
+            setIsPreviewing(false);
+            setPreviewPitchRegions([]);
+            setPreviewDuration(null);
+            showToast("Preview Cancelled", "success");
+        } else {
+            // If not previewing, just deselect all or similar? 
+            // The user wants Reset to go back to before preview.
+            // If they aren't previewing, maybe it just closes the tool? 
+            // Let's keep it simple: Reset = cancel preview.
+        }
+    };
+
+    const handleClearPitch = () => {
+        setPitchRegions([]);
+        setPreviewPitchRegions([]);
+        setPitchSemitones(0);
+        showToast("All selections cleared", "success");
+    };
+
+    const handleSelectAllPitch = () => {
+        setPitchRegions([{
+            id: 'pitch-all',
+            start: 0,
+            end: editorDuration,
+            semitones: 0,
+            selected: true
+        }]);
     };
 
     const handlePreviewAutomation = async () => {
         if (!originalBuffer || !wavesurfer.current) return;
 
-        // Always regenerate (Refresh behavior)
-        // if (isPreviewing) { await handleStopPreview(); return; }
-
-        // Generate temp blob
         try {
-            // Processing...
             setIsProcessing(true);
-            const processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
+            let processed = await audioProcessor.applyEnvelope(originalBuffer, automationPoints, smooth);
+
+            if (automationNormalize) {
+                processed = await audioProcessor.normalize(processed);
+            }
+
             const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
 
@@ -1028,6 +1642,29 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         } catch (e) {
             console.error(e);
             showToast("Failed to preview", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleSplitStereo = async (side: 'L' | 'R' | 'both') => {
+        if (!originalBuffer) return;
+        setIsProcessing(true);
+        try {
+            const { left, right } = await audioProcessor.splitToChannels(originalBuffer);
+            if (side === 'L' || side === 'both') {
+                const blob = await audioProcessor.toWav(left);
+                onSave(blob, left.duration, "Channel Left", true, ['normalized' as any]);
+            }
+            if ((side === 'R' || side === 'both') && right) {
+                const blob = await audioProcessor.toWav(right);
+                onSave(blob, right.duration, "Channel Right", true, ['normalized' as any]);
+            }
+            showToast("Channels saved to pool", "success");
+            toggleTool(null);
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to split channels", "error");
         } finally {
             setIsProcessing(false);
         }
@@ -1082,6 +1719,38 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
+    const handleApplyLoop = async () => {
+        if (!originalBuffer || !wavesurfer.current) return;
+        setIsProcessing(true);
+        try {
+            let start = 0;
+            let end = originalBuffer.duration;
+            if (regions.current) {
+                const list = regions.current.getRegions();
+                if (list.length > 0) {
+                    start = list[0].start;
+                    end = list[0].end;
+                }
+            }
+            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
+            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
+            const newBlob = encodeWAV(looped, meta);
+
+            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s xfade)`, true, ['looped']);
+
+            setIsPreviewingLoop(false);
+            setHasNormalized(false);
+            toggleTool(null);
+            showToast("Loop Applied!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to apply loop", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!originalBuffer) return;
 
@@ -1093,6 +1762,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             if (fadeIn > 0 || fadeOut > 0) isDirty = true;
             if (automationPoints.length > 0) isDirty = true;
             if (regionState.start > 0.01 || regionState.end < (originalBuffer.duration - 0.01)) isDirty = true;
+            if (eqLow !== 0 || eqMid !== 0 || eqHigh !== 0) isDirty = true;
+            if (activeTool === 'limiter' && (limiterThreshold !== -6 || limiterCeiling !== -0.3)) isDirty = true;
+            if (cutRegions.length > 0) isDirty = true;
+            if (slicePoints.length > 0) isDirty = true;
             // What if content hasn't changed but we just opened it?
             // "Save to Tape" implies assigning this specific edited version.
             // If nothing changed, we just re-assign the current version. (Handled by parent)
@@ -1215,7 +1888,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // We calculate width to force the scroll container to expand
     // Ensure we have a valid width based on duration and zoom
-    const contentWidth = Math.floor(editorDuration * zoom);
+    const contentWidth = editorDuration * zoom;
 
     // Manual Scrubbing Logic
     const isScrubbingRef = useRef(false);
@@ -1244,17 +1917,39 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     };
 
     const handleScrub = (e: React.PointerEvent) => {
-        if (!containerRef.current || !wavesurfer.current) return;
+        if (!containerRef.current || !wavesurfer.current || !scrollContainerRef.current) return;
 
-        const rect = containerRef.current.getBoundingClientRect();
-        const relativeX = e.clientX - rect.left;
+        const rect = scrollContainerRef.current.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const totalX = scrollContainerRef.current.scrollLeft + localX;
 
-        // Clamp
-        let progress = relativeX / rect.width;
+        // Use duration * zoom as the true pixel width for mapping
+        // This is more accurate than Math.floor'd contentWidth state
+        let progress = totalX / (editorDuration * zoom);
         if (progress < 0) progress = 0;
         if (progress > 1) progress = 1;
 
         wavesurfer.current.seekTo(progress);
+    };
+
+    const handleEditorScroll = () => {
+        if (!scrollContainerRef.current || !wavesurfer.current) return;
+        const scrollLeft = scrollContainerRef.current.scrollLeft;
+
+        // Sync WaveSurfer internal scroll with main scrollbar
+        // In v7, the scrollable element is in the shadow DOM, accessible via renderer.scrollContainer
+        const shadowScroll = (wavesurfer.current as any).renderer?.scrollContainer;
+        if (shadowScroll) {
+            shadowScroll.scrollLeft = scrollLeft;
+        } else {
+            // Fallback for different versions or if renderer is not directly exposed
+            const wrapper = wavesurfer.current.getWrapper();
+            if (wrapper) {
+                const s = wrapper.shadowRoot?.querySelector('[part="scroll"]');
+                if (s) (s as HTMLElement).scrollLeft = scrollLeft;
+                else wrapper.scrollLeft = scrollLeft;
+            }
+        }
     };
 
     return (
@@ -1304,6 +1999,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 .history-scroll::-webkit-scrollbar {
                     width: 6px;
                     background: #111;
+                }
+
+                /* Trim Region Visibility Control */
+                .hide-trim-regions .wavesurfer-region {
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    visibility: hidden !important;
+                }
+                .show-trim-regions .wavesurfer-region {
+                    opacity: 1 !important;
+                    pointer-events: auto !important;
+                    visibility: visible !important;
                 }
             `}</style>
 
@@ -1356,55 +2063,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             )}
 
 
-            <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-7xl h-[90vh] shadow-2xl flex overflow-hidden noise-texture">
-                {/* Reset Confirmation Modal */}
-                <ConfirmModal
-                    isOpen={showResetConfirm}
-                    onClose={() => setShowResetConfirm(false)}
-                    onConfirm={() => {
-                        // Revert to the CURRENTLY loaded version's state
-                        const v = versions.find(v => v.id === loadedVersionId);
-                        if (v) {
-                            setCurrentBlob(v.blob);
-                        }
-                        setFadeIn(0);
-                        setFadeOut(0);
-                        setIsDirty(false);
-                        setAutomationPoints([]);
-                        setIsPreviewing(false);
-                        setIsPreviewingLoop(false);
+            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] h-[95vh] shadow-2xl flex overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
 
-                        // Reset Region Logic (Max 42s or duration)
-                        if (wavesurfer.current && regions.current) {
-                            const duration = wavesurfer.current.getDuration();
-                            regions.current.clearRegions();
-
-                            let rEnd = duration;
-                            let rStart = 0;
-                            if (duration > 42) {
-                                const mid = duration / 2;
-                                rStart = mid - 21;
-                                rEnd = mid + 21;
-                            }
-
-                            regions.current.addRegion({
-                                start: rStart,
-                                end: rEnd,
-                                color: 'rgba(255, 255, 255, 0.1)',
-                                drag: false,
-                                resize: true
-                            });
-                            setRegionState({ start: rStart, end: rEnd });
-                        }
-
-                        showToast("Reset to original", "success");
-                        setShowResetConfirm(false);
-                    }}
-                    title="Reset Changes?"
-                    message="Are you sure you want to discard all changes and revert to the last saved version? This cannot be undone."
-                    confirmLabel="Discard & Reset"
-                    isDestructive={true}
-                />
 
                 {/* Batch Delete Confirmation */}
                 <ConfirmModal
@@ -1634,496 +2294,834 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     {/* Editor Helpers */}
 
                     <div className="p-6 pt-2 flex flex-col h-full overflow-hidden">
-                        {/* Toolbar */}
-                        <div className="flex gap-6 mb-4 bg-[#111] relative z-20 p-4 rounded-xl border border-gray-800 flex-col text-left shrink-0 max-w-full">
-                            <div className="flex items-center gap-6 w-full overflow-x-auto pb-2">
-                                <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap"
-                                    onMouseEnter={() => setHelpText("Global Edit Controls (Step 1)")}
+                        {/* Toolbar Container */}
+                        <div className="flex flex-col mb-4 bg-[#111] relative z-20 p-4 rounded-xl border border-gray-800 shrink-0 max-w-full">
+
+                            {/* Top Bar: Label + Buttons + Reset */}
+                            <div className="flex items-center gap-4 w-full">
+                                {/* Label */}
+                                <div className="flex items-center gap-3 text-[10px] font-bold uppercase text-gray-500 tracking-wider shrink-0 whitespace-nowrap"
+                                    onMouseEnter={() => setHelpText("Global Edit Controls")}
                                     onMouseLeave={() => setHelpText("")}>
                                     <Sliders size={12} className="text-gray-500" /> Main Controls
                                 </div>
 
-                                {/* Zoom Controls Moved to Bottom */}
+                                <div className="h-6 w-px bg-gray-800/50 shrink-0"></div>
 
-                                {/* Volume Selection & Fade Controls */}
-                                <div className="flex items-center gap-6 border-r border-gray-700 pr-6 shrink-0 h-full">
-
-                                    {/* VOLUME TOOLBAR - Shows when a selection (not trim) is active */}
-                                    {/* VOLUME AUTOMATION TOOLBAR */}
-
-                                    {/* Default Fade Controls (Always Visible) */}
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
-                                                <label>Fade In</label>
-                                                <span className="text-synthux-green">{fadeIn.toFixed(1)}s</span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="5"
-                                                step="0.1"
-                                                value={fadeIn}
-                                                onChange={(e) => {
-                                                    setFadeIn(Number(e.target.value));
-                                                    handleDirtyChange();
-                                                }}
-                                                onMouseEnter={() => setHelpText("Adjust Fade In Duration (Step 1)")}
-                                                onMouseLeave={() => setHelpText("")}
-                                                className="w-24 h-2 bg-gradient-to-r from-green-900 to-synthux-green rounded-lg appearance-none cursor-pointer"
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
-                                                <label>Fade Out</label>
-                                                <span className="text-synthux-orange">{fadeOut.toFixed(1)}s</span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="5"
-                                                step="0.1"
-                                                value={fadeOut}
-                                                onChange={(e) => {
-                                                    setFadeOut(Number(e.target.value));
-                                                    handleDirtyChange();
-                                                }}
-                                                onMouseEnter={() => setHelpText("Adjust Fade Out Duration (Step 1)")}
-                                                onMouseLeave={() => setHelpText("")}
-                                                className="w-24 h-2 bg-gradient-to-r from-synthux-orange to-red-900 rounded-lg appearance-none cursor-pointer"
-                                            />
-                                        </div>
-                                    </div>
-
-
-                                </div>
-                                {(() => {
-                                    const duration = regionState.end - regionState.start;
-                                    const isFullSelection = Math.abs(duration - editorDuration) < 0.05;
-                                    const hasFades = fadeIn > 0 || fadeOut > 0;
-                                    // Disable if processing, OR if it's full selection AND no fades. 
-                                    const isDisabled = isProcessing || (isFullSelection && !hasFades) || hasTrimmed;
-
-                                    // Dynamic Button Text
-                                    const buttonText = hasFades ? "Apply Trim / Fade" : "Apply Trim";
-
-                                    return (
+                                {/* Tool Buttons - Scrollable if needed */}
+                                <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent py-1">
+                                    {[
+                                        { id: 'trim' as const, label: 'Trim/Fade', icon: <Scissors size={13} />, color: 'green', activeColor: 'bg-synthux-green', textColor: 'text-synthux-green', hasContent: fadeIn > 0 || fadeOut > 0 || hasTrimmed },
+                                        { id: 'automation' as const, label: 'Automation', icon: <Activity size={13} />, color: 'orange', activeColor: 'bg-orange-500', textColor: 'text-orange-400', hasContent: automationPoints.length > 0 },
+                                        { id: 'loop' as const, label: 'Loop', icon: <Repeat size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', hasContent: activeTool === 'loop' },
+                                        { id: 'eq' as const, label: 'EQ', icon: <BarChart2 size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', hasContent: eqLow !== 0 || eqMid !== 0 || eqHigh !== 0 || isPreviewingEQ },
+                                        { id: 'pitch' as const, label: 'Pitch', icon: <Music size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', hasContent: pitchSemitones !== 0 },
+                                        { id: 'limiter' as const, label: 'Limiter', icon: <Sliders size={13} />, color: 'red', activeColor: 'bg-red-500', textColor: 'text-red-400', hasContent: limiterThreshold !== -6 || limiterCeiling !== -0.3 || isPreviewingLimiter },
+                                        { id: 'normalize' as const, label: 'Normalize', icon: <BarChart2 size={13} />, color: 'yellow', activeColor: 'bg-synthux-yellow', textColor: 'text-synthux-yellow', hasContent: hasNormalized },
+                                        { id: 'cutter' as const, label: 'Cutter', icon: <Scissors size={13} />, color: 'amber', activeColor: 'bg-amber-500', textColor: 'text-amber-400', hasContent: cutRegions.length > 0 },
+                                        { id: 'slicer' as const, label: 'Slicer', icon: <Scissors size={13} className="rotate-90" />, color: 'cyan', activeColor: 'bg-cyan-500', textColor: 'text-cyan-400', hasContent: slicePoints.length > 0 },
+                                        { id: 'stereo' as const, label: 'Stereo', icon: <ArrowLeftRight size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', hasContent: (originalBuffer?.numberOfChannels || 0) > 1 },
+                                    ].map(tool => (
                                         <button
-                                            onClick={() => {
-                                                // STOP PLAYBACK (Safety)
-                                                if (wavesurfer.current && isPlaying) {
-                                                    wavesurfer.current.pause();
-                                                    setIsPlaying(false);
-                                                }
-                                                handleSave();
-                                            }}
-                                            onMouseEnter={() => setHelpText(
-                                                hasTrimmed ? "Already Applied" :
-                                                    (isFullSelection && !hasFades) ? "Full Selection & No Fades (Nothing to Apply)" :
-                                                        "Apply Trim & Fades (Keep Open)"
-                                            )}
+                                            key={tool.id}
+                                            onClick={() => toggleTool(tool.id)}
+                                            onMouseEnter={() => setHelpText(`${activeTool === tool.id ? 'Close' : 'Open'} ${tool.label}`)}
                                             onMouseLeave={() => setHelpText("")}
-                                            disabled={isDisabled}
-                                            className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${isDisabled
-                                                ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50'
-                                                : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-green-400 hover:text-green-300 hover:border-green-800'
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap border ${activeTool === tool.id
+                                                ? `${tool.activeColor} text-white border-transparent shadow-lg shadow-${tool.color}-500/20`
+                                                : tool.hasContent
+                                                    ? `bg-gray-800/80 ${tool.textColor} border-gray-700 hover:border-${tool.color}-800`
+                                                    : 'bg-gray-800/50 text-gray-500 border-gray-800/50 hover:bg-gray-800 hover:text-gray-300 hover:border-gray-700'
                                                 }`}
                                         >
-                                            <Check size={14} /> {buttonText}
+                                            {tool.icon}
+                                            {tool.label}
+                                            {tool.hasContent && activeTool !== tool.id && (
+                                                <span className={`w-1.5 h-1.5 rounded-full ${tool.activeColor} animate-pulse`}></span>
+                                            )}
                                         </button>
-                                    )
-                                })()}
-                                <button
-                                    onClick={async () => {
-                                        if (!originalBuffer) return;
-                                        // STOP PLAYBACK IMMEDIATELY
-                                        if (wavesurfer.current) {
-                                            wavesurfer.current.pause();
-                                            setIsPlaying(false);
-                                        }
-                                        setIsProcessing(true);
-                                        try {
-                                            // Normalize to -1dB
-                                            const normalized = await audioProcessor.normalize(originalBuffer, -1);
-                                            const newBlob = await audioProcessor.toWav(normalized);
-                                            // Normalization is a specific action
-                                            onSave(newBlob, normalized.duration, `Normalized`, true, ['normalized']);
-                                            setHasNormalized(true);
-                                            showToast("Normalized Saved!", "success");
-                                            // onClose(); // Removed to keep editor open
-                                        } catch (e) {
-                                            console.error(e);
-                                            showToast("Normalization Failed", "error");
-                                        } finally {
-                                            setIsProcessing(false);
-                                        }
-                                    }}
-                                    onMouseEnter={() => setHelpText(hasNormalized ? "Already Applied" : "Normalize Audio to -1dB")}
-                                    onMouseLeave={() => setHelpText("")}
-                                    title={hasNormalized ? "Already Applied" : ""}
-                                    disabled={isProcessing || hasNormalized}
-                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${hasNormalized ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-yellow-400 hover:text-yellow-300 hover:border-yellow-800'
-                                        }`}
-                                >
-                                    <BarChart2 size={14} /> Normalize
-                                </button>
-                                {/* Reset Button */}
-                                <button
-                                    onClick={() => setShowResetConfirm(true)}
-                                    onMouseEnter={() => setHelpText("Discard Changes & Reset")}
-                                    onMouseLeave={() => setHelpText("")}
-                                    disabled={!isDirty}
-                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${!isDirty ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed hidden' : 'bg-red-900/20 hover:bg-red-900/40 border-red-900/30 text-red-400 hover:text-red-300'
-                                        }`}
-                                >
-                                    <RotateCcw size={14} /> Reset
-                                </button>
+                                    ))}
+                                </div>
+
                             </div>
 
-                            {/* Automation Controls Panel - ALWAYS VISIBLE */}
-                            {/* Unified Panel Container (Automation + Loop) */}
-                            <div className="mb-2 px-4 py-2 border border-gray-800 bg-gray-900/90 rounded-xl flex flex-col gap-4 w-full max-w-full overflow-hidden shrink-0">
+                            {/* Expanded Tool Panel */}
+                            {activeTool && (
+                                <div className="border-t border-gray-800 pt-2 pb-1 mt-1 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
 
-                                {/* Automation Section */}
-                                <div className={`flex flex-row items-center gap-6 w-full transition-all ${showAutomationPanel ? 'opacity-100' : 'opacity-60 grayscale'}`}>
-                                    <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap">
-                                        {/* Toggle Switch */}
-                                        <div
-                                            onClick={() => {
-                                                if (!showAutomationPanel) {
-                                                    // Turning ON
-                                                    if (automationPoints.length === 0) {
-                                                        const points = [
-                                                            { id: 'start', time: 0, value: 1.0, selected: false },
-                                                            { id: 'end', time: editorDuration, value: 1.0, selected: false }
-                                                        ];
-                                                        setAutomationPoints(points);
-                                                        handleDirtyChange();
-                                                    }
-                                                } else {
-                                                    // Turning OFF - Reset
-                                                    setAutomationPoints([]);
-                                                    if (isPreviewing) {
-                                                        handleStopPreview();
-                                                    }
-                                                }
-                                                setShowAutomationPanel(!showAutomationPanel);
-                                            }}
-                                            onMouseEnter={() => setHelpText("Enable Volume Automation (Step 1: Edit Volume)")}
-                                            onMouseLeave={() => setHelpText("")}
-                                            className={`w-8 h-4 rounded-full p-0.5 cursor-pointer transition-colors ${showAutomationPanel ? 'bg-synthux-orange' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        >
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${showAutomationPanel ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                    {/* Trim / Fade Panel */}
+                                    {activeTool === 'trim' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
+                                                        <label>Fade In</label>
+                                                        <span className="text-synthux-green">{fadeIn.toFixed(1)}s</span>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="0" max="5" step="0.1" value={fadeIn}
+                                                        onChange={(e) => { setFadeIn(Number(e.target.value)); handleDirtyChange(); }}
+                                                        onMouseEnter={() => setHelpText("Adjust Fade In Duration")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                        className="w-24 h-2 bg-gradient-to-r from-green-900 to-synthux-green rounded-lg appearance-none cursor-pointer"
+                                                    />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
+                                                        <label>Fade Out</label>
+                                                        <span className="text-synthux-orange">{fadeOut.toFixed(1)}s</span>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="0" max="5" step="0.1" value={fadeOut}
+                                                        onChange={(e) => { setFadeOut(Number(e.target.value)); handleDirtyChange(); }}
+                                                        onMouseEnter={() => setHelpText("Adjust Fade Out Duration")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                        className="w-24 h-2 bg-gradient-to-r from-synthux-orange to-red-900 rounded-lg appearance-none cursor-pointer"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-2">
+                                                {(() => {
+                                                    const duration = regionState.end - regionState.start;
+                                                    const isFullSelection = Math.abs(duration - editorDuration) < 0.05;
+                                                    const hasFades = fadeIn > 0 || fadeOut > 0;
+                                                    const isDisabled = isProcessing || (isFullSelection && !hasFades) || hasTrimmed;
+                                                    const buttonText = hasFades ? "Apply Trim / Fade" : "Apply Trim";
+
+                                                    return (
+                                                        <button
+                                                            onClick={() => {
+                                                                if (wavesurfer.current && isPlaying) {
+                                                                    wavesurfer.current.pause();
+                                                                    setIsPlaying(false);
+                                                                }
+                                                                handleSave();
+                                                            }}
+                                                            disabled={isDisabled}
+                                                            className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${isDisabled
+                                                                ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50'
+                                                                : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-green-400 hover:text-green-300 hover:border-green-800'
+                                                                }`}
+                                                        >
+                                                            <Check size={12} /> {buttonText}
+                                                        </button>
+                                                    )
+                                                })()}
+                                                <button onClick={() => { setFadeIn(0); setFadeOut(0); handleDirtyChange(); }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Reset Fades")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setShowAutomationPanel(!showAutomationPanel)}
-                                            onMouseEnter={() => setHelpText("Enable Volume Automation (Step 1: Edit Volume)")}
-                                            onMouseLeave={() => setHelpText("")}>
-                                            <Activity size={12} className={showAutomationPanel ? "text-synthux-orange" : "text-gray-500"} /> Volume Automation
+                                    )}
+
+                                    {/* Normalize Panel */}
+                                    {activeTool === 'normalize' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="bg-black/40 px-3 py-1.5 rounded-lg border border-gray-800 flex items-center gap-4">
+                                                <div className="flex flex-col">
+                                                    <div className="text-[10px] uppercase font-bold text-gray-500">Target Peak</div>
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                        {[
+                                                            { label: '-1 dB', value: -1 },
+                                                            { label: '0 dB', value: 0 },
+                                                            { label: 'Custom', value: 'custom' }
+                                                        ].map(opt => (
+                                                            <button
+                                                                key={opt.label}
+                                                                onClick={() => setNormalizationLevel(opt.value === 'custom' ? -6 : opt.value as number)}
+                                                                className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${(opt.value === 'custom' ? ![-1, 0].includes(normalizationLevel) : normalizationLevel === opt.value)
+                                                                    ? 'bg-yellow-500 text-black'
+                                                                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                                                    }`}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {![-1, 0].includes(normalizationLevel) && (
+                                                    <div className="flex flex-col gap-1 min-w-[6rem] border-l border-gray-800 pl-4 ml-1">
+                                                        <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                            <span>Level</span>
+                                                            <span className="text-yellow-500">{normalizationLevel}dB</span>
+                                                        </div>
+                                                        <input
+                                                            type="range" min="-24" max="0" step="0.5"
+                                                            value={normalizationLevel}
+                                                            onChange={(e) => setNormalizationLevel(Number(e.target.value))}
+                                                            className="w-24 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleApplyNormalization(normalizationLevel)}
+                                                    disabled={isProcessing || hasNormalized}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${hasNormalized ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-yellow-400 hover:text-yellow-300 hover:border-yellow-800'
+                                                        }`}
+                                                >
+                                                    <BarChart2 size={12} /> {hasNormalized ? "Normalized" : "Normalize"}
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
+                                    {/* Volume Automation Panel */}
+                                    {activeTool === 'automation' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            {/* Point Volume Controls */}
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-1 min-w-[8rem]">
+                                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                        <span>Point Volume</span>
+                                                        {(() => {
+                                                            const selected = automationPoints.filter(p => p.selected);
+                                                            if (selected.length === 0) return <span className="text-gray-600">-</span>;
+                                                            const val = selected[0].value;
+                                                            const db = val > 0 ? 20 * Math.log10(val) : -Infinity;
+                                                            const dbStr = db === -Infinity ? '-∞' : db.toFixed(1);
+                                                            return (
+                                                                <span className={val > 1 ? "text-green-400" : val < 1 ? "text-red-400" : "text-gray-400"}>
+                                                                    {dbStr} dB
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    <input
+                                                        type="range" min="0" max="3.981" step="0.01"
+                                                        disabled={!automationPoints.some(p => p.selected)}
+                                                        value={(() => {
+                                                            const selected = automationPoints.filter(p => p.selected);
+                                                            return selected.length > 0 ? selected[0].value : 1.0;
+                                                        })()}
+                                                        onChange={(e) => {
+                                                            const newVal = Number(e.target.value);
+                                                            setAutomationPoints(automationPoints.map(p => p.selected ? { ...p, value: newVal } : p));
+                                                            handleDirtyChange();
+                                                        }}
+                                                        onDoubleClick={() => {
+                                                            setAutomationPoints(automationPoints.map(p => p.selected ? { ...p, value: 1.0 } : p));
+                                                            handleDirtyChange();
+                                                        }}
+                                                        onMouseEnter={() => setHelpText("Adjust Selected Point Value (DBL-Click to Reset)")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                        className={`w-32 h-2 rounded-lg appearance-none cursor-pointer ${automationPoints.some(p => p.selected) ? 'bg-gray-700 accent-synthux-orange' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
+                                                    />
+                                                </div>
 
-                                    {/* Controls - Conditional Interaction */}
-                                    <div className={`flex gap-4 items-center flex-wrap justify-start transition-opacity ${showAutomationPanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-40'}`}>
-
-                                        {/* Point Controls Group */}
-                                        <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
-                                            <div className="flex flex-col gap-1 min-w-[8rem]">
-                                                <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
-                                                    <label>Point Volume</label>
+                                                {/* Point action buttons */}
+                                                <div className="flex items-center gap-1">
                                                     {(() => {
-                                                        const selected = automationPoints.filter(p => p.selected);
-                                                        if (selected.length === 0) return <span>-</span>;
-                                                        const val = selected[0].value;
-                                                        const db = val === 0 ? -Infinity : 20 * Math.log10(val);
-                                                        const dbStr = val === 0 ? '-Inf' : (db > 0 ? `+${db.toFixed(1)}` : db.toFixed(1));
+                                                        const hasPointAtPlayhead = automationPoints.some(p => Math.abs(p.time - currentTime) < 0.001);
                                                         return (
-                                                            <span className={val > 1 ? "text-green-400" : val < 1 ? "text-red-400" : "text-gray-400"}>
-                                                                {dbStr} dB
-                                                            </span>
+                                                            <button onClick={() => {
+                                                                if (hasPointAtPlayhead) return;
+                                                                const id = `pt-${Date.now()}`;
+                                                                setAutomationPoints(prev => [
+                                                                    ...prev.map(p => ({ ...p, selected: false })),
+                                                                    { id, time: currentTime, value: 1.0, selected: true }
+                                                                ]);
+                                                                handleDirtyChange();
+                                                            }}
+                                                                title={hasPointAtPlayhead ? "Already Added" : "add point at playhead"}
+                                                                disabled={hasPointAtPlayhead}
+                                                                className={`p-1.5 rounded transition-colors ${hasPointAtPlayhead ? 'bg-gray-800 text-gray-600 cursor-not-allowed opacity-50' : 'bg-gray-800 hover:bg-synthux-orange text-gray-400 hover:text-white'}`}
+                                                                onMouseEnter={() => setHelpText(hasPointAtPlayhead ? "Already Added" : "Add Point at Playhead")}
+                                                                onMouseLeave={() => setHelpText("")}
+                                                            ><PlusCircle size={14} /></button>
+                                                        );
+                                                    })()}
+
+                                                    <button onClick={() => {
+                                                        setAutomationPoints(automationPoints.filter(p => !p.selected || p.id === 'start' || p.id === 'end'));
+                                                        handleDirtyChange();
+                                                    }}
+                                                        className="p-1.5 rounded bg-gray-800 hover:bg-red-600 text-gray-400 hover:text-white transition-colors"
+                                                        onMouseEnter={() => setHelpText("Delete Selected Points")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    ><Trash2 size={14} /></button>
+
+                                                    <button onClick={() => setSmooth(!smooth)}
+                                                        className={`p-1.5 rounded transition-colors ${smooth ? 'bg-synthux-orange text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                                                        onMouseEnter={() => setHelpText(smooth ? "Disable Smooth Curves" : "Enable Smooth Curves")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    ><Activity size={14} /></button>
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-gray-800">
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="automation-normalize"
+                                                        checked={automationNormalize}
+                                                        onChange={(e) => setAutomationNormalize(e.target.checked)}
+                                                        className="w-3 h-3 accent-synthux-yellow"
+                                                    />
+                                                    <label htmlFor="automation-normalize" className="text-[10px] font-bold uppercase text-gray-500 cursor-pointer select-none">
+                                                        Normalize
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            {/* Scale Help Text & Toggle */}
+                                            <div className="flex items-center gap-3 bg-black/40 px-3 py-1.5 rounded-lg border border-gray-800 group relative">
+                                                <div className="flex flex-col">
+                                                    <div className="text-[9px] uppercase font-bold text-gray-500 leading-tight">Scale Info</div>
+                                                    <div className="text-[10px] text-gray-400 leading-tight max-w-[120px]">
+                                                        Left scale is Volume. Right is Waveform.
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setShowDbScale(!showDbScale)}
+                                                    className={`px-2 py-1 rounded text-[9px] font-bold uppercase transition-colors border ${showDbScale
+                                                        ? 'bg-synthux-yellow/10 border-synthux-yellow/30 text-synthux-yellow hover:bg-synthux-yellow/20'
+                                                        : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
+                                                        }`}
+                                                >
+                                                    {showDbScale ? "Hide Waveform Scale" : "Show Waveform Scale"}
+                                                </button>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            {/* Automation Actions */}
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handlePreviewAutomation}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Refresh Preview" : "Hear Automation Effect")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewing ? <RefreshCw size={12} /> : <Play size={12} />}
+                                                    {isPreviewing ? "Refresh" : "Preview"}
+                                                </button>
+                                                <button onClick={handleApplyAutomation}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Apply Changes & Bake Audio")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Apply</button>
+                                                <button onClick={() => {
+                                                    setAutomationPoints([
+                                                        { id: 'start', time: 0, value: 1, selected: false },
+                                                        { id: 'end', time: editorDuration, value: 1, selected: false }
+                                                    ]);
+                                                    handleDirtyChange();
+                                                }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Clear All Automation")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Loop Settings Panel */}
+                                    {activeTool === 'loop' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-1 min-w-[12rem]">
+                                                    {(() => {
+                                                        const dur = regionState.end - regionState.start;
+                                                        const maxCrossfade = Math.min(10, dur / 2);
+                                                        const safeValue = Math.min(loopCrossfade, maxCrossfade);
+                                                        return (
+                                                            <>
+                                                                <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                                    <span>Loop Crossfade</span>
+                                                                    <span className="text-synthux-blue">{safeValue.toFixed(2)}s <span className="text-gray-600">/ {maxCrossfade.toFixed(2)}s</span></span>
+                                                                </div>
+                                                                <input
+                                                                    type="range" min="0" max={maxCrossfade} step="0.01" value={safeValue}
+                                                                    onChange={(e) => { setLoopCrossfade(Number(e.target.value)); handleDirtyChange(); }}
+                                                                    onDoubleClick={() => { setLoopCrossfade(0.2); handleDirtyChange(); }}
+                                                                    onMouseEnter={() => setHelpText("Set Loop Crossfade Duration (DBL-Click to Reset)")}
+                                                                    onMouseLeave={() => setHelpText("")}
+                                                                    className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+                                                                />
+                                                            </>
                                                         );
                                                     })()}
                                                 </div>
-                                                <input
-                                                    type="range"
-                                                    min="0"
-                                                    max="2"
-                                                    step="0.01"
-                                                    disabled={!automationPoints.some(p => p.selected)}
-                                                    value={(() => {
-                                                        const selected = automationPoints.filter(p => p.selected);
-                                                        return selected.length > 0 ? selected[0].value : 1.0;
-                                                    })()}
-                                                    onChange={(e) => {
-                                                        const newVal = Number(e.target.value);
-                                                        const newPoints = automationPoints.map(p =>
-                                                            p.selected ? { ...p, value: newVal } : p
-                                                        );
-                                                        setAutomationPoints(newPoints);
-                                                        handleDirtyChange();
-                                                    }}
-                                                    onMouseEnter={() => setHelpText("Adjust Selected Point Value")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                    className={`w-32 h-2 rounded-lg appearance-none cursor-pointer ${automationPoints.some(p => p.selected) ? 'bg-gray-700 accent-synthux-orange' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
-                                                />
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800 mx-2"></div>
+                                            <div className="h-6 w-px bg-gray-800"></div>
 
-                                            {/* Action Buttons */}
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    onClick={addSmartPoint}
-                                                    onMouseEnter={() => setHelpText("Add Automation Point (Click Line)")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                    className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-                                                    title="Add Point (Smart)"
-                                                >
-                                                    <PlusCircle size={14} />
-                                                </button>
-
-                                                <button
-                                                    onClick={() => {
-                                                        const newPoints = automationPoints.filter(p => !p.selected);
-                                                        if (newPoints.length < 2) {
-                                                            setAutomationPoints([]); // Reset completely
-                                                        } else {
-                                                            setAutomationPoints(newPoints);
-                                                        }
-                                                        handleDirtyChange();
-                                                    }}
-                                                    disabled={!automationPoints.some(p => p.selected)}
-                                                    className={`p-1.5 rounded hover:bg-red-900/40 text-gray-400 hover:text-red-400 transition-colors ${!automationPoints.some(p => p.selected) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                    title="Delete Selected Points"
-                                                    onMouseEnter={() => setHelpText("Delete Selected Points")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-
-                                                <button
-                                                    onClick={() => {
-                                                        setSmooth(!smooth);
-                                                    }}
-                                                    className={`p-1.5 rounded transition-colors ml-1 ${smooth ? 'bg-synthux-orange text-white' : 'hover:bg-gray-700 text-gray-500 hover:text-gray-300'}`}
-                                                    title={smooth ? "Switch to Linear" : "Switch to Smooth (Curve)"}
-                                                    onMouseEnter={() => setHelpText(smooth ? "Use Linear Transitions" : "Use Smooth Start/End Curves")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    <Activity size={14} />
-                                                </button>
-                                            </div>
-
-                                            {/* Automation Actions */}
-                                            <div className="flex items-center gap-2 border-l border-gray-800 pl-4">
-                                                <button
-                                                    onClick={handlePreviewAutomation}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing
-                                                        ? 'bg-synthux-blue text-white hover:bg-red-500'
-                                                        : 'bg-gray-800 hover:bg-synthux-blue text-white'
-                                                        }`}
-                                                    title={isPreviewing ? "Stop Preview (Revert)" : "Preview Automation Effect"}
-                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Refresh Preview (Update Settings)" : "Hear Automation Effect")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    {isPreviewing ? <RefreshCw size={12} className="animate-spin-once" /> : <Play size={12} />}
-                                                    {isPreviewing ? "Refresh" : "Preview"}
-                                                </button>
-                                                <button
-                                                    onClick={handleApplyAutomation}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
-                                                    title="Apply Automation and Reset"
-                                                    onMouseEnter={() => setHelpText("Apply Changes & Bake Audio")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    <Check size={12} /> Apply
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setAutomationPoints([]);
-                                                        setShowAutomationPanel(false);
-                                                        handleDirtyChange();
-                                                    }}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
-                                                    title="Clear Automation Points"
-                                                    onMouseEnter={() => setHelpText("Reset All Points")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    <RotateCcw size={12} /> Reset
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Loop Settings Section */}
-                                <div className={`flex flex-row items-center gap-6 w-full transition-all ${showLoopPanel ? 'opacity-100' : 'opacity-60 grayscale'}`}>
-                                    <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-gray-500 tracking-wider w-[240px] shrink-0 whitespace-nowrap">
-                                        {/* Toggle Switch */}
-                                        <div
-                                            onClick={() => {
-                                                if (showLoopPanel) {
-                                                    // Turning OFF - Reset Loop Preview
-                                                    if (isPreviewingLoop) {
-                                                        if (wavesurfer.current && currentBlob) {
-                                                            wavesurfer.current.loadBlob(currentBlob);
-                                                        }
-                                                        setIsPreviewingLoop(false);
-                                                    }
-                                                }
-                                                setShowLoopPanel(!showLoopPanel);
-                                            }}
-                                            onMouseEnter={() => setHelpText("Enable Loop Settings (Step 2: Refine Loop)")}
-                                            onMouseLeave={() => setHelpText("")}
-                                            className={`w-8 h-4 rounded-full p-0.5 cursor-pointer transition-colors ${showLoopPanel ? 'bg-synthux-blue' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        >
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${showLoopPanel ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                                        </div>
-                                        <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setShowLoopPanel(!showLoopPanel)}
-                                            onMouseEnter={() => setHelpText("Enable Loop Settings (Step 2: Refine Loop)")}
-                                            onMouseLeave={() => setHelpText("")}>
-                                            <Repeat size={12} className={showLoopPanel ? "text-synthux-blue" : "text-gray-500"} /> Loop Settings
-                                        </div>
-                                    </div>
-
-
-                                    <div className={`flex gap-4 items-center flex-wrap justify-start transition-opacity ${showLoopPanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-40'}`}>
-
-                                        <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
-                                            <div className="flex flex-col gap-1 min-w-[12rem]">
-                                                {(() => {
-                                                    const duration = regionState.end - regionState.start;
-                                                    const maxCrossfade = Math.min(10, duration / 2);
-                                                    const safeValue = Math.min(loopCrossfade, maxCrossfade);
-
-                                                    return (
-                                                        <>
-                                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
-                                                                <span>Loop Crossfade</span>
-                                                                <span className="text-synthux-blue">{safeValue.toFixed(2)}s <span className="text-gray-600">/ {maxCrossfade.toFixed(2)}s</span></span>
-                                                            </div>
-                                                            <input
-                                                                type="range"
-                                                                min="0.01"
-                                                                max={maxCrossfade}
-                                                                step="0.01"
-                                                                value={safeValue}
-                                                                onChange={(e) => setLoopCrossfade(Number(e.target.value))}
-                                                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
-                                                                onMouseEnter={() => setHelpText("Adjust Crossfade Duration (Smooth Loop)")}
-                                                                onMouseLeave={() => setHelpText("")}
-                                                            />
-                                                        </>
-                                                    )
-                                                })()}
-                                            </div>
-
-                                            <div className="h-6 w-px bg-gray-800 mx-2"></div>
-
-                                            {/* Loop Actions (Preview, Apply, Reset) */}
                                             <div className="flex items-center gap-2">
-                                                {/* Preview */}
-                                                <button
-                                                    onClick={handlePreviewLoop}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLoop
-                                                        ? 'bg-synthux-blue text-white hover:bg-red-500'
-                                                        : 'bg-gray-800 hover:bg-synthux-blue text-white'
-                                                        }`}
-                                                    title={isPreviewingLoop ? "Refresh Loop Preview" : "Preview Loop (Gapless)"}
-                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Refresh Loop (Update Crossfade)" : "Hear Loop with Crossfade")}
+                                                <button onClick={handlePreviewLoop}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLoop ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Refresh Loop Preview" : "Preview Loop")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    {isPreviewingLoop ? <RefreshCw size={12} className="animate-spin-once" /> : <Play size={12} />}
+                                                    {isPreviewingLoop ? <RefreshCw size={12} /> : <Play size={12} />}
                                                     {isPreviewingLoop ? "Refresh" : "Preview"}
                                                 </button>
-
-                                                {/* Apply */}
-                                                <button
-                                                    onClick={async () => {
-                                                        if (!originalBuffer) return;
-                                                        if (wavesurfer.current) {
-                                                            wavesurfer.current.pause();
-                                                            setIsPlaying(false);
-                                                        }
-                                                        setIsProcessing(true);
-                                                        try {
-                                                            // Logic duplicated from original "Make Loop"
-                                                            let start = 0;
-                                                            let end = originalBuffer.duration;
-                                                            if (regions.current) {
-                                                                const list = regions.current.getRegions();
-                                                                if (list.length > 0) {
-                                                                    start = list[0].start;
-                                                                    end = list[0].end;
-                                                                }
-                                                            }
-                                                            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
-                                                            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-                                                            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['looped', 'trimmed'] };
-                                                            const newBlob = encodeWAV(looped, meta);
-
-                                                            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s)`, true, ['looped', 'trimmed']);
-                                                            showToast("Loop Created!", "success");
-                                                            setShowLoopPanel(false);
-
-                                                        } catch (e) {
-                                                            console.error(e);
-                                                            showToast("Failed to make loopable", "error");
-                                                        } finally {
-                                                            setIsProcessing(false);
-                                                        }
-                                                    }}
+                                                <button onClick={handleApplyLoop}
                                                     className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
-                                                    title="Create/Apply Loop"
-                                                    onMouseEnter={() => setHelpText("Apply Loop Crossfade & Settings")}
+                                                    onMouseEnter={() => setHelpText("Apply Loop Crossfade")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Apply</button>
+                                                <button onClick={() => {
+                                                    if (isPreviewingLoop && wavesurfer.current && currentBlob) {
+                                                        wavesurfer.current.loadBlob(currentBlob);
+                                                        setIsPreviewingLoop(false);
+                                                    }
+                                                    setLoopCrossfade(0.2);
+                                                    handleDirtyChange();
+                                                }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Reset Loop Settings")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* EQ Panel */}
+                                    {activeTool === 'eq' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                {isAdvancedEQ ? (
+                                                    <div className="flex items-center gap-3 px-2">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <div className="text-[10px] uppercase font-bold text-gray-500">Advanced EQ</div>
+                                                            <div className="text-[9px] text-purple-400 font-bold uppercase tracking-widest animate-pulse">10-Band Mode Active</div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setShowAdvancedEQModal(true)}
+                                                            className="px-2 py-1 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded text-[9px] font-bold text-purple-300 uppercase tracking-widest transition-colors flex items-center gap-1.5"
+                                                        >
+                                                            <Sliders size={10} /> Open Sliders
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    [
+                                                        { label: 'Low', value: eqLow, setter: setEqLow, hint: 'Low Shelf (300Hz)' },
+                                                        { label: 'Mid', value: eqMid, setter: setEqMid, hint: 'Mid Peak (1kHz)' },
+                                                        { label: 'High', value: eqHigh, setter: setEqHigh, hint: 'High Shelf (4kHz)' },
+                                                    ].map(band => (
+                                                        <div key={band.label} className="flex flex-col gap-1 min-w-[5rem]">
+                                                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                                <label>{band.label}</label>
+                                                                <span className={band.value > 0 ? "text-green-400" : band.value < 0 ? "text-red-400" : "text-gray-500"}>
+                                                                    {band.value > 0 ? '+' : ''}{band.value}dB
+                                                                </span>
+                                                            </div>
+                                                            <input
+                                                                type="range" min="-12" max="12" step="0.5" value={band.value}
+                                                                onChange={(e) => { band.setter(Number(e.target.value)); handleDirtyChange(); }}
+                                                                onDoubleClick={() => { band.setter(0); handleDirtyChange(); }}
+                                                                onMouseEnter={() => setHelpText(`${band.hint} (DBL-Click to Reset)`)}
+                                                                onMouseLeave={() => setHelpText("")}
+                                                                className="w-20 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-400"
+                                                            />
+                                                        </div>
+                                                    ))
+                                                )}
+
+                                                {!isAdvancedEQ && (
+                                                    <button
+                                                        onClick={() => setEqNormalize(!eqNormalize)}
+                                                        className={`flex flex-col items-center gap-0.5 group px-2 border-l border-gray-800 ml-1 ${eqNormalize ? 'text-synthux-green' : 'text-gray-500'}`}
+                                                        onMouseEnter={() => setHelpText("Normalize before EQ")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    >
+                                                        <div className="text-[8px] uppercase font-bold group-hover:text-synthux-green transition-colors">Norm</div>
+                                                        <div className={`p-1 rounded ${eqNormalize ? 'bg-synthux-green/20' : 'bg-gray-800'} transition-colors`}>
+                                                            <Maximize2 size={12} />
+                                                        </div>
+                                                    </button>
+                                                )}
+
+                                                {!isAdvancedEQ && (
+                                                    <div className="h-6 w-px bg-gray-800 mx-1"></div>
+                                                )}
+
+                                                {!isAdvancedEQ && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setIsAdvancedEQ(true);
+                                                            setShowAdvancedEQModal(true);
+                                                        }}
+                                                        className="flex flex-col items-center gap-0.5 group px-2"
+                                                        onMouseEnter={() => setHelpText("Open 10-Band Advanced EQ")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    >
+                                                        <div className="text-[8px] uppercase font-bold text-gray-600 group-hover:text-purple-400">Advanced</div>
+                                                        <div className="p-1 rounded bg-gray-800 group-hover:bg-purple-900/40 text-gray-500 group-hover:text-purple-400 transition-colors">
+                                                            <Maximize2 size={12} />
+                                                        </div>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handlePreviewEQ}
+                                                    disabled={!isAdvancedEQ && eqLow === 0 && eqMid === 0 && eqHigh === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingEQ ? 'bg-purple-500 text-white hover:bg-red-500' : (!isAdvancedEQ && eqLow === 0 && eqMid === 0 && eqHigh === 0) ? 'bg-gray-900 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-purple-500 text-white'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewingEQ ? "Refresh Preview" : "Hear EQ Effect")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewingEQ ? <RefreshCw size={12} /> : <Play size={12} />}
+                                                    {isPreviewingEQ ? "Refresh" : "Preview"}
+                                                </button>
+                                                <button onClick={handleApplyEQ}
+                                                    disabled={!isAdvancedEQ && eqLow === 0 && eqMid === 0 && eqHigh === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${(!isAdvancedEQ && eqLow === 0 && eqMid === 0 && eqHigh === 0) ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border-green-900/50'}`}
+                                                    onMouseEnter={() => setHelpText("Apply EQ & Create Version")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Apply</button>
+                                                <button onClick={handleResetEQ}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Reset EQ Settings")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Limiter Panel */}
+                                    {activeTool === 'limiter' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-gray-800">
+                                                <button
+                                                    onClick={() => setLimiterMode('compressor')}
+                                                    className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors ${limiterMode === 'compressor' ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-800'}`}
+                                                    onMouseEnter={() => setHelpText("Auto Limiter: Acts like an upward compressor, pushing volume up towards the ceiling.")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >Auto</button>
+                                                <button
+                                                    onClick={() => setLimiterMode('peak')}
+                                                    className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors ${limiterMode === 'peak' ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-800'}`}
+                                                    onMouseEnter={() => setHelpText("Peak Limiter: Cuts off any volume over the threshold. No makeup gain.")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >Peak</button>
+                                            </div>
+
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-1 min-w-[7rem]">
+                                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                        <label>{limiterMode === 'peak' ? 'Limit' : 'Threshold'}</label>
+                                                        <span className="text-red-400">{limiterThreshold}dB</span>
+                                                    </div>
+                                                    <input type="range" min="-24" max="0" step="0.5" value={limiterThreshold}
+                                                        onChange={(e) => { setLimiterThreshold(Number(e.target.value)); handleDirtyChange(); }}
+                                                        onDoubleClick={() => { setLimiterThreshold(-6); handleDirtyChange(); }}
+                                                        onMouseEnter={() => setHelpText(limiterMode === 'peak' ? "Peak Threshold (DBL-Click to Reset)" : "Limiter Threshold (DBL-Click to Reset)")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                        className="w-24 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-400"
+                                                    />
+                                                </div>
+
+                                                {limiterMode === 'compressor' && (
+                                                    <div className="flex flex-col gap-1 min-w-[7rem]">
+                                                        <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                            <label>Ceiling</label>
+                                                            <span className="text-red-400">{limiterCeiling.toFixed(1)}dB</span>
+                                                        </div>
+                                                        <input type="range" min="-3" max="0" step="0.1" value={limiterCeiling}
+                                                            onChange={(e) => { setLimiterCeiling(Number(e.target.value)); handleDirtyChange(); }}
+                                                            onDoubleClick={() => { setLimiterCeiling(-0.3); handleDirtyChange(); }}
+                                                            onMouseEnter={() => setHelpText("Limiter Output Ceiling (DBL-Click to Reset)")}
+                                                            onMouseLeave={() => setHelpText("")}
+                                                            className="w-24 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-400"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handlePreviewLimiter}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLimiter ? 'bg-red-500 text-white hover:bg-gray-800' : 'bg-gray-800 hover:bg-red-500 text-white'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewingLimiter ? "Stop Preview" : "Hear Limiter Effect")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewingLimiter ? <Pause size={12} /> : <Play size={12} />}
+                                                    {isPreviewingLimiter ? "Stop" : "Preview"}
+                                                </button>
+                                                <button onClick={handleApplyLimiter}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white transition-colors border border-green-900/50"
+                                                    onMouseEnter={() => setHelpText("Apply Limiter & Create Version")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Apply</button>
+                                                <button onClick={handleResetLimiter}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Reset Limiter Settings")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Cutter Panel */}
+                                    {activeTool === 'cutter' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-0.5 min-w-[6rem]">
+                                                    <div className="text-[10px] uppercase font-bold text-gray-500">Regions</div>
+                                                    <div className="text-xs font-bold text-amber-400">
+                                                        {cutRegions.length} cut{cutRegions.length !== 1 ? 's' : ''}
+                                                        {cutRegions.length > 0 && (
+                                                            <span className="text-gray-500 ml-1">(-{cutRegions.reduce((s, r) => s + (r.end - r.start), 0).toFixed(2)}s)</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-1 min-w-[6rem]">
+                                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                        <label>Crossfade</label>
+                                                        <span className="text-amber-400">{(cutCrossfade * 1000).toFixed(0)}ms</span>
+                                                    </div>
+                                                    <input type="range" min="0" max="0.1" step="0.001" value={cutCrossfade}
+                                                        onChange={(e) => setCutCrossfade(Number(e.target.value))}
+                                                        onDoubleClick={() => setCutCrossfade(0.01)}
+                                                        onMouseEnter={() => setHelpText("Crossfade at cut seams (DBL-Click to Reset)")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                        className="w-20 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                                                    />
+                                                </div>
+                                                <div className="text-[9px] text-gray-600 max-w-[100px] leading-tight">
+                                                    Double-click waveform to add. Drag edges.
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handlePreviewCut} disabled={cutRegions.length === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingCut ? 'bg-amber-500 text-white hover:bg-red-500' : cutRegions.length === 0 ? 'bg-gray-900 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-amber-500 text-white'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewingCut ? "Refresh Preview" : "Hear Result After Cuts")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewingCut ? <RefreshCw size={12} /> : <Play size={12} />}
+                                                    {isPreviewingCut ? "Refresh" : "Preview"}
+                                                </button>
+                                                <button onClick={handleApplyCut} disabled={cutRegions.length === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${cutRegions.length === 0 ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border-green-900/50'}`}
+                                                    onMouseEnter={() => setHelpText("Apply Cuts & Create Version")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Apply</button>
+                                                <button onClick={handleResetCut}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Clear All Cut Regions")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Slicer Panel */}
+                                    {activeTool === 'slicer' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-0.5 min-w-[5rem]">
+                                                    <div className="text-[10px] uppercase font-bold text-gray-500">Markers</div>
+                                                    <div className="text-xs font-bold text-cyan-400">{slicePoints.length} / 32</div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    {[4, 8, 16, 32].map(n => (
+                                                        <button key={n} onClick={() => handleAutoSlice(n - 1)}
+                                                            className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${slicePoints.length === n - 1 ? 'bg-cyan-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}
+                                                            onMouseEnter={() => setHelpText(`Auto-divide into ${n} slices`)}
+                                                            onMouseLeave={() => setHelpText("")}
+                                                        >{n}</button>
+                                                    ))}
+                                                </div>
+                                                <div className="text-[9px] text-gray-600 max-w-[100px] leading-tight">
+                                                    Double-click waveform to add. Drag to move.
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handleApplySlicer} disabled={slicePoints.length === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${slicePoints.length === 0 ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border-green-900/50'}`}
+                                                    onMouseEnter={() => setHelpText("Save Slice Markers to Metadata")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Apply</button>
+                                                <button onClick={handleResetSlicer}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Clear All Slice Markers")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {/* Pitch Panel */}
+                                    {activeTool === 'pitch' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-0.5 min-w-[7rem]">
+                                                    <div className="text-[10px] uppercase font-bold text-gray-500">Semitones</div>
+                                                    <div className="text-xs font-bold text-synthux-blue">
+                                                        {pitchSemitones > 0 ? '+' : ''}{pitchSemitones} ST
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <input type="range" min="-12" max="12" step="1" value={pitchSemitones}
+                                                        onChange={(e) => handlePitchSliderChange(parseInt(e.target.value))}
+                                                        onDoubleClick={() => setPitchSemitones(0)}
+                                                        onMouseEnter={() => setHelpText("Pitch Shift in Semitones (DBL-Click to Reset)")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                        className="w-32 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
+                                                    />
+                                                </div>
+                                                <div className="text-[9px] text-gray-600 max-w-[100px] leading-tight">
+                                                    Shift pitch up/down. Detection uses current region.
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handleSelectAllPitch} disabled={isPreviewing}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}`}
+                                                    onMouseEnter={() => setHelpText("Select entire waveform for pitching")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <Maximize2 size={12} /> All
+                                                </button>
+
+                                                <button onClick={handleClearPitch} disabled={isPreviewing || pitchRegions.length === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing || pitchRegions.length === 0 ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-red-900/40 text-red-400'}`}
+                                                    onMouseEnter={() => setHelpText("Remove all pitch regions")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    <Trash2 size={12} /> Clear
+                                                </button>
+
+                                                <div className="h-4 w-px bg-gray-700 mx-1"></div>
+
+                                                <button onClick={isPreviewing ? handleResetPitch : handlePreviewPitch} disabled={isProcessing || (pitchRegions.length === 0 && !isPreviewing)}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isProcessing || (pitchRegions.length === 0 && !isPreviewing) ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-gray-200'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Cancel Preview & Restore Selections" : "Preview pitch changes")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {isPreviewing ? (
+                                                        <><RotateCcw size={12} /> Reset</>
+                                                    ) : (
+                                                        <><Play size={12} /> Preview</>
+                                                    )}
+                                                </button>
+
+                                                <button onClick={handleApplyPitch} disabled={pitchRegions.length === 0 || isProcessing}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all border ${pitchRegions.length === 0 || isProcessing ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed' : 'bg-synthux-blue/20 hover:bg-synthux-blue text-synthux-blue hover:text-white border-synthux-blue/30'}`}
+                                                    onMouseEnter={() => setHelpText("Apply all pitch tunings to file")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
                                                     <Check size={12} /> Apply
                                                 </button>
 
-                                                {/* Reset (Cancel) */}
-                                                <button
-                                                    onClick={() => {
-                                                        // If previewing, stop preview?
-                                                        if (isPreviewingLoop && wavesurfer.current && currentBlob) {
-                                                            wavesurfer.current.loadBlob(currentBlob);
-                                                            setIsPreviewingLoop(false);
-                                                        }
-                                                        setShowLoopPanel(false);
-                                                    }}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
-                                                    title="Close Loop Settings"
-                                                    onMouseEnter={() => setHelpText("Close Loop Settings")}
+                                                <div className="h-4 w-px bg-gray-700 mx-1"></div>
+
+                                                <button onClick={handleDetectPitch} disabled={isProcessing || isPreviewing}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isProcessing || isPreviewing ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-synthux-blue hover:text-white text-gray-400'}`}
+                                                    onMouseEnter={() => setHelpText("Detect pitch of selected region")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    <RotateCcw size={12} /> Reset
+                                                    <Activity size={12} className={isProcessing ? 'animate-pulse' : ''} />
+                                                    {detectedPitch ? `${detectedPitch.toFixed(1)} Hz` : 'Detect'}
                                                 </button>
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {/* Stereo Panel */}
+                                    {activeTool === 'stereo' && (
+                                        <div className="flex items-center gap-3 min-w-max">
+                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex flex-col gap-0.5 min-w-[7rem]">
+                                                    <div className="text-[10px] uppercase font-bold text-gray-500">Channels</div>
+                                                    <div className="text-xs font-bold text-purple-400">
+                                                        {originalBuffer?.numberOfChannels || 1} Channel(s)
+                                                    </div>
+                                                </div>
+                                                <div className="text-[9px] text-gray-600 max-w-[150px] leading-tight">
+                                                    Split stereo into mono versions or keep specific sides.
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => setStereoSplitView(!stereoSplitView)}
+                                                    disabled={!originalBuffer || originalBuffer.numberOfChannels <= 1}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all border ${!originalBuffer || originalBuffer.numberOfChannels <= 1
+                                                        ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed'
+                                                        : stereoSplitView
+                                                            ? 'bg-synthux-blue/20 border-synthux-blue text-synthux-blue shadow-lg shadow-blue-500/10'
+                                                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-300'
+                                                        }`}
+                                                    onMouseEnter={() => setHelpText(stereoSplitView ? "Superimpose channels (Merged View)" : "Split channels vertically (Stacked View)")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >
+                                                    {stereoSplitView ? <Maximize2 size={12} /> : <Minimize2 size={12} />}
+                                                    {stereoSplitView ? "STACKED" : "MERGED"}
+                                                </button>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => handleSplitStereo('L')}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-[#00A3FF]/20 border border-[#00A3FF]/30 text-[#00A3FF] hover:bg-[#00A3FF] hover:text-white transition-all shadow-lg shadow-blue-500/10"
+                                                    onMouseEnter={() => setHelpText("Save Left Channel to Pool")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >L</button>
+                                                <button onClick={() => handleSplitStereo('R')}
+                                                    disabled={originalBuffer?.numberOfChannels === 1}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all border ${originalBuffer?.numberOfChannels === 1
+                                                        ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed'
+                                                        : 'bg-[#FFB900]/20 border border-[#FFB900]/30 text-[#FFB900] hover:bg-[#FFB900] hover:text-black shadow-lg shadow-yellow-500/10'
+                                                        }`}
+                                                    onMouseEnter={() => setHelpText("Save Right Channel to Pool")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                >R</button>
+                                                <button onClick={() => handleSplitStereo('both')}
+                                                    disabled={originalBuffer?.numberOfChannels === 1}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${originalBuffer?.numberOfChannels === 1 ? 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border-green-900/50'}`}
+                                                    onMouseEnter={() => setHelpText("Save Both Channels Separately")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Check size={12} /> Split Both</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
+                            )}
                         </div>
 
-
-
-
-
                         {/* Hover Help Text */}
+
                         <div className="absolute top-[88px] left-6 text-[10px] text-synthux-blue font-mono tracking-widest uppercase pointer-events-none transition-opacity duration-200">
                             {helpText || "Ready"}
                         </div>
 
                         {/* Editor Container - SCROLLABLE WINDOW */}
                         {/* Parent: Flex-1 to take available space. Centered content. */}
-                        <div className="flex-1 bg-[#111] border-y border-gray-800 relative z-20 flex flex-col justify-center overflow-hidden min-h-[300px] min-w-0 max-w-full">
+                        <div className="flex-1 bg-[#111] border-y border-gray-800 relative z-20 flex flex-col justify-center overflow-hidden min-h-[350px] min-w-0 max-w-full">
 
                             {/* Scroll Area Wrapper - This handles the overflow-x */}
                             <div
                                 ref={scrollContainerRef}
-                                className="w-full h-full overflow-x-auto overflow-y-hidden px-4 editor-scroll"
+                                className="w-full h-full overflow-x-auto overflow-y-hidden editor-scroll"
                                 style={{ userSelect: 'none' }}
                                 onWheel={handleWheel}
+                                onScroll={handleEditorScroll}
                             >
 
                                 {/* Fixed Height Content Strip with Ruler */}
@@ -2146,19 +3144,98 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Waveform Area */}
                                     <div className="relative" style={{ height: 256 }}>
-                                        {/* WaveSurfer Container */}
+                                        {/* WaveSurfer Sticky Window */}
                                         <div
-                                            ref={containerRef}
-                                            className="absolute inset-0 z-0 bg-black/20 cursor-text touch-none"
-                                            onPointerDown={handleWaveformPointerDown}
-                                            onPointerMove={handleWaveformPointerMove}
-                                            onPointerUp={handleWaveformPointerUp}
-                                            onPointerLeave={handleWaveformPointerUp}
+                                            className="sticky left-0 h-full z-0 overflow-hidden pointer-events-none"
+                                            style={{ width: viewportWidth }}
+                                        >
+                                            {/* dB Scale Background Overlay - Now inside sticky window with viewportWidth */}
+                                            {showDbScale && <DbScale width={viewportWidth} height={256} vZoom={vZoom} />}
+
+                                            <div
+                                                ref={containerRef}
+                                                className="w-full h-full bg-black/20 cursor-text touch-none pointer-events-auto"
+                                                onPointerDown={handleWaveformPointerDown}
+                                                onPointerMove={handleWaveformPointerMove}
+                                                onPointerUp={handleWaveformPointerUp}
+                                                onPointerLeave={handleWaveformPointerUp}
+                                            />
+                                        </div>
+
+                                        {/* Automation Overlay (New) */}
+                                        <AutomationOverlay
+                                            points={automationPoints}
+                                            duration={editorDuration}
+                                            width={contentWidth}
+                                            height={256}
+                                            active={activeTool === 'automation'}
+                                            onPointsChange={(pts) => {
+                                                setAutomationPoints(pts);
+                                                handleDirtyChange();
+                                                // Auto-enable panel if adding points
+                                                if (pts.length > 0 && activeTool !== 'automation') {
+                                                    setActiveTool('automation');
+                                                }
+                                            }}
+                                            onSeek={(t) => {
+                                                if (wavesurfer.current) wavesurfer.current.setTime(t);
+                                            }}
+                                            smooth={smooth}
                                         />
 
-                                        {/* Fade Overlay (Existing) */}
-                                        {editorDuration > 0 && (
-                                            <div className="absolute inset-0 z-10 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
+                                        {/* Cutter Overlay */}
+                                        <CutterOverlay
+                                            regions={cutRegions}
+                                            duration={editorDuration}
+                                            width={contentWidth}
+                                            height={256}
+                                            onRegionsChange={(updated) => {
+                                                setCutRegions(updated);
+                                                handleDirtyChange();
+                                            }}
+                                            active={activeTool === 'cutter'}
+                                        />
+
+                                        {/* Slicer Overlay */}
+                                        <SlicerOverlay
+                                            points={slicePoints}
+                                            duration={editorDuration}
+                                            width={contentWidth}
+                                            height={256}
+                                            maxSlices={100}
+                                            onPointsChange={setSlicePoints}
+                                            active={activeTool === 'slicer'}
+                                        />
+
+                                        {/* Pitch Selection Overlay */}
+                                        <PitchOverlay
+                                            regions={pitchRegions}
+                                            duration={isPreviewing && previewDuration ? previewDuration : editorDuration}
+                                            width={contentWidth}
+                                            height={256}
+                                            onRegionsChange={setPitchRegions}
+                                            active={activeTool === 'pitch'}
+                                            currentPitch={pitchSemitones}
+                                            isPreviewing={isPreviewing && activeTool === 'pitch'}
+                                            previewRegions={previewPitchRegions}
+                                        />
+
+                                        {/* Limiter Overlay (New) */}
+                                        <LimiterOverlay
+                                            thresholdDb={limiterThreshold}
+                                            onThresholdChange={(db) => {
+                                                setLimiterThreshold(db);
+                                                handleDirtyChange();
+                                            }}
+                                            width={contentWidth}
+                                            height={256}
+                                            vZoom={vZoom}
+                                            active={activeTool === 'limiter' && limiterMode === 'peak'}
+                                        />
+
+                                        {/* Fade Overlay - PLACED LAST FOR MAX Z-INDEX PRIORITY */}
+                                        {activeTool === 'trim' && editorDuration > 0 && (
+                                            <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
                                                 <FadeOverlay
                                                     width={contentWidth}
                                                     height={256}
@@ -2166,7 +3243,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     fadeOut={fadeOut}
                                                     duration={editorDuration}
                                                     region={regionState}
+                                                    active={activeTool === 'trim'}
                                                     onFadeChange={(type, duration) => {
+                                                        if (activeTool !== 'trim') return;
                                                         const rounded = Math.round(duration * 100) / 100;
                                                         if (type === 'in') setFadeIn(rounded);
                                                         else setFadeOut(rounded);
@@ -2174,6 +3253,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         handleDirtyChange();
                                                     }}
                                                     onRegionChange={(start, end) => {
+                                                        if (activeTool !== 'trim') return;
                                                         const regionList = regions.current?.getRegions();
                                                         if (regionList && regionList.length > 0) {
                                                             regionList[0].setOptions({ start, end });
@@ -2184,27 +3264,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 />
                                             </div>
                                         )}
-
-                                        {/* Automation Overlay (New) */}
-                                        <AutomationOverlay
-                                            points={automationPoints}
-                                            duration={editorDuration}
-                                            width={contentWidth}
-                                            height={256}
-                                            onPointsChange={(pts) => {
-                                                setAutomationPoints(pts);
-                                                handleDirtyChange();
-                                                // Auto-enable panel if adding points
-                                                if (pts.length > 0 && !showAutomationPanel) {
-                                                    setShowAutomationPanel(true);
-                                                }
-                                            }}
-                                            onSeek={(t) => {
-                                                if (wavesurfer.current) wavesurfer.current.seekTo(t / editorDuration);
-                                            }}
-                                            smooth={smooth}
-                                        />
-
                                         {/* Center Line Visual */}
                                         <div className="absolute inset-0 pointer-events-none border-t border-b border-dashed border-gray-700/30 top-1/2 -translate-y-1/2 h-0 z-0"></div>
                                     </div>
@@ -2219,36 +3278,54 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             <div className="flex-1 flex justify-start">
                                 {(() => {
                                     const duration = regionState.end - regionState.start;
-                                    const isOverLimit = duration > 42.01;
+                                    const isTrimOverLimit = duration > 42.01;
+                                    const isFileOverLimit = editorDuration > 42.01;
+
+                                    // Always show if it's a long file OR we're in the trim tool
+                                    const showStatus = isFileOverLimit || activeTool === 'trim';
+
+                                    // Explicitly safe if we are in the trim tool and within limit
+                                    const isSafe = activeTool === 'trim' && !isTrimOverLimit;
+
+                                    // Show warning if the TRIM is over 42s OR if the FILE is over 42s (but we're not in the "safe" trim view)
+                                    const showWarning = isTrimOverLimit || (isFileOverLimit && activeTool !== 'trim');
+
+                                    if (!showStatus) return null;
+
                                     return (
                                         <div className="flex items-center gap-4">
-                                            <div className={`text-xs font-bold uppercase tracking-widest flex items-center gap-2 ${isOverLimit ? 'text-red-500' : 'text-gray-500'}`}>
-                                                {isOverLimit && <span>⚠️</span>}
+                                            <div className={`text-xs font-bold uppercase tracking-widest flex items-center gap-2 ${showWarning ? 'text-red-500' : isSafe ? 'text-green-500' : 'text-gray-500'}`}>
+                                                {showWarning && <span>⚠️</span>}
+                                                {isSafe && <span>✅</span>}
                                                 <span>Trim: {duration.toFixed(2)}s</span>
-                                                {isOverLimit && <span className="text-[10px] normal-case opacity-80">(Max 42s)</span>}
+                                                {isSafe && <span className="text-[10px] normal-case opacity-80">(Safe)</span>}
+                                                {isFileOverLimit && !isTrimOverLimit && activeTool !== 'trim' && <span className="text-[10px] normal-case opacity-80">(File: {editorDuration.toFixed(2)}s)</span>}
+                                                {isTrimOverLimit && <span className="text-[10px] normal-case opacity-80">(Max 42s)</span>}
                                             </div>
-                                            <button
-                                                onClick={() => {
-                                                    if (regions.current) {
-                                                        const list = regions.current.getRegions();
-                                                        if (list.length > 0) {
-                                                            const r = list[0];
-                                                            const center = r.start + (duration / 2);
-                                                            const newStart = Math.max(0, center - 21);
-                                                            const newEnd = Math.min(editorDuration, center + 21);
-                                                            r.setOptions({ start: newStart, end: newEnd });
-                                                            setRegionState({ start: newStart, end: newEnd });
-                                                            handleDirtyChange();
+                                            {activeTool === 'trim' && (
+                                                <button
+                                                    onClick={() => {
+                                                        if (regions.current) {
+                                                            const list = regions.current.getRegions();
+                                                            if (list.length > 0) {
+                                                                const r = list[0];
+                                                                const center = r.start + (duration / 2);
+                                                                const newStart = Math.max(0, center - 21);
+                                                                const newEnd = Math.min(editorDuration, center + 21);
+                                                                r.setOptions({ start: newStart, end: newEnd });
+                                                                setRegionState({ start: newStart, end: newEnd });
+                                                                handleDirtyChange();
+                                                            }
                                                         }
-                                                    }
-                                                }}
-                                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border ${isOverLimit
-                                                    ? 'bg-red-900/30 hover:bg-red-900/50 border-red-500/50 text-red-200'
-                                                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600 text-gray-400 hover:text-white'
-                                                    }`}
-                                            >
-                                                Set 42s
-                                            </button>
+                                                    }}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border ${isTrimOverLimit
+                                                        ? 'bg-red-900/30 hover:bg-red-900/50 border-red-500/50 text-red-200'
+                                                        : 'bg-gray-800 hover:bg-gray-700 border-gray-600 text-gray-400 hover:text-white'
+                                                        }`}
+                                                >
+                                                    Set 42s
+                                                </button>
+                                            )}
                                         </div>
                                     )
                                 })()}
@@ -2256,9 +3333,39 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                             {/* Zoom Controls (Right) */}
                             <div className="flex items-center gap-2">
-                                <div className="mr-2 text-gray-500 flex items-center gap-1 opacity-50">
-                                    <Eye size={14} />
+                                {/* Vertical Zoom (Visual Gain) */}
+                                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-900/50 rounded-lg border border-gray-800/50 mr-1" title="Vertical Zoom (Amplitude)">
+                                    <Activity size={12} className="text-gray-500" />
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="15"
+                                        step="0.1"
+                                        value={vZoom}
+                                        onChange={(e) => setVZoom(Number(e.target.value))}
+                                        onDoubleClick={() => setVZoom(1.0)}
+                                        onMouseEnter={() => setHelpText("Vertical Zoom / Gain (DBL-Click to Reset)")}
+                                        onMouseLeave={() => setHelpText("")}
+                                        className="w-[150px] h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
+                                    />
+                                    <button
+                                        onClick={() => setVZoom(1.0)}
+                                        className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors ml-1"
+                                        title="Fit Vertically"
+                                    >
+                                        <Maximize2 size={12} />
+                                    </button>
                                 </div>
+
+                                <button
+                                    onClick={() => setShowDbScale(!showDbScale)}
+                                    className={`mr-2 flex items-center gap-1 transition-all ${showDbScale ? 'text-synthux-yellow opacity-100' : 'text-gray-500 opacity-50'}`}
+                                    title={showDbScale ? "Hide dB Scale" : "Show dB Scale"}
+                                    onMouseEnter={() => setHelpText(showDbScale ? "Hide dB Scale Overlay" : "Show dB Scale Overlay")}
+                                    onMouseLeave={() => setHelpText("")}
+                                >
+                                    <Eye size={14} />
+                                </button>
                                 <button onClick={handleFitView} className="px-2 py-1 hover:bg-gray-800 rounded text-[10px] font-bold uppercase text-gray-400 hover:text-white flex items-center gap-1 border border-transparent hover:border-gray-700 transition-all" title="Fit All">
                                     <ArrowLeftRight size={14} /> Fit View
                                 </button>
@@ -2267,7 +3374,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 </button>
                                 <div className="w-px h-4 bg-gray-700 mx-2"></div>
                                 <button onClick={handleZoomOut} disabled={zoom <= (minZoom * 1.001)} className={`p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white ${zoom <= (minZoom * 1.001) ? 'opacity-30' : ''}`}><ZoomOut size={16} /></button>
-                                <input type="range" min={minZoom || 0.1} max="1000" step="0.1" value={zoom} onChange={(e) => setZoomCentered(Number(e.target.value))} className="w-24 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                                <input
+                                    type="range" min={minZoom || 0.1} max="1000" step="0.1" value={zoom}
+                                    onChange={(e) => setZoomCentered(Number(e.target.value))}
+                                    onDoubleClick={() => setZoomCentered(minZoom)}
+                                    className="w-[150px] h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                />
                                 <button onClick={handleZoomIn} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white"><ZoomIn size={16} /></button>
                             </div>
                         </div>
@@ -2283,11 +3395,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         const newLooping = !isLooping;
                                         setIsLooping(newLooping);
 
-                                        // ENABLE NATIVE LOOPING on the region as backup/primary
-                                        if (regions.current) {
+                                        // Only set region loop if TRIM TOOL is active
+                                        if (activeTool === 'trim' && regions.current) {
                                             const list = regions.current.getRegions();
-                                            if (list.length > 0) {
-                                                list[0].setOptions({ loop: newLooping });
+                                            const trimRegion = list.find((r: any) => r.id === 'trim-region');
+                                            if (trimRegion) {
+                                                trimRegion.setOptions({ loop: newLooping });
                                             }
                                         }
                                     }}
@@ -2299,9 +3412,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                 <button
                                     onClick={handlePlayPause}
-                                    className="flex items-center gap-2 px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full text-lg font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
+                                    className="flex items-center gap-2 px-6 py-2 bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
                                 >
-                                    {isPlaying ? <Pause fill="white" /> : <Play fill="white" />}
+                                    {isPlaying ? <Pause fill="white" size={18} /> : <Play fill="white" size={18} />}
                                     {isPlaying ? 'PAUSE' : 'PLAY'}
                                 </button>
                                 <div title={!isDirty && loadedVersionId === activeVersionId ? "File has not changed" : ""}>
@@ -2309,9 +3422,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         onClick={() => {
                                             if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
                                                 onAssignVersion(loadedVersionId);
-                                                // onClose(); // User wants to just assign? Or keep editing?
-                                                // "making this just the assigned file for the slot"
-                                                // Let's assume we maintain local state but trigger assignment
                                             } else {
                                                 if (wavesurfer.current && isPlaying) {
                                                     wavesurfer.current.pause();
@@ -2321,14 +3431,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }}
                                         disabled={isProcessing || (!isDirty && loadedVersionId === activeVersionId)}
-                                        className={`flex items-center gap-2 px-8 py-3 rounded-full text-lg font-bold transition-all shadow-lg ${isProcessing || (!isDirty && loadedVersionId === activeVersionId)
+                                        className={`flex items-center gap-2 px-6 py-2 rounded-full text-base font-bold transition-all shadow-lg ${isProcessing || (!isDirty && loadedVersionId === activeVersionId)
                                             ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
                                             : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
                                             }`}
                                     >
-                                        <Save size={20} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
+                                        <Save size={18} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
                                     </button>
-
                                 </div>
 
                                 {/* Save Unique Button (For Duplicates) */}
@@ -2421,12 +3530,140 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             </div>
                         </div>
                     </div>
-                </div >
+                </div>
             </div>
+
+            {/* Advanced EQ Modal */}
+            {
+                showAdvancedEQModal && (
+                    <Rnd
+                        size={{ width: 600, height: 400 }}
+                        position={advancedEQPos}
+                        onDragStop={(_, d) => setAdvancedEQPos({ x: d.x, y: d.y })}
+                        minWidth={550}
+                        minHeight={350}
+                        enableResizing={false}
+                        dragHandleClassName="drag-handle"
+                        className="z-[100]"
+                        bounds="window"
+                    >
+                        <div className="bg-[#1a1a1a] border border-gray-700 rounded-2xl p-4 w-full h-full shadow-2xl relative overflow-hidden flex flex-col">
+                            {/* Background Decoration */}
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 drag-handle cursor-move"></div>
+
+                            <div className="flex justify-between items-start mb-2 drag-handle cursor-move">
+                                <div>
+                                    <h3 className="text-xl font-black bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent uppercase tracking-tighter leading-tight">Advanced 10-Band EQ</h3>
+                                    <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.1em] mt-0.5 flex items-center gap-1.5 focus:outline-none">
+                                        <Activity size={12} className="text-purple-500" /> Surgical Frequency Control • ±24dB
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setShowAdvancedEQModal(false)}
+                                    className="p-1.5 bg-gray-800/50 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white pointer-events-auto"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="flex justify-between items-center h-56 gap-0.5 mb-4 bg-black/40 p-3 rounded-xl border border-gray-800/50 relative">
+                                {/* DB Scale Background */}
+                                <div className="absolute left-1 inset-y-4 flex flex-col justify-between text-[11px] font-mono text-gray-600 pointer-events-none pr-1 border-r border-gray-800/30">
+                                    <span>+24</span>
+                                    <span className="text-gray-500">0</span>
+                                    <span>-24</span>
+                                </div>
+
+                                {ADVANCED_EQ_FREQS.map((freq, i) => (
+                                    <div key={freq} className="flex-1 flex flex-col items-center h-full group pointer-events-none">
+                                        <div
+                                            className="flex-1 w-full flex flex-col items-center relative mb-2 pointer-events-auto cursor-ns-resize"
+                                            onPointerDown={(e) => handleSliderPointerDown(i, e)}
+                                            onPointerMove={(e) => handleSliderPointerMove(i, e)}
+                                            onPointerUp={handleSliderPointerUp}
+                                            onPointerLeave={handleSliderPointerUp}
+                                        >
+                                            {/* Interaction Logic Slider */}
+                                            <div className="w-1 h-full bg-gray-900 rounded-full relative overflow-hidden flex flex-col justify-center pointer-events-none">
+                                                {/* Track Gradient */}
+                                                <div
+                                                    className="absolute left-0 right-0 transition-all duration-75 rounded-full"
+                                                    style={{
+                                                        height: `${Math.abs(advancedEQBands[i]) / 48 * 100}%`,
+                                                        bottom: advancedEQBands[i] >= 0 ? '50%' : `${50 - (Math.abs(advancedEQBands[i]) / 48 * 100)}%`,
+                                                        backgroundColor: advancedEQBands[i] > 0 ? 'var(--color-synthux-green, #10b981)' : 'var(--color-synthux-orange, #f59e0b)',
+                                                        boxShadow: `0 0 10px ${advancedEQBands[i] > 0 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`
+                                                    }}
+                                                />
+                                                {/* Zero Line */}
+                                                <div className="absolute top-1/2 left-0 right-0 h-px bg-gray-700 z-0"></div>
+                                            </div>
+
+                                            {/* Custom Handle Visual */}
+                                            <div
+                                                className="absolute w-4 h-2 bg-white rounded-sm shadow-lg z-20 pointer-events-none transition-all duration-75 border border-gray-400"
+                                                style={{
+                                                    bottom: `${(advancedEQBands[i] + 24) / 48 * 100}%`,
+                                                    transform: 'translateY(50%)'
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="text-[11px] font-black text-gray-500 uppercase tracking-tighter group-hover:text-purple-400 transition-colors">
+                                            {freq >= 1000 ? `${freq / 1000}k` : freq}
+                                        </div>
+                                        <div className={`text-[10px] font-mono mt-0.5 font-bold ${advancedEQBands[i] > 0 ? 'text-green-400' : advancedEQBands[i] < 0 ? 'text-red-400' : 'text-gray-600'}`}>
+                                            {advancedEQBands[i] > 0 ? '+' : ''}{advancedEQBands[i].toFixed(1)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex flex-col gap-3 mt-auto">
+                                <div className="flex justify-between items-center bg-black/20 p-2 rounded-xl border border-white/5">
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            onClick={() => { setIsAdvancedEQ(false); setShowAdvancedEQModal(false); }}
+                                            className="px-2.5 py-1.5 bg-gray-800/80 hover:bg-gray-700 text-purple-400 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-purple-500/20 flex items-center gap-1.5"
+                                            title="Back to Basic 3-Band EQ"
+                                        >
+                                            <Minimize2 size={12} /> BASIC
+                                        </button>
+                                        <button
+                                            onClick={() => setEqNormalize(!eqNormalize)}
+                                            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border flex items-center gap-1.5 ${eqNormalize ? 'bg-synthux-green/20 border-synthux-green text-synthux-green shadow-lg shadow-green-900/10' : 'bg-gray-800/80 border-gray-700 text-gray-400 hover:text-gray-300'}`}
+                                        >
+                                            <Maximize2 size={12} /> NORMALIZE
+                                        </button>
+                                        <button
+                                            onClick={() => { setAdvancedEQBands(new Array(10).fill(0)); handleDirtyChange(); }}
+                                            className="px-2.5 py-1.5 bg-gray-800/80 hover:bg-gray-700 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-gray-700"
+                                        >
+                                            RESET
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handlePreviewEQ}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${isPreviewingEQ ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'bg-gray-800/80 hover:bg-purple-600 text-white border border-gray-700'}`}
+                                        >
+                                            {isPreviewingEQ ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} fill="currentColor" />}
+                                            PREVIEW
+                                        </button>
+                                        <button
+                                            onClick={() => { handleApplyEQ(); setShowAdvancedEQModal(false); }}
+                                            className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-lg shadow-green-900/20"
+                                        >
+                                            <Check size={14} strokeWidth={3} /> APPLY
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </Rnd>
+                )
+            }
         </div >
-
-
-
-
     );
 };

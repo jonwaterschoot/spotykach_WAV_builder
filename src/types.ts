@@ -17,7 +17,7 @@ export interface AudioVersion {
     description: string; // "Original", "Trimmed", "Faded", etc.
     blob: Blob | null; // Changed to allow null if file is missing/unreadable
     duration: number;
-    processing?: ('normalized' | 'trimmed' | 'looped')[];
+    processing?: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[];
     blobRef?: string; // Optional path reference used during load/save
 }
 
