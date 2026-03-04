@@ -342,69 +342,133 @@ import type { WavMetadata } from '../types';
 // Helper: Parse WAV Metadata (LIST INFO)
 export const readWavMetadata = async (file: File): Promise<WavMetadata | null> => {
     try {
-        const buffer = await file.arrayBuffer();
-        const view = new DataView(buffer);
+        const metadata: WavMetadata = {};
+        let foundAny = false;
 
-        // Simple RIFF parser for LIST INFO
-        let offset = 12; // Skip RIFF header
-        while (offset < view.byteLength) {
-            const chunkId = String.fromCharCode(
-                view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3)
-            );
-            const chunkSize = view.getUint32(offset + 4, true);
+        // 1. Read RIFF header
+        const headerBlob = file.slice(0, 12);
+        const headerBuffer = await headerBlob.arrayBuffer();
+        if (headerBuffer.byteLength < 12) return null;
+        const headerView = new DataView(headerBuffer);
 
-            if (chunkId === 'LIST') {
-                const listType = String.fromCharCode(
-                    view.getUint8(offset + 8), view.getUint8(offset + 9), view.getUint8(offset + 10), view.getUint8(offset + 11)
-                );
+        const riff = String.fromCharCode(headerView.getUint8(0), headerView.getUint8(1), headerView.getUint8(2), headerView.getUint8(3));
+        const wave = String.fromCharCode(headerView.getUint8(8), headerView.getUint8(9), headerView.getUint8(10), headerView.getUint8(11));
 
-                if (listType === 'INFO') {
-                    // Parse Subchunks
-                    let subOffset = offset + 12;
-                    const maxSub = offset + 8 + chunkSize;
+        if (riff !== 'RIFF' || wave !== 'WAVE') return null;
 
-                    const metadata: WavMetadata = {};
-                    let foundAny = false;
+        // 2. Iterate through chunks
+        let offset = 12;
+        const fileSize = file.size;
 
-                    while (subOffset < maxSub) {
-                        const subId = String.fromCharCode(
-                            view.getUint8(subOffset), view.getUint8(subOffset + 1), view.getUint8(subOffset + 2), view.getUint8(subOffset + 3)
-                        );
-                        const subSize = view.getUint32(subOffset + 4, true);
+        while (offset < fileSize - 8) {
+            const chunkHeaderBlob = file.slice(offset, offset + 8);
+            const chunkHeaderBuffer = await chunkHeaderBlob.arrayBuffer();
+            if (chunkHeaderBuffer.byteLength < 8) break;
+            const view = new DataView(chunkHeaderBuffer);
 
-                        // Read Value
-                        let value = '';
-                        for (let i = 0; i < subSize; i++) {
-                            const charCode = view.getUint8(subOffset + 8 + i);
-                            if (charCode !== 0) value += String.fromCharCode(charCode);
-                        }
+            const chunkId = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+            const chunkSize = view.getUint32(4, true);
 
-                        if (subId === 'ICMT') {
-                            try {
-                                const payload = JSON.parse(value);
-                                if (payload.id) metadata.id = payload.id;
-                                if (payload.h) metadata.hash = payload.h;
-                                if (payload.p) metadata.processing = payload.p;
-                                if (payload.t) metadata.tempo = payload.t;
-                                foundAny = true;
-                            } catch (e) {
-                                // Not JSON, maybe normal comment?
+            // Skip huge DATA chunks immediately without reading them
+            if (chunkId === 'data') {
+                offset += 8 + chunkSize + (chunkSize % 2);
+                continue;
+            }
+
+            // Read interested chunks
+            if (chunkId === 'LIST' || chunkId === 'cue ') {
+                const bodyBlob = file.slice(offset + 8, offset + 8 + chunkSize);
+                const bodyBuffer = await bodyBlob.arrayBuffer();
+                const bodyView = new DataView(bodyBuffer);
+
+                if (chunkId === 'LIST') {
+                    const listType = String.fromCharCode(bodyView.getUint8(0), bodyView.getUint8(1), bodyView.getUint8(2), bodyView.getUint8(3));
+                    if (listType === 'INFO') {
+                        let subOffset = 4;
+                        while (subOffset < chunkSize - 8) {
+                            const subId = String.fromCharCode(bodyView.getUint8(subOffset), bodyView.getUint8(subOffset + 1), bodyView.getUint8(subOffset + 2), bodyView.getUint8(subOffset + 3));
+                            const subSize = bodyView.getUint32(subOffset + 4, true);
+
+                            if (subId === 'ICMT') {
+                                let value = '';
+                                for (let i = 0; i < subSize; i++) {
+                                    const charCode = bodyView.getUint8(subOffset + 8 + i);
+                                    if (charCode !== 0) value += String.fromCharCode(charCode);
+                                }
+                                try {
+                                    const payload = JSON.parse(value);
+                                    if (payload.id) metadata.id = payload.id;
+                                    if (payload.h) metadata.hash = payload.h;
+                                    if (payload.p) metadata.processing = payload.p;
+                                    if (payload.t) metadata.tempo = payload.t;
+                                    foundAny = true;
+                                } catch (e) { }
+                            } else if (subId === 'ITMP') {
+                                let value = '';
+                                for (let i = 0; i < subSize; i++) {
+                                    const charCode = bodyView.getUint8(subOffset + 8 + i);
+                                    if (charCode !== 0) value += String.fromCharCode(charCode);
+                                }
+                                const t = parseFloat(value);
+                                if (!isNaN(t)) {
+                                    metadata.tempo = t;
+                                    foundAny = true;
+                                }
                             }
+                            subOffset += 8 + subSize + (subSize % 2);
                         }
-
-                        subOffset += 8 + subSize + (subSize % 2);
                     }
-
-                    if (foundAny) return metadata;
+                } else if (chunkId === 'cue ') {
+                    const numPoints = bodyView.getUint32(0, true);
+                    const points: number[] = [];
+                    // Sanity check numPoints to avoid infinite loops or memory issues
+                    const safeNumPoints = Math.min(numPoints, 100);
+                    for (let i = 0; i < safeNumPoints; i++) {
+                        const cueRecordOffset = 4 + (i * 24);
+                        if (cueRecordOffset + 24 <= chunkSize) {
+                            const sampleOffset = bodyView.getUint32(cueRecordOffset + 20, true);
+                            points.push(+(sampleOffset / 48000).toFixed(3));
+                        }
+                    }
+                    if (points.length > 0) {
+                        metadata.slicePoints = points;
+                        foundAny = true;
+                    }
                 }
             }
 
             offset += 8 + chunkSize + (chunkSize % 2);
         }
+
+        return foundAny ? metadata : null;
     } catch (e) {
         console.warn('Failed to parse WAV metadata', e);
     }
     return null;
+};
+
+// Helper: Check for CUE chunk (Robust version)
+export const detectCueChunk = async (file: File): Promise<boolean> => {
+    try {
+        let offset = 12;
+        const fileSize = file.size;
+
+        while (offset < fileSize - 8) {
+            const headerBlob = file.slice(offset, offset + 8);
+            const headerBuffer = await headerBlob.arrayBuffer();
+            if (headerBuffer.byteLength < 8) break;
+            const view = new DataView(headerBuffer);
+
+            const chunkId = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+            const chunkSize = view.getUint32(4, true);
+
+            if (chunkId === 'cue ') return true;
+            offset += 8 + chunkSize + (chunkSize % 2);
+        }
+    } catch (e) {
+        console.warn('Failed to detect cue chunk', e);
+    }
+    return false;
 };
 
 

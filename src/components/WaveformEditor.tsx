@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
@@ -18,6 +18,7 @@ import SlicerOverlay from './SlicerOverlay';
 import PitchOverlay from './PitchOverlay';
 import type { PitchRegion } from './PitchOverlay';
 import { DbScale } from './DbScale';
+import { readWavMetadata } from '../utils/importUtils';
 import { LimiterOverlay } from './LimiterOverlay';
 
 // Fade Overlay Component
@@ -351,6 +352,79 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
     );
 };
 
+// Custom BPM Input Component
+const BpmInput = ({ value, onChange }: { value: number | null, onChange: (val: number | null) => void }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const startY = useRef(0);
+    const startVal = useRef(0);
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        // Only start dragging if not strictly clicking the input to type (optional refinement)
+        // For now, allow drag from anywhere in the component
+        if (e.button !== 0) return;
+        setIsDragging(true);
+        startY.current = e.clientY;
+        startVal.current = value ?? 120;
+    };
+
+    useEffect(() => {
+        if (!isDragging) return;
+        const handleMouseMove = (e: MouseEvent) => {
+            const deltaY = startY.current - e.clientY;
+            const newVal = Math.max(1, startVal.current + Math.floor(deltaY / 2)); // Dynamic sensing
+            onChange(newVal);
+        };
+        const handleMouseUp = () => setIsDragging(false);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging, onChange]);
+
+    return (
+        <div
+            className={`flex items-center gap-1.5 bg-black/40 border border-gray-800 px-2 py-1 rounded transition-all select-none
+                ${isDragging ? 'border-synthux-turquoise/60 ring-1 ring-synthux-turquoise/20' : 'hover:border-gray-700'}
+            `}
+            onMouseDown={handleMouseDown}
+            style={{ cursor: isDragging ? 'ns-resize' : 'default' }}
+        >
+            <div className="flex flex-col gap-0.5">
+                <div className="text-[9px] uppercase font-black text-gray-500 leading-none">BPM</div>
+                <input
+                    type="text"
+                    value={value ?? ''}
+                    placeholder="---"
+                    className="bg-transparent text-synthux-turquoise text-xs font-black w-10 text-center focus:outline-none pointer-events-auto"
+                    onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9.]/g, '');
+                        onChange(val === '' ? null : parseFloat(val));
+                    }}
+                    onFocus={(e) => {
+                        if (value === null) onChange(120);
+                        setTimeout(() => e.target.select(), 10);
+                    }}
+                    onKeyDown={(e) => {
+                        if (['ArrowUp', 'ArrowRight'].includes(e.key)) {
+                            e.preventDefault();
+                            onChange((value ?? 120) + 1);
+                        } else if (['ArrowDown', 'ArrowLeft'].includes(e.key)) {
+                            e.preventDefault();
+                            onChange(Math.max(1, (value ?? 120) - 1));
+                        }
+                    }}
+                />
+            </div>
+            <div className="flex flex-col -gap-0.5 opacity-30 hover:opacity-100 transition-opacity">
+                <button onMouseDown={(e) => e.stopPropagation()} onClick={() => onChange((value ?? 120) + 1)} className="hover:text-synthux-turquoise"><ChevronUp size={12} /></button>
+                <button onMouseDown={(e) => e.stopPropagation()} onClick={() => onChange(Math.max(1, (value ?? 120) - 1))} className="hover:text-synthux-turquoise"><ChevronDown size={12} /></button>
+            </div>
+        </div>
+    );
+};
+
 import type { AudioVersion, TapeColor, WavMetadata } from '../types';
 
 interface EditorSlot {
@@ -471,11 +545,15 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const lastSelectedPitchId = useRef<string | null>(null);
     const prevPitchRegionsRef = useRef<PitchRegion[]>([]);
     const [slicePoints, setSlicePoints] = useState<number[]>([]);
+    const [initialSlicePoints, setInitialSlicePoints] = useState<number[]>([]);
+    const [tempo, setTempo] = useState<number | null>(null);
+    const [initialTempo, setInitialTempo] = useState<number | null>(null);
 
     // Active Tool (for toolbar UI — only one expanded at a time)
     type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | null;
     const [activeTool, setActiveTool] = useState<ToolId>('trim');
     const [stereoSplitView, setStereoSplitView] = useState(false);
+    const [internalMetadata, setInternalMetadata] = useState<WavMetadata | null>(metadata || null);
 
 
     // Sync individual show states with activeTool
@@ -707,8 +785,30 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         activeToolRef.current = activeTool;
     }, [activeTool]);
 
+    // Sync slices and tempo from metadata when tool opened or version changed
+    useEffect(() => {
+        if (activeTool === 'slicer' || activeVersionId) {
+            const metaSlices = (internalMetadata || metadata)?.slicePoints || [];
+            const metaTempo = (internalMetadata || metadata)?.tempo || null;
+
+            setSlicePoints([...metaSlices]);
+            setInitialSlicePoints([...metaSlices]);
+            setTempo(metaTempo);
+            setInitialTempo(metaTempo);
+        }
+    }, [activeTool, activeVersionId, metadata?.slicePoints, internalMetadata?.slicePoints, metadata?.tempo, internalMetadata?.tempo]);
+
     const initEditor = async () => {
         if (!containerRef.current || !currentBlob || !isMounted.current) return;
+
+        // Extract metadata from blob if possible
+        if (currentBlob instanceof File || currentBlob instanceof Blob) {
+            const file = currentBlob instanceof File ? currentBlob : new File([currentBlob], 'temp.wav', { type: 'audio/wav' });
+            const meta = await readWavMetadata(file);
+            if (meta) {
+                setInternalMetadata(meta);
+            }
+        }
 
         // Cleanup old
         if (wavesurfer.current) {
@@ -1419,31 +1519,39 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     };
 
     const handleApplySlicer = async () => {
-        if (!originalBuffer || slicePoints.length === 0) return;
-        // Save slice markers into metadata — doesn't modify audio
+        if (!originalBuffer) return;
+        // Save slice markers and tempo into metadata — doesn't modify audio
         setIsProcessing(true);
         try {
-            const meta = {
-                ...(metadata || {}),
-                id: metadata?.id || slot.fileId || uuidv4(),
-                processing: ['sliced'],
+            const meta: WavMetadata = {
+                ...(internalMetadata || metadata || {}),
+                id: (internalMetadata || metadata)?.id || slot.fileId || uuidv4(),
+                processing: Array.from(new Set([...((internalMetadata || metadata)?.processing || []), 'sliced'])),
                 slicePoints: slicePoints.sort((a, b) => a - b),
+                tempo: tempo || undefined,
             };
             const newBlob = encodeWAV(originalBuffer, meta);
-            onSave(newBlob, originalBuffer.duration, `Sliced (${slicePoints.length} markers)`, true, ['sliced']);
+            onSave(newBlob, originalBuffer.duration, `Sliced (${slicePoints.length} markers)${tempo ? ` @ ${tempo}BPM` : ''}`, true, meta.processing as any);
 
-            setSlicePoints([]);
-            setActiveTool(null);
-            showToast("Slice Markers Saved!", "success");
+            // AFTER saving, the current state is the "initial" one for the NEXT edit session
+            setInitialSlicePoints([...slicePoints]);
+            setInitialTempo(tempo);
+
+            showToast("Slicer Settings Saved!", "success");
         } catch (e) {
             console.error(e);
-            showToast("Failed to save slice markers", "error");
+            showToast("Failed to save slicer settings", "error");
         } finally {
             setIsProcessing(false);
         }
     };
 
     const handleResetSlicer = () => {
+        setSlicePoints([...initialSlicePoints]);
+        setTempo(initialTempo);
+    };
+
+    const handleClearAllSlices = () => {
         setSlicePoints([]);
     };
 
@@ -2932,6 +3040,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Markers</div>
                                                     <div className="text-xs font-bold text-cyan-400">{slicePoints.length} / 32</div>
                                                 </div>
+
+                                                <div className="h-6 w-px bg-gray-800"></div>
+
+                                                <BpmInput value={tempo} onChange={setTempo} />
+
+                                                <div className="h-6 w-px bg-gray-800"></div>
+
                                                 <div className="flex items-center gap-1">
                                                     {[4, 8, 16, 32].map(n => (
                                                         <button key={n} onClick={() => handleAutoSlice(n - 1)}
@@ -2942,23 +3057,43 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     ))}
                                                 </div>
                                                 <div className="text-[9px] text-gray-600 max-w-[100px] leading-tight">
-                                                    Double-click waveform to add. Drag to move.
+                                                    Double-click to add. Drag to move.
                                                 </div>
                                             </div>
 
                                             <div className="h-6 w-px bg-gray-800"></div>
 
                                             <div className="flex items-center gap-2">
-                                                <button onClick={handleApplySlicer} disabled={slicePoints.length === 0}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${slicePoints.length === 0 ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border-green-900/50'}`}
+                                                <button onClick={handleApplySlicer}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
+                                                        ? 'bg-gray-800 hover:bg-gray-700 text-gray-400 border-gray-700/50'
+                                                        : 'bg-green-900/40 hover:bg-green-600 text-green-400 hover:text-white border-green-500/30'
+                                                        }`}
                                                     onMouseEnter={() => setHelpText("Save Slice Markers to Metadata")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><Check size={12} /> Apply</button>
+                                                >
+                                                    <Check size={12} />
+                                                    Save to File
+                                                    {JSON.stringify([...slicePoints].sort()) !== JSON.stringify([...initialSlicePoints].sort()) && (
+                                                        <span className="text-[8px] opacity-70 ml-1">(not saved)</span>
+                                                    )}
+                                                </button>
+
                                                 <button onClick={handleResetSlicer}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
-                                                    onMouseEnter={() => setHelpText("Clear All Slice Markers")}
+                                                    disabled={JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
+                                                        ? 'bg-gray-900/50 text-gray-700 cursor-not-allowed'
+                                                        : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                                                        }`}
+                                                    onMouseEnter={() => setHelpText("Revert to file's original slices")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><RotateCcw size={12} /> Reset</button>
+
+                                                <button onClick={handleClearAllSlices}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    onMouseEnter={() => setHelpText("Remove All Slice Markers")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><Trash2 size={12} /> Remove All</button>
                                             </div>
                                         </div>
                                     )}

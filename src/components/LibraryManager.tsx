@@ -7,6 +7,7 @@ import { SmartTagInput } from './SmartTagInput';
 import { NotesEditor } from './NotesEditor';
 import { LocalFolderBrowser } from './LocalFolderBrowser';
 import { saveKnownTags } from '../utils/tagStore';
+import { detectCueChunk } from '../utils/importUtils';
 
 const COMMON_LICENSES = [
     { label: "Standard Copyright / All Rights Reserved", value: "", short: "ARR" },
@@ -440,7 +441,11 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
 
     const importCustomFile = async (file: File) => {
         // Send directly to the draft upload queue so text inputs and FFmpeg conversion can follow normal flow
-        const willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+        let willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+
+        // Exception: If file HAS slices, we MUST NOT convert to FLAC or we lose them
+        const hasSlices = await detectCueChunk(file);
+        if (hasSlices) willConvert = false;
 
         const newDraft: UploadDraft = {
             id: crypto.randomUUID(),
@@ -458,7 +463,12 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
     const handleBulkImport = async (files: { file: File, path: string }[]) => {
         const drafts: UploadDraft[] = [];
         for (const { file } of files) {
-            const willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+            let willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+
+            // Exception: Skip conversion for files with slices
+            const hasSlices = await detectCueChunk(file);
+            if (hasSlices) willConvert = false;
+
             drafts.push({
                 id: crypto.randomUUID(),
                 file,
@@ -657,7 +667,12 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
         const drafts: UploadDraft[] = [];
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+            let willConvert = shouldConvert ? await detectUncompressedWav(file) : false;
+
+            // Exception: Skip conversion for files with slices
+            const hasSlices = await detectCueChunk(file);
+            if (hasSlices) willConvert = false;
+
             drafts.push({
                 id: crypto.randomUUID(),
                 file,
@@ -1469,6 +1484,14 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                                                     {missingLibraryFiles.includes(file.id) && (
                                                                         <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-500 text-[9px] font-bold uppercase tracking-wider border border-red-500/30 shrink-0">Missing</span>
                                                                     )}
+                                                                    <div className="flex items-center gap-1">
+                                                                        {(file.metadata?.tempo || (file.tags || []).some(t => t.toLowerCase().includes('bpm'))) && (
+                                                                            <span className="px-1 rounded bg-synthux-blue/20 text-synthux-blue text-[8px] font-black border border-synthux-blue/30" title="Tempo Enabled">T</span>
+                                                                        )}
+                                                                        {(file.metadata?.slicePoints?.length || (file.versions[0]?.processing || []).includes('sliced')) && (
+                                                                            <span className="px-1 rounded bg-synthux-orange/20 text-synthux-orange text-[8px] font-black border border-synthux-orange/30" title="Slices Embedded">S</span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                                 <div className="text-[10px] truncate flex items-center gap-2">
                                                                     {file.license && (

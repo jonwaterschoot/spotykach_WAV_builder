@@ -293,32 +293,44 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                             </div>
                         </div>
 
-                        {/* Bottom Row: Filename */}
+                        {/* Bottom Row: Filename & Indicators */}
                         <div className="mt-auto pt-2">
-                            {isRenaming ? (
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={renameValue}
-                                    onChange={e => setRenameValue(e.target.value)}
-                                    onBlur={handleRenameSubmit}
-                                    onKeyDown={handleRenameKeyDown}
-                                    onClick={e => e.stopPropagation()}
-                                    className="w-full bg-[#111] text-white text-[9px] font-bold px-0.5 py-0 border border-synthux-yellow rounded outline-none"
-                                />
-                            ) : (
-                                <div
-                                    className="text-[9px] font-bold text-gray-300 truncate cursor-text hover:text-synthux-yellow transition-colors"
-                                    title={fileRecord.name}
-                                    onDoubleClick={(e) => {
-                                        e.stopPropagation();
-                                        setRenameValue(fileRecord.name);
-                                        setIsRenaming(true);
-                                    }}
-                                >
-                                    {fileRecord.name}
+                            <div className="flex items-center justify-between gap-2">
+                                {isRenaming ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={renameValue}
+                                        onChange={e => setRenameValue(e.target.value)}
+                                        onBlur={handleRenameSubmit}
+                                        onKeyDown={handleRenameKeyDown}
+                                        onClick={e => e.stopPropagation()}
+                                        className="w-full bg-[#111] text-white text-[9px] font-bold px-0.5 py-0 border border-synthux-yellow rounded outline-none"
+                                    />
+                                ) : (
+                                    <div
+                                        className="text-[9px] font-bold text-gray-300 truncate cursor-text hover:text-synthux-yellow transition-colors flex-1"
+                                        title={fileRecord.name}
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            setRenameValue(fileRecord.name);
+                                            setIsRenaming(true);
+                                        }}
+                                    >
+                                        {fileRecord.name}
+                                    </div>
+                                )}
+
+                                {/* Indicators */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                    {(fileRecord.metadata?.tempo || (fileRecord.tags || []).some(t => t.toLowerCase().includes('bpm'))) && (
+                                        <span className="text-[7px] font-black bg-synthux-blue/20 text-synthux-blue px-1 rounded-sm border border-synthux-blue/30" title="Tempo Info">T</span>
+                                    )}
+                                    {(fileRecord.metadata?.slicePoints?.length || (fileRecord.versions[0]?.processing || []).includes('sliced')) && (
+                                        <span className="text-[7px] font-black bg-synthux-orange/20 text-synthux-orange px-1 rounded-sm border border-synthux-orange/30" title="Slices Embedded">S</span>
+                                    )}
                                 </div>
-                            )}
+                            </div>
                         </div>
                     </div>
                 </>
