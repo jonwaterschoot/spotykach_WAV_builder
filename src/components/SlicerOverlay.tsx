@@ -8,6 +8,8 @@ interface SlicerOverlayProps {
     maxSlices: number;
     onPointsChange: (points: number[]) => void;
     active: boolean;
+    activeSliceIdx?: number;
+    onActiveSliceChange?: (idx: number) => void;
 }
 
 const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
@@ -18,10 +20,13 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     maxSlices,
     onPointsChange,
     active,
+    activeSliceIdx,
+    onActiveSliceChange,
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragIdx, setDragIdx] = useState<number | null>(null);
     const [bannerDismissed, setBannerDismissed] = useState(false);
+    const wasDragging = useRef(false);
 
     const timeToX = useCallback((t: number) => (t / duration) * width, [duration, width]);
     const xToTime = useCallback((x: number) => Math.max(0, Math.min(duration, (x / width) * duration)), [duration, width]);
@@ -57,6 +62,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
         if (dragIdx === null) return;
 
         const handleMouseMove = (e: MouseEvent) => {
+            wasDragging.current = true;
             const x = getMouseX(e);
             const time = xToTime(x);
             const newPoints = [...points];
@@ -68,6 +74,9 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
 
         const handleMouseUp = () => {
             setDragIdx(null);
+            setTimeout(() => {
+                if (wasDragging.current) wasDragging.current = false;
+            }, 50);
         };
 
         window.addEventListener('mousemove', handleMouseMove);
@@ -77,6 +86,22 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
             window.removeEventListener('mouseup', handleMouseUp);
         };
     }, [dragIdx, points, getMouseX, xToTime, onPointsChange]);
+
+    const handleSvgClick = useCallback((e: React.MouseEvent) => {
+        if (!active || wasDragging.current || !onActiveSliceChange) return;
+        const x = getMouseX(e);
+        const time = xToTime(x);
+
+        let foundIdx = points.length;
+        const sortedPts = [...points].sort((a, b) => a - b);
+        for (let i = 0; i < sortedPts.length; i++) {
+            if (time < sortedPts[i]) {
+                foundIdx = i;
+                break;
+            }
+        }
+        onActiveSliceChange(foundIdx);
+    }, [active, onActiveSliceChange, getMouseX, xToTime, points]);
 
     // Delete key removes hovered/closest point (simplified: remove last added)
     useEffect(() => {
@@ -97,6 +122,9 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     // Sorted points for rendering
     const sorted = [...points].sort((a, b) => a - b);
 
+    const activeStart = activeSliceIdx === 0 ? 0 : (activeSliceIdx && sorted[activeSliceIdx - 1]) || 0;
+    const activeEnd = activeSliceIdx !== undefined && activeSliceIdx < sorted.length ? sorted[activeSliceIdx] : duration;
+
     return (
         <svg
             ref={svgRef}
@@ -105,7 +133,19 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
             height={height}
             style={{ pointerEvents: active ? 'auto' : 'none' }}
             onDoubleClick={handleDoubleClick}
+            onClick={handleSvgClick}
         >
+            {activeSliceIdx !== undefined && active && (
+                <rect
+                    x={timeToX(activeStart)}
+                    y={0}
+                    width={Math.max(0, timeToX(activeEnd) - timeToX(activeStart))}
+                    height={height}
+                    fill="rgba(34, 211, 238, 0.15)"
+                    pointerEvents="none"
+                />
+            )}
+
             {sorted.map((time, idx) => {
                 const x = timeToX(time);
                 const sliceNum = idx + 1;

@@ -548,6 +548,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [initialSlicePoints, setInitialSlicePoints] = useState<number[]>([]);
     const [tempo, setTempo] = useState<number | null>(null);
     const [initialTempo, setInitialTempo] = useState<number | null>(null);
+    const [activeSliceIdx, setActiveSliceIdx] = useState<number>(0);
 
     // Active Tool (for toolbar UI — only one expanded at a time)
     type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | null;
@@ -749,7 +750,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const entry = entries[0];
             if (entry && editorDuration > 0) {
                 const newWidth = entry.contentRect.width;
-                const newFitZoom = newWidth / editorDuration;
+                const newFitZoom = (newWidth - 16) / editorDuration;
 
                 setMinZoom(newFitZoom);
                 setViewportWidth(newWidth);
@@ -1228,7 +1229,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 processed = await audioProcessor.normalize(processed);
             }
 
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
             const newBlob = encodeWAV(processed, meta);
             onSave(newBlob, processed.duration, "Automation Applied", true, ['normalized']);
 
@@ -1258,7 +1259,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 processed = await audioProcessor.normalize(processed);
             }
 
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
             if (wavesurfer.current) {
                 wavesurfer.current.pause();
@@ -1299,7 +1300,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 ? `Advanced EQ (10 bands)`
                 : `EQ (L:${eqLow > 0 ? '+' : ''}${eqLow} M:${eqMid > 0 ? '+' : ''}${eqMid} H:${eqHigh > 0 ? '+' : ''}${eqHigh})`;
 
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['eq' as const] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['eq' as const] };
             const newBlob = encodeWAV(processed, meta);
             onSave(newBlob, processed.duration, desc, true, ['eq']);
 
@@ -1366,7 +1367,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 ? await audioProcessor.applyHardLimiter(originalBuffer, limiterThreshold)
                 : await audioProcessor.applyLimiter(originalBuffer, limiterCeiling, limiterThreshold);
 
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
             if (wavesurfer.current) {
                 wavesurfer.current.pause();
@@ -1395,7 +1396,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 ? `Peak Limited (${limiterThreshold}dB)`
                 : `Limited (T:${limiterThreshold}dB C:${limiterCeiling}dB)`;
 
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['limited'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['limited'] };
             const newBlob = encodeWAV(processed, meta);
             onSave(newBlob, processed.duration, desc, true, ['limited']);
 
@@ -1423,7 +1424,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         try {
             // Normalize to -1dB
             const normalized = await audioProcessor.normalize(originalBuffer, level);
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
             const newBlob = await audioProcessor.toWav(normalized, meta);
             // Normalization is a specific action
             onSave(newBlob, normalized.duration, `Normalized (${level}dB)`, true, ['normalized']);
@@ -1454,7 +1455,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             setIsProcessing(true);
             const regionsToRemove = cutRegions.map(r => ({ start: r.start, end: r.end }));
             const processed = await audioProcessor.cutAndMerge(originalBuffer, regionsToRemove, cutCrossfade);
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
             if (wavesurfer.current) {
                 wavesurfer.current.pause();
@@ -1477,7 +1478,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         try {
             const regionsToRemove = cutRegions.map(r => ({ start: r.start, end: r.end }));
             const processed = await audioProcessor.cutAndMerge(originalBuffer, regionsToRemove, cutCrossfade);
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['cut'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['cut'] };
             const newBlob = encodeWAV(processed, meta);
 
             const removedDuration = cutRegions.reduce((sum, r) => sum + (r.end - r.start), 0);
@@ -1553,6 +1554,33 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     const handleClearAllSlices = () => {
         setSlicePoints([]);
+    };
+
+    useEffect(() => {
+        if (activeSliceIdx > slicePoints.length) {
+            setActiveSliceIdx(slicePoints.length);
+        }
+    }, [slicePoints.length, activeSliceIdx]);
+
+    const handlePlaySlice = () => {
+        if (!wavesurfer.current || editorDuration <= 0) return;
+        const start = activeSliceIdx === 0 ? 0 : slicePoints[activeSliceIdx - 1];
+        const end = activeSliceIdx < slicePoints.length ? slicePoints[activeSliceIdx] : editorDuration;
+
+        wavesurfer.current.play(start, end);
+        setIsPlaying(true);
+    };
+
+    const handleSliceMarkerChange = (idx: number, newValue: number) => {
+        if (isNaN(newValue) || newValue < 0 || newValue > editorDuration) return;
+
+        setSlicePoints(prev => {
+            const newPoints = [...prev];
+            newPoints[idx] = newValue;
+            newPoints.sort((a, b) => a - b);
+            return newPoints;
+        });
+        handleDirtyChange();
     };
 
     // Sync pitchSemitones with selected region
@@ -1670,7 +1698,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const { buffer: processed } = await audioProcessor.applyMultiPitchShift(originalBuffer, pitchRegions);
 
             const newId = uuidv4();
-            const meta = { ...(metadata || {}), id: newId, processing: ['normalized'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: newId, processing: ['normalized'] };
             const newBlob = encodeWAV(processed, meta);
 
             const numRegions = pitchRegions.filter(r => r.semitones !== 0).length;
@@ -1740,7 +1768,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 processed = await audioProcessor.normalize(processed);
             }
 
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
 
             await wavesurfer.current.loadBlob(newBlob);
@@ -1807,7 +1835,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
 
             let looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = await audioProcessor.toWav(looped, meta);
 
             await wavesurfer.current.loadBlob(newBlob);
@@ -1842,7 +1870,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             }
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
             const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-            const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
+            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = encodeWAV(looped, meta);
 
             onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s xfade)`, true, ['looped']);
@@ -1906,7 +1934,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 let processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
                 // Preserve metadata
-                const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4() };
+                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
                 finalBlob = await audioProcessor.toWav(processed, meta);
 
                 // Preserve processing tags if assigning same version? 
@@ -1922,7 +1950,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                 }
                 finalDuration = processed.duration;
-                const meta = { ...(metadata || {}), id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed'] };
+                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed'] };
                 finalBlob = await audioProcessor.toWav(processed, meta);
 
                 // New edit -> likely 'trimmed' unless it was just fades?
@@ -1996,7 +2024,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // We calculate width to force the scroll container to expand
     // Ensure we have a valid width based on duration and zoom
-    const contentWidth = editorDuration * zoom;
+    const contentWidth = Math.max(viewportWidth, editorDuration * zoom);
 
     // Manual Scrubbing Logic
     const isScrubbingRef = useRef(false);
@@ -2031,9 +2059,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         const localX = e.clientX - rect.left;
         const totalX = scrollContainerRef.current.scrollLeft + localX;
 
-        // Use duration * zoom as the true pixel width for mapping
-        // This is more accurate than Math.floor'd contentWidth state
-        let progress = totalX / (editorDuration * zoom);
+        // Use contentWidth as the true pixel width for mapping (WaveSurfer stretches to viewport if smaller)
+        let progress = totalX / contentWidth;
         if (progress < 0) progress = 0;
         if (progress > 1) progress = 1;
 
@@ -3035,6 +3062,76 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* Slicer Panel */}
                                     {activeTool === 'slicer' && (
                                         <div className="flex items-center gap-3 min-w-max">
+                                            {/* Active Slice Inspector */}
+                                            <div className="flex items-center gap-3 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => setActiveSliceIdx(Math.max(0, activeSliceIdx - 1))}
+                                                        disabled={activeSliceIdx === 0}
+                                                        className="p-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 hover:text-white transition-colors"
+                                                    >
+                                                        <ChevronDown size={14} className="rotate-90" />
+                                                    </button>
+                                                    <div className="flex flex-col gap-0.5 min-w-[3.5rem] items-center">
+                                                        <div className="text-[10px] uppercase font-bold text-gray-500">Slice</div>
+                                                        <div className="text-xs font-bold text-cyan-400">{activeSliceIdx + 1}</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setActiveSliceIdx(Math.min(slicePoints.length, activeSliceIdx + 1))}
+                                                        disabled={activeSliceIdx === slicePoints.length}
+                                                        className="p-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 hover:text-white transition-colors"
+                                                    >
+                                                        <ChevronDown size={14} className="-rotate-90" />
+                                                    </button>
+                                                </div>
+
+                                                <button
+                                                    onClick={handlePlaySlice}
+                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-900/40 hover:bg-cyan-600 text-cyan-400 hover:text-white border border-cyan-500/30 transition-colors"
+                                                    title="Play Slice"
+                                                >
+                                                    <Play size={14} className="ml-0.5" />
+                                                </button>
+
+                                                <div className="flex items-center gap-2">
+                                                    {/* Start Marker */}
+                                                    <div className="flex flex-col gap-0.5 text-center">
+                                                        <div className="text-[9px] uppercase font-bold text-gray-500">
+                                                            {activeSliceIdx === 0 ? 'Start' : `M${activeSliceIdx}`}
+                                                        </div>
+                                                        {activeSliceIdx === 0 ? (
+                                                            <div className="text-xs font-bold text-gray-400 w-12 bg-gray-900/50 rounded py-0.5 text-center">0.000</div>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={slicePoints[activeSliceIdx - 1]?.toFixed(3) || ''}
+                                                                onChange={(e) => handleSliceMarkerChange(activeSliceIdx - 1, parseFloat(e.target.value))}
+                                                                className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    <span className="text-gray-600 text-xs font-bold">-</span>
+                                                    {/* End Marker */}
+                                                    <div className="flex flex-col gap-0.5 text-center">
+                                                        <div className="text-[9px] uppercase font-bold text-gray-500">
+                                                            {activeSliceIdx === slicePoints.length ? 'End' : `M${activeSliceIdx + 1}`}
+                                                        </div>
+                                                        {activeSliceIdx === slicePoints.length ? (
+                                                            <div className="text-xs font-bold text-gray-400 w-12 bg-gray-900/50 rounded py-0.5 text-center">{editorDuration.toFixed(3)}</div>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={slicePoints[activeSliceIdx]?.toFixed(3) || ''}
+                                                                onChange={(e) => handleSliceMarkerChange(activeSliceIdx, parseFloat(e.target.value))}
+                                                                className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="h-6 w-px bg-gray-800"></div>
+
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[5rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Markers</div>
@@ -3055,9 +3152,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                             onMouseLeave={() => setHelpText("")}
                                                         >{n}</button>
                                                     ))}
-                                                </div>
-                                                <div className="text-[9px] text-gray-600 max-w-[100px] leading-tight">
-                                                    Double-click to add. Drag to move.
                                                 </div>
                                             </div>
 
@@ -3260,7 +3354,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             >
 
                                 {/* Fixed Height Content Strip with Ruler */}
-                                <div className="relative my-auto top-1/2 -translate-y-1/2 flex flex-col" style={{ width: contentWidth, minWidth: '100%' }}>
+                                <div className="relative my-auto top-1/2 -translate-y-1/2 flex flex-col" style={{ width: contentWidth }}>
 
                                     {/* Playhead Ruler - Always visible seeking */}
                                     <PlayheadRuler
@@ -3338,8 +3432,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             width={contentWidth}
                                             height={256}
                                             maxSlices={100}
-                                            onPointsChange={setSlicePoints}
+                                            onPointsChange={(points) => {
+                                                setSlicePoints(points);
+                                                handleDirtyChange();
+                                            }}
                                             active={activeTool === 'slicer'}
+                                            activeSliceIdx={activeSliceIdx}
+                                            onActiveSliceChange={setActiveSliceIdx}
                                         />
 
                                         {/* Pitch Selection Overlay */}
@@ -3606,7 +3705,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                                 // 2. Encode
                                                 const newId = uuidv4();
-                                                const meta = { ...(metadata || {}), id: newId, processing: processingTags };
+                                                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: newId, processing: processingTags };
                                                 const newBlob = encodeWAV(processed, meta);
 
                                                 // 3. Callback
@@ -3646,7 +3745,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                                             }
                                             const newId = uuidv4();
-                                            const meta = { ...(metadata || {}), id: newId };
+                                            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: newId };
                                             const newBlob = encodeWAV(processed, meta);
                                             onSaveAsCopy(newBlob, processed.duration, newId);
                                             showToast("Saved copy to Unused Pool!", "success");

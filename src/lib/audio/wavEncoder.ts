@@ -138,7 +138,7 @@ export function encodeWAV(audioBuffer: AudioBuffer, metadata?: WavMetadata): Blo
 
         cuePoints.forEach((point, index) => {
             const id = index + 1;
-            const sampleOffset = Math.round(point * 48000);
+            const sampleOffset = Math.round(point * sampleRate);
 
             view.setUint32(offset, id, true); offset += 4; // dwIdentifier
             view.setUint32(offset, 0, true); offset += 4; // dwPosition
