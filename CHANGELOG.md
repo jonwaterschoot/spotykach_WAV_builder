@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.1.0] - 2026-03-04
+
+### Added
+- **Interactive Keyboard Slicer Map**:
+    - Converted static modal into a **floatable, movable panel** using `react-rnd`.
+    - Implemented **Click-to-Play**: Any key in the visual map now triggers its corresponding slice playback.
+    - Added **Input Highlighting**: Keys now pulse and glow cyan when triggered via computer keyboard, MIDI notes (C1-G3), or mouse clicks.
+- **Marker Removal**:
+    - Added hover-based removal directly on the waveform (hover marker to reveal delete icon).
+    - Added inspector-based removal (delete icons next to marker inputs).
+- **Slicer UI Vertical Layout**: Reorganized Slicer controls into a two-row layout for better logical grouping of inspection and generation tools.
+
+### Fixed
+- **MIDI Auditioning Sync**: Refactored MIDI event listeners to use stable references, ensuring note mapping stays in sync after adding or removing markers.
+- **WAV Export Marker Sorting**: Fixed an issue where markers were not always sorted chronologically in exported WAV files.
+- **State Integrity**: Resolved a race condition where the slicer state could be mutated in-place during export.
+
+
 ## [3.0.0] - 2026-03-03
 
 ### Added

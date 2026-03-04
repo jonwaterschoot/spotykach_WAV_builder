@@ -18,11 +18,7 @@ Is this related to the tweak we tried for eleminating the gap during loop playba
 
 ### Priority Features
 - **Editor Improvements** 
-    - **Audio Processor**:
-        - add 3 band EQ (automated)
-        - add limiter
-    - **Cutting tool**:
-        - Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
+
     - **Slicer tool**:
         - A slicer tool with up to 32 slices - to be implemented in furture SK firmware.
 - **History & Trashcan**:
@@ -49,7 +45,6 @@ Is this related to the tweak we tried for eleminating the gap during loop playba
 - format SD card ? can we do what Windows cannot (32GB limit) ? 
 
 ### Sync User Library ( almost done, need to check if it works properly)
-
 Option to sync the user library to the SD card in the same way as the projects are synced. Though we must keep an eye on available space on the SD card. 
 
 ### Option to download sample packs from github
@@ -93,20 +88,7 @@ A simplified version of the tool that only allows editing and exporting to a fol
 ### Automation tool
 - snap to 0db while dragging, dragging with alt allows free movement
 
-### UI improvements
-- double clicking sliders to reset them to zero/standard value
 
-### Audio Processor
-- add 3 band EQ (automated)
-- add limiter
-
-### Cutting tool
-- Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
-
-### Slicer tool
-A slicer tool with up to 32 slices
-> about the slice points - we'll need to agree on convention. I'm thinking about CUE chunk of the header. Also the maximum number of slice points will be 32 - that's what Spotykach is prepared for.
-> It would be also good to have this chunk prior to DATA chunk as currently once I find DATA, i'm not looking further.
 
 ## add info and meta data to  WAV files and project
 - There will be a config file for spotykach which it will read for settings
@@ -173,7 +155,34 @@ Improve touch targets and layout for tablet/phone usage.
 
 ---
 
-vvvvvvvv -- Done -- vvvvvvvv
+
+--------------------------------
+| vvvvvvvv -- Done -- vvvvvvvv |
+--------------------------------
+
+
+
+
+### UI improvements
+- double clicking sliders to reset them to zero/standard value
+
+### Audio Processor
+- add 3 band EQ (automated)
+- add limiter
+
+### Cutting tool
+- Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
+
+### Slicer tool
+A slicer tool with up to 32 slices
+> about the slice points - we'll need to agree on convention. I'm thinking about CUE chunk of the header. Also the maximum number of slice points will be 32 - that's what Spotykach is prepared for.
+> It would be also good to have this chunk prior to DATA chunk as currently once I find DATA, i'm not looking further.
+
+    - **Audio Processor**:
+        - add 3 band EQ (automated) - Added 10 band advanced
+        - add limiter - added auto and peak
+    - **Cutting tool**:
+        - Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
 
 ## Notes tool (done)
 - option to add notes to projects

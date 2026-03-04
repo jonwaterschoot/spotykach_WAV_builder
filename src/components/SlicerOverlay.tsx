@@ -10,6 +10,7 @@ interface SlicerOverlayProps {
     active: boolean;
     activeSliceIdx?: number;
     onActiveSliceChange?: (idx: number) => void;
+    hoveredMarkerIdx?: number | null;
 }
 
 const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
@@ -22,9 +23,11 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     active,
     activeSliceIdx,
     onActiveSliceChange,
+    hoveredMarkerIdx,
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragIdx, setDragIdx] = useState<number | null>(null);
+    const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const [bannerDismissed, setBannerDismissed] = useState(false);
     const wasDragging = useRef(false);
 
@@ -158,21 +161,24 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                             y1={0}
                             x2={x}
                             y2={height}
-                            stroke="#22d3ee"
-                            strokeWidth={2}
-                            strokeDasharray="4 2"
-                            opacity={0.8}
+                            stroke={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#f87171" : "#22d3ee"}
+                            strokeWidth={(hoverIdx === idx || hoveredMarkerIdx === idx) ? 3 : 2}
+                            strokeDasharray={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "0" : "4 2"}
+                            opacity={(hoverIdx === idx || hoveredMarkerIdx === idx) ? 1 : 0.8}
+                            className="transition-all duration-150"
                         />
 
                         {/* Drag handle (wider invisible area) */}
                         <rect
-                            x={x - 6}
+                            x={x - 8}
                             y={0}
-                            width={12}
+                            width={16}
                             height={height}
                             fill="transparent"
                             style={{ cursor: 'ew-resize' }}
                             onMouseDown={(e) => handlePointMouseDown(e, idx)}
+                            onMouseEnter={() => setHoverIdx(idx)}
+                            onMouseLeave={() => setHoverIdx(null)}
                         />
 
                         {/* Slice number badge */}
@@ -180,9 +186,12 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                             cx={x}
                             cy={14}
                             r={9}
-                            fill="#0891b2"
-                            stroke="#22d3ee"
+                            fill={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#b91c1c" : "#0891b2"}
+                            stroke={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#f87171" : "#22d3ee"}
                             strokeWidth={1.5}
+                            onMouseEnter={() => setHoverIdx(idx)}
+                            onMouseLeave={() => setHoverIdx(null)}
+                            style={{ cursor: 'pointer' }}
                         />
                         <text
                             x={x}
@@ -196,6 +205,34 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                         >
                             {sliceNum}
                         </text>
+
+                        {/* Remove Marker Icon on Hover */}
+                        {hoverIdx === idx && (
+                            <g
+                                style={{ cursor: 'pointer' }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newPoints = points.filter((_, i) => i !== idx);
+                                    onPointsChange(newPoints);
+                                    setHoverIdx(null);
+                                }}
+                                onMouseEnter={() => setHoverIdx(idx)}
+                            >
+                                <circle
+                                    cx={x + 10}
+                                    cy={6}
+                                    r={6}
+                                    fill="#f87171"
+                                    className="animate-in fade-in zoom-in duration-200"
+                                />
+                                <path
+                                    d={`M${x + 8} ${4} L${x + 12} ${8} M${x + 12} 4 L${x + 8} 8`}
+                                    stroke="white"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                />
+                            </g>
+                        )}
 
                         {/* Time label at bottom */}
                         <text

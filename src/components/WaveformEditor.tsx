@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, Keyboard } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
@@ -20,6 +20,7 @@ import type { PitchRegion } from './PitchOverlay';
 import { DbScale } from './DbScale';
 import { readWavMetadata } from '../utils/importUtils';
 import { LimiterOverlay } from './LimiterOverlay';
+import { KeyboardSlicerModal } from './KeyboardSlicerModal';
 
 // Fade Overlay Component
 interface FadeOverlayProps {
@@ -549,6 +550,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [tempo, setTempo] = useState<number | null>(null);
     const [initialTempo, setInitialTempo] = useState<number | null>(null);
     const [activeSliceIdx, setActiveSliceIdx] = useState<number>(0);
+    const [customSliceCount, setCustomSliceCount] = useState<number>(32);
+    const [keyboardLayout, setKeyboardLayout] = useState<'QWERTY' | 'AZERTY'>('QWERTY');
+    const [showKeyboardMapModal, setShowKeyboardMapModal] = useState(false);
+    const [hoveredMarkerIdx, setHoveredMarkerIdx] = useState<number | null>(null);
+    const [triggeredSliceIdx, setTriggeredSliceIdx] = useState<number | null>(null);
+    const [keyboardSlicerPos, setKeyboardSlicerPos] = useState({ x: 100, y: 100 });
+    const triggeredSliceTimeout = useRef<NodeJS.Timeout | null>(null);
 
     // Active Tool (for toolbar UI — only one expanded at a time)
     type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | null;
@@ -603,6 +611,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const isMounted = useRef(false);
     const initTimeout = useRef<NodeJS.Timeout | null>(null);
     const playbackStartTimeRef = useRef(0);
+    const isPausingRef = useRef(false);
+    const pauseTimeRef = useRef(0);
+    const pauseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const [isPausing, setIsPausing] = useState(false);
 
     // Mark dirty on changes
     const handleDirtyChange = () => {
@@ -1031,16 +1043,35 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             volume *= (timeSinceStart / 0.015);
         }
 
+        // Micro-Fade Out (10ms) to prevent pops on pause
+        if (isPausingRef.current) {
+            const timeSincePause = (performance.now() - pauseTimeRef.current) / 1000;
+            const fadeDuration = 0.010; // 10ms
+            const progress = Math.max(0, 1 - (timeSincePause / fadeDuration));
+            volume *= progress;
+
+            if (progress <= 0) {
+                wavesurfer.current.pause();
+                isPausingRef.current = false;
+                setIsPausing(false);
+                if (pauseTimeoutRef.current) {
+                    clearTimeout(pauseTimeoutRef.current);
+                    pauseTimeoutRef.current = null;
+                }
+                return;
+            }
+        }
+
         wavesurfer.current.setVolume(volume);
 
-        if (isPlaying) {
+        if (isPlaying || isPausingRef.current) {
             rafRef.current = requestAnimationFrame(updateVolume);
         }
     };
 
     // Watch playback state to start/stop volume loop
     useEffect(() => {
-        if (isPlaying) {
+        if (isPlaying || isPausing) {
             updateVolume();
         } else {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -1048,7 +1079,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [isPlaying, fadeIn, fadeOut]);
+    }, [isPlaying, isPausing, fadeIn, fadeOut]);
 
 
 
@@ -1167,6 +1198,32 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }, 0);
     };
 
+    const triggerSafePause = useCallback((callback?: () => void) => {
+        if (pauseTimeoutRef.current) {
+            clearTimeout(pauseTimeoutRef.current);
+            pauseTimeoutRef.current = null;
+        }
+
+        if (!wavesurfer.current) {
+            if (callback) callback();
+            return;
+        }
+
+        if (isPlaying) {
+            if (isPausingRef.current) return;
+            setIsPausing(true);
+            isPausingRef.current = true;
+            pauseTimeRef.current = performance.now();
+
+            pauseTimeoutRef.current = setTimeout(() => {
+                pauseTimeoutRef.current = null;
+                if (callback) callback();
+            }, 20); // 10ms fade + 10ms buffer
+        } else {
+            if (callback) callback();
+        }
+    }, [isPlaying]);
+
     const handleWheel = (e: React.WheelEvent) => {
         if (e.ctrlKey) {
             e.preventDefault();
@@ -1192,8 +1249,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (!wavesurfer.current) return;
 
         if (isPlaying) {
-            wavesurfer.current.pause();
+            if (isPausingRef.current) return;
+            setIsPausing(true);
+            isPausingRef.current = true;
+            pauseTimeRef.current = performance.now();
         } else {
+            // Cancel any pending pause
+            if (pauseTimeoutRef.current) {
+                clearTimeout(pauseTimeoutRef.current);
+                pauseTimeoutRef.current = null;
+            }
+            setIsPausing(false);
+            isPausingRef.current = false;
             const regionList = regions.current?.getRegions();
             const trimRegion = regionList?.find((r: any) => r.id === 'trim-region');
 
@@ -1237,13 +1304,37 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 { id: 'start', time: 0, value: 1, selected: false },
                 { id: 'end', time: editorDuration, value: 1, selected: false }
             ]);
-            showToast("Automation Reset", "success");
+
+            // NEW: Close tool and reset preview state
+            setActiveTool(null);
+            setIsPreviewing(false);
+            if (wavesurfer.current && isPlaying) {
+                wavesurfer.current.pause();
+                setIsPlaying(false);
+            }
+
+            showToast("Automation Applied & Tool Reset", "success");
         } catch (e) {
             console.error(e);
             showToast("Failed to apply automation", "error");
         } finally {
             setIsProcessing(false);
         }
+    };
+
+    const handleResetAutomation = async () => {
+        setAutomationPoints([
+            { id: 'start', time: 0, value: 1, selected: false },
+            { id: 'end', time: editorDuration, value: 1, selected: false }
+        ]);
+
+        if (isPreviewing && currentBlob && wavesurfer.current) {
+            setIsPlaying(false);
+            setIsPreviewing(false);
+            await wavesurfer.current.loadBlob(currentBlob);
+        }
+        handleDirtyChange();
+        showToast("Automation Reset", "success");
     };
 
     // EQ Handlers
@@ -1261,11 +1352,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
-            if (wavesurfer.current) {
-                wavesurfer.current.pause();
-                await wavesurfer.current.loadBlob(newBlob);
-                wavesurfer.current.play();
-            }
+            triggerSafePause(async () => {
+                if (wavesurfer.current) {
+                    await wavesurfer.current.loadBlob(newBlob);
+                    wavesurfer.current.play();
+                }
+            });
             setIsPreviewingEQ(true);
             showToast("Previewing EQ...", "success");
         } catch (e) {
@@ -1369,11 +1461,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
-            if (wavesurfer.current) {
-                wavesurfer.current.pause();
-                await wavesurfer.current.loadBlob(newBlob);
-                wavesurfer.current.play();
-            }
+            triggerSafePause(async () => {
+                if (wavesurfer.current) {
+                    await wavesurfer.current.loadBlob(newBlob);
+                    wavesurfer.current.play();
+                }
+            });
             setIsPreviewingLimiter(true);
             showToast(`Previewing ${limiterMode === 'peak' ? 'Peak Limiter' : 'Limiter'}...`, "success");
         } catch (e) {
@@ -1415,28 +1508,25 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     const handleApplyNormalization = async (level: number = -1) => {
         if (!originalBuffer) return;
-        // STOP PLAYBACK IMMEDIATELY
-        if (wavesurfer.current) {
-            wavesurfer.current.pause();
-            setIsPlaying(false);
-        }
-        setIsProcessing(true);
-        try {
-            // Normalize to -1dB
-            const normalized = await audioProcessor.normalize(originalBuffer, level);
-            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
-            const newBlob = await audioProcessor.toWav(normalized, meta);
-            // Normalization is a specific action
-            onSave(newBlob, normalized.duration, `Normalized (${level}dB)`, true, ['normalized']);
-            setHasNormalized(true);
-            setActiveTool(null);
-            showToast(`Normalized to ${level}dB!`, "success");
-        } catch (e) {
-            console.error(e);
-            showToast("Normalization Failed", "error");
-        } finally {
-            setIsProcessing(false);
-        }
+        triggerSafePause(async () => {
+            setIsProcessing(true);
+            try {
+                // Normalize to -1dB
+                const normalized = await audioProcessor.normalize(originalBuffer, level);
+                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['normalized'] };
+                const newBlob = await audioProcessor.toWav(normalized, meta);
+                // Normalization is a specific action
+                onSave(newBlob, normalized.duration, `Normalized (${level}dB)`, true, ['normalized']);
+                setHasNormalized(true);
+                setActiveTool(null);
+                showToast(`Normalized to ${level}dB!`, "success");
+            } catch (e) {
+                console.error(e);
+                showToast("Normalization Failed", "error");
+            } finally {
+                setIsProcessing(false);
+            }
+        });
     };
 
     const handleResetLimiter = () => {
@@ -1457,11 +1547,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const processed = await audioProcessor.cutAndMerge(originalBuffer, regionsToRemove, cutCrossfade);
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
-            if (wavesurfer.current) {
-                wavesurfer.current.pause();
-                await wavesurfer.current.loadBlob(newBlob);
-                wavesurfer.current.play();
-            }
+            triggerSafePause(async () => {
+                if (wavesurfer.current) {
+                    await wavesurfer.current.loadBlob(newBlob);
+                    wavesurfer.current.play();
+                }
+            });
             setIsPreviewingCut(true);
             showToast("Previewing Cut...", "success");
         } catch (e) {
@@ -1524,18 +1615,20 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         // Save slice markers and tempo into metadata — doesn't modify audio
         setIsProcessing(true);
         try {
+            const currentPoints = [...slicePoints].sort((a, b) => a - b);
             const meta: WavMetadata = {
                 ...(internalMetadata || metadata || {}),
                 id: (internalMetadata || metadata)?.id || slot.fileId || uuidv4(),
                 processing: Array.from(new Set([...((internalMetadata || metadata)?.processing || []), 'sliced'])),
-                slicePoints: slicePoints.sort((a, b) => a - b),
+                slicePoints: currentPoints,
                 tempo: tempo || undefined,
             };
             const newBlob = encodeWAV(originalBuffer, meta);
-            onSave(newBlob, originalBuffer.duration, `Sliced (${slicePoints.length} markers)${tempo ? ` @ ${tempo}BPM` : ''}`, true, meta.processing as any);
+            onSave(newBlob, originalBuffer.duration, `Sliced (${currentPoints.length} markers)${tempo ? ` @ ${tempo}BPM` : ''}`, true, meta.processing as any);
 
             // AFTER saving, the current state is the "initial" one for the NEXT edit session
-            setInitialSlicePoints([...slicePoints]);
+            setInitialSlicePoints(currentPoints);
+            setSlicePoints(currentPoints); // Ensure state is sorted too
             setInitialTempo(tempo);
 
             showToast("Slicer Settings Saved!", "success");
@@ -1556,20 +1649,127 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setSlicePoints([]);
     };
 
+    const handleRemoveSliceMarker = (idx: number) => {
+        setSlicePoints(prev => prev.filter((_, i) => i !== idx));
+        handleDirtyChange();
+    };
+
     useEffect(() => {
         if (activeSliceIdx > slicePoints.length) {
             setActiveSliceIdx(slicePoints.length);
         }
     }, [slicePoints.length, activeSliceIdx]);
 
-    const handlePlaySlice = () => {
+    const playSliceByIndex = useCallback((idx: number) => {
         if (!wavesurfer.current || editorDuration <= 0) return;
-        const start = activeSliceIdx === 0 ? 0 : slicePoints[activeSliceIdx - 1];
-        const end = activeSliceIdx < slicePoints.length ? slicePoints[activeSliceIdx] : editorDuration;
+        if (idx < 0 || idx > slicePoints.length) return; // Note: if slicePoints = N, there are N+1 slices (0 to N)
+        setActiveSliceIdx(idx);
+
+        const start = idx === 0 ? 0 : slicePoints[idx - 1];
+        const end = idx < slicePoints.length ? slicePoints[idx] : editorDuration;
 
         wavesurfer.current.play(start, end);
         setIsPlaying(true);
+
+        // Highlight for Map
+        if (triggeredSliceTimeout.current) clearTimeout(triggeredSliceTimeout.current);
+        setTriggeredSliceIdx(idx);
+        triggeredSliceTimeout.current = setTimeout(() => {
+            setTriggeredSliceIdx(null);
+        }, 300);
+    }, [editorDuration, slicePoints]);
+
+    const handlePlaySlice = () => {
+        playSliceByIndex(activeSliceIdx);
     };
+
+    // Refs for stable event listeners (Keyboard, MIDI) — declared after functions they reference
+    const slicePointsRef = useRef<number[]>(slicePoints);
+    const playSliceByIndexRef = useRef<(idx: number) => void>(playSliceByIndex);
+
+    useEffect(() => { slicePointsRef.current = slicePoints; }, [slicePoints]);
+    useEffect(() => { playSliceByIndexRef.current = playSliceByIndex; }, [playSliceByIndex]);
+
+    // Keyboard Auditioning
+    useEffect(() => {
+        if (activeTool !== 'slicer') return;
+
+        const QWERTY_MAP = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'z', 'x', 'c'];
+        const AZERTY_MAP = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'z', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'q', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'w', 'x', 'c'];
+
+        // Also support Numpad keys 1-9
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore if focus is in an input field (so typing name or BPM doesn't trigger slices)
+            if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+            const key = e.key.toLowerCase();
+            const map = keyboardLayout === 'QWERTY' ? QWERTY_MAP : AZERTY_MAP;
+            const idx = map.indexOf(key);
+
+            if (idx !== -1 && idx <= slicePointsRef.current.length) {
+                e.preventDefault();
+                playSliceByIndexRef.current(idx);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeTool, keyboardLayout]);
+
+    // MIDI Auditioning
+    useEffect(() => {
+        if (activeTool !== 'slicer') return;
+
+        const activeInputs = new Set<any>();
+        let isCanceled = false;
+
+        const onMIDIMessage = (message: any) => {
+            const [command, note, velocity] = message.data;
+
+            // Note On for any channel (144 to 159). Also ensure velocity > 0
+            if (command >= 144 && command <= 159 && velocity > 0) {
+                // Map Note 36 (C1) through 67 (G3) to slice index 0-31
+                const idx = note - 36;
+                if (idx >= 0 && idx <= 31 && idx <= slicePointsRef.current.length) {
+                    playSliceByIndexRef.current(idx);
+                }
+            }
+        };
+
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then((access) => {
+                if (isCanceled) return;
+
+                // Bind to all existing inputs
+                access.inputs.forEach((input: any) => {
+                    input.addEventListener('midimessage', onMIDIMessage);
+                    activeInputs.add(input);
+                });
+
+                // Handle hot-plugged devices
+                access.onstatechange = (e: any) => {
+                    const port = e.port;
+                    if (port.type === 'input') {
+                        if (port.state === 'connected') {
+                            port.addEventListener('midimessage', onMIDIMessage);
+                            activeInputs.add(port);
+                        } else {
+                            port.removeEventListener('midimessage', onMIDIMessage);
+                            activeInputs.delete(port);
+                        }
+                    }
+                };
+            }).catch((err) => console.error("MIDI Request Error:", err));
+        }
+
+        return () => {
+            isCanceled = true;
+            activeInputs.forEach((input) => {
+                input.removeEventListener('midimessage', onMIDIMessage);
+            });
+        };
+    }, [activeTool]);
 
     const handleSliceMarkerChange = (idx: number, newValue: number) => {
         if (isNaN(newValue) || newValue < 0 || newValue > editorDuration) return;
@@ -2749,13 +2949,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     onMouseEnter={() => setHelpText("Apply Changes & Bake Audio")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
-                                                <button onClick={() => {
-                                                    setAutomationPoints([
-                                                        { id: 'start', time: 0, value: 1, selected: false },
-                                                        { id: 'end', time: editorDuration, value: 1, selected: false }
-                                                    ]);
-                                                    handleDirtyChange();
-                                                }}
+                                                <button onClick={handleResetAutomation}
                                                     className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
                                                     onMouseEnter={() => setHelpText("Clear All Automation")}
                                                     onMouseLeave={() => setHelpText("")}
@@ -3061,133 +3255,192 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Slicer Panel */}
                                     {activeTool === 'slicer' && (
-                                        <div className="flex items-center gap-3 min-w-max">
-                                            {/* Active Slice Inspector */}
-                                            <div className="flex items-center gap-3 bg-black/40 p-1.5 rounded-lg border border-gray-800">
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        onClick={() => setActiveSliceIdx(Math.max(0, activeSliceIdx - 1))}
-                                                        disabled={activeSliceIdx === 0}
-                                                        className="p-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 hover:text-white transition-colors"
-                                                    >
-                                                        <ChevronDown size={14} className="rotate-90" />
-                                                    </button>
-                                                    <div className="flex flex-col gap-0.5 min-w-[3.5rem] items-center">
-                                                        <div className="text-[10px] uppercase font-bold text-gray-500">Slice</div>
-                                                        <div className="text-xs font-bold text-cyan-400">{activeSliceIdx + 1}</div>
+                                        <div className="flex flex-col gap-2 min-w-max">
+                                            {/* Row 1: Inspector & Primary Actions */}
+                                            <div className="flex items-center gap-3">
+                                                {/* Active Slice Inspector */}
+                                                <div className="flex items-center gap-3 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => setActiveSliceIdx(Math.max(0, activeSliceIdx - 1))}
+                                                            disabled={activeSliceIdx === 0}
+                                                            className="p-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 hover:text-white transition-colors"
+                                                        >
+                                                            <ChevronDown size={14} className="rotate-90" />
+                                                        </button>
+                                                        <div className="flex flex-col gap-0.5 min-w-[3.5rem] items-center">
+                                                            <div className="text-[10px] uppercase font-bold text-gray-500">Slice</div>
+                                                            <div className="text-xs font-bold text-cyan-400">{activeSliceIdx + 1}</div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setActiveSliceIdx(Math.min(slicePoints.length, activeSliceIdx + 1))}
+                                                            disabled={activeSliceIdx === slicePoints.length}
+                                                            className="p-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 hover:text-white transition-colors"
+                                                        >
+                                                            <ChevronDown size={14} className="-rotate-90" />
+                                                        </button>
                                                     </div>
+
                                                     <button
-                                                        onClick={() => setActiveSliceIdx(Math.min(slicePoints.length, activeSliceIdx + 1))}
-                                                        disabled={activeSliceIdx === slicePoints.length}
-                                                        className="p-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 hover:text-white transition-colors"
+                                                        onClick={handlePlaySlice}
+                                                        className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-900/40 hover:bg-cyan-600 text-cyan-400 hover:text-white border border-cyan-500/30 transition-colors"
+                                                        title="Play Slice"
                                                     >
-                                                        <ChevronDown size={14} className="-rotate-90" />
+                                                        <Play size={14} className="ml-0.5" />
                                                     </button>
+
+                                                    <div className="flex items-center gap-4 ml-2">
+                                                        {/* Start Marker */}
+                                                        <div className="flex flex-col gap-0.5 text-center">
+                                                            <div className="text-[9px] uppercase font-bold text-gray-500">
+                                                                {activeSliceIdx === 0 ? 'Start' : `M${activeSliceIdx}`}
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                {activeSliceIdx === 0 ? (
+                                                                    <div className="text-xs font-bold text-gray-400 w-12 bg-gray-900/50 rounded py-0.5 text-center">0.000</div>
+                                                                ) : (
+                                                                    <>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={slicePoints[activeSliceIdx - 1]?.toFixed(3) || ''}
+                                                                            onChange={(e) => handleSliceMarkerChange(activeSliceIdx - 1, parseFloat(e.target.value))}
+                                                                            className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                                        />
+                                                                        <button
+                                                                            onClick={() => handleRemoveSliceMarker(activeSliceIdx - 1)}
+                                                                            onMouseEnter={() => setHoveredMarkerIdx(activeSliceIdx - 1)}
+                                                                            onMouseLeave={() => setHoveredMarkerIdx(null)}
+                                                                            className="p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors"
+                                                                            title="Remove Marker"
+                                                                        >
+                                                                            <X size={10} />
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-gray-600 text-xs font-bold">-</span>
+                                                        {/* End Marker */}
+                                                        <div className="flex flex-col gap-0.5 text-center">
+                                                            <div className="text-[9px] uppercase font-bold text-gray-500">
+                                                                {activeSliceIdx === slicePoints.length ? 'End' : `M${activeSliceIdx + 1}`}
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                {activeSliceIdx === slicePoints.length ? (
+                                                                    <div className="text-xs font-bold text-gray-400 w-12 bg-gray-900/50 rounded py-0.5 text-center">{editorDuration.toFixed(3)}</div>
+                                                                ) : (
+                                                                    <>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={slicePoints[activeSliceIdx]?.toFixed(3) || ''}
+                                                                            onChange={(e) => handleSliceMarkerChange(activeSliceIdx, parseFloat(e.target.value))}
+                                                                            className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                                        />
+                                                                        <button
+                                                                            onClick={() => handleRemoveSliceMarker(activeSliceIdx)}
+                                                                            onMouseEnter={() => setHoveredMarkerIdx(activeSliceIdx)}
+                                                                            onMouseLeave={() => setHoveredMarkerIdx(null)}
+                                                                            className="p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors"
+                                                                            title="Remove Marker"
+                                                                        >
+                                                                            <X size={10} />
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
-                                                <button
-                                                    onClick={handlePlaySlice}
-                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-900/40 hover:bg-cyan-600 text-cyan-400 hover:text-white border border-cyan-500/30 transition-colors"
-                                                    title="Play Slice"
-                                                >
-                                                    <Play size={14} className="ml-0.5" />
-                                                </button>
+                                                <div className="h-6 w-px bg-gray-800 mx-1"></div>
 
                                                 <div className="flex items-center gap-2">
-                                                    {/* Start Marker */}
-                                                    <div className="flex flex-col gap-0.5 text-center">
-                                                        <div className="text-[9px] uppercase font-bold text-gray-500">
-                                                            {activeSliceIdx === 0 ? 'Start' : `M${activeSliceIdx}`}
-                                                        </div>
-                                                        {activeSliceIdx === 0 ? (
-                                                            <div className="text-xs font-bold text-gray-400 w-12 bg-gray-900/50 rounded py-0.5 text-center">0.000</div>
-                                                        ) : (
-                                                            <input
-                                                                type="text"
-                                                                value={slicePoints[activeSliceIdx - 1]?.toFixed(3) || ''}
-                                                                onChange={(e) => handleSliceMarkerChange(activeSliceIdx - 1, parseFloat(e.target.value))}
-                                                                className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                                                            />
+                                                    <button onClick={handleApplySlicer}
+                                                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
+                                                            ? 'bg-gray-800 hover:bg-gray-700 text-gray-400 border-gray-700/50'
+                                                            : 'bg-green-900/40 hover:bg-green-600 text-green-400 hover:text-white border-green-500/30'
+                                                            }`}
+                                                        onMouseEnter={() => setHelpText("Save Slice Markers to Metadata")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    >
+                                                        <Check size={12} />
+                                                        Save to File
+                                                        {JSON.stringify([...slicePoints].sort()) !== JSON.stringify([...initialSlicePoints].sort()) && (
+                                                            <span className="text-[8px] opacity-70 ml-1">(not saved)</span>
                                                         )}
-                                                    </div>
-                                                    <span className="text-gray-600 text-xs font-bold">-</span>
-                                                    {/* End Marker */}
-                                                    <div className="flex flex-col gap-0.5 text-center">
-                                                        <div className="text-[9px] uppercase font-bold text-gray-500">
-                                                            {activeSliceIdx === slicePoints.length ? 'End' : `M${activeSliceIdx + 1}`}
-                                                        </div>
-                                                        {activeSliceIdx === slicePoints.length ? (
-                                                            <div className="text-xs font-bold text-gray-400 w-12 bg-gray-900/50 rounded py-0.5 text-center">{editorDuration.toFixed(3)}</div>
-                                                        ) : (
-                                                            <input
-                                                                type="text"
-                                                                value={slicePoints[activeSliceIdx]?.toFixed(3) || ''}
-                                                                onChange={(e) => handleSliceMarkerChange(activeSliceIdx, parseFloat(e.target.value))}
-                                                                className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                                                            />
-                                                        )}
-                                                    </div>
+                                                    </button>
+
+                                                    <button onClick={handleResetSlicer}
+                                                        disabled={JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())}
+                                                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
+                                                            ? 'bg-gray-900/50 text-gray-700 cursor-not-allowed'
+                                                            : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                                                            }`}
+                                                        onMouseEnter={() => setHelpText("Revert to file's original slices")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    ><RotateCcw size={12} /> Reset</button>
+
+                                                    <button onClick={handleClearAllSlices}
+                                                        className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                        onMouseEnter={() => setHelpText("Remove All Slice Markers")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    ><Trash2 size={12} /> Remove All</button>
                                                 </div>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            {/* Row 2: Generation & Formatting */}
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                    <div className="flex flex-col gap-0.5 min-w-[5rem]">
+                                                        <div className="text-[10px] uppercase font-bold text-gray-500">Markers</div>
+                                                        <div className="text-xs font-bold text-cyan-400">{slicePoints.length} / 32</div>
+                                                    </div>
 
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
-                                                <div className="flex flex-col gap-0.5 min-w-[5rem]">
-                                                    <div className="text-[10px] uppercase font-bold text-gray-500">Markers</div>
-                                                    <div className="text-xs font-bold text-cyan-400">{slicePoints.length} / 32</div>
+                                                    <div className="h-6 w-px bg-gray-800"></div>
+
+                                                    <BpmInput value={tempo} onChange={setTempo} />
+
+                                                    <div className="h-6 w-px bg-gray-800"></div>
+
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="text-[9px] uppercase font-bold text-gray-600 mr-2">Auto-Slice:</div>
+                                                        {[4, 8, 16, 32].map(n => (
+                                                            <button key={n} onClick={() => handleAutoSlice(n - 1)}
+                                                                className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${slicePoints.length === n - 1 ? 'bg-cyan-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}
+                                                                onMouseEnter={() => setHelpText(`Auto-divide into ${n} slices`)}
+                                                                onMouseLeave={() => setHelpText("")}
+                                                            >{n}</button>
+                                                        ))}
+                                                        <div className="flex items-center gap-1 pl-2 ml-1 border-l border-gray-700">
+                                                            <input
+                                                                type="number"
+                                                                min="1" max="32"
+                                                                value={customSliceCount}
+                                                                onChange={(e) => setCustomSliceCount(Math.min(32, Math.max(1, parseInt(e.target.value) || 1)))}
+                                                                className="w-10 bg-gray-900 border border-gray-700 text-cyan-400 text-[10px] font-bold py-1 px-1 rounded text-center focus:outline-none focus:border-cyan-500"
+                                                            />
+                                                            <button
+                                                                onClick={() => handleAutoSlice(customSliceCount - 1)}
+                                                                className="px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-cyan-600 text-cyan-400 hover:text-white transition-colors"
+                                                                onMouseEnter={() => setHelpText(`Auto-divide into ${customSliceCount} slices`)}
+                                                                onMouseLeave={() => setHelpText("")}
+                                                            >
+                                                                Slice
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="h-6 w-px bg-gray-800 mx-2"></div>
+
+                                                    <button
+                                                        onClick={() => setShowKeyboardMapModal(true)}
+                                                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-gray-700 text-gray-400 transition-colors"
+                                                        onMouseEnter={() => setHelpText("View Keyboard Map")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    >
+                                                        <Keyboard size={12} /> Map
+                                                    </button>
                                                 </div>
-
-                                                <div className="h-6 w-px bg-gray-800"></div>
-
-                                                <BpmInput value={tempo} onChange={setTempo} />
-
-                                                <div className="h-6 w-px bg-gray-800"></div>
-
-                                                <div className="flex items-center gap-1">
-                                                    {[4, 8, 16, 32].map(n => (
-                                                        <button key={n} onClick={() => handleAutoSlice(n - 1)}
-                                                            className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${slicePoints.length === n - 1 ? 'bg-cyan-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}
-                                                            onMouseEnter={() => setHelpText(`Auto-divide into ${n} slices`)}
-                                                            onMouseLeave={() => setHelpText("")}
-                                                        >{n}</button>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            <div className="h-6 w-px bg-gray-800"></div>
-
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={handleApplySlicer}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
-                                                        ? 'bg-gray-800 hover:bg-gray-700 text-gray-400 border-gray-700/50'
-                                                        : 'bg-green-900/40 hover:bg-green-600 text-green-400 hover:text-white border-green-500/30'
-                                                        }`}
-                                                    onMouseEnter={() => setHelpText("Save Slice Markers to Metadata")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    <Check size={12} />
-                                                    Save to File
-                                                    {JSON.stringify([...slicePoints].sort()) !== JSON.stringify([...initialSlicePoints].sort()) && (
-                                                        <span className="text-[8px] opacity-70 ml-1">(not saved)</span>
-                                                    )}
-                                                </button>
-
-                                                <button onClick={handleResetSlicer}
-                                                    disabled={JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
-                                                        ? 'bg-gray-900/50 text-gray-700 cursor-not-allowed'
-                                                        : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-                                                        }`}
-                                                    onMouseEnter={() => setHelpText("Revert to file's original slices")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
-
-                                                <button onClick={handleClearAllSlices}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
-                                                    onMouseEnter={() => setHelpText("Remove All Slice Markers")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                ><Trash2 size={12} /> Remove All</button>
                                             </div>
                                         </div>
                                     )}
@@ -3439,6 +3692,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             active={activeTool === 'slicer'}
                                             activeSliceIdx={activeSliceIdx}
                                             onActiveSliceChange={setActiveSliceIdx}
+                                            hoveredMarkerIdx={hoveredMarkerIdx}
                                         />
 
                                         {/* Pitch Selection Overlay */}
@@ -3898,6 +4152,31 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     </Rnd>
                 )
             }
-        </div >
+
+            {/* Keyboard Slicer Map Panel */}
+            {showKeyboardMapModal && (
+                <Rnd
+                    size={{ width: 550, height: 320 }}
+                    position={keyboardSlicerPos}
+                    onDragStop={(_, d) => setKeyboardSlicerPos({ x: d.x, y: d.y })}
+                    minWidth={500}
+                    minHeight={300}
+                    enableResizing={false}
+                    dragHandleClassName="drag-handle"
+                    className="z-[200]"
+                    bounds="window"
+                >
+                    <KeyboardSlicerModal
+                        isOpen={showKeyboardMapModal}
+                        onClose={() => setShowKeyboardMapModal(false)}
+                        layout={keyboardLayout}
+                        onLayoutChange={setKeyboardLayout}
+                        onPlaySlice={playSliceByIndex}
+                        activeSliceIdx={activeSliceIdx}
+                        triggeredSliceIdx={triggeredSliceIdx}
+                    />
+                </Rnd>
+            )}
+        </div>
     );
 };
