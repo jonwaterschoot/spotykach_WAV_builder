@@ -94,10 +94,16 @@ function defaultToPool(status: SlotRow['status'], preset: QuickPreset): boolean 
     return preset === 'erase_replace' && status === 'CONFLICT';
 }
 
-function rowsMatchPreset(rows: SlotRow[], preset: QuickPreset): boolean {
-    return rows.every(r =>
+function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset): boolean {
+    const slotsMatch = rows.every(r =>
         r.primary === defaultPrimary(r.status, preset) &&
         r.toPool === defaultToPool(r.status, preset));
+
+    if (!configStatus) return slotsMatch;
+
+    // Config matches the preset's intended direction for that status
+    const configMatch = configDecision === defaultPrimary(configStatus, preset);
+    return slotsMatch && configMatch;
 }
 
 const PRIMARY_LABEL: Record<SKPrimaryDecision, string> = {
@@ -141,7 +147,15 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const [rows, setRows] = useState<SlotRow[]>(() => buildRows(initialPreset));
     const [showAll, setShowAll] = useState(false);
     const [hardcopyBackup, setHardcopyBackup] = useState(true);
+    const [forceOverwrite, setForceOverwrite] = useState(false);
     const [isApplying, setIsApplying] = useState(false);
+
+    // Config Sync State
+    const [includeConfig, setIncludeConfig] = useState(true);
+    const [configDecision, setConfigDecision] = useState<SKPrimaryDecision>(() => {
+        if (!diff.config) return 'skip';
+        return defaultPrimary(diff.config.status as any, initialPreset);
+    });
 
     // Audio scrubbing player
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -182,6 +196,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 primary: 'skip' as const,
                 toPool: false,
             })));
+            setConfigDecision('skip');
             return;
         }
         setRows(prev => prev.map(r => ({
@@ -189,15 +204,22 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             primary: defaultPrimary(r.status, preset),
             toPool: defaultToPool(r.status, preset),
         })));
-    }, []);
+
+        if (diff.config) {
+            setConfigDecision(defaultPrimary(diff.config.status as any, preset));
+        }
+    }, [diff.config]);
 
     const currentPreset: QuickPreset = useMemo(() => {
         const presets: QuickPreset[] = ['import_only', 'erase_replace', 'merge'];
-        return presets.find(p => rowsMatchPreset(rows, p)) ?? 'custom';
-    }, [rows]);
+        return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p)) ?? 'custom';
+    }, [rows, configDecision, diff.config]);
 
     const visibleRows = showAll ? rows : rows.filter(r => r.status !== 'MATCH' && r.status !== 'EMPTY');
-    const actionCount = rows.filter(r => r.primary !== 'skip' || r.toPool).length;
+
+    // Action count includes slot updates AND config sync if enabled and pending
+    const configActionPending = includeConfig && configDecision !== 'skip';
+    const actionCount = rows.filter(r => r.primary !== 'skip' || r.toPool).length + (configActionPending ? 1 : 0);
 
     // ── Drag state ────────────────────────────────────────────────────────────
     const [_dragSource, setDragSource] = useState<{ slotKey: string; prefix: 'PR' | 'SD' } | null>(null);
@@ -267,7 +289,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             hardcopyBackup,
             skMode: currentPreset === 'erase_replace' ? 'clean' : 'overwrite',
             backupSKToProject: hardcopyBackup,
-        }, importDecisions);
+            // Include config decision if enabled
+            includeConfig: includeConfig,
+            configDecision: configDecision,
+            forceOverwrite: forceOverwrite,
+        } as any, importDecisions);
         setIsApplying(false);
     };
 
@@ -356,11 +382,18 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             <span className="text-[10px] text-orange-400 italic px-2">Custom / Cleared</span>
                         )}
                     </div>
-                    <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none hover:text-white">
-                        <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)}
-                            className="w-3.5 h-3.5 rounded border-gray-700 bg-gray-800 text-indigo-500 focus:ring-0" />
-                        Show all slots
-                    </label>
+                    <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none hover:text-white group">
+                            <input type="checkbox" checked={includeConfig} onChange={e => setIncludeConfig(e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-gray-700 bg-gray-800 text-orange-500 focus:ring-0" />
+                            <span className={includeConfig ? 'text-orange-400 font-bold' : ''}>Sync config.txt</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none hover:text-white">
+                            <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-gray-700 bg-gray-800 text-indigo-500 focus:ring-0" />
+                            Show all slots
+                        </label>
+                    </div>
                 </div>
 
                 {/* Dual slot grid visualizer */}
@@ -461,11 +494,55 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         </div>
                     </div>
 
-                    {visibleRows.length === 0 && (
+                    {visibleRows.length === 0 && (!diff.config || diff.config.status === 'MATCH' || !includeConfig) && (
                         <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
                             <Check size={32} className="text-green-500" />
                             <p className="font-medium text-gray-300">Hardware matches project</p>
                             <p className="text-sm">Toggle "Show all slots" to review everything.</p>
+                        </div>
+                    )}
+
+                    {/* Config Row */}
+                    {diff.config && includeConfig && (showAll || diff.config.status !== 'MATCH') && (
+                        <div className="grid grid-cols-[40px_1fr_80px_150px_1fr] gap-0 border-b border-white/5 bg-orange-500/5 hover:bg-orange-500/10 transition-colors">
+                            <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-white/5">
+                                <Archive size={14} className="text-orange-400" />
+                            </div>
+                            <div className="p-3 flex items-center gap-2 border-r border-white/5 min-w-0">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-white font-bold truncate">config.txt</p>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">Project Settings</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-center p-2 border-r border-white/5">
+                                {diff.config.status === 'MATCH' && <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync</span>}
+                                {diff.config.status === 'CONFLICT' && <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Conflict</span>}
+                                {diff.config.status === 'LOCAL_ONLY' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
+                                {diff.config.status === 'REMOTE_ONLY' && <span className="text-[8px] text-orange-300 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowLeft size={7} /> SD only</span>}
+                            </div>
+                            <div className="flex flex-col items-center justify-center gap-1 p-2 border-r border-white/5">
+                                {diff.config.status === 'MATCH' ? (
+                                    <span className="text-[9px] text-green-500 font-bold flex items-center gap-1"><Check size={9} /> In sync</span>
+                                ) : (
+                                    <div className="flex items-center gap-0.5">
+                                        <button onClick={() => setConfigDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk')}
+                                            className={['p-1.5 rounded transition-all', configDecision === 'push_to_sk' ? 'bg-indigo-600 text-white shadow-sm scale-110' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
+                                            <ArrowRight size={12} />
+                                        </button>
+                                        <span className="text-gray-700 text-[10px] mx-0.5 select-none">|</span>
+                                        <button onClick={() => setConfigDecision(prev => prev === 'pull_to_slot' ? 'skip' : 'pull_to_slot')}
+                                            className={['p-1.5 rounded transition-all', configDecision === 'pull_to_slot' ? 'bg-teal-600 text-white shadow-sm scale-110' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
+                                            <ArrowLeft size={12} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-3 flex items-center gap-2 min-w-0 flex-row-reverse">
+                                <div className="flex-1 min-w-0 text-right">
+                                    <p className="text-xs text-white font-medium truncate">config.txt</p>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">on SD Root</p>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -622,11 +699,20 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
                 {/* Footer */}
                 <div className="p-5 border-t border-white/10 bg-[#1a1a1a] flex items-center justify-between gap-4 shrink-0 flex-wrap">
-                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors select-none">
-                        <input type="checkbox" checked={hardcopyBackup} onChange={e => setHardcopyBackup(e.target.checked)}
-                            className="w-4 h-4 rounded border-gray-600 text-indigo-500 focus:ring-indigo-500 bg-black" />
-                        Save hardcopy backup
-                    </label>
+                    <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors select-none">
+                            <input type="checkbox" checked={hardcopyBackup} onChange={e => setHardcopyBackup(e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-600 text-indigo-500 focus:ring-indigo-500 bg-black" />
+                            Save hardcopy backup
+                        </label>
+
+                        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-orange-400 transition-colors select-none group">
+                            <input type="checkbox" checked={forceOverwrite} onChange={e => setForceOverwrite(e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-black" />
+                            <span className={forceOverwrite ? "text-orange-400 font-bold" : ""}>Force Overwrite all SK files</span>
+                            <AlertTriangle size={12} className={`opacity-50 group-hover:opacity-100 ${forceOverwrite ? 'text-orange-400 opacity-100' : ''}`} />
+                        </label>
+                    </div>
 
                     <div className="flex items-center gap-3">
                         <span className="text-xs text-gray-500 hidden sm:block">

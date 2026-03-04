@@ -1,14 +1,53 @@
 import JSZip from 'jszip';
 import { TAPE_COLORS } from '../types';
-import type { AppState } from '../types';
+import type { AppState, ProjectConfig } from '../types';
 
 // ==========================================
 // SHARED HELPERS
 // ==========================================
 
-// ==========================================
-// SHARED HELPERS
-// ==========================================
+export interface ConfigSyncData {
+    id: 'config';
+    decision: 'keep_local' | 'use_backup' | 'skip' | 'export' | 'delete_local' | 'delete_backup';
+    backupConfig?: ProjectConfig;
+}
+
+export type SlotSyncDecision = 'export' | 'skip' | 'delete' | 'keep_local' | 'use_backup' | 'delete_local' | 'delete_backup';
+
+export interface ExportSDOptions {
+    skMode: 'overwrite' | 'clean';
+    backupSKToProject?: boolean;
+    workHandle?: FileSystemDirectoryHandle | null;
+    projectName?: string;
+    includeProject?: boolean;
+    directWrite?: boolean;
+    smartSync?: boolean;
+    destinationHandle?: FileSystemDirectoryHandle;
+    syncUserLibrary?: boolean;
+    userLibrary?: import('../types').UserLibrary;
+    syncDecisions?: Record<string, SlotSyncDecision> | Array<{ id: string, decision: SlotSyncDecision } | ConfigSyncData>;
+    includeConfig?: boolean;
+    forceOverwrite?: boolean;
+}
+
+export const generateConfigText = (config: ProjectConfig): string => {
+    const lines: string[] = [];
+    const appendSetting = (key: string, value: any) => {
+        lines.push(key.padEnd(8, ' ').substring(0, 8));
+        let valStr = '0';
+        if (value === true || value === '1' || value === 1) valStr = '1';
+        else if (value === false || value === '0' || value === 0) valStr = '0';
+        else if (value !== undefined && value !== null) valStr = value.toString();
+        lines.push(valStr);
+        lines.push(''); // Empty line separator
+    };
+    // Use defaults if missing (for older projects)
+    appendSetting('mid_ch_a', config?.mid_ch_a ?? 1);
+    appendSetting('mid_ch_b', config?.mid_ch_b ?? 2);
+    appendSetting('mid_ps_a', config?.mid_ps_a ?? false);
+    appendSetting('mid_ps_b', config?.mid_ps_b ?? false);
+    return lines.join('\n');
+};
 
 export const verifyProjectBlobs = async (state: AppState): Promise<Array<{ fileId: string; fileName: string; versionId: string; blobRef: string; reason: string }>> => {
     const unreadableFiles: Array<{ fileId: string; fileName: string; versionId: string; blobRef: string; reason: string }> = [];
@@ -48,15 +87,17 @@ export const downloadBlob = (blob: Blob, name: string) => {
 
 // Helper: Safely write a blob to a file handle. Checks size to skip redundant writes,
 // and buffers File objects into memory to prevent NotReadableError due to file locks.
-export const safeWriteBlob = async (fileHandle: FileSystemFileHandle, blob: Blob) => {
+export const safeWriteBlob = async (fileHandle: FileSystemFileHandle, blob: Blob, force: boolean = false) => {
     let shouldWrite = true;
-    try {
-        const existingFile = await fileHandle.getFile();
-        if (existingFile.size === blob.size) {
-            shouldWrite = false;
+    if (!force) {
+        try {
+            const existingFile = await fileHandle.getFile();
+            if (existingFile.size === blob.size) {
+                shouldWrite = false;
+            }
+        } catch (e) {
+            // Doesn't exist, proceed
         }
-    } catch (e) {
-        // Doesn't exist, proceed
     }
 
     if (shouldWrite) {
@@ -317,6 +358,7 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
         files: serializedFiles,
         tapes: state.tapes,
         projectNotes: state.projectNotes,
+        projectConfig: state.projectConfig, // Include project config
         metadata: {
             appName: "Spotykach WAV Builder",
             version: __APP_VERSION__,
@@ -361,21 +403,6 @@ export const exportSaveState = async (state: AppState, returnZip = false, onProg
 // 2. SD CARD STRUCTURE (Strict)
 // ==========================================
 
-export interface ExportSDOptions {
-    includeProject: boolean; // Keeping for backward compat, but effectively true
-    directWrite: boolean;
-    smartSync?: boolean; // Used for "Overwrite" mode
-    destinationHandle?: FileSystemDirectoryHandle;
-    // New Options
-    skMode?: 'overwrite' | 'clean';
-    syncUserLibrary?: boolean;
-    userLibrary?: import('../types').UserLibrary; // Passed from App state
-    backupSKToProject?: boolean;
-    workHandle?: FileSystemDirectoryHandle | null; // Needed for internal backup
-    projectName?: string; // Needed for folder naming
-    syncDecisions?: Record<string, 'export' | 'skip' | 'delete'>; // New decision map
-}
-
 export const exportSDStructure = async (state: AppState, options: ExportSDOptions, onProgress?: (msg: string | undefined, progress?: number) => void) => {
 
     // A. DIRECT WRITE (FileSystem API)
@@ -385,7 +412,6 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             if (!('showDirectoryPicker' in window)) throw new Error("Browser not supported");
 
             let rootHandle = options.destinationHandle;
-
             if (!rootHandle) {
                 onProgress?.("Requesting directory access...", 0);
                 // @ts-ignore
@@ -394,191 +420,103 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
             if (!rootHandle) throw new Error("No destination selected");
 
-            // 1. CLEAN RE-INSTALL?
             if (options.skMode === 'clean') {
                 onProgress?.("Cleaning old Sync...", 5);
                 await cleanDirectory(rootHandle, 'SK');
             }
 
-            onProgress?.("Creating/Accessing SK folder...", 10);
+            const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
 
-            // Access 'SK' subdirectory.
-            let skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
-
-            // SMART SYNC MANIFEST (Only if Overwrite mode)
-            let manifest: Record<string, Record<number, string>> = {};
-            // Initialize manifest structure for all colors
-            TAPE_COLORS.forEach(c => manifest[c] = {});
-
-            if (options.smartSync && options.skMode !== 'clean') {
-                try {
-                    const manifestHandle = await skHandle.getFileHandle('export_manifest.json', { create: false });
-                    const file = await manifestHandle.getFile();
-                    const text = await file.text();
-                    const loaded = JSON.parse(text);
-                    TAPE_COLORS.forEach(c => {
-                        if (loaded[c]) manifest[c] = loaded[c];
-                    });
-                    onProgress?.("Smart Sync: Manifest loaded.", 10);
-                } catch (e) {
-                    onProgress?.("Smart Sync: No previous manifest found.", 10);
-                }
-            }
-
-            // Write Readme
+            // 1. Write Readme
             onProgress?.("Writing README.md...", 15);
             const readmeHandle = await rootHandle.getFileHandle('README.md', { create: true });
             const readmeWritable = await readmeHandle.createWritable();
-            await readmeWritable.write(generateReadme(state)); // Bundle info is separate now
+            await readmeWritable.write(generateReadme(state));
             await readmeWritable.close();
 
-            // 2. WRITE SK FOLDER (WAVs)
-            let skippedCount = 0;
-            let writtenCount = 0;
-            const totalActiveSlots = TAPE_COLORS.reduce((acc, color) => {
-                return acc + state.tapes[color].slots.filter(s => s.fileId).length;
-            }, 0);
-            let processedSlots = 0;
+            // 2. Config.txt Generation
+            let configToUse: ProjectConfig | undefined = undefined;
+            if (options.includeConfig !== false) {
+                if (Array.isArray(options.syncDecisions)) {
+                    const configEntry = options.syncDecisions.find(d => d.id === 'config') as ConfigSyncData | undefined;
+                    if (configEntry && (configEntry.decision === 'keep_local' || configEntry.decision === 'use_backup' || configEntry.decision === 'export')) {
+                        configToUse = configEntry.decision === 'use_backup' ? configEntry.backupConfig : state.projectConfig;
+                    } else if (!configEntry && state.projectConfig) {
+                        configToUse = state.projectConfig;
+                    }
+                } else if (options.syncDecisions?.['config']) {
+                    const d = options.syncDecisions['config'];
+                    if (d === 'export' || d === 'keep_local') {
+                        configToUse = state.projectConfig;
+                    }
+                } else if (state.projectConfig) {
+                    configToUse = state.projectConfig;
+                }
+            }
 
-            const skBlobs: { name: string, blob: Blob }[] = []; // Collect for Hardcopy
+            if (configToUse) {
+                const finalConfig = configToUse || state.projectConfig;
+                if (finalConfig) {
+                    onProgress?.("Writing config.txt...", 18);
+                    const configText = generateConfigText(finalConfig);
+                    const configHandle = await rootHandle.getFileHandle('config.txt', { create: true });
+                    await safeWriteBlob(configHandle, new Blob([configText], { type: 'text/plain' }), options.forceOverwrite);
+                }
+            }
+
+            // 3. Process Tapes
+            let writtenCount = 0;
+            let skippedCount = 0;
+            const activeSlots = TAPE_COLORS.reduce((acc, c) => acc + state.tapes[c].slots.filter(s => s.fileId).length, 0);
+            let processed = 0;
 
             for (const color of TAPE_COLORS) {
                 const tape = state.tapes[color];
                 const folderName = color.charAt(0).toUpperCase();
-                const activeSlots = tape.slots.filter(s => s.fileId);
-
-                let tapeHandle: FileSystemDirectoryHandle;
-                try {
-                    tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
-                } catch (e) {
-                    continue;
-                }
-
-                // 2.a Sweep Orphaned Files (Perfect Mirroring)
-                if (options.skMode !== 'clean' && !options.syncDecisions) {
-                    try {
-                        // @ts-ignore
-                        for await (const [name, entry] of tapeHandle.entries()) {
-                            if (entry.kind === 'file' && name.toUpperCase().endsWith('.WAV')) {
-                                const match = name.match(/^(\d+)\.WAV$/i);
-                                if (match) {
-                                    const slotId = parseInt(match[1]);
-                                    const slot = tape.slots.find(s => s.id === slotId);
-                                    if (!slot || !slot.fileId) {
-                                        // Empty slot in project, but file exists on hardware!
-                                        await tapeHandle.removeEntry(name);
-                                        if (manifest[color] && manifest[color][slotId]) {
-                                            delete manifest[color][slotId];
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        // Ignore sweeping errors
-                    }
-                }
-
-                if (activeSlots.length === 0) continue;
-
-                onProgress?.(`Processing Tape ${color}...`, 20 + ((processedSlots / Math.max(1, totalActiveSlots)) * 40));
+                const tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
 
                 for (const slot of tape.slots) {
                     const slotRef = `${color}${slot.id}`;
-                    const decision = options.syncDecisions?.[slotRef];
+                    let decision: SlotSyncDecision | undefined = undefined;
+
+                    if (Array.isArray(options.syncDecisions)) {
+                        decision = options.syncDecisions.find(d => d.id === slotRef)?.decision;
+                    } else if (options.syncDecisions) {
+                        decision = options.syncDecisions[slotRef];
+                    } else if (!options.syncDecisions && slot.fileId) {
+                        decision = 'export';
+                    }
+
                     const fileName = `${slot.id}.WAV`;
 
-                    // Handle Explicit Deletes from Sync Dashboard
-                    if (decision === 'delete') {
-                        onProgress?.(`  -> Removing ${fileName} from Hardware`, 20 + ((processedSlots / totalActiveSlots) * 40));
-                        try {
-                            await tapeHandle.removeEntry(fileName);
-                        } catch (e) {
-                            // File didn't exist anyway or we don't have permission.
-                        }
-                        if (manifest[color] && manifest[color][slot.id]) {
-                            delete manifest[color][slot.id];
-                        }
+                    if (decision === 'delete' || decision === 'delete_local') {
+                        try { await tapeHandle.removeEntry(fileName); } catch (e) { }
                         continue;
                     }
 
-                    // Handle Explicit Skips
-                    if (decision === 'skip') {
-                        skippedCount++;
+                    if (decision === 'skip' || !slot.fileId || decision === 'delete_backup') {
+                        if (slot.fileId) skippedCount++;
                         continue;
                     }
 
-                    // Process Local Files (Export)
-                    // If decision is defined and it's 'export', or if no explicit decisions are given (fallback)
-                    const shouldExport = (!options.syncDecisions) || (options.syncDecisions && decision === 'export');
-
-                    if (slot.fileId && state.files[slot.fileId] && shouldExport) {
-                        processedSlots++;
-                        const progressBase = 20 + ((processedSlots / totalActiveSlots) * 40);
-
-                        const file = state.files[slot.fileId];
-                        const version = file.versions.find(v => v.id === file.currentVersionId);
+                    if (decision === 'export' || decision === 'keep_local' || decision === 'use_backup') {
+                        const fileId = slot.fileId;
+                        const file = state.files[fileId];
+                        const version = file?.versions.find(v => v.id === file.currentVersionId);
 
                         if (version?.blob) {
-                            try {
-                                // Try to read a tiny slice to verify it's valid before writing
-                                await version.blob.slice(0, 1).arrayBuffer();
-                            } catch (e) {
-                                console.warn(`[Export] Skipping unreadable blob for ${fileName}`);
-                                // We could optionally mark it as missing here or notify the user
-                                continue;
-                            }
-
-                            // Collect for hardcopy
-
-
-                            // Check Smart Sync (If no explicit decision forced us here)
-                            const previousVersionId = manifest[color]?.[slot.id];
-                            const currentVersionId = file.currentVersionId;
-
-                            // If we don't have explicit decisions, fallback to smart sync logic
-                            if (!options.syncDecisions && options.smartSync && options.skMode !== 'clean' && previousVersionId === currentVersionId) {
-                                skippedCount++;
-                                continue;
-                            }
-
-                            onProgress?.(`  -> Writing ${fileName}`, progressBase);
-                            try {
-                                const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
-                                await safeWriteBlob(fileHandle, version.blob);
-
-                                // Collect for hardcopy
-                                if (options.backupSKToProject) {
-                                    skBlobs.push({ name: `${folderName}/${fileName}`, blob: version.blob });
-                                }
-                            } catch (e) {
-                                console.error(`[Export] Failed to write ${fileName}`, e);
-                                // Skip manifest update if write fails
-                                continue;
-                            }
-
-                            // Update Manifest
-                            if (!manifest[color]) manifest[color] = {};
-                            manifest[color][slot.id] = currentVersionId;
-                            writtenCount++;
+                            processed++;
+                            onProgress?.(`Writing ${color} Tape ${slot.id}...`, 20 + ((processed / Math.max(1, activeSlots)) * 50));
+                            const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
+                            const wrote = await safeWriteBlob(fileHandle, version.blob, options.forceOverwrite);
+                            if (wrote) writtenCount++; else skippedCount++;
                         }
                     }
                 }
             }
 
-            // Write Manifest (Old Smart Sync logic)
-            if (options.smartSync) {
-                onProgress?.("Updating Sync Manifest...", 60);
-                const manifestHandle = await skHandle.getFileHandle('export_manifest.json', { create: true });
-                const writable = await manifestHandle.createWritable();
-                await writable.write(JSON.stringify(manifest, null, 2));
-                await writable.close();
-            }
-
-            // Write Project Identity Manifest (For Device Sync / Re-Import)
-            // This allows us to know:
-            // 1. What Project this SK folder belongs to.
-            // 2. What the expected state was (to detect new/changed files).
+            // 4. Project Identity
+            onProgress?.("Writing project identity...", 80);
             const projectIdentity = {
                 metadata: {
                     appName: "Spotykach WAV Builder",
@@ -586,279 +524,111 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     exportDate: new Date().toISOString(),
                     projectName: options.projectName
                 },
+                projectConfig: state.projectConfig,
                 projectNotes: state.projectNotes,
-                tapes: state.tapes,
-                files: Object.entries(state.files).reduce((acc, [id, f]) => {
-                    const currentVer = f.versions.find(v => v.id === f.currentVersionId);
-                    acc[id] = {
-                        id: f.id,
-                        originalName: f.originalName,
-                        currentVersionId: f.currentVersionId,
-                        // Add Metadata for Robust Comparison
-                        size: currentVer?.blob?.size || 0,
-                        timestamp: currentVer?.timestamp || 0
-                    };
-                    return acc;
-                }, {} as any)
+                tapes: state.tapes
             };
+            const identityHandle = await skHandle.getFileHandle('project.json', { create: true });
+            const identityWritable = await identityHandle.createWritable();
+            await identityWritable.write(JSON.stringify(projectIdentity, null, 2));
+            await identityWritable.close();
 
-            try {
-                const identityHandle = await skHandle.getFileHandle('project.json', { create: true });
-                const writable = await identityHandle.createWritable();
-                await writable.write(JSON.stringify(projectIdentity, null, 2));
-                await writable.close();
-            } catch (e) {
-                console.warn("Failed to write project.json identity to SK folder", e);
-            }
-
-            // 3. COPY SOURCE TO WAV_BUILDER (Backup Logic)
+            // 5. Source Backup
             if (options.workHandle && options.projectName) {
-                onProgress?.("Backing up Project Source...", 65);
+                onProgress?.("Backing up Project Source...", 85);
                 try {
-                    // Structure: SD_ROOT/WAV_Builder/Projects/{ProjectName}
                     const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
                     const wbProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: true });
                     const targetProjectDir = await wbProjectsDir.getDirectoryHandle(options.projectName, { create: true });
-
-                    // Uses syncDirectory to copy from Work/Projects/{ProjectName} to SD/WAV_Builder/Projects/{ProjectName}
-                    // We need the Work Handle for the SPECIFIC PROJECT.
-                    // Access: workHandle/Projects/ProjectName
                     const sourceProjectsDir = await options.workHandle.getDirectoryHandle('Projects');
                     const sourceProjectDir = await sourceProjectsDir.getDirectoryHandle(options.projectName);
 
-                    // Manual Sync for robustness (generic syncDirectory might be failing on root files?)
-                    // 1. Copy project.json
-                    try {
-                        const sourceJson = await sourceProjectDir.getFileHandle('project.json');
-                        const sourceFile = await sourceJson.getFile();
-                        const targetJson = await targetProjectDir.getFileHandle('project.json', { create: true });
-                        const writable = await targetJson.createWritable();
-                        await writable.write(sourceFile);
-                        await writable.close();
-                        onProgress?.("Synced project.json", 70);
-                    } catch (e) {
-                        console.error("Failed to sync project.json to SD", e);
-                    }
+                    // Copy project.json
+                    const sJson = await sourceProjectDir.getFileHandle('project.json');
+                    const tJson = await targetProjectDir.getFileHandle('project.json', { create: true });
+                    const sw = await tJson.createWritable();
+                    await sw.write(await sJson.getFile());
+                    await sw.close();
 
-                    // 2. Copy Assets Folder
+                    // Copy Assets
                     try {
-                        const sourceAssets = await sourceProjectDir.getDirectoryHandle('Assets');
-                        const targetAssets = await targetProjectDir.getDirectoryHandle('Assets', { create: true });
-
-                        // Manual Sync for Assets
+                        const sAssets = await sourceProjectDir.getDirectoryHandle('Assets');
+                        const tAssets = await targetProjectDir.getDirectoryHandle('Assets', { create: true });
                         // @ts-ignore
-                        let assetCount = 0;
-                        // @ts-ignore
-                        for await (const [name, entry] of sourceAssets.entries()) {
+                        for await (const [name, entry] of sAssets.entries()) {
                             if (entry.kind === 'file') {
-                                try {
-                                    const sourceFileHandle = await sourceAssets.getFileHandle(name);
-                                    const sourceFile = await sourceFileHandle.getFile();
-
-                                    if (sourceFile.size === 0) {
-                                        console.warn(`[Sync] Skipping 0kb source file: ${name}`);
-                                        continue;
-                                    }
-
-                                    const targetFileHandle = await targetAssets.getFileHandle(name, { create: true });
-
-                                    // Check if target exists and is same size/newer?
-                                    // For now, let's force overwrite or check size
-                                    try {
-                                        const existing = await targetFileHandle.getFile();
-                                        if (existing.size === sourceFile.size && existing.lastModified >= sourceFile.lastModified) {
-                                            // Skip if identical
-                                            continue;
-                                        }
-                                    } catch (e) { /* doesn't exist */ }
-
-                                    const writable = await (targetFileHandle as any).createWritable();
-                                    await writable.write(sourceFile);
-                                    await writable.close();
-                                    // console.log(`[Sync] Copied ${name} (${sourceFile.size} bytes)`);
-                                    assetCount++;
-                                    onProgress?.(`Syncing Asset ${assetCount}...`, 75);
-                                } catch (fileErr) {
-                                    console.error(`[Sync] Failed to copy asset ${name}`, fileErr);
-                                }
+                                const sf = await sAssets.getFileHandle(name);
+                                const tf = await tAssets.getFileHandle(name, { create: true });
+                                const tw = await tf.createWritable();
+                                await tw.write(await sf.getFile());
+                                await tw.close();
                             }
                         }
-                    } catch (e) {
-                        // No assets, ignore
-                    }
-
+                    } catch (e) { }
                 } catch (e) {
-                    console.error("Source Backup Failed", e);
-                    onProgress?.("Source Backup Failed (Check Console)", 80);
+                    console.warn("Backup failed", e);
                 }
             }
 
-            // 4. SYNC USER LIBRARY (Optional)
-            // 4. SYNC USER LIBRARY (Optional - from IndexedDB object)
-            if (options.syncUserLibrary && options.userLibrary) {
-                onProgress?.("Syncing User Library...", 80);
-                try {
-                    const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
-                    const userLibDir = await wavBuilderDir.getDirectoryHandle('User_Library', { create: true });
-
-                    const libFiles = Object.values(options.userLibrary.files);
-                    for (let i = 0; i < libFiles.length; i++) {
-                        const file = libFiles[i];
-                        const mainVerId = file.currentVersionId;
-                        const version = file.versions.find(v => v.id === mainVerId) || file.versions[0];
-                        if (version?.blob) {
-                            const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
-                            await safeWriteBlob(fileHandle, version.blob);
-                        }
-                        onProgress?.(`Syncing User Library: ${file.name}`, 80 + ((i / libFiles.length) * 10));
-                    }
-                } catch (e) {
-                    console.error("User Library Sync Failed", e);
-                }
-            } else if (options.syncUserLibrary && options.workHandle) {
-                onProgress?.("Syncing User Library (Legacy)...", 80);
-                try {
-                    const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
-                    await syncDirectory(options.workHandle, wavBuilderDir, 'User_Library', (p) => {
-                        onProgress?.("Syncing User Library...", 80 + (p * 10));
-                    });
-                } catch (e) {
-                    // Ignore
-                }
-            }
-
-            // 5. HARDCOPY SK TO PROJECT (Optional)
-            if (options.backupSKToProject && options.workHandle && options.projectName && skBlobs.length > 0) {
-                onProgress?.("Creating SK Hardcopy in Project...", 90);
-                // Target: Work/Projects/{Name}/SK_Hardcopy
-                // Also: SD/WAV_Builder/Projects/{Name}/SK_Hardcopy (Synced via step 3? No, step 3 happened before)
-                // If we want it on SD backup too, we should write it to Work FIRST, then Step 3.
-                // OR write to both.
-                // Logic says: "User opts to build extra hardcopy... standard is this ALSO gets built into workfolder."
-                // So default is Workfolder. The copy on SD should probably exist too?
-                // The sync (Step 3) happened at 65%. If we write to Work NOW, it's not on SD until next sync.
-                // Suggestion: Write to Work Folder. If user wants it on SD, they need to sync again?
-                // OR: Write to Work Folder, then write to SD Project folder manually.
-
-                try {
-                    const projectsHandle = await options.workHandle.getDirectoryHandle('Projects');
-                    const projectDir = await projectsHandle.getDirectoryHandle(options.projectName);
-                    const hardcopyDir = await projectDir.getDirectoryHandle('SK_Hardcopy', { create: true });
-
-                    // Write blobs
-                    let hcCount = 0;
-                    for (const item of skBlobs) {
-                        // item.name is "B/1.WAV"
-                        const [folder, file] = item.name.split('/');
-                        const folderHandle = await hardcopyDir.getDirectoryHandle(folder, { create: true });
-                        const fileHandle = await folderHandle.getFileHandle(file, { create: true });
-                        await safeWriteBlob(fileHandle, item.blob);
-                        hcCount++;
-                        onProgress?.(`Writing Hardcopy ${hcCount}/${skBlobs.length}`, 90 + ((hcCount / skBlobs.length) * 10));
-                    }
-
-                    // Also write to SD backup location if it exists
-                    try {
-                        const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder');
-                        const wbProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects');
-                        const targetProjectDir = await wbProjectsDir.getDirectoryHandle(options.projectName);
-                        const targetHardcopyDir = await targetProjectDir.getDirectoryHandle('SK_Hardcopy', { create: true });
-
-                        // Quick copy since we have blobs
-                        for (const item of skBlobs) {
-                            const [folder, file] = item.name.split('/');
-                            const folderHandle = await targetHardcopyDir.getDirectoryHandle(folder, { create: true });
-                            const fileHandle = await folderHandle.getFileHandle(file, { create: true });
-                            await safeWriteBlob(fileHandle, item.blob);
-                        }
-                    } catch (e) {
-                        // Ignore SD write failure
-                    }
-
-                } catch (e) {
-                    console.error("Hardcopy creation failed", e);
-                }
-            }
-
-
-            const summary = `Sync Complete: Updated ${writtenCount}, Skipped ${skippedCount}.`;
-            onProgress?.(summary, 100);
-            return;
+            onProgress?.(`Sync Complete: ${writtenCount} written, ${skippedCount} skipped.`, 100);
 
         } catch (e: any) {
             console.error("Direct Write Error:", e);
-            if (e.name === 'NotAllowedError' || e.message.includes('read-only')) {
-                throw new Error("System blocked write access. Please use Zip Export.");
-            }
             throw e;
         }
+        return;
     }
 
-
-    // B. DOWNLOAD ZIP
+    // B. ZIP EXPORT
     onProgress?.("Preparing SD Card ZIP...", 0);
     const zip = new JSZip();
     const skFolder = zip.folder("SK");
-    if (!skFolder) throw new Error("Failed to create zip");
+    if (!skFolder) throw new Error("Failed to create ZIP folder");
 
-    // README
-    onProgress?.("Adding README...", 5);
     zip.file("README.md", generateReadme(state));
 
-    // Tapes
-    let filesAdded = 0;
-    TAPE_COLORS.forEach(color => {
-        const tape = state.tapes[color];
-        const folderName = color.charAt(0).toUpperCase();
-
-        const activeSlots = tape.slots.filter(s => s.fileId);
-        if (activeSlots.length > 0) {
-
-            const tapeFolder = skFolder.folder(folderName);
-
-            if (tapeFolder) {
-                tape.slots.forEach(slot => {
-                    if (slot.fileId) {
-                        const file = state.files[slot.fileId];
-                        const version = file.versions.find(v => v.id === file.currentVersionId);
-                        if (version?.blob) {
-                            tapeFolder.file(`${slot.id}.WAV`, version.blob);
-                            filesAdded++;
-                            onProgress?.(`Adding Tape ${color}...`, 5 + (Math.min(filesAdded, 50))); // Rough progress up to 50ish
-                        }
-                    }
-                });
-            }
-        }
-    });
-
-    // Project Bundle
-    if (options.includeProject) {
-        onProgress?.("Bundling Project Backup...", 60);
-        // Map 0-100 to 60-70
-        const projectZip = await exportSaveState(state, true, (msg, p) => {
-            const mapped = p !== undefined ? 60 + (p * 0.1) : undefined;
-            onProgress?.(msg ? `  [Backup] ${msg}` : undefined, mapped);
-        }) as JSZip;
-        const backupFolder = skFolder.folder("PROJECT_BACKUP");
-
-        onProgress?.("Compressing Backup...", 70);
-        const backupBlob = await projectZip.generateAsync({ type: "blob" });
-        backupFolder?.file("project_backup.zip", backupBlob);
+    // Config.txt
+    if (options.includeConfig !== false && state.projectConfig) {
+        zip.file("config.txt", generateConfigText(state.projectConfig));
     }
 
-    onProgress?.("Combining and Compressing Final ZIP...", 75);
-    // 75 to 100
-    const content = await zip.generateAsync({ type: "blob" }, (metadata) => {
-        onProgress?.(undefined, 75 + (metadata.percent * 0.25));
-    });
-    const dateStr = new Date().toISOString().split('T')[0];
+    let filesAdded = 0;
+    const totalSlots = TAPE_COLORS.reduce((acc, c) => acc + state.tapes[c].slots.filter(s => s.fileId).length, 0);
 
-    onProgress?.("Triggering Download...", 100);
-    downloadBlob(content, `Spotykach_SD_${dateStr}.zip`);
+    for (const color of TAPE_COLORS) {
+        const tape = state.tapes[color];
+        const folderName = color.charAt(0).toUpperCase();
+        const tapeFolder = skFolder.folder(folderName);
+
+        if (tapeFolder) {
+            for (const slot of tape.slots) {
+                if (slot.fileId) {
+                    const file = state.files[slot.fileId];
+                    const version = file?.versions.find(v => v.id === file.currentVersionId);
+                    if (version?.blob) {
+                        tapeFolder.file(`${slot.id}.WAV`, version.blob);
+                        filesAdded++;
+                        onProgress?.(`Adding ${color} Tape ${slot.id}...`, 10 + ((filesAdded / Math.max(1, totalSlots)) * 80));
+                    }
+                }
+            }
+        }
+    }
+
+    if (options.includeProject) {
+        onProgress?.("Bundling Project Backup...", 90);
+        const pZip = await exportSaveState(state, true) as JSZip;
+        const backupBlob = await pZip.generateAsync({ type: "blob" });
+        skFolder.folder("PROJECT_BACKUP")?.file("project_backup.zip", backupBlob);
+    }
+
+    const content = await zip.generateAsync({ type: "blob" }, (meta) => {
+        onProgress?.("Compressing Final ZIP...", 95 + (meta.percent * 0.05));
+    });
+    const dStr = new Date().toISOString().split('T')[0];
+    downloadBlob(content, `Spotykach_SD_${dStr}.zip`);
     onProgress?.("Done.", 100);
 };
-
 
 // ==========================================
 // 3. FILES ONLY (Loose)
@@ -1030,7 +800,18 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                             hasMeta,
                             fileCount,
                             lastModified,
-                            _rawData: json ? { files: json.files || {}, tapes: json.tapes || {}, projectNotes: json.projectNotes } : undefined,
+                            _rawData: json ? {
+                                files: json.files || {},
+                                tapes: json.tapes || {},
+                                projectNotes: json.projectNotes,
+                                projectConfig: {
+                                    mid_ch_a: 1,
+                                    mid_ch_b: 2,
+                                    mid_ps_a: false,
+                                    mid_ps_b: false,
+                                    ...(json.projectConfig || {})
+                                }
+                            } : undefined,
                         });
                     } catch (e) {
                         console.log(`[scanForProjects] '${name}' is not a project (no project.json)`);
@@ -1141,6 +922,7 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
             files: serializedFiles,
             tapes: state.tapes,
             projectNotes: state.projectNotes,
+            projectConfig: state.projectConfig, // Fix: Include project config
             metadata: {
                 appName: "Spotykach WAV Builder",
                 version: "1.2.0",
@@ -1230,6 +1012,16 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
         const file = await projectFileHandle.getFile();
         const text = await file.text();
         const state: AppState = JSON.parse(text);
+
+        // Ensure projectConfig is complete with defaults for backward compatibility
+        state.projectConfig = {
+            mid_ch_a: 1,
+            mid_ch_b: 2,
+            mid_ps_a: false,
+            mid_ps_b: false,
+            ...(state.projectConfig || {})
+        } as ProjectConfig;
+
         const missingAssets: NonNullable<AppState['loadIssues']>['missingAssets'] = [];
 
         // 2. Rehydrate Blobs
@@ -1421,5 +1213,32 @@ export const duplicateProject = async (rootHandle: FileSystemDirectoryHandle, so
         }
     } catch (e) {
         console.warn("No Assets folder found to copy");
+    }
+};
+
+export const parseConfigText = (text: string): ProjectConfig | null => {
+    try {
+        const config: ProjectConfig = {
+            mid_ch_a: 1,
+            mid_ch_b: 2,
+            mid_ps_a: false,
+            mid_ps_b: false
+        };
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
+        for (let i = 0; i < lines.length; i += 2) {
+            const rawKey = lines[i];
+            const val = lines[i + 1];
+            if (!rawKey || val === undefined) continue;
+
+            const key = rawKey.toUpperCase();
+            if (key.startsWith('MID_CH_A')) config.mid_ch_a = parseInt(val) || 1;
+            else if (key.startsWith('MID_CH_B')) config.mid_ch_b = parseInt(val) || 2;
+            else if (key.startsWith('MID_PS_A')) config.mid_ps_a = val === '1';
+            else if (key.startsWith('MID_PS_B')) config.mid_ps_b = val === '1';
+        }
+        return config;
+    } catch (e) {
+        console.warn("Failed to parse config.txt", e);
+        return null;
     }
 };

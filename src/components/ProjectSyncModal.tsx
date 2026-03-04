@@ -276,18 +276,22 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
                                 };
 
                                 return (
-                                    <div key={`note-${entry.id}`} className="grid grid-cols-[40px_1fr_80px_120px_1fr] gap-0 border-b border-white/5 hover:bg-white/[0.02] transition-colors bg-blue-500/5">
+                                    <div key={`note-${entry.id}`} className={`grid grid-cols-[40px_1fr_80px_120px_1fr] gap-0 border-b border-white/5 hover:bg-white/[0.02] transition-colors ${entry.id === 'config' ? 'bg-indigo-500/5' : 'bg-blue-500/5'}`}>
                                         <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-white/5">
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: dotColor }} />
                                         </div>
                                         <div className="p-3 flex flex-col justify-center border-r border-white/5 min-w-0">
                                             <p className="text-xs text-white font-medium truncate">{entry.label}</p>
-                                            <p className="text-[10px] text-gray-500 mt-0.5 truncate">{entry.localNotes ? 'Has Notes' : 'Empty'}</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 truncate">
+                                                {entry.id === 'config'
+                                                    ? (entry.localConfig ? `CH: ${entry.localConfig.mid_ch_a}/${entry.localConfig.mid_ch_b}` : 'No Config')
+                                                    : (entry.localNotes ? 'Has Notes' : 'Empty')}
+                                            </p>
                                         </div>
                                         <div className="flex items-center justify-center p-2 border-r border-white/5">
                                             {entry.status === 'same' && <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Same</span>}
                                             {entry.status === 'conflict' && <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><RefreshCw size={7} /> Conflict</span>}
-                                            {entry.status === 'local_only' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
+                                            {entry.status === 'local_only' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> New</span>}
                                             {entry.status === 'backup_only' && <span className="text-[8px] text-orange-300 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowLeft size={7} /> SD only</span>}
                                         </div>
                                         <div className="flex flex-col items-center justify-center gap-1 p-2 border-r border-white/5">
@@ -302,7 +306,11 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
                                         </div>
                                         <div className="p-3 flex flex-col justify-center min-w-0 text-right">
                                             <p className="text-xs text-white font-medium truncate">{entry.label}</p>
-                                            <p className="text-[10px] text-gray-500 mt-0.5 truncate">{entry.backupNotes ? 'Has Notes' : 'Empty'}</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 truncate">
+                                                {entry.id === 'config'
+                                                    ? (entry.backupConfig ? `CH: ${entry.backupConfig.mid_ch_a}/${entry.backupConfig.mid_ch_b}` : 'No Config')
+                                                    : (entry.backupNotes ? 'Has Notes' : 'Empty')}
+                                            </p>
                                         </div>
                                     </div>
                                 );

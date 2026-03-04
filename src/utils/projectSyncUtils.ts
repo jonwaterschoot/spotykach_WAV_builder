@@ -31,11 +31,13 @@ export interface SlotSyncEntry {
 }
 
 export interface NoteSyncEntry {
-    id: string; // 'project' or tape color
+    id: 'project' | TapeColor | 'config';
     label: string;
-    localNotes: string | null;
-    backupNotes: string | null;
-    status: 'same' | 'local_only' | 'backup_only' | 'conflict';
+    localNotes?: string;
+    backupNotes?: string;
+    localConfig?: any;
+    backupConfig?: any;
+    status: 'same' | 'conflict' | 'local_only' | 'backup_only';
     decision: SyncDecision;
 }
 
@@ -111,6 +113,7 @@ export const loadBackupProjectState = async (
             tapes: parsed.tapes,
             metadata: parsed.metadata,
             projectNotes: parsed.projectNotes,
+            projectConfig: parsed.projectConfig,
         };
     } catch (e) {
         console.warn('[loadBackupProjectState] Failed', e);
@@ -129,10 +132,15 @@ export const compareProjectStates = (
     const entries: SlotSyncEntry[] = [];
     const noteEntries: NoteSyncEntry[] = [];
 
-    const pushNote = (id: string, label: string, localN: string | undefined, backupN: string | undefined) => {
-        const l = localN || null;
-        const b = backupN || null;
-        if (!l && !b) return;
+    const createNoteEntry = (
+        id: NoteSyncEntry['id'],
+        label: string,
+        localN: string | undefined,
+        backupN: string | undefined
+    ): NoteSyncEntry | null => {
+        const l = localN || undefined;
+        const b = backupN || undefined;
+        if (!l && !b) return null;
         let status: NoteSyncEntry['status'] = 'same';
         let decision: SyncDecision = 'skip';
         if (l && !b) { status = 'local_only'; decision = 'keep_local'; }
@@ -140,11 +148,37 @@ export const compareProjectStates = (
         else if (l && b && l !== b) { status = 'conflict'; decision = 'keep_local'; }
         else { status = 'same'; decision = 'skip'; }
 
-        noteEntries.push({ id, label, localNotes: l, backupNotes: b, status, decision });
+        return { id, label, localNotes: l, backupNotes: b, status, decision };
     };
 
-    pushNote('project', 'Project Notes', localState.projectNotes, backupState?.projectNotes);
+    // 1. Compare Project Notes
+    const projectNotesEntry = createNoteEntry('project', 'Project Notes', localState.projectNotes, backupState?.projectNotes);
+    if (projectNotesEntry) noteEntries.push(projectNotesEntry);
 
+    // 2. Compare Project Config
+    const localConfig = localState.projectConfig;
+    const backupConfig = backupState?.projectConfig;
+
+    // Simple deep equals for config
+    const configMatch = JSON.stringify(localConfig || {}) === JSON.stringify(backupConfig || {});
+    let configStatus: 'same' | 'conflict' | 'local_only' | 'backup_only' = 'same';
+
+    if (!localConfig && backupConfig) configStatus = 'backup_only';
+    else if (localConfig && !backupConfig) configStatus = 'local_only';
+    else if (!configMatch) configStatus = 'conflict';
+
+    if (configStatus !== 'same' || localConfig || backupConfig) { // Only add if there's a difference or at least one exists
+        noteEntries.push({
+            id: 'config',
+            label: 'Config Settings',
+            localConfig,
+            backupConfig,
+            status: configStatus,
+            decision: (configStatus === 'same') ? 'skip' : 'keep_local' // Default to keeping local config
+        });
+    }
+
+    // 3. Compare Tape Slots and Notes
     for (const color of TAPE_COLORS) {
         const localTape = localState.tapes[color];
         const backupTape = backupState?.tapes[color];
@@ -216,7 +250,8 @@ export const compareProjectStates = (
                 decision,
             });
         }
-        pushNote(color, `${color} Tape Notes`, localTape.notes, backupTape?.notes);
+        const tapeNotesEntry = createNoteEntry(color, `${color} Tape Notes`, localTape.notes, backupTape?.notes);
+        if (tapeNotesEntry) noteEntries.push(tapeNotesEntry);
     }
 
     return { slots: entries, notes: noteEntries };
@@ -236,6 +271,7 @@ export const applyProjectSync = (
     const newFiles = { ...localState.files };
     const newTapes = { ...localState.tapes } as Record<TapeColor, (typeof localState.tapes)[TapeColor]>;
     let newProjectNotes = localState.projectNotes;
+    let newProjectConfig = localState.projectConfig;
 
     for (const color of TAPE_COLORS) {
         newTapes[color] = {
@@ -284,6 +320,15 @@ export const applyProjectSync = (
     for (const entry of noteEntries) {
         if (entry.decision === 'skip' || entry.decision === 'keep_local' || entry.decision === 'delete_backup') continue;
 
+        if (entry.id === 'config') {
+            if (entry.decision === 'use_backup') {
+                newProjectConfig = entry.backupConfig;
+            } else if (entry.decision === 'delete_local') {
+                newProjectConfig = undefined;
+            }
+            continue; // Move to next entry
+        }
+
         let valToSet: string | undefined = undefined;
         if (entry.decision === 'use_backup') valToSet = entry.backupNotes || undefined;
         else if (entry.decision === 'delete_local') valToSet = undefined;
@@ -296,7 +341,7 @@ export const applyProjectSync = (
         }
     }
 
-    return { ...localState, files: newFiles, tapes: newTapes as AppState['tapes'], projectNotes: newProjectNotes };
+    return { ...localState, files: newFiles, tapes: newTapes as AppState['tapes'], projectNotes: newProjectNotes, projectConfig: newProjectConfig };
 };
 
 /**
@@ -305,11 +350,14 @@ export const applyProjectSync = (
  * Does NOT load blobs — only uses the JSON data already read during scan.
  */
 export const quickCompareProjects = (
-    localData: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string },
-    backupData: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string }
+    localData: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string; projectConfig?: any },
+    backupData: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string; projectConfig?: any }
 ): boolean => {
     // Compare project notes
     if ((localData.projectNotes || '') !== (backupData.projectNotes || '')) return false;
+
+    // Compare project config
+    if (JSON.stringify(localData.projectConfig || {}) !== JSON.stringify(backupData.projectConfig || {})) return false;
 
     // Compare each tape's slots and notes
     for (const color of TAPE_COLORS) {

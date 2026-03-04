@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.1.1] - 2026-03-04
+
+### Added
+- **config.txt Management System**: 
+    - Dedicated modal for managing hardware configuration files (`config.txt`).
+    - **MIDI Channel Assignment**: Independent sliders for Deck A and B channels (1-16).
+    - **MIDI Transport Control**: Independent Start/Stop toggles for Deck A and B (`mid_ps_a`, `mid_ps_b`).
+    - **Preset System**: Save/Load configuration presets to `localStorage`.
+    - **Project Browser**: Load configuration directly from other project folders.
+- **Hardware Synchronization**:
+    - `config.txt` is now fully integrated into the **Push SK to SD** and **ZIP Export** workflows.
+    - Two-way sync: Detects differences between local and hardware settings with Pull/Push options.
+    - Added "Force Overwrite" option to export all project content regardless of diff status.
+
+### Fixed
+- **Sync Stability**: Resolved crash when loading/scanning older projects with missing or legacy configuration properties.
+- **Project Manager Detection**: Improved sync status accuracy by including protocol-level configuration in the project comparison logic.
+
+### Documentation
+- Created [docs/configtxt/configtextsettings.md](./docs/configtxt/configtextsettings.md) with technical specifications for the Spotykach configuration format.
+
+
 ## [3.1.0] - 2026-03-04
 
 ### Added

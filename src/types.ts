@@ -66,16 +66,20 @@ export interface Tape {
     notes?: string;
 }
 
+export interface ProjectConfig {
+    mid_ch_a: number; // 1-16
+    mid_ch_b: number; // 1-16
+    mid_ps_a: boolean; // Start/stop deck A from MIDI
+    mid_ps_b: boolean; // Start/stop deck B from MIDI
+}
+
 // Normalized State
 export interface AppState {
     files: Record<string, FileRecord>;
     tapes: Record<TapeColor, Tape>;
     projectNotes?: string;
-    metadata?: {
-        appName: string;
-        version: string;
-        exportDate: string;
-    };
+    metadata?: Record<string, any>;
+    projectConfig?: ProjectConfig;
     userLibrary?: UserLibrary;
     loadIssues?: {
         missingAssets?: Array<{
@@ -99,7 +103,7 @@ export interface ProjectSummary {
     status?: 'synced' | 'local' | 'backup' | 'modified'; // NEW: Sync status
     local?: ProjectSummary;
     backup?: ProjectSummary;
-    _rawData?: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string }; // Transient: for content-based sync comparison
+    _rawData?: { files: Record<string, any>; tapes: Record<string, any>; projectNotes?: string; projectConfig?: ProjectConfig }; // Transient: for content-based sync comparison
 }
 
 export interface VisualFilters {

@@ -330,6 +330,11 @@ export interface SyncDiff {
         remoteOnly: number;
     };
     totalCount: number; // For legacy check
+    config?: {
+        status: SyncStatus;
+        localConfig?: any;
+        remoteConfigText?: string;
+    };
     // Legacy support (optional, can simulate if needed or refactor consumers)
     newFiles: SyncDiffItemNew[];
     updatedFiles: SyncDiffItemUpdate[];
@@ -482,8 +487,34 @@ export const calculateSyncDiff = async (
         summary: { matches: 0, conflicts: 0, localOnly: 0, remoteOnly: 0 },
         totalCount: 0,
         newFiles: [],
-        updatedFiles: []
+        updatedFiles: [],
     };
+
+    // 0. Compare Config
+    const localConfig = projectState.projectConfig;
+    const remoteConfigText = (structureMap as any).configText as string | undefined;
+    const { generateConfigText } = await import('./exportUtils');
+
+    let configStatus: SyncStatus = 'EMPTY';
+    if (localConfig && remoteConfigText) {
+        const localConfigText = generateConfigText(localConfig);
+        configStatus = localConfigText.trim() === remoteConfigText.trim() ? 'MATCH' : 'CONFLICT';
+    } else if (localConfig && !remoteConfigText) {
+        configStatus = 'LOCAL_ONLY';
+    } else if (!localConfig && remoteConfigText) {
+        configStatus = 'REMOTE_ONLY';
+    }
+
+    diff.config = {
+        status: configStatus,
+        localConfig,
+        remoteConfigText
+    };
+
+    if (configStatus === 'MATCH') diff.summary.matches++;
+    else if (configStatus === 'CONFLICT') diff.summary.conflicts++;
+    else if (configStatus === 'LOCAL_ONLY') diff.summary.localOnly++;
+    else if (configStatus === 'REMOTE_ONLY') diff.summary.remoteOnly++;
 
     for (const color of TAPE_COLORS) {
         const tape = projectState.tapes[color];
@@ -818,10 +849,17 @@ export const scanDeviceChanges = async (skHandle: FileSystemDirectoryHandle): Pr
  * Scans the root SD handle for the 'SK' folder and reads its Tape structure.
  * This ensures we iterate correctly using the master TAPE_COLORS.
  */
-export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Promise<{ [key in TapeColor]?: { [slotId: number]: File } }> => {
-    const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } = {};
+export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Promise<{ [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string }> => {
+    const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string } = {};
 
     try {
+        // Read config.txt at root if it exists
+        try {
+            const configHandle = await rootHandle.getFileHandle('config.txt', { create: false });
+            const configFile = await configHandle.getFile();
+            structureMap.configText = await configFile.text();
+        } catch { /* No config.txt at root */ }
+
         const skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
 
         for (const color of TAPE_COLORS) {
@@ -845,7 +883,7 @@ export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Pr
             }
         }
     } catch (e) {
-        // SK folder entirely missing, return empty structure map
+        // SK folder entirely missing, return structure map (might still have configText)
     }
 
     return structureMap;

@@ -20,5 +20,11 @@ export const getInitialState = (): AppState => {
     return {
         files: {},
         tapes: tapes as Record<keyof AppState['tapes'], Tape>,
+        projectConfig: {
+            mid_ch_a: 1,
+            mid_ch_b: 2,
+            mid_ps_a: false,
+            mid_ps_b: false,
+        },
     };
 };

@@ -37,6 +37,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ExportPreviewModal } from './components/ExportPreviewModal';
 import { NotesEditor } from './components/NotesEditor';
 import { MissingFilesResolver, type MissingAsset } from './components/MissingFilesResolver';
+import { ConfigModal } from './components/ConfigModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Rnd } from 'react-rnd';
 
@@ -193,6 +194,7 @@ function App() {
   // Workflow / Settings State
   const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   // Sync Logic State
@@ -777,7 +779,6 @@ function App() {
 
       let projectState = state;
       if (projectName && projectName !== currentProjectName && workHandle) {
-        const { loadProjectFromDirectory } = await import('./utils/exportUtils');
         projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
       }
 
@@ -3319,6 +3320,16 @@ function App() {
               {/* RIGHT — Action buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
 
+                <button onClick={() => setShowConfigModal(true)} title="config.txt Settings"
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors ${showConfigModal ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                  <div className="w-5 h-5 shrink-0">
+                    <img src={tapeIcon} alt="Config" className="w-full h-full opacity-60 invert group-hover:opacity-100" />
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">config.txt</span>
+                </button>
+
+                <div className="h-5 w-px bg-gray-700 mx-1" />
+
                 <button onClick={() => setShowProjectNotes(!showProjectNotes)} title="Project Notes"
                   className={`p-1.5 rounded-md transition-colors ${showProjectNotes ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
                   <StickyNote size={16} />
@@ -4353,7 +4364,7 @@ function App() {
                 onRefresh={handleSKRefresh}
                 isRefreshing={isProcessing}
                 onClose={() => setSyncModalState(null)}
-                onConfirm={async (decisions, options, importDecisions) => {
+                onConfirm={async (decisions, options: any, importDecisions) => {
                   const projectName = syncModalState?.projectName;
                   setSyncModalState(null); // Close modal
 
@@ -4363,13 +4374,17 @@ function App() {
                   setProgressMsg(`Syncing ${projectName}...`);
 
                   try {
-                    const { loadProjectFromDirectory, exportSDStructure } = await import('./utils/exportUtils');
-
                     const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
+
+                    // 1. Prepare export decisions
+                    const finalDecisions = { ...decisions };
+                    if (options.includeConfig && options.configDecision === 'push_to_sk') {
+                      finalDecisions['config'] = 'export';
+                    }
 
                     // 2. Export push decisions (push_to_sk, delete_sk)
                     const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
-                    if (hasPushDecisions) {
+                    if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
                       await exportSDStructure(projectState, {
                         includeProject: true,
                         directWrite: true,
@@ -4380,7 +4395,9 @@ function App() {
                         destinationHandle: backupHandle!,
                         workHandle: workHandle,
                         projectName: projectName,
-                        syncDecisions: decisions,
+                        syncDecisions: finalDecisions,
+                        includeConfig: options.includeConfig,
+                        forceOverwrite: options.forceOverwrite,
                       }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
                     }
 
@@ -4439,8 +4456,22 @@ function App() {
                             newState.tapes[color].slots[slotIdx].fileId = fileId;
                             fileRecord.isParked = false;
                           }
+                          // toPool: isParked stays true — file sits in the pool
                         }
-                        // toPool: isParked stays true — file sits in the pool
+                      }
+
+                      // 4. Apply config import if requested (outside the for-loop)
+                      const currentDiff = syncModalState?.diff;
+                      if (options.includeConfig && options.configDecision === 'pull_to_slot' && currentDiff?.config?.remoteConfigText) {
+                        try {
+                          const { parseConfigText } = await import('./utils/exportUtils');
+                          const parsedConfig = parseConfigText(currentDiff.config.remoteConfigText);
+                          if (parsedConfig) {
+                            newState.projectConfig = parsedConfig;
+                          }
+                        } catch (e) {
+                          console.warn("Failed to parse remote config during import", e);
+                        }
                       }
 
                       isSystemUpdate.current = true;
@@ -4557,6 +4588,19 @@ function App() {
           </div>
         </div>
       )}
+      <ConfigModal
+        isOpen={showConfigModal}
+        onClose={() => setShowConfigModal(false)}
+        config={state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false }}
+        onChange={(config) => {
+          setState(prev => ({ ...prev, projectConfig: config }));
+          setHasUnsavedChanges(true);
+        }}
+        projects={foundProjects}
+        currentProjectName={currentProjectName}
+        workHandle={workHandle}
+      />
+
       {showProjectNotes && (
         <Rnd
           position={{ x: projectNotesPos.x, y: projectNotesPos.y }}
