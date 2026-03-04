@@ -17,6 +17,11 @@
 - **WAV Export Marker Sorting**: Fixed an issue where markers were not always sorted chronologically in exported WAV files.
 - **State Integrity**: Resolved a race condition where the slicer state could be mutated in-place during export.
 
+### Documentation
+- **WAV CUE Research**: Added comprehensive research and implementation notes for WAV slice markers (CUE chunks). See the [docs/WAV-CUE](./docs/WAV-CUE) folder for technical details, including:
+    - [Slice Implementation Summary](./docs/WAV-CUE/slice_implementation_summary.md)
+    - [WAV CUE Research & Instructions](./docs/WAV-CUE/wavcueinstructionsresearch.md)
+
 
 ## [3.0.0] - 2026-03-03
 
