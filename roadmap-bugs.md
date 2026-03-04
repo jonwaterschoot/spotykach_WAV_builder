@@ -21,7 +21,7 @@ Is this related to the tweak we tried for eleminating the gap during loop playba
 
     - **Slicer tool**:
         - A slicer tool with up to 32 slices - to be implemented in furture SK firmware.
-- **History & Trashcan**:
+- **History & Trashcan**: ? - History might be too much work to implement properly. **Project cleanup is still needed.**
     - Dedicated trashcan for deleted files with Restore capability.
     - Undo/Redo for editor actions (Normalize, etc.).
     - cleanup of unused files in project (only keep original files, not history files)
@@ -56,6 +56,8 @@ Option to sync the user library to the SD card in the same way as the projects a
 
 ## History / Trashcan
 
+> **Note**: Not sure if this is still feasable, to track what is a step and what not, and if it's worth the effort.
+
 - Keep a temporary trashcan for removed files and an action history list, able to use ctrl+z / ctrl+y to undo/redo actions, and buttons in a main menu place?
 
 - indexing (all) actions (how many actions should we keep in history? how to name them?)
@@ -81,13 +83,40 @@ A simplified version of the tool that only allows editing and exporting to a fol
 
 ---
 
-
-
 ## Editor Improvements
 
 ### Automation tool
 - snap to 0db while dragging, dragging with alt allows free movement
 
+
+## Standalone Application (Electron)
+*   Wrap the app in Electron for native "File > Open/Save" dialogs.
+*   completely offline mode, no connection to the internet needed
+
+
+## other UI improvements
+
+### Rightclick context menu
+For some places, like cardviews, with e.g. edit, remove from slot, remove from project, perma delete, move to tape x, move to tape y, etc., show file in browser panel
+
+### Mobile Optimization
+
+**As the interface has gotten more and more complex I'm not sure if this is still a realistic goal.** 
+
+Improve touch targets and layout for tablet/phone usage.
+
+**Touch support** (Ongoing)
+
+- Further testing needed on various devices.
+- Editor UI improvements for touch (larger buttons, spacing).
+- Firefox touch drag-and-drop issues (Windows & Android).
+
+---
+
+
+-------------------------------------------
+| vvvvvvvv -- Done / reviewed -- vvvvvvvv |
+-------------------------------------------
 
 
 ## add info and meta data to  WAV files and project
@@ -104,7 +133,10 @@ A simplified version of the tool that only allows editing and exporting to a fol
 > We want to be able to make slices using the web-tool by @Jon Waterschoot and read those in the slice mode. In this case, start position should snap to the defined points instead of default 1/8th step.
 > To transfer the slice points to the Spotykach we’ll use CUE chunk of the WAV file header as described in RIFF specification. Considering there’s only a single DATA chunk in the file, the structure of the CUE chunk will be fairly simple.
 
+
 ### Spotykach config file config.txt
+
+Updated and integrated
 
 The file name is config.txt
 Sitting on the root of SK.
@@ -119,7 +151,9 @@ mid_ch_b //MIDI channel deck B: 1...16
 mid_play //Whether MIDI Start/Stop respected: 0/1
 
 Example file: public\config_examples\config.txt
-
+> Updated with new settings:
+mid_ps_a //Whether MIDI Start/Stop respected for deck A: 0/1
+mid_ps_b //Whether MIDI Start/Stop respected for deck B: 0/1
 ```txt  
 mid_ch_a
 15
@@ -130,37 +164,6 @@ mid_ch_b
 mid_play
 1
 ```
-
-## Standalone Application (Electron)
-*   Wrap the app in Electron for native "File > Open/Save" dialogs.
-*   completely offline mode, no connection to the internet needed
-
-
-## other UI improvements
-
-### Rightclick context menu
-For some places, like cardviews, with e.g. edit, remove from slot, remove from project, perma delete, move to tape x, move to tape y, etc., show file in browser panel
-
-### Mobile Optimization
-
-As the interface has gotten more and more complex I'm not sure if this is still a realistic goal. 
-
-Improve touch targets and layout for tablet/phone usage.
-
-**Touch support** (Ongoing)
-
-- Further testing needed on various devices.
-- Editor UI improvements for touch (larger buttons, spacing).
-- Firefox touch drag-and-drop issues (Windows & Android).
-
----
-
-
---------------------------------
-| vvvvvvvv -- Done -- vvvvvvvv |
---------------------------------
-
-
 
 
 ### UI improvements
