@@ -24,11 +24,16 @@ export function encodeWAV(audioBuffer: AudioBuffer, metadata?: WavMetadata): Blo
         // INAM (Original Filename usually) - We don't have filename here easily, maybe pass it?
         // Let's settle on ICMT for JSON payload
 
-        if (metadata.id || metadata.hash || metadata.processing) {
+        if (metadata.tempo) {
+            infoChunks.push({ id: 'ITMP', value: metadata.tempo.toString() });
+        }
+
+        if (metadata.id || metadata.hash || metadata.processing || metadata.tempo) {
             const jsonPayload = JSON.stringify({
                 id: metadata.id,
                 h: metadata.hash, // Shorten keys
-                p: metadata.processing // Processing flags
+                p: metadata.processing, // Processing flags
+                t: metadata.tempo
             });
             infoChunks.push({ id: 'ICMT', value: jsonPayload });
         }
@@ -54,15 +59,17 @@ export function encodeWAV(audioBuffer: AudioBuffer, metadata?: WavMetadata): Blo
     const listChunkSize = listBodySize > 0 ? 8 + listBodySize + (listBodySize % 2) : 0;
     // ^ LIST (4) + Size (4) + Body + Pad
 
-    // CUE Chunk (We don't support slices yet, placeholder logic)
-    // TODO: Pass slices in metadata
+    // CUE Chunk
+    const cuePoints: number[] = metadata?.slicePoints || [];
+    const cueBodySize = cuePoints.length > 0 ? 4 + (cuePoints.length * 24) : 0;
+    const cueChunkSize = cuePoints.length > 0 ? 8 + cueBodySize : 0;
 
     // --------------------------------------------------------------------------------
     // 2. Assemble File
     // --------------------------------------------------------------------------------
 
-    // RIFF (12) + FMT (24) + DATA (8 + length) + LIST (listChunkSize)
-    const riffSize = 4 + (8 + 16) + (8 + length) + listChunkSize;
+    // RIFF (12) + FMT (24) + DATA (8 + length) + LIST (listChunkSize) + CUE (cueChunkSize)
+    const riffSize = 4 + (8 + 16) + (8 + length) + listChunkSize + cueChunkSize;
 
     const buffer = new ArrayBuffer(8 + riffSize);
     const view = new DataView(buffer);
@@ -121,6 +128,25 @@ export function encodeWAV(audioBuffer: AudioBuffer, metadata?: WavMetadata): Blo
         if (listBodySize % 2 !== 0) {
             view.setUint8(offset, 0); offset++;
         }
+    }
+
+    // Write CUE Chunk
+    if (cuePoints.length > 0) {
+        writeString(view, offset, 'cue '); offset += 4;
+        view.setUint32(offset, cueBodySize, true); offset += 4;
+        view.setUint32(offset, cuePoints.length, true); offset += 4; // dwCuePoints
+
+        cuePoints.forEach((point, index) => {
+            const id = index + 1;
+            const sampleOffset = Math.round(point * sampleRate);
+
+            view.setUint32(offset, id, true); offset += 4; // dwIdentifier
+            view.setUint32(offset, 0, true); offset += 4; // dwPosition
+            writeString(view, offset, 'data'); offset += 4; // fccChunk
+            view.setUint32(offset, 0, true); offset += 4; // dwChunkStart
+            view.setUint32(offset, 0, true); offset += 4; // dwBlockStart
+            view.setUint32(offset, sampleOffset, true); offset += 4; // dwSampleOffset
+        });
     }
 
     return new Blob([buffer], { type: 'audio/wav' });

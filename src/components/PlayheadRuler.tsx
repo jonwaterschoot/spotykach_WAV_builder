@@ -154,6 +154,7 @@ export const PlayheadRuler: React.FC<PlayheadRulerProps> = ({
         <div
             ref={containerRef}
             className={`relative h-6 bg-gray-900 border-b border-gray-800 cursor-pointer select-none ${className}`}
+            style={{ overflowX: 'clip', overflowY: 'visible' }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}

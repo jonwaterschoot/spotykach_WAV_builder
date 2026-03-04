@@ -54,21 +54,69 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         };
     }, []);
 
-    const stop = () => {
-        if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
+    const fadeIntervalRef = useRef<number | null>(null);
+    const pendingActionRef = useRef<(() => void) | null>(null);
+
+    const clearFade = () => {
+        if (fadeIntervalRef.current) {
+            cancelAnimationFrame(fadeIntervalRef.current);
+            fadeIntervalRef.current = null;
         }
-        setIsPlaying(false);
-        setActiveFileId(null);
-        setCurrentTime(0);
+        pendingActionRef.current = null;
+    };
+
+    const fadeOut = (callback: () => void) => {
+        clearFade(); // Cancel any existing fade/action
+
+        if (!audioRef.current || audioRef.current.paused) {
+            callback();
+            return;
+        }
+
+        const audio = audioRef.current;
+        const startVolume = 1.0;
+        const fadeTime = 15; // Shorter fade (15ms)
+        const startTime = performance.now();
+        pendingActionRef.current = callback;
+
+        const animate = (now: number) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / fadeTime, 1);
+
+            if (audioRef.current) {
+                audio.volume = startVolume * (1 - progress);
+            }
+
+            if (progress < 1) {
+                fadeIntervalRef.current = requestAnimationFrame(animate);
+            } else {
+                audio.pause();
+                audio.volume = startVolume;
+                const action = pendingActionRef.current;
+                fadeIntervalRef.current = null;
+                pendingActionRef.current = null;
+                if (action) action();
+            }
+        };
+        fadeIntervalRef.current = requestAnimationFrame(animate);
+    };
+
+    const stop = () => {
+        fadeOut(() => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+            }
+            setIsPlaying(false);
+            setActiveFileId(null);
+            setCurrentTime(0);
+        });
     };
 
     const pause = () => {
-        if (audioRef.current) {
-            audioRef.current.pause();
-        }
-        setIsPlaying(false);
+        fadeOut(() => {
+            setIsPlaying(false);
+        });
     };
 
     const seek = (time: number) => {
@@ -90,41 +138,70 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         // If clicking the same file and it is paused, resume it
         if (activeFileId === file.id && !isPlaying && currentUrlRef.current) {
             if (audioRef.current) {
+                clearFade();
+                audioRef.current.volume = 0;
                 audioRef.current.play()
-                    .then(() => setIsPlaying(true))
+                    .then(() => {
+                        setIsPlaying(true);
+                        const startTime = performance.now();
+                        const fadeIn = (now: number) => {
+                            const elapsed = now - startTime;
+                            const progress = Math.min(elapsed / 15, 1);
+                            if (audioRef.current) audioRef.current.volume = progress;
+                            if (progress < 1) fadeIntervalRef.current = requestAnimationFrame(fadeIn);
+                            else fadeIntervalRef.current = null;
+                        };
+                        fadeIntervalRef.current = requestAnimationFrame(fadeIn);
+                    })
                     .catch(e => console.error("Resume failed", e));
             }
             return;
         }
 
-        stop(); // Ensure previous is stopped
+        const proceedToPlay = () => {
+            const version = file.versions.find(v => v.id === targetVersionId);
 
-        const version = file.versions.find(v => v.id === targetVersionId);
+            if (!version || !version.blob) {
+                console.warn("AudioPlayer: No valid blob found for file", file.name);
+                return;
+            }
 
-        if (!version || !version.blob) {
-            console.warn("AudioPlayer: No valid blob found for file", file.name);
-            return;
-        }
+            // Cleanup previous URL
+            if (currentUrlRef.current) {
+                URL.revokeObjectURL(currentUrlRef.current);
+            }
 
-        // Cleanup previous URL
-        if (currentUrlRef.current) {
-            URL.revokeObjectURL(currentUrlRef.current);
-        }
+            const url = URL.createObjectURL(version.blob);
+            currentUrlRef.current = url;
 
-        const url = URL.createObjectURL(version.blob);
-        currentUrlRef.current = url;
+            if (audioRef.current) {
+                audioRef.current.src = url;
+                audioRef.current.volume = 0;
+                audioRef.current.play()
+                    .then(() => {
+                        setIsPlaying(true);
+                        setActiveFileId(file.id);
+                        const startTime = performance.now();
+                        const fadeIn = (now: number) => {
+                            const elapsed = now - startTime;
+                            const progress = Math.min(elapsed / 15, 1);
+                            if (audioRef.current) audioRef.current.volume = progress;
+                            if (progress < 1) fadeIntervalRef.current = requestAnimationFrame(fadeIn);
+                            else fadeIntervalRef.current = null;
+                        };
+                        fadeIntervalRef.current = requestAnimationFrame(fadeIn);
+                    })
+                    .catch(e => {
+                        console.error("Play failed", e);
+                        alert("Playback failed. See console.");
+                    });
+            }
+        };
 
-        if (audioRef.current) {
-            audioRef.current.src = url;
-            audioRef.current.play()
-                .then(() => {
-                    setIsPlaying(true);
-                    setActiveFileId(file.id);
-                })
-                .catch(e => {
-                    console.error("Play failed", e);
-                    alert("Playback failed. See console.");
-                });
+        if (isPlaying || fadeIntervalRef.current) {
+            fadeOut(proceedToPlay);
+        } else {
+            proceedToPlay();
         }
     };
 

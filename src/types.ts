@@ -41,6 +41,7 @@ export interface WavMetadata {
     hash?: string; // Content hash for change detection
     tempo?: number; // BPM
     processing?: string[]; // Flags like ["NORMALIZED", "FADED"]
+    slicePoints?: number[]; // Time in seconds
 }
 
 export interface UserLibraryMetadata {
