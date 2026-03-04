@@ -1,8 +1,0 @@
-mid_ch_a
-15
-
-mid_ch_b
-16
-
-mid_play
-1
