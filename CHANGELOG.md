@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.2] - 2026-03-12
+
+### Fixed
+- **Sample Browser CORS Fix**: Resolved `TypeError: Failed to fetch` when importing samples from GitHub.
+    - Switched default sample hosting to **jsDelivr CDN** to provide correct CORS headers.
+    - Updated path resolution logic to preserve directory hierarchy, ensuring samples are correctly located without needing to flatten folder structures.
+
 ## [3.1.1] - 2026-03-04
 
 ### Added
