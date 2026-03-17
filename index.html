@@ -1,131 +1,41 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Spotykach WAV Builder</title>
-  <meta name="description" content="Choose the Spotykach WAV Builder version." />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@300..800&family=Space+Mono:wght@400;700&family=Syne+Mono&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #131314;
-      --panel: #1a1a1a;
-      --border: rgba(255, 255, 255, 0.12);
-      --text: #f3f4f6;
-      --muted: #9ca3af;
-      --accent-v1: #f58b44;
-      --accent-v2: #23e073;
-    }
 
-    * {
-      box-sizing: border-box;
-    }
+<meta charset="UTF-8" />
+<link rel="icon" type="image/svg+xml" href="spotytape.svg" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spotykach .WAV builder</title>
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 15% 0%, rgba(71, 113, 249, 0.2), transparent 40%),
-        radial-gradient(circle at 85% 100%, rgba(35, 224, 115, 0.16), transparent 40%),
-        var(--bg);
-      font-family: "Funnel Display", sans-serif;
-      display: grid;
-      place-items: center;
-      padding: 24px;
-    }
+<!-- SEO & Social Media -->
+<meta name="description" content="Create, edit, and export perfect .WAV loops for your sampler." />
+<meta name="theme-color" content="#131314" />
 
-    .modal {
-      width: min(740px, 100%);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 45%), var(--panel);
-      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-      padding: 28px;
-    }
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://jonwaterschoot.github.io/spotykach_WAV_builder/" />
+<meta property="og:title" content="Spotykach .WAV builder" />
+<meta property="og:description" content="Create, edit, and export perfect .WAV loops for your sampler." />
+<meta property="og:image" content="https://jonwaterschoot.github.io/spotykach_WAV_builder/og-image.png" />
 
-    h1 {
-      margin: 0;
-      font-family: "Syne Mono", monospace;
-      letter-spacing: 0.02em;
-      font-size: clamp(1.35rem, 4vw, 1.95rem);
-    }
+<!-- Twitter -->
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:url" content="https://jonwaterschoot.github.io/spotykach_WAV_builder/" />
+<meta property="twitter:title" content="Spotykach .WAV builder" />
+<meta property="twitter:description" content="Create, edit, and export perfect .WAV loops for your sampler." />
+<meta property="twitter:image" content="https://jonwaterschoot.github.io/spotykach_WAV_builder/og-image.png" />
 
-    p {
-      margin: 12px 0 0 0;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .grid {
-      margin-top: 24px;
-      display: grid;
-      gap: 12px;
-    }
-
-    .card {
-      display: block;
-      text-decoration: none;
-      color: inherit;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 16px;
-      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .card:hover {
-      transform: translateY(-1px);
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    .card h2 {
-      margin: 0;
-      font-size: 1.1rem;
-      font-family: "Space Mono", monospace;
-    }
-
-    .card p {
-      margin-top: 8px;
-      font-size: 0.95rem;
-    }
-
-    .card-v1:hover {
-      border-color: color-mix(in srgb, var(--accent-v1) 70%, white 30%);
-    }
-
-    .card-v2:hover {
-      border-color: color-mix(in srgb, var(--accent-v2) 70%, white 30%);
-    }
-
-    .hint {
-      margin-top: 18px;
-      font-size: 0.82rem;
-      color: #6b7280;
-    }
-  </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+  href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@300..800&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Syne+Mono&display=swap"
+  rel="stylesheet">
+  <script type="module" crossorigin src="/spotykach_WAV_builder/assets/index-Dhb2VfLT.js"></script>
+  <link rel="stylesheet" crossorigin href="/spotykach_WAV_builder/assets/index-DNzxljX6.css">
 </head>
+
 <body>
-  <main class="modal">
-    <h1>Spotykach WAV Builder</h1>
-    <p>Select your preferred app version. Both versions are hosted on this same site.</p>
-
-    <section class="grid" aria-label="Version picker">
-      <a class="card card-v1" href="./v1/">
-        <h2>Classic Workflow (v1)</h2>
-        <p>Stable legacy workflow for users who want the old method.</p>
-      </a>
-
-      <a class="card card-v2" href="./v2/">
-        <h2>New Workflow (v2)</h2>
-        <p>Latest version with the updated import/export flow and settings modal start.</p>
-      </a>
-    </section>
-
-    <p class="hint">Tip: Bookmark `.../v1/` or `.../v2/` to skip this picker.</p>
-  </main>
+  <div id="root"></div>
+  <div id="unfiltered-portal-root"></div>
 </body>
-</html>
 
+</html>
