@@ -32,7 +32,7 @@ Nobody else can claim this work as their own.`,
         coverImage: '/samples/horror/p1/Audrey-II-Horror-Sample-Pack-2026-Synthux-Academy.png',
         samples: [
             // KHAGE
-            { name: "C-Larinet Der Wal", path: "/samples/horror/p1/KG/Clarinet_Rixdorf.flac", category: "KHAGE" },
+            { name: "C-Larinet Der Wal", path: "/samples/horror/p1/KG/Clarinet_Rixdorf.mp3", category: "KHAGE" },
 
             // Machine Oil
             { name: "Acid Box Echo Fix 1", path: "/samples/horror/p1/MO/AcidBox_Echo1.flac", category: "Machine Oil" },
@@ -69,7 +69,8 @@ Nobody else can claim this work as their own.`,
             { name: "Silent Bells", path: "/samples/horror/p1/NKT/SilentBells.flac", category: "enkaytee" },
 
             // jonwtr
-            { name: "Model Cycles Audrey Touch Pt 1", path: "/samples/horror/p1/JW/ModelCycles_Pt1.flac", category: "jonwtr" },
+            { name: "Model Cycles Audrey Touch Pt 1.1", path: "/samples/horror/p1/JW/ModelCycles_Pt1-1.flac", category: "jonwtr" },
+            { name: "Model Cycles Audrey Touch Pt 1.2", path: "/samples/horror/p1/JW/ModelCycles_Pt1-2.flac", category: "jonwtr" },
             { name: "Model Cycles Audrey Touch Pt 2", path: "/samples/horror/p1/JW/ModelCycles_Pt2.flac", category: "jonwtr" }
         ]
     },
