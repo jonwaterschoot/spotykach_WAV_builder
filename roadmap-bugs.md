@@ -4,23 +4,77 @@ For now I'm keeping a text file with the roadmap / feature ideas, and a bugtrack
 
 ## bugs
 
-Possibly solved with v 1.1.5
-- pitch seems off after tweaking a sample with trim or normalize tool. Reported on OSX. One user with Chrome, another with Brave.
-Is this related to the tweak we tried for eleminating the gap during loop playback?
 ---
 
-- import issue loading on deck A failed, problem dissapeared on reboot
+Make a better intro text to describe the tool and the workflow
 
->Report by @Naenyn:
->"deck a loading happily now. I've noticed that one one file is bad and a load is attempted, that seems to kill that deck .. can no longer load anything until cycling power."
+One version should be short and sweet, the other more detailed. 
+
+Do we need a full mkdocs documentation?
+
+# Spotykach WAV.builder
+
+https://jonwaterschoot.github.io/spotykach_WAV_builder/v2/
+
+## SD card manager
+
+Manage + manipulate samples for the SD card + create config file for MIDI settings.
+Needs Google Chrome for advanced features such as file access. Files are stored locally on your own device. For now best used on desktop.
+
+This is a community / unofficial project. I started building this tool with the idea of overcoming the difficulties of saving samples in the correct formatting. Spotykach needs the files in a specific format and specific folder structure. On Windows it was tricky to save samples with all-caps extensions, hence a web tool seemed like a 'universal' solution.
+
+I mainly used Google Antigravity to build and manage this project, it's 90% vibecoded.  
+
+The core features: 
+- Setup starts with choosing a local drive on your computer and selecting the SD card location.
+- The left sidebar has the 6 tapes or an 'All Tapes' view. In the main window you can drag and drop samples into the slots.
+- Clicking an empty slot opens the browser options; there are some options to manage local libraries and access to community sample packs.
+- Once a slot is filled, clicking the sample will open the editor. Main use is the trim and normalizing, but I've added a bunch of tools suggested by the community.
+
+Once you've built a project you can save it, backup / sync it to the SD card. 
+Building the SD card is the core feature: it burns the files into the correct file format and folder structure:
+SK/
+├── B/
+│ ├── 1.WAV
+│ ├── ...
+│ └── 6.WAV
+├── G/
+│ └── 1.WAV
+└── ...
+Files must be in 32-bit float 48kHz Stereo WAV format.
+
+////
+
+
+
 
 ---
+
+Suggestions and ideas after talking to Roey:
+
+**onboarding** 
+- make extra step explaining "project" >> asking to set a project name >> and then going straight into the tapes view instead of project manager
+
+  - a project is the ... , tapes are ... and contain 6 slots ... 
+
+**config text** - option to download this txt and send straight to sd card
+
+**Editor**
+
+- confusion about having to apply edits - destructive workflow. 
+- After an edit is done and saved to the slot, there should be a "Done" button to close instead of only the X in the top corner
+- History list, expanded view / vs cleaner list, differentiate more with the cards on the main screens left column
+
+**general history feature?**
+
+I am still contemplating on the way to implement a ctr-z / actual history workflow.
+
+At the very least a cleanup feature should be implemented, as keeping all the history files can become unnecessarily big, suggested cleaning should be added to the workflow.
+
 
 ### Priority Features
 - **Editor Improvements** 
 
-    - **Slicer tool**:
-        - A slicer tool with up to 32 slices - to be implemented in furture SK firmware.
 - **History & Trashcan**: ? - History might be too much work to implement properly. **Project cleanup is still needed.**
     - Dedicated trashcan for deleted files with Restore capability.
     - Undo/Redo for editor actions (Normalize, etc.).
@@ -56,7 +110,7 @@ Option to sync the user library to the SD card in the same way as the projects a
 
 ## History / Trashcan
 
-> **Note**: Not sure if this is still feasable, to track what is a step and what not, and if it's worth the effort.
+> **Note**: Not sure if this is still feasible, to track what is a step and what not, and if it's worth the effort.
 
 - Keep a temporary trashcan for removed files and an action history list, able to use ctrl+z / ctrl+y to undo/redo actions, and buttons in a main menu place?
 
@@ -119,6 +173,10 @@ Improve touch targets and layout for tablet/phone usage.
 -------------------------------------------
 
 
+    - **Slicer tool**: done from the apps end / not implemented on SK yet
+        - A slicer tool with up to 32 slices - to be implemented in future SK firmware.
+
+
 ## add info and meta data to  WAV files and project
 - There will be a config file for spotykach which it will read for settings
 - Wave files will have info and meta data written to them, slice info will be written to the CUE chunk of the header
@@ -174,7 +232,7 @@ mid_play
 - add limiter
 
 ### Cutting tool
-- Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
+- Option to cut files and remove parts in the file (merge pieces with fade, i'd rather not get into multiple tracks territory)
 
 ### Slicer tool
 A slicer tool with up to 32 slices
@@ -185,7 +243,7 @@ A slicer tool with up to 32 slices
         - add 3 band EQ (automated) - Added 10 band advanced
         - add limiter - added auto and peak
     - **Cutting tool**:
-        - Option to cut files and remove parts in the file (merge peices with fade, i'd rather not get into multiple tracks territory)
+        - Option to cut files and remove parts in the file (merge pieces with fade, i'd rather not get into multiple tracks territory)
 
 ## Notes tool (done)
 - option to add notes to projects
@@ -222,5 +280,5 @@ Goal: Allow users to create their own "sample packs" and use them in all project
             - The samples can be expanded to see the versions of the samples 
                 - it is here that the user can copy individual samples to the user library.
                 - option to set (new) title (only used in the new assigned user library, original files are not touched)
-        - option to set a general licence and user / artist name for the User Library, standard assigned to each sample, can be changed on an individual level. (If the option ever comes that users share projects, the readme's will be able to use this info. This hooks into our already used system where we look at the license of the Sample packs.) 
+        - option to set a general license and user / artist name for the User Library, standard assigned to each sample, can be changed on an individual level. (If the option ever comes that users share projects, the readme's will be able to use this info. This hooks into our already used system where we look at the license of the Sample packs.) 
 
