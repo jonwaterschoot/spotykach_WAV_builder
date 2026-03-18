@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.2.0] - 2026-03-18
+
+### Changed
+- **Unified Application Entry**: Removed the version picker and the legacy V1 application. The root URL now directly serves the latest (V2) application.
+- **Legacy Redirects**: Implemented a transition layer that automatically redirects any requests for `/v2/` back to the root URL, preventing 404s for bookmarked users.
+- **Build System Simplification**:
+    - Removed `build:versioned` and associated scripts.
+    - Standardized on the default Vite build process for deployment.
+    - Cleaned up obsolete documentation and multi-version build logic from `package.json` and `README.md`.
+
 ## [3.1.2] - 2026-03-12
 
 ### Fixed
