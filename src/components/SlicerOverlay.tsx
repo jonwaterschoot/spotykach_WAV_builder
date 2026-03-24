@@ -11,6 +11,8 @@ interface SlicerOverlayProps {
     activeSliceIdx?: number;
     onActiveSliceChange?: (idx: number) => void;
     hoveredMarkerIdx?: number | null;
+    showAlways?: boolean;
+    isLocked?: boolean;
 }
 
 const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
@@ -24,6 +26,8 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     activeSliceIdx,
     onActiveSliceChange,
     hoveredMarkerIdx,
+    showAlways = false,
+    isLocked = false,
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -42,7 +46,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
 
     // Double-click to add a slice point
     const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-        if (!active) return;
+        if (!active || isLocked) return;
         if (points.length >= maxSlices) return;
         e.preventDefault();
         e.stopPropagation();
@@ -54,7 +58,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
 
     // Start dragging a slice point
     const handlePointMouseDown = useCallback((e: React.MouseEvent, idx: number) => {
-        if (!active) return;
+        if (!active || isLocked) return;
         e.preventDefault();
         e.stopPropagation();
         setDragIdx(idx);
@@ -91,7 +95,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     }, [dragIdx, points, getMouseX, xToTime, onPointsChange]);
 
     const handleSvgClick = useCallback((e: React.MouseEvent) => {
-        if (!active || wasDragging.current || !onActiveSliceChange) return;
+        if (!active || isLocked || wasDragging.current || !onActiveSliceChange) return;
         const x = getMouseX(e);
         const time = xToTime(x);
 
@@ -108,7 +112,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
 
     // Delete key removes hovered/closest point (simplified: remove last added)
     useEffect(() => {
-        if (!active) return;
+        if (!active || isLocked) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.key === 'Delete' || e.key === 'Backspace') && points.length > 0) {
                 // Remove last point as a simple UX
@@ -118,9 +122,9 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [active, points, onPointsChange]);
+    }, [active, isLocked, points, onPointsChange]);
 
-    if (!active || width <= 0 || duration <= 0) return null;
+    if ((!active && !showAlways) || width <= 0 || duration <= 0) return null;
 
     // Sorted points for rendering
     const sorted = [...points].sort((a, b) => a - b);
@@ -207,7 +211,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                         </text>
 
                         {/* Remove Marker Icon on Hover */}
-                        {hoverIdx === idx && (
+                        {hoverIdx === idx && active && !isLocked && (
                             <g
                                 style={{ cursor: 'pointer' }}
                                 onClick={(e) => {

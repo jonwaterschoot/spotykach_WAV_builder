@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, RefreshCw, AlertTriangle, X, Save } from 'lucide-react';
+import { Settings, RefreshCw, AlertTriangle, X, Save, Trash2 } from 'lucide-react';
 import type { VisualFilters } from '../types';
 
 interface SettingsModalProps {
@@ -11,6 +11,8 @@ interface SettingsModalProps {
     visualFilters: VisualFilters;
     onUpdateVisualFilters: (filters: VisualFilters) => void;
     onSaveVisualSettings: () => void;
+    currentProjectName?: string;
+    onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
 }
 
 const TEXTURES = [
@@ -36,7 +38,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onResetEmptySlotBrowserPreference,
     visualFilters,
     onUpdateVisualFilters,
-    onSaveVisualSettings
+    onSaveVisualSettings,
+    currentProjectName,
+    onCleanupProject
 }) => {
     const [pos, setPos] = useState({ x: -1, y: 64 }); // -1 uses default right:16
     const [isDragging, setIsDragging] = useState(false);
@@ -640,19 +644,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             Clears the saved choice between App Sample Browser and OS Browser for empty tape slots.
                         </p>
 
-                        <div className="border-t border-white/10 pt-3 space-y-3">
-                        <h3 className="text-[10px] font-bold text-red-500/70 uppercase tracking-widest flex items-center gap-2">
-                            <AlertTriangle size={12} /> Reset System
-                        </h3>
-                        <button
-                            onClick={onResetApp}
-                            className="w-full py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-center gap-2 transition-colors text-xs font-bold"
-                        >
-                            <RefreshCw size={12} /> Reset Application
-                        </button>
-                        <p className="text-[9px] text-gray-600 text-center leading-tight px-2">
-                            Clears all browser data, projects, and settings. Use with care.
-                        </p>
+                        <div className="pt-6 mt-6 border-t border-red-500/10 dark:border-red-500/20">
+                            <h3 className="text-sm font-medium text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
+                                <Trash2 size={16} />
+                                Danger Zone
+                            </h3>
+                            
+                            {currentProjectName && onCleanupProject && (
+                        <div className="p-4 bg-red-900/10 border border-red-900/30 rounded-xl flex items-center justify-between">
+                            <div>
+                                <h4 className="font-bold text-red-400">Clean Up Active Project</h4>
+                                <p className="text-sm text-gray-500 mt-1">Remove unused history versions and unused files to save space.</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    onCleanupProject();
+                                    onClose();
+                                }}
+                                className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-300 font-bold rounded-lg flex items-center gap-2 transition-colors border border-red-500/20"
+                            >
+                                Clean Up...
+                            </button>
+                        </div>
+                            )}
+
+                            <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-500/10 rounded-lg mb-4">
+                                <h3 className="text-[10px] font-bold text-red-500/70 uppercase tracking-widest flex items-center gap-2">
+                                    <AlertTriangle size={12} /> Reset System
+                                </h3>
+                                <button
+                                    onClick={onResetApp}
+                                    className="w-full py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-center gap-2 transition-colors text-xs font-bold"
+                                >
+                                    <RefreshCw size={12} /> Reset Application
+                                </button>
+                                <p className="text-[9px] text-gray-600 text-center leading-tight px-2">
+                                    Clears all browser data, projects, and settings. Use with care.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

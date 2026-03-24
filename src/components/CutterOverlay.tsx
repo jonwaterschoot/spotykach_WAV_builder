@@ -13,7 +13,10 @@ interface CutterOverlayProps {
     width: number;
     height: number;
     onRegionsChange: (regions: CutRegion[]) => void;
-    active: boolean; // only interactive when cutter panel is on
+    active: boolean;
+    isPreviewing?: boolean;
+    snapPoints?: number[];
+    snapToSlices?: boolean;
 }
 
 const CutterOverlay: React.FC<CutterOverlayProps> = ({
@@ -23,6 +26,9 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
     height,
     onRegionsChange,
     active,
+    isPreviewing = false,
+    snapPoints = [],
+    snapToSlices = false,
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragState, setDragState] = useState<{
@@ -42,21 +48,47 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
         return e.clientX - rect.left;
     }, []);
 
+    const getSnappedTime = useCallback((time: number, thresholdPx = 10) => {
+        if (!snapToSlices || !snapPoints || snapPoints.length === 0) return time;
+        const snapThreshold = (thresholdPx / width) * duration;
+        let nearest = time;
+        let minDiff = Infinity;
+        for (const p of snapPoints) {
+            const diff = Math.abs(p - time);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearest = p;
+            }
+        }
+        return minDiff <= snapThreshold ? nearest : time;
+    }, [snapToSlices, snapPoints, duration, width]);
+
     // Generate unique ID
     const genId = () => `cut-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
 
     // Double-click to create a new cut region (default 0.5s wide)
     const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-        if (!active) return;
+        if (!active || isPreviewing) return;
         e.preventDefault();
         e.stopPropagation();
         const x = getMouseX(e);
         const time = xToTime(x);
         const halfWidth = 0.25; // 0.25s on each side
+        let newStart = Math.max(0, time - halfWidth);
+        let newEnd = Math.min(duration, time + halfWidth);
+        
+        // If snapping, optionally snap the newly created region entirely or just center it on the snapped time?
+        // If we snap creation, the center of the region snaps to the slice.
+        const snappedTime = getSnappedTime(time, 15);
+        if (snappedTime !== time) {
+            newStart = Math.max(0, snappedTime - halfWidth);
+            newEnd = Math.min(duration, snappedTime + halfWidth);
+        }
+
         const newRegion: CutRegion = {
             id: genId(),
-            start: Math.max(0, time - halfWidth),
-            end: Math.min(duration, time + halfWidth),
+            start: newStart,
+            end: newEnd,
             selected: true,
         };
         // Deselect others, add new
@@ -67,7 +99,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
 
     // Click to select/deselect
     const handleRegionClick = useCallback((e: React.MouseEvent, regionId: string) => {
-        if (!active) return;
+        if (!active || isPreviewing) return;
         e.stopPropagation();
         const updated = regions.map(r => ({
             ...r,
@@ -78,7 +110,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
 
     // Click on background to deselect all
     const handleBackgroundClick = useCallback((_e: React.MouseEvent) => {
-        if (!active) return;
+        if (!active || isPreviewing) return;
         // Only deselect if not double-clicking
         const updated = regions.map(r => ({ ...r, selected: false }));
         onRegionsChange(updated);
@@ -86,7 +118,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
 
     // Start drag for creating or resizing
     const handleEdgeMouseDown = useCallback((e: React.MouseEvent, regionId: string, edge: 'start' | 'end') => {
-        if (!active) return;
+        if (!active || isPreviewing) return;
         e.preventDefault();
         e.stopPropagation();
         const region = regions.find(r => r.id === regionId);
@@ -101,7 +133,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
     }, [active, regions, getMouseX]);
 
     const handleBodyMouseDown = useCallback((e: React.MouseEvent, regionId: string) => {
-        if (!active) return;
+        if (!active || isPreviewing) return;
         e.preventDefault();
         e.stopPropagation();
         const region = regions.find(r => r.id === regionId);
@@ -132,14 +164,16 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
             let updated: CutRegion[];
             switch (dragState.type) {
                 case 'resize-start': {
-                    const newStart = Math.max(0, Math.min(orig.end - 0.05, orig.start + dt));
+                    let newStart = Math.max(0, Math.min(orig.end - 0.05, orig.start + dt));
+                    newStart = getSnappedTime(newStart);
                     updated = regions.map(r =>
                         r.id === dragState.regionId ? { ...r, start: newStart, selected: true } : r
                     );
                     break;
                 }
                 case 'resize-end': {
-                    const newEnd = Math.min(duration, Math.max(orig.start + 0.05, orig.end + dt));
+                    let newEnd = Math.min(duration, Math.max(orig.start + 0.05, orig.end + dt));
+                    newEnd = getSnappedTime(newEnd);
                     updated = regions.map(r =>
                         r.id === dragState.regionId ? { ...r, end: newEnd, selected: true } : r
                     );
@@ -149,6 +183,17 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
                     const segLen = orig.end - orig.start;
                     let newStart = orig.start + dt;
                     newStart = Math.max(0, Math.min(duration - segLen, newStart));
+                    // Snap the start (or end)
+                    const snappedStart = getSnappedTime(newStart);
+                    const snappedEnd = getSnappedTime(newStart + segLen);
+                    
+                    // Prioritize snapping start, then end, but don't snap both if it changes length
+                    if (snappedStart !== newStart) {
+                        newStart = snappedStart;
+                    } else if (snappedEnd !== newStart + segLen) {
+                        newStart = snappedEnd - segLen;
+                    }
+
                     updated = regions.map(r =>
                         r.id === dragState.regionId ? { ...r, start: newStart, end: newStart + segLen, selected: true } : r
                     );
@@ -174,7 +219,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
 
     // Delete key removes selected regions
     useEffect(() => {
-        if (!active) return;
+        if (!active || isPreviewing) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 const hasSelected = regions.some(r => r.selected);
@@ -207,7 +252,30 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
                 </pattern>
             </defs>
 
-            {regions.map((region) => {
+            {isPreviewing ? (() => {
+                const sorted = [...regions].sort((a, b) => a.start - b.start);
+                let accumulatedLoss = 0;
+                return sorted.map(region => {
+                    const jointTime = region.start - accumulatedLoss;
+                    accumulatedLoss += (region.end - region.start);
+                    const x = timeToX(jointTime);
+                    return (
+                        <g key={`joint-${region.id}`}>
+                            <line
+                                x1={x} y1={0} x2={x} y2={height}
+                                stroke="#ef4444" strokeWidth="2"
+                                pointerEvents="none"
+                            />
+                            {/* Optional diamond marker at top */}
+                            <path
+                                d={`M ${x} 0 L ${x-4} 6 L ${x} 12 L ${x+4} 6 Z`}
+                                fill="#ef4444"
+                                pointerEvents="none"
+                            />
+                        </g>
+                    );
+                });
+            })() : regions.map((region) => {
                 const x = timeToX(region.start);
                 const w = timeToX(region.end) - x;
                 const isSelected = region.selected;

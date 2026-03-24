@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, Keyboard } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
@@ -444,6 +444,7 @@ interface WaveformEditorProps {
     onSaveAsCopy: (blob: Blob, duration: number, createdId: string) => void;
     onDeleteVersion?: (versionId: string) => void;
     onAssignVersion?: (versionId: string) => void;
+    onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
     onMoveVersionToPool?: (versionId: string) => void;
     tapeColor?: TapeColor;
     isDuplicate?: boolean;
@@ -452,7 +453,7 @@ interface WaveformEditorProps {
     onRenameFile?: (fileId: string, newName: string) => void;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onCleanupProject, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -481,7 +482,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [viewportWidth, setViewportWidth] = useState(0);
 
     // Dirty State & Version Management
-    const [isDirty, setIsDirty] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [pendingVersion, setPendingVersion] = useState<AudioVersion | null>(null);
 
@@ -550,6 +550,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [tempo, setTempo] = useState<number | null>(null);
     const [initialTempo, setInitialTempo] = useState<number | null>(null);
     const [activeSliceIdx, setActiveSliceIdx] = useState<number>(0);
+    const [isSlicerLocked, setIsSlicerLocked] = useState(false);
+    const [showGlobalSlices, setShowGlobalSlices] = useState(false);
+    const [snapToSlices, setSnapToSlices] = useState(false);
     const [customSliceCount, setCustomSliceCount] = useState<number>(32);
     const [keyboardLayout, setKeyboardLayout] = useState<'QWERTY' | 'AZERTY'>('QWERTY');
     const [showKeyboardMapModal, setShowKeyboardMapModal] = useState(false);
@@ -560,14 +563,45 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     // Active Tool (for toolbar UI — only one expanded at a time)
     type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | null;
-    const [activeTool, setActiveTool] = useState<ToolId>('trim');
+    const [activeTool, setActiveTool] = useState<ToolId>(null);
+    const [pendingTool, setPendingTool] = useState<ToolId | undefined>(undefined);
+    const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
     const [stereoSplitView, setStereoSplitView] = useState(false);
     const [internalMetadata, setInternalMetadata] = useState<WavMetadata | null>(metadata || null);
+
+    // Individual Tool Dirty States
+    const isTrimDirty = fadeIn > 0 || fadeOut > 0 || regionState.start > 0.01 || regionState.end < ((originalBuffer?.duration || 0) - 0.01);
+    const isAutomationDirty = automationPoints.length > 0 && (
+        automationPoints.length !== 2 
+        || automationPoints[0].value !== 1 
+        || automationPoints[1].value !== 1
+        || automationPoints[0].time !== 0
+        || Math.abs(automationPoints[1].time - (originalBuffer?.duration || 0)) > 0.01
+    );
+    const isEqDirty = eqLow !== 0 || eqMid !== 0 || eqHigh !== 0 || (isAdvancedEQ && advancedEQBands.some(v => v !== 0));
+    const isLimiterDirty = limiterThreshold !== -6 || limiterCeiling !== -0.3;
+    const isPitchDirty = pitchRegions.some(r => r.semitones !== 0);
+    const isCutterDirty = cutRegions.length > 0;
+    const isSlicerDirty = slicePoints.length !== (initialSlicePoints?.length || 0) || slicePoints.some((p, i) => Math.abs(p - (initialSlicePoints?.[i] || 0)) > 0.001) || tempo !== initialTempo;
+
+    // Calculated Dirty State
+    const isDirty = useMemo(() => {
+        if (!originalBuffer) return false;
+        return isTrimDirty || isAutomationDirty || isEqDirty || isLimiterDirty || isPitchDirty || isCutterDirty || isSlicerDirty;
+    }, [isTrimDirty, isAutomationDirty, isEqDirty, isLimiterDirty, isPitchDirty, isCutterDirty, isSlicerDirty, originalBuffer]);
 
 
     // Sync individual show states with activeTool
     const toggleTool = (tool: ToolId) => {
         const next = activeTool === tool ? null : tool;
+        if (isDirty && activeTool !== null) {
+            setPendingTool(next);
+            return;
+        }
+        executeToolSwitch(next);
+    };
+
+    const executeToolSwitch = (next: ToolId) => {
         setActiveTool(next);
 
         // Auto-create automation points when toggling on
@@ -590,6 +624,39 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 selected: true
             }]);
         }
+    };
+
+    const handleDiscardChanges = async () => {
+        setFadeIn(0);
+        setFadeOut(0);
+        if (originalBuffer) {
+            setRegionState({ start: 0, end: originalBuffer.duration });
+        }
+        setAutomationPoints([]);
+        setEqLow(0);
+        setEqMid(0);
+        setEqHigh(0);
+        setAdvancedEQBands(new Array(10).fill(0));
+        setLimiterThreshold(-6);
+        setLimiterCeiling(-0.3);
+        setCutRegions([]);
+        if (initialSlicePoints) setSlicePoints([...initialSlicePoints]);
+        
+        setIsPreviewing(false);
+        setIsPreviewingEQ(false);
+        setIsPreviewingLimiter(false);
+        setIsPreviewingCut(false);
+        setIsPreviewingLoop(false);
+
+        if (currentBlob && wavesurfer.current) {
+            setIsPlaying(false);
+            await wavesurfer.current.loadBlob(currentBlob);
+        }
+
+        if (pendingTool !== undefined) {
+            executeToolSwitch(pendingTool);
+        }
+        setPendingTool(undefined);
     };
 
 
@@ -616,9 +683,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const pauseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [isPausing, setIsPausing] = useState(false);
 
-    // Mark dirty on changes
+    // Mark dirty on changes (deprecated logic, isDirty is now dynamic)
     const handleDirtyChange = () => {
-        if (!isDirty && isMounted.current) setIsDirty(true);
+        // Obsolete
     };
 
     // Rename state
@@ -659,7 +726,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     useEffect(() => {
         setFadeIn(0);
         setFadeOut(0);
-        setIsDirty(false);
         // Automation reset handled above
         // Load processing state from version if available
         const currentVersion = versions.find(v => v.id === loadedVersionId);
@@ -1529,14 +1595,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         });
     };
 
-    const handleResetLimiter = () => {
-        setLimiterThreshold(-6); setLimiterCeiling(-0.3);
-        setIsPreviewingLimiter(false);
-        if (isPreviewingLimiter && currentBlob && wavesurfer.current) {
-            setIsPlaying(false);
-            wavesurfer.current.loadBlob(currentBlob);
-        }
-    };
+
 
     // Cutter Handlers
     const handlePreviewCut = async () => {
@@ -1568,8 +1627,22 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setIsProcessing(true);
         try {
             const regionsToRemove = cutRegions.map(r => ({ start: r.start, end: r.end }));
+            
+            // Recalculate slice points across cuts
+            let newSlicePoints = [...slicePoints];
+            const sortedRegions = [...regionsToRemove].sort((a,b) => a.start - b.start);
+            newSlicePoints = newSlicePoints.map(p => {
+                let shift = 0;
+                let isInsideCut = false;
+                for (const r of sortedRegions) {
+                    if (p > r.start && p < r.end) isInsideCut = true;
+                    if (p >= r.end) shift += (r.end - r.start);
+                }
+                return isInsideCut ? -1 : p - shift; 
+            }).filter(p => p !== -1);
+
             const processed = await audioProcessor.cutAndMerge(originalBuffer, regionsToRemove, cutCrossfade);
-            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['cut'] };
+            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['cut'] };
             const newBlob = encodeWAV(processed, meta);
 
             const removedDuration = cutRegions.reduce((sum, r) => sum + (r.end - r.start), 0);
@@ -1588,15 +1661,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
-    const handleResetCut = () => {
-        setCutRegions([]);
-        setCutCrossfade(0.01);
-        setIsPreviewingCut(false);
-        if (isPreviewingCut && currentBlob && wavesurfer.current) {
-            setIsPlaying(false);
-            wavesurfer.current.loadBlob(currentBlob);
-        }
-    };
+
 
     // Slicer Handlers
     const handleAutoSlice = (count: number) => {
@@ -1640,10 +1705,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
-    const handleResetSlicer = () => {
-        setSlicePoints([...initialSlicePoints]);
-        setTempo(initialTempo);
-    };
+
 
     const handleClearAllSlices = () => {
         setSlicePoints([]);
@@ -1940,13 +2002,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
-    const handleClearPitch = () => {
-        setPitchRegions([]);
-        setPreviewPitchRegions([]);
-        setPitchSemitones(0);
-        showToast("All selections cleared", "success");
-    };
-
     const handleSelectAllPitch = () => {
         setPitchRegions([{
             id: 'pitch-all',
@@ -2070,7 +2125,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             }
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
             const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
+            
+            // Recalculate slice points for trim
+            const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = encodeWAV(looped, meta);
 
             onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s xfade)`, true, ['looped']);
@@ -2133,8 +2191,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 // Not dirty -> Assign to Tape
                 let processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
-                // Preserve metadata
-                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
+                // Preserve metadata and recalculate slice points for trim
+                const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+                const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
                 finalBlob = await audioProcessor.toWav(processed, meta);
 
                 // Preserve processing tags if assigning same version? 
@@ -2150,7 +2209,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                 }
                 finalDuration = processed.duration;
-                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed'] };
+                
+                // Preserve metadata and recalculate slice points for trim
+                const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+                const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed'] };
                 finalBlob = await audioProcessor.toWav(processed, meta);
 
                 // New edit -> likely 'trimmed' unless it was just fades?
@@ -2398,8 +2460,26 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             )}
 
 
-            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] h-[95vh] shadow-2xl flex overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
+            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] h-[95vh] shadow-2xl flex flex-row-reverse overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
 
+
+                {/* Tool Switch Confirmation */}
+                <ConfirmModal
+                    isOpen={pendingTool !== undefined}
+                    onClose={() => setPendingTool(undefined)}
+                    onConfirm={() => {
+                        handleSave();
+                        if (pendingTool !== undefined) {
+                            executeToolSwitch(pendingTool);
+                        }
+                        setPendingTool(undefined);
+                    }}
+                    onDiscard={handleDiscardChanges}
+                    title="Unsaved Changes"
+                    message="You have unsaved changes. Do you want to apply them before switching tools?"
+                    confirmLabel="Apply & Switch"
+                    discardLabel="Discard"
+                />
 
                 {/* Batch Delete Confirmation */}
                 <ConfirmModal
@@ -2437,10 +2517,27 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 />
 
                 {/* SIDEBAR: Versions */}
-                <div className="w-64 bg-[#111] border-r border-gray-800 flex flex-col shrink-0">
-                    <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex flex-wrap gap-2 justify-between items-center">
-                        <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">History</h4>
-                        {selectedVersionIds.size > 0 && (
+                <div className={`bg-[#111] border-l border-gray-800 flex flex-col shrink-0 transition-all duration-300 ${isHistoryExpanded ? 'w-64' : 'w-16 items-center'}`}>
+                    <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex flex-wrap gap-2 justify-between items-center relative overflow-hidden w-full">
+                        <div className="flex items-center gap-2 w-full justify-between">
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setIsHistoryExpanded(!isHistoryExpanded)} className="text-gray-500 hover:text-white transition-colors select-none" title={isHistoryExpanded ? "Collapse History" : "Expand History"}>
+                                    {isHistoryExpanded ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                                </button>
+                                {isHistoryExpanded && <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">History</h4>}
+                            </div>
+                            {isHistoryExpanded && onCleanupProject && (
+                                <button
+                                    onClick={() => onCleanupProject()}
+                                    className="px-2 py-1.5 hover:bg-red-500/10 rounded flex items-center gap-1.5 text-gray-400 hover:text-red-400 font-bold text-xs uppercase tracking-wider transition-colors tooltip-trigger"
+                                    title="Clean Up Project History"
+                                >
+                                    <Trash2 size={13} strokeWidth={2.5} />
+                                    <span>Clean</span>
+                                </button>
+                            )}
+                        </div>
+                        {isHistoryExpanded && selectedVersionIds.size > 0 && (
                             <div className="flex gap-1">
                                 {onMoveVersionToPool && (
                                     <button
@@ -2461,10 +2558,27 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             </div>
                         )}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2 history-scroll">
+                    <div className={`flex-1 overflow-y-auto p-2 space-y-2 history-scroll w-full ${!isHistoryExpanded && 'flex flex-col items-center'}`}>
                         {versions.map((v) => {
                             const isActive = v.id === loadedVersionId;
                             const isSelected = selectedVersionIds.has(v.id);
+
+                            if (!isHistoryExpanded) {
+                                return (
+                                    <div
+                                        key={v.id}
+                                        onClick={() => handleLoadVersion(v)}
+                                        className={`w-10 h-10 shrink-0 rounded-full border border-gray-800 flex items-center justify-center cursor-pointer transition-all hover:bg-gray-800 relative
+                                            ${isActive ? 'bg-synthux-blue text-white border-synthux-blue' : 'bg-[#1a1a1a] text-gray-500'}
+                                            ${isSelected ? 'ring-2 ring-synthux-yellow border-synthux-yellow' : ''}
+                                        `}
+                                        title={`${new Date(v.timestamp).toLocaleString(undefined, { timeStyle: 'short' })} - ${v.description || 'Edited Version'}`}
+                                    >
+                                        <span className="text-[10px] font-bold uppercase select-none">{v.id.substring(v.id.length - 2)}</span>
+                                        {isActive && <div className="absolute -top-0 -right-0 w-3 h-3 bg-synthux-blue rounded-full border-2 border-[#111]" />}
+                                    </div>
+                                );
+                            }
 
                             return (
                                 <div
@@ -2621,6 +2735,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         {isDirty ? "Unsaved Changes" : "All Saved"}
                                     </span>
                                 </div>
+                                <div className="text-[10px] text-gray-500 max-w-sm mt-1 leading-[1.2]">
+                                    Note: Edits save to this slot's history. The original file is not altered until export.
+                                </div>
                             </div>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors">✕</button>
@@ -2646,16 +2763,46 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 {/* Tool Buttons - Scrollable if needed */}
                                 <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent py-1">
                                     {[
-                                        { id: 'trim' as const, label: 'Trim/Fade', icon: <Scissors size={13} />, color: 'green', activeColor: 'bg-synthux-green', textColor: 'text-synthux-green', hasContent: fadeIn > 0 || fadeOut > 0 || hasTrimmed },
-                                        { id: 'automation' as const, label: 'Automation', icon: <Activity size={13} />, color: 'orange', activeColor: 'bg-orange-500', textColor: 'text-orange-400', hasContent: automationPoints.length > 0 },
-                                        { id: 'loop' as const, label: 'Loop', icon: <Repeat size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', hasContent: activeTool === 'loop' },
-                                        { id: 'eq' as const, label: 'EQ', icon: <BarChart2 size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', hasContent: eqLow !== 0 || eqMid !== 0 || eqHigh !== 0 || isPreviewingEQ },
-                                        { id: 'pitch' as const, label: 'Pitch', icon: <Music size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', hasContent: pitchSemitones !== 0 },
-                                        { id: 'limiter' as const, label: 'Limiter', icon: <Sliders size={13} />, color: 'red', activeColor: 'bg-red-500', textColor: 'text-red-400', hasContent: limiterThreshold !== -6 || limiterCeiling !== -0.3 || isPreviewingLimiter },
-                                        { id: 'normalize' as const, label: 'Normalize', icon: <BarChart2 size={13} />, color: 'yellow', activeColor: 'bg-synthux-yellow', textColor: 'text-synthux-yellow', hasContent: hasNormalized },
-                                        { id: 'cutter' as const, label: 'Cutter', icon: <Scissors size={13} />, color: 'amber', activeColor: 'bg-amber-500', textColor: 'text-amber-400', hasContent: cutRegions.length > 0 },
-                                        { id: 'slicer' as const, label: 'Slicer', icon: <Scissors size={13} className="rotate-90" />, color: 'cyan', activeColor: 'bg-cyan-500', textColor: 'text-cyan-400', hasContent: slicePoints.length > 0 },
-                                        { id: 'stereo' as const, label: 'Stereo', icon: <ArrowLeftRight size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', hasContent: (originalBuffer?.numberOfChannels || 0) > 1 },
+                                        { 
+                                            id: 'trim' as const, label: 'Trim/Fade', icon: <Scissors size={13} />, color: 'green', activeColor: 'bg-synthux-green', textColor: 'text-synthux-green', 
+                                            hasContent: isTrimDirty
+                                        },
+                                        { 
+                                            id: 'automation' as const, label: 'Automation', icon: <Activity size={13} />, color: 'orange', activeColor: 'bg-orange-500', textColor: 'text-orange-400', 
+                                            hasContent: isAutomationDirty
+                                        },
+                                        { 
+                                            id: 'loop' as const, label: 'Loop', icon: <Repeat size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', 
+                                            hasContent: false // Loops are immediately applied
+                                        },
+                                        { 
+                                            id: 'eq' as const, label: 'EQ', icon: <BarChart2 size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', 
+                                            hasContent: isEqDirty
+                                        },
+                                        { 
+                                            id: 'pitch' as const, label: 'Pitch', icon: <Music size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', 
+                                            hasContent: isPitchDirty
+                                        },
+                                        { 
+                                            id: 'limiter' as const, label: 'Limiter', icon: <Sliders size={13} />, color: 'red', activeColor: 'bg-red-500', textColor: 'text-red-400', 
+                                            hasContent: isLimiterDirty
+                                        },
+                                        { 
+                                            id: 'normalize' as const, label: 'Normalize', icon: <BarChart2 size={13} />, color: 'yellow', activeColor: 'bg-synthux-yellow', textColor: 'text-synthux-yellow', 
+                                            hasContent: false // Normalize is immediately applied
+                                        },
+                                        { 
+                                            id: 'cutter' as const, label: 'Cutter', icon: <Scissors size={13} />, color: 'amber', activeColor: 'bg-amber-500', textColor: 'text-amber-400', 
+                                            hasContent: isCutterDirty
+                                        },
+                                        { 
+                                            id: 'slicer' as const, label: 'Slicer', icon: <Scissors size={13} className="rotate-90" />, color: 'cyan', activeColor: 'bg-cyan-500', textColor: 'text-cyan-400', 
+                                            hasContent: isSlicerDirty
+                                        },
+                                        { 
+                                            id: 'stereo' as const, label: 'Stereo', icon: <ArrowLeftRight size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', 
+                                            hasContent: false
+                                        },
                                     ].map(tool => (
                                         <button
                                             key={tool.id}
@@ -2745,11 +2892,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         </button>
                                                     )
                                                 })()}
-                                                <button onClick={() => { setFadeIn(0); setFadeOut(0); handleDirtyChange(); }}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
-                                                    onMouseEnter={() => setHelpText("Reset Fades")}
+                                                <button onClick={() => { setFadeIn(0); setFadeOut(0); if (originalBuffer) setRegionState({ start: 0, end: originalBuffer.duration }); handleDirtyChange(); }}
+                                                    disabled={!isTrimDirty}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isTrimDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
+                                                    onMouseEnter={() => setHelpText("Reset Trim & Fades")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
+                                                ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
                                     )}
@@ -2950,10 +3098,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
                                                 <button onClick={handleResetAutomation}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    disabled={!isAutomationDirty}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isAutomationDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Clear All Automation")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
+                                                ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
                                     )}
@@ -3011,10 +3160,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     setLoopCrossfade(0.2);
                                                     handleDirtyChange();
                                                 }}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    disabled={loopCrossfade === 0.2}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${loopCrossfade === 0.2 ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Reset Loop Settings")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
+                                                ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
                                     )}
@@ -3116,10 +3266,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
                                                 <button onClick={handleResetEQ}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                    disabled={!isEqDirty}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isEqDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Reset EQ Settings")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
+                                                ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
                                     )}
@@ -3188,11 +3339,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     onMouseEnter={() => setHelpText("Apply Limiter & Create Version")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
-                                                <button onClick={handleResetLimiter}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                <button onClick={() => { setLimiterThreshold(-6); setLimiterCeiling(-0.3); if (isPreviewingLimiter && wavesurfer.current && currentBlob) { wavesurfer.current.loadBlob(currentBlob); setIsPreviewingLimiter(false); } handleDirtyChange(); }}
+                                                    disabled={!isLimiterDirty}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isLimiterDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Reset Limiter Settings")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
+                                                ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
                                     )}
@@ -3231,24 +3383,34 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             <div className="h-6 w-px bg-gray-800"></div>
 
                                             <div className="flex items-center gap-2">
-                                                <button onClick={handlePreviewCut} disabled={cutRegions.length === 0}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingCut ? 'bg-amber-500 text-white hover:bg-red-500' : cutRegions.length === 0 ? 'bg-gray-900 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-amber-500 text-white'}`}
-                                                    onMouseEnter={() => setHelpText(isPreviewingCut ? "Refresh Preview" : "Hear Result After Cuts")}
+                                                <button
+                                                    onClick={() => {
+                                                        if (isPreviewingCut && currentBlob && wavesurfer.current) {
+                                                            wavesurfer.current.loadBlob(currentBlob);
+                                                            setIsPreviewingCut(false);
+                                                        } else {
+                                                            handlePreviewCut();
+                                                        }
+                                                    }}
+                                                    disabled={cutRegions.length === 0}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingCut ? 'bg-amber-500 text-white hover:bg-amber-600' : cutRegions.length === 0 ? 'bg-gray-900 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-amber-500 text-white'}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewingCut ? "Return to editing cuts" : "Hear Result After Cuts")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    {isPreviewingCut ? <RefreshCw size={12} /> : <Play size={12} />}
-                                                    {isPreviewingCut ? "Refresh" : "Preview"}
+                                                    {isPreviewingCut ? <Scissors size={12} /> : <Play size={12} />}
+                                                    {isPreviewingCut ? "Tweak Cuts" : "Preview"}
                                                 </button>
                                                 <button onClick={handleApplyCut} disabled={cutRegions.length === 0}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${cutRegions.length === 0 ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border-green-900/50'}`}
                                                     onMouseEnter={() => setHelpText("Apply Cuts & Create Version")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
-                                                <button onClick={handleResetCut}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
+                                                <button onClick={() => { setCutRegions([]); setCutCrossfade(0.01); if (isPreviewingCut && wavesurfer.current && currentBlob) { wavesurfer.current.loadBlob(currentBlob); setIsPreviewingCut(false); } handleDirtyChange(); }}
+                                                    disabled={!isCutterDirty}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isCutterDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Clear All Cut Regions")}
                                                     onMouseLeave={() => setHelpText("")}
-                                                ><RotateCcw size={12} /> Reset</button>
+                                                ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
                                     )}
@@ -3354,6 +3516,32 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                                 <div className="h-6 w-px bg-gray-800 mx-1"></div>
 
+                                                <div className="flex items-center gap-1 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                    <button 
+                                                        onClick={() => setIsSlicerLocked(!isSlicerLocked)}
+                                                        className={`p-1.5 rounded transition-colors ${isSlicerLocked ? 'bg-red-900/40 text-red-500 hover:text-red-400' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}
+                                                        title={isSlicerLocked ? "Unlock Slices" : "Lock Slices"}
+                                                    >
+                                                        {isSlicerLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setShowGlobalSlices(!showGlobalSlices)}
+                                                        className={`p-1.5 rounded transition-colors ${showGlobalSlices ? 'bg-blue-900/40 text-blue-400 hover:text-blue-300' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}
+                                                        title="Show Slices in All Tools"
+                                                    >
+                                                        {showGlobalSlices ? <Eye size={12} /> : <EyeOff size={12} />}
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setSnapToSlices(!snapToSlices)}
+                                                        className={`p-1.5 rounded transition-colors ${snapToSlices ? 'bg-synthux-blue/40 text-synthux-blue hover:text-blue-400' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}
+                                                        title="Snap Edits to Slices"
+                                                    >
+                                                        <Magnet size={12} />
+                                                    </button>
+                                                </div>
+
+                                                <div className="h-6 w-px bg-gray-800 mx-1"></div>
+
                                                 <div className="flex items-center gap-2">
                                                     <button onClick={handleApplySlicer}
                                                         className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
@@ -3370,15 +3558,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         )}
                                                     </button>
 
-                                                    <button onClick={handleResetSlicer}
-                                                        disabled={JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())}
-                                                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
-                                                            ? 'bg-gray-900/50 text-gray-700 cursor-not-allowed'
-                                                            : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-                                                            }`}
+                                                    <button onClick={() => { setSlicePoints(initialSlicePoints || []); setTempo(initialTempo); handleDirtyChange(); }}
+                                                        disabled={!isSlicerDirty}
+                                                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isSlicerDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                         onMouseEnter={() => setHelpText("Revert to file's original slices")}
                                                         onMouseLeave={() => setHelpText("")}
-                                                    ><RotateCcw size={12} /> Reset</button>
+                                                    ><RotateCcw size={12} /> Reset Tool</button>
 
                                                     <button onClick={handleClearAllSlices}
                                                         className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-red-900/50 text-red-400 transition-colors"
@@ -3479,26 +3664,15 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     <Maximize2 size={12} /> All
                                                 </button>
 
-                                                <button onClick={handleClearPitch} disabled={isPreviewing || pitchRegions.length === 0}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing || pitchRegions.length === 0 ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-red-900/40 text-red-400'}`}
-                                                    onMouseEnter={() => setHelpText("Remove all pitch regions")}
-                                                    onMouseLeave={() => setHelpText("")}
-                                                >
-                                                    <Trash2 size={12} /> Clear
-                                                </button>
-
                                                 <div className="h-4 w-px bg-gray-700 mx-1"></div>
 
                                                 <button onClick={isPreviewing ? handleResetPitch : handlePreviewPitch} disabled={isProcessing || (pitchRegions.length === 0 && !isPreviewing)}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isProcessing || (pitchRegions.length === 0 && !isPreviewing) ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-gray-200'}`}
-                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Cancel Preview & Restore Selections" : "Preview pitch changes")}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isProcessing || (pitchRegions.length === 0 && !isPreviewing) ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : (isPreviewing ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white')}`}
+                                                    onMouseEnter={() => setHelpText(isPreviewing ? "Stop Preview & Restore Selections" : "Preview pitch changes")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    {isPreviewing ? (
-                                                        <><RotateCcw size={12} /> Reset</>
-                                                    ) : (
-                                                        <><Play size={12} /> Preview</>
-                                                    )}
+                                                    {isPreviewing ? <Pause size={12} /> : <Play size={12} />}
+                                                    {isPreviewing ? "Stop" : "Preview"}
                                                 </button>
 
                                                 <button onClick={handleApplyPitch} disabled={pitchRegions.length === 0 || isProcessing}
@@ -3508,6 +3682,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 >
                                                     <Check size={12} /> Apply
                                                 </button>
+
+                                                <button onClick={() => { setPitchRegions([]); setPitchSemitones(0); if (isPreviewing) handleResetPitch(); handleDirtyChange(); }}
+                                                    disabled={!isPitchDirty}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isPitchDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
+                                                    onMouseEnter={() => setHelpText("Reset Pitch Tool")}
+                                                    onMouseLeave={() => setHelpText("")}
+                                                ><RotateCcw size={12} /> Reset Tool</button>
+
 
                                                 <div className="h-4 w-px bg-gray-700 mx-1"></div>
 
@@ -3663,6 +3845,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 if (wavesurfer.current) wavesurfer.current.setTime(t);
                                             }}
                                             smooth={smooth}
+                                            snapPoints={slicePoints}
+                                            snapToSlices={snapToSlices}
                                         />
 
                                         {/* Cutter Overlay */}
@@ -3676,6 +3860,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 handleDirtyChange();
                                             }}
                                             active={activeTool === 'cutter'}
+                                            isPreviewing={isPreviewingCut}
+                                            snapPoints={slicePoints}
+                                            snapToSlices={snapToSlices}
                                         />
 
                                         {/* Slicer Overlay */}
@@ -3693,6 +3880,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             activeSliceIdx={activeSliceIdx}
                                             onActiveSliceChange={setActiveSliceIdx}
                                             hoveredMarkerIdx={hoveredMarkerIdx}
+                                            showAlways={showGlobalSlices}
+                                            isLocked={isSlicerLocked}
                                         />
 
                                         {/* Pitch Selection Overlay */}
@@ -3928,6 +4117,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     </button>
                                 </div>
 
+                                <button
+                                    onClick={onClose}
+                                    className={`flex items-center gap-2 px-6 py-2 rounded-full text-base font-bold transition-all shadow-lg border ${
+                                        isDirty 
+                                            ? 'bg-gray-800 hover:bg-gray-700 text-gray-500 border-transparent hover:border-gray-500' 
+                                            : 'bg-green-600 hover:bg-green-500 text-white border-transparent hover:scale-105 active:scale-95 shadow-green-900/50'
+                                    }`}
+                                    title={isDirty ? "Close without saving" : "Close Editor"}
+                                >
+                                    <Check size={18} /> DONE
+                                </button>
+
                                 {/* Save Unique Button (For Duplicates) */}
                                 {isDuplicate && onSaveUnique && (
                                     <button
@@ -3959,7 +4160,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                                 // 2. Encode
                                                 const newId = uuidv4();
-                                                const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: newId, processing: processingTags };
+                                                const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+                                                const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: newId, processing: processingTags };
                                                 const newBlob = encodeWAV(processed, meta);
 
                                                 // 3. Callback
@@ -3999,7 +4201,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
                                             }
                                             const newId = uuidv4();
-                                            const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: newId };
+                                            const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+                                            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: newId };
                                             const newBlob = encodeWAV(processed, meta);
                                             onSaveAsCopy(newBlob, processed.duration, newId);
                                             showToast("Saved copy to Unused Pool!", "success");

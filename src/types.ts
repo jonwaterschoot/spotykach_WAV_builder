@@ -117,3 +117,20 @@ export interface VisualFilters {
     textureSize: string;
     texturePosition?: string;
 }
+
+// ─── Sync & Export Types ──────────────────────────────────────────────────────
+
+export type ConflictMode = 'manual' | 'overwrite_keep' | 'overwrite_clear';
+
+export type SKPrimaryDecision = 'push_to_sk' | 'pull_to_slot' | 'delete_local' | 'delete_sk' | 'skip';
+
+export interface ExportOptions {
+    preset: 'import_only' | 'erase_replace' | 'merge' | 'custom';
+    moveDisplacedToPool: boolean;
+    conflictMode: ConflictMode;
+    skMode: 'overwrite' | 'clean';
+    configDecision: SKPrimaryDecision;
+    includeConfig: boolean;
+    forceOverwrite: boolean;
+    backupSKToProject: boolean;
+}

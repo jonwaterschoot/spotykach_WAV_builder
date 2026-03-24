@@ -1,5 +1,31 @@
 # Changelog
 
+## [3.3.0] - 2026-03-24
+
+### Added
+- **SD Import & Build Workflow Overhaul**:
+    - Introduced **Import Presets**: "Standard import", "Merge into project", "Merge into project + Mirror", and "Custom" to standardize SD card synchronization.
+    - Implemented a high-density UI for the SD Sync Modal with a 10-second auto-hide feature for the audio player.
+    - Unified preset button layouts across Simple and Advanced views for better consistency.
+    - Added clear visual feedback for destructive sync actions (trash icons and high-visibility red dashed borders).
+    - Compacted the Build & Import modal layout, featuring a "Before & After" comparison view and streamlined header/footer.
+- **Onboarding & Workflow Enhancements**:
+    - Refined the setup flow: users can now enter a project title immediately after "Start New Setup" or "Skip Intro," bypassing the Project Manager to load directly into the Tapes view.
+    - Enhanced "Resume Session" to skip the Project Manager and load the latest session automatically.
+    - Integrated the **Core Concepts Explainer** into the Help section for easier accessibility.
+- **Config & MIDI Management**:
+    - Added "Save to SD" and "Download" buttons directly to the Config Modal.
+    - Pre-populated the Config Modal with default presets for quicker setup.
+    - Updated MIDI settings schema to include start/stop control toggles (`mid_ps_a`, `mid_ps_b`).
+- **Slicer Tool Refinements**:
+    - Slice points and state now persist across different tool edits.
+    - Added global visibility toggles, slice locking, and snapping functionality for markers.
+
+### Fixed
+- **UI Stability**: Resolved layout collapse issues in the Cleanup Modal and fixed duplicate "Apply" buttons in the Pitch tool.
+- **CORS & Assets**: Switched sample hosting to jsDelivr to resolve CORS issues and optimized file sizes to stay within CDN limits.
+- **Project Structure**: Removed obsolete V1 routes and implemented redirects to ensure a seamless transition to the V2 application.
+
 ## [3.2.0] - 2026-03-18
 
 ### Changed

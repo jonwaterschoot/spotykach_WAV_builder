@@ -16,6 +16,8 @@ interface AutomationOverlayProps {
     onSeek: (time: number) => void;
     smooth?: boolean;
     active?: boolean;
+    snapPoints?: number[];
+    snapToSlices?: boolean;
 }
 
 export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
@@ -26,7 +28,9 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     onPointsChange,
     onSeek,
     smooth = false,
-    active = true
+    active = true,
+    snapPoints = [],
+    snapToSlices = false
 }) => {
     if (!active) return null;
     const svgRef = useRef<SVGSVGElement>(null);
@@ -62,6 +66,21 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         return Math.max(0, Math.min(MAX_GAIN_VAL, val));
     };
 
+    const getSnappedTime = (time: number, thresholdPx = 10) => {
+        if (!snapToSlices || !snapPoints || snapPoints.length === 0) return time;
+        const snapThreshold = (thresholdPx / width) * duration;
+        let nearest = time;
+        let minDiff = Infinity;
+        for (const p of snapPoints) {
+            const diff = Math.abs(p - time);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearest = p;
+            }
+        }
+        return minDiff <= snapThreshold ? nearest : time;
+    };
+
     const sortedPoints = [...points].sort((a, b) => a.time - b.time);
 
     // Global Drag Listeners
@@ -90,6 +109,20 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                         if (initialPoint.selected) {
                             let newTime = Math.max(0, Math.min(duration, initialPoint.time + dt));
                             let newValue = Math.max(0, Math.min(MAX_GAIN_VAL, initialPoint.value + dVal));
+
+                            if (!e.altKey) {
+                                const snappedTime = getSnappedTime(newTime, 10);
+                                if (snappedTime !== newTime) {
+                                    newTime = snappedTime;
+                                }
+                            }
+
+                            // Snap to 0 dB (value = 1.0) unless Alt is held
+                            if (!e.altKey) {
+                                if (Math.abs(newValue - 1.0) < 0.1) {
+                                    newValue = 1.0;
+                                }
+                            }
 
                             // Snap to other points (Merging)
                             const SNAP_THRESHOLD_PX = 10;
@@ -322,8 +355,22 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        const t = xToTime(x);
-        const val = yToValue(y);
+        let t = xToTime(x);
+        let val = yToValue(y);
+
+        if (!e.altKey) {
+            const snappedTime = getSnappedTime(t, 15);
+            if (snappedTime !== t) {
+                t = snappedTime;
+            }
+        }
+
+        // Snap to 0 dB (value = 1.0) unless Alt is held
+        if (!e.altKey) {
+            if (Math.abs(val - 1.0) < 0.1) {
+                val = 1.0;
+            }
+        }
 
         const newPoint: AutomationPoint = {
             id: Math.random().toString(36).substr(2, 9),
@@ -476,14 +523,16 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                     style={{ pointerEvents: 'all' }}
                 />
 
-                <line
-                    x1="0" y1={valueToY(1.0)}
-                    x2={width} y2={valueToY(1.0)}
-                    stroke="rgba(255,255,255,0.4)"
-                    strokeDasharray="4 4"
-                    strokeWidth="1.5"
-                    pointerEvents="none"
-                />
+                {points.length > 0 && (
+                    <line
+                        x1="0" y1={valueToY(1.0)}
+                        x2={width} y2={valueToY(1.0)}
+                        stroke="rgba(255,255,255,0.4)"
+                        strokeDasharray="4 4"
+                        strokeWidth="1.5"
+                        pointerEvents="none"
+                    />
+                )}
 
                 <g style={{ pointerEvents: 'all' }}>
                     {renderLines()}

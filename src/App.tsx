@@ -7,11 +7,11 @@ import { SlotGrid } from './components/SlotGrid';
 import { AllViewGrid } from './components/AllViewGrid';
 import { WaveformEditor } from './components/WaveformEditor';
 import { FileBrowser } from './components/FileBrowser';
-import type { AppState, TapeColor, FileRecord, AudioVersion } from './types';
+import type { AppState, TapeColor, FileRecord, AudioVersion, ExportOptions } from './types';
 import { TAPE_COLORS } from './types';
 import { getInitialState } from './utils/initialState';
 import { audioEngine } from './lib/audio/audioEngine';
-import { exportSaveState, exportSingleTape, exportSDStructure, exportFilesOnly, loadProjectFromDirectory, saveProjectToDirectory, duplicateProject } from './utils/exportUtils';
+import { exportSaveState, exportSingleTape, exportSDStructure, exportFilesOnly, loadProjectFromDirectory, saveProjectToDirectory, duplicateProject, verifyProjectBlobs } from './utils/exportUtils';
 import { analyzeImport, type ImportAnalysis } from './utils/importUtils';
 import { ImportModal } from './components/ImportModal';
 import { InfoModal } from './components/InfoModal';
@@ -35,6 +35,7 @@ import { Toast, type ToastType } from './components/Toast';
 import { SetupWizard } from './components/SetupWizard';
 import { SettingsModal } from './components/SettingsModal';
 import { ExportPreviewModal } from './components/ExportPreviewModal';
+import { CleanupModal } from './components/CleanupModal';
 import { NotesEditor } from './components/NotesEditor';
 import { MissingFilesResolver, type MissingAsset } from './components/MissingFilesResolver';
 import { ConfigModal } from './components/ConfigModal';
@@ -136,10 +137,21 @@ function App() {
 
   // Project Manager State
   const [showProjectManager, setShowProjectManager] = useState(false);
+  const [showCleanupModal, setShowCleanupModal] = useState(false);
   const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
-  const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(undefined);
+  const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(() => localStorage.getItem('spotykach_current_project') || undefined);
+  const [skBackups, setSkBackups] = useState<{ timestamp: string; sizeBytes: number }[]>([]);
+  const SK_BACKUP_LIMIT = 5;
+
+  useEffect(() => {
+    if (currentProjectName) {
+      localStorage.setItem('spotykach_current_project', currentProjectName);
+    } else {
+      localStorage.removeItem('spotykach_current_project');
+    }
+  }, [currentProjectName]);
 
   const [allViewNoteStates, setAllViewNoteStates] = useState<Record<TapeColor, 'collapsed' | 'preview' | 'expanded'>>({
     Blue: 'collapsed', Green: 'collapsed', Pink: 'collapsed', Red: 'collapsed', Turquoise: 'collapsed', Yellow: 'collapsed'
@@ -208,6 +220,193 @@ function App() {
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
   const [showDeviceImport, setShowDeviceImport] = useState(false);
+
+  // ── SK Backup helpers ─────────────────────────────────────────────────────
+  const scanSKBackups = async (projectName: string, handle: FileSystemDirectoryHandle) => {
+    try {
+      const projectDir = await handle.getDirectoryHandle('Projects', { create: false })
+        .then(d => d.getDirectoryHandle(projectName, { create: false }));
+      let backupsDir: FileSystemDirectoryHandle | null = null;
+      try { backupsDir = await projectDir.getDirectoryHandle('_sk_backups', { create: false }); } catch { /* not yet created */ }
+      if (!backupsDir) { setSkBackups([]); return; }
+      const entries: { timestamp: string; sizeBytes: number }[] = [];
+      for await (const [name, entry] of (backupsDir as any).entries()) {
+        if (entry.kind === 'directory') {
+          let size = 0;
+          try {
+            for await (const [, fh] of (entry as any).entries()) {
+              if ((fh as any).kind === 'file') {
+                const f = await (fh as FileSystemFileHandle).getFile();
+                size += f.size;
+              }
+            }
+          } catch { /* ignore */ }
+          entries.push({ timestamp: name, sizeBytes: size });
+        }
+      }
+      setSkBackups(entries);
+    } catch { setSkBackups([]); }
+  };
+
+  const createSKBackup = async (projectName: string, workDir: FileSystemDirectoryHandle, sdHandle: FileSystemDirectoryHandle) => {
+    try {
+      const projectDir = await workDir.getDirectoryHandle('Projects', { create: true })
+        .then(d => d.getDirectoryHandle(projectName, { create: true }));
+      const backupsDir = await projectDir.getDirectoryHandle('_sk_backups', { create: true });
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const targetDir = await backupsDir.getDirectoryHandle(timestamp, { create: true });
+
+      // Copy SK folder root files from the SD card into target
+      const copyDir = async (src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle) => {
+        for await (const [name, entry] of (src as any).entries()) {
+          if ((entry as any).kind === 'file') {
+            const file = await (entry as FileSystemFileHandle).getFile();
+            const buf = await file.arrayBuffer();
+            const writer = await (await dst.getFileHandle(name, { create: true })).createWritable();
+            await writer.write(buf);
+            await writer.close();
+          } else {
+            const subDst = await dst.getDirectoryHandle(name, { create: true });
+            await copyDir(entry as FileSystemDirectoryHandle, subDst);
+          }
+        }
+      };
+
+      let skFolder: FileSystemDirectoryHandle | null = null;
+      try { skFolder = await sdHandle.getDirectoryHandle('SK', { create: false }); } catch { /* maybe a flat structure */ }
+      if (skFolder) await copyDir(skFolder, targetDir);
+
+      // Prune old backups beyond the limit
+      const allEntries: string[] = [];
+      for await (const [name] of (backupsDir as any).entries()) allEntries.push(name);
+      const sorted = allEntries.sort();
+      if (sorted.length > SK_BACKUP_LIMIT) {
+        for (const old of sorted.slice(0, sorted.length - SK_BACKUP_LIMIT)) {
+          try { await backupsDir.removeEntry(old, { recursive: true }); } catch { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      console.warn('SK backup failed (non-fatal):', e);
+    }
+  };
+
+  const handleDeleteSKBackup = async (timestamp: string) => {
+    if (!workHandle || !currentProjectName) return;
+    try {
+      const backupsDir = await workHandle
+        .getDirectoryHandle('Projects', { create: false })
+        .then(d => d.getDirectoryHandle(currentProjectName, { create: false }))
+        .then(d => d.getDirectoryHandle('_sk_backups', { create: false }));
+      await backupsDir.removeEntry(timestamp, { recursive: true });
+      setSkBackups(prev => prev.filter(b => b.timestamp !== timestamp));
+      setToast({ msg: 'SK backup deleted', type: 'success' });
+    } catch (e: any) {
+      setToast({ msg: 'Failed to delete backup: ' + e.message, type: 'error' });
+    }
+  };
+
+  // ── Zip Import / Export ───────────────────────────────────────────────────
+  const handleImportZip = async () => {
+    if (!workHandle) {
+      setToast({ msg: 'Connect a Work Folder first.', type: 'error' });
+      return;
+    }
+    try {
+      // @ts-ignore – showOpenFilePicker is not in all TS libs yet
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Zip Archive', accept: { 'application/zip': ['.zip'] } }],
+        multiple: false,
+      });
+      const file = await handle.getFile();
+      const JSZip = (await import('jszip')).default;
+      const zip = await JSZip.loadAsync(file);
+
+      // Determine project name from zip (top-level folder or filename)
+      const entries = Object.keys(zip.files);
+      const topFolders = [...new Set(entries.map(e => e.split('/')[0]).filter(Boolean))];
+      const projectName = topFolders.length === 1 ? topFolders[0] : file.name.replace(/\.zip$/i, '');
+
+      setIsProcessing(true);
+      setProgressMsg(`Importing "${projectName}" from zip...`);
+
+      const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
+
+      for (const [path, entry] of Object.entries(zip.files)) {
+        if (entry.dir) continue;
+        // Strip leading top-folder prefix if present
+        const relPath = topFolders.length === 1 && path.startsWith(topFolders[0] + '/')
+          ? path.slice(topFolders[0].length + 1)
+          : path;
+        if (!relPath) continue;
+
+        const parts = relPath.split('/');
+        let dir: FileSystemDirectoryHandle = projectDir;
+        for (const part of parts.slice(0, -1)) {
+          dir = await dir.getDirectoryHandle(part, { create: true });
+        }
+        const buf = await entry.async('arraybuffer');
+        const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
+        const w = await fh.createWritable();
+        await w.write(buf);
+        await w.close();
+      }
+
+      await scanProjects(workHandle, backupHandle);
+      setToast({ msg: `"${projectName}" imported from zip`, type: 'success' });
+    } catch (e: any) {
+      if (e.name !== 'AbortError') setToast({ msg: 'Import failed: ' + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  const handleExportZip = async (projectName: string) => {
+    if (!workHandle) {
+      setToast({ msg: 'Connect a Work Folder first.', type: 'error' });
+      return;
+    }
+    setIsProcessing(true);
+    setProgressMsg(`Zipping "${projectName}"...`);
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      const projectDir = await workHandle
+        .getDirectoryHandle('Projects', { create: false })
+        .then(d => d.getDirectoryHandle(projectName, { create: false }));
+
+      const addDir = async (dir: FileSystemDirectoryHandle, zipPath: string) => {
+        for await (const [name, entry] of (dir as any).entries()) {
+          if ((entry as any).kind === 'file') {
+            const file = await (entry as FileSystemFileHandle).getFile();
+            const buf = await file.arrayBuffer();
+            zip.file(`${zipPath}/${name}`, buf);
+          } else {
+            await addDir(entry as FileSystemDirectoryHandle, `${zipPath}/${name}`);
+          }
+        }
+      };
+      await addDir(projectDir, projectName);
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setToast({ msg: `"${projectName}" exported as zip`, type: 'success' });
+    } catch (e: any) {
+      setToast({ msg: 'Export failed: ' + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
 
   // Computed Mode for UI/Logic compatibility
   // const workflowMode: 'LOCAL' | 'BROWSER' = workHandle ? 'LOCAL' : 'BROWSER';
@@ -375,20 +574,21 @@ function App() {
     setShowProjectManager(true);
   };
 
-  const handleLoadProject = async (projectName: string) => {
-    if (!workHandle) return;
+  const handleLoadProject = async (projectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
+    const activeWorkHandle = overrideWorkHandle || workHandle;
+    if (!activeWorkHandle) return;
 
     setIsProcessing(true);
     setProgressMsg(`Loading ${projectName}...`);
 
     try {
-      const loadedState = await loadProjectFromDirectory(projectName, workHandle, (msg) => {
+      const loadedState = await loadProjectFromDirectory(projectName, activeWorkHandle, (msg) => {
         setProgressMsg(msg || "Loading...");
       });
       const missingAssets = loadedState.loadIssues?.missingAssets || [];
 
       // Update Ref to point to this new project folder
-      const projectsDir = await workHandle.getDirectoryHandle('Projects');
+      const projectsDir = await activeWorkHandle.getDirectoryHandle('Projects');
       projectRootHandleRef.current = await projectsDir.getDirectoryHandle(projectName);
 
       // Merge with current running state specifics if needed? 
@@ -401,7 +601,7 @@ function App() {
 
       // --- NEW: Load Visual Settings from Workspace ---
       try {
-        const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: false });
+        const projectsDir = await activeWorkHandle.getDirectoryHandle('Projects', { create: false });
         const pDir = await projectsDir.getDirectoryHandle(projectName, { create: false });
         try {
           const vHandle = await pDir.getFileHandle('visual_settings.json', { create: false });
@@ -611,8 +811,9 @@ function App() {
   };
 
 
-  const handleCreateEmptyProject = async (projectName: string) => {
-    if (!workHandle) {
+  const handleCreateEmptyProject = async (projectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
+    const activeWorkHandle = overrideWorkHandle || workHandle;
+    if (!activeWorkHandle) {
       setToast({ msg: "Please set a Work Folder first.", type: 'error' });
       return;
     }
@@ -624,7 +825,7 @@ function App() {
 
     try {
       // 1. Get/Create 'Projects' folder
-      const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const projectsDir = await activeWorkHandle.getDirectoryHandle('Projects', { create: true });
 
       // 2. Create specific Project folder
       const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
@@ -635,7 +836,7 @@ function App() {
       // 4. Save blank state
       const emptyState = getInitialState();
       // @ts-ignore
-      await saveProjectToDirectory(emptyState, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+      await saveProjectToDirectory(emptyState, activeWorkHandle, (msg) => setProgressMsg(msg || ''), projectName);
 
       // 5. Load blank state into UI map
       setState(emptyState);
@@ -643,7 +844,7 @@ function App() {
       setHasUnsavedChanges(false);
       setToast({ msg: "Empty Project Created", type: 'success' });
 
-      handleSmartScan(workHandle);
+      handleSmartScan(activeWorkHandle);
     } catch (e: any) {
       console.error(e);
       setToast({ msg: "Failed to create project: " + e.message, type: 'error' });
@@ -732,6 +933,85 @@ function App() {
     });
   };
 
+  const handleCleanupProject = () => {
+    setShowCleanupModal(true);
+  };
+
+  const executeProjectCleanup = async (deleteFileIds: string[], deleteVersionIds: Record<string, string[]>) => {
+    setShowCleanupModal(false);
+    setIsProcessing(true);
+    setProgressMsg("Cleaning up project...");
+
+    try {
+      const newFiles = { ...state.files };
+      let removedFilesCount = 0;
+      let removedVersionsCount = 0;
+
+      // 1. Delete entirely selected files
+      deleteFileIds.forEach(id => {
+        if (newFiles[id]) {
+          delete newFiles[id];
+          removedFilesCount++;
+        }
+      });
+
+      // 2. Delete specific versions for other files
+      Object.entries(deleteVersionIds).forEach(([fileId, versionIds]) => {
+        const file = newFiles[fileId];
+        if (file) {
+          const vSet = new Set(versionIds);
+          const newVersions = file.versions.filter(v => !vSet.has(v.id));
+          
+          if (newVersions.length < file.versions.length) {
+            removedVersionsCount += file.versions.length - newVersions.length;
+            
+            if (newVersions.length === 0) {
+              delete newFiles[fileId];
+              removedFilesCount++;
+            } else {
+              // Ensure currentVersionId still points to a valid version
+              let nextCurrentId = file.currentVersionId;
+              if (vSet.has(file.currentVersionId)) {
+                nextCurrentId = newVersions[0].id;
+              }
+              newFiles[fileId] = { 
+                ...file, 
+                versions: newVersions,
+                currentVersionId: nextCurrentId
+              };
+            }
+          }
+        }
+      });
+
+      setState(prev => ({ ...prev, files: newFiles }));
+
+      // Clean up orphaned disk assets if we're working locally
+      if (workHandle && currentProjectName) {
+        setProgressMsg("Cleaning up disk...");
+        const { cleanOrphanedAssets, saveProjectToDirectory } = await import('./utils/exportUtils');
+        await cleanOrphanedAssets(workHandle, currentProjectName, newFiles, (msg) => setProgressMsg(msg));
+
+        // Auto-save the updated state to project.json so it matches the new disk state
+        setProgressMsg("Saving Project...");
+        await saveProjectToDirectory(
+          { ...state, files: newFiles },
+          workHandle,
+          (msg) => setProgressMsg(msg || ''),
+          currentProjectName
+        );
+        setHasUnsavedChanges(false);
+      }
+
+      setToast({ msg: `Cleaned ${removedFilesCount} files and ${removedVersionsCount} history versions. Project saved.`, type: 'success' });
+    } catch (e: any) {
+      console.error(e);
+      setToast({ msg: "Cleanup Failed: " + e.message, type: 'error' });
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
 
   const handleRenameProject = async (oldName: string, newName: string, renameBackup: boolean = false) => {
     if (!workHandle) return;
@@ -914,8 +1194,9 @@ function App() {
     // Scan
     await handleSmartScan(restorableHandles.work);
 
-    // Open Project Manager
-    setShowProjectManager(true);
+    if (currentProjectName) {
+      await handleLoadProject(currentProjectName, restorableHandles.work);
+    }
   };
 
   // Autosave User Library (DB + Local Folder Sync)
@@ -3226,7 +3507,7 @@ function App() {
     <ErrorBoundary>
       {isWelcomeActive && !workHandle && (
         <SetupWizard
-          onComplete={async (work, backup) => {
+          onComplete={async (work, backup, projectName) => {
             setWorkHandle(work);
             setBackupHandle(backup || null);
             setIsWelcomeActive(false);
@@ -3239,9 +3520,11 @@ function App() {
             // Auto-scan projects
             await handleSmartScan(work);
 
-            // If backup is set, maybe do a quick sync check?
-            // For now just open Project Manager
-            setShowProjectManager(true);
+            if (projectName) {
+              await handleCreateEmptyProject(projectName, work);
+            } else {
+              setShowProjectManager(true);
+            }
           }}
           onSkip={() => {
             if (confirm("Browser Cache Mode is temporary. Your work will be lost if you clear browser data. Continue?")) {
@@ -3349,33 +3632,6 @@ function App() {
 
                 <div className="h-5 w-px bg-gray-700 mx-1" />
 
-                {/* Import SD — only when SD connected */}
-                {backupHandle && (
-                  <button
-                    onClick={async () => {
-                      setIsProcessing(true);
-                      setProgressMsg('Scanning SK folder on SD...');
-                      try {
-                        const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-                        const structureMap = await scanSKStructure(backupHandle);
-                        const diff = await calculateSyncDiff(state, structureMap);
-                        setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
-                      } catch (e: any) {
-                        setToast({ msg: 'SK scan failed: ' + e.message, type: 'error' });
-                      } finally {
-                        setIsProcessing(false);
-                        setProgressMsg('');
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
-                    title="Import SK from SD card"
-                  >
-                    <RiSdCardMiniLine size={14} />
-                    <ArrowLeft size={11} strokeWidth={2.5} />
-                    <span className="hidden sm:inline">Import SD</span>
-                  </button>
-                )}
-
                 {/* Build SD — only when SD connected */}
                 {backupHandle && (
                   <button
@@ -3398,12 +3654,39 @@ function App() {
                         setProgressMsg('');
                       }
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-500/30 text-indigo-400 hover:text-white hover:bg-indigo-500/15 hover:border-indigo-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
                     title="Push SK to SD card"
                   >
                     <RiSdCardMiniLine size={14} />
                     <ArrowRight size={11} strokeWidth={2.5} />
                     <span className="hidden sm:inline">Build SD</span>
+                  </button>
+                )}
+
+                {/* Import SD — only when SD connected */}
+                {backupHandle && (
+                  <button
+                    onClick={async () => {
+                      setIsProcessing(true);
+                      setProgressMsg('Scanning SK folder on SD...');
+                      try {
+                        const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+                        const structureMap = await scanSKStructure(backupHandle);
+                        const diff = await calculateSyncDiff(state, structureMap);
+                        setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
+                      } catch (e: any) {
+                        setToast({ msg: 'SK scan failed: ' + e.message, type: 'error' });
+                      } finally {
+                        setIsProcessing(false);
+                        setProgressMsg('');
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-500/30 text-indigo-400 hover:text-white hover:bg-indigo-500/15 hover:border-indigo-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
+                    title="Import SK from SD card"
+                  >
+                    <RiSdCardMiniLine size={14} />
+                    <ArrowLeft size={11} strokeWidth={2.5} />
+                    <span className="hidden sm:inline">Import SD</span>
                   </button>
                 )}
 
@@ -3750,6 +4033,7 @@ function App() {
                         isDuplicate={duplicateFileIds.has(activeFile.id)}
                         metadata={activeFile.metadata}
                         onClose={() => setActiveSlotId(null)}
+                        onCleanupProject={handleCleanupProject}
                         onRenameFile={handleRenameFile}
                         onSaveUnique={(newBlob, duration, processing, createdId) => {
                           if (!activeFileId || !activeSlotId) return;
@@ -4052,6 +4336,8 @@ function App() {
               isOpen={showSettings}
               onClose={() => setShowSettings(false)}
               onResetApp={handleReset}
+              onCleanupProject={handleCleanupProject}
+              currentProjectName={currentProjectName}
               onResetEmptySlotBrowserPreference={handleResetEmptySlotBrowserPreference}
               visualFilters={visualFilters}
               onUpdateVisualFilters={setVisualFilters}
@@ -4149,6 +4435,7 @@ function App() {
               onCreateEmptyProject={handleCreateEmptyProject}
               currentProjectName={currentProjectName}
               hasUnsavedChanges={hasUnsavedChanges}
+              onCleanupProject={handleCleanupProject}
               onDeleteProject={handleDeleteProject}
               onDeleteBackupProject={backupHandle ? async (name) => {
                 setConfirmAction({
@@ -4211,6 +4498,8 @@ function App() {
               onChangeWorkFolder={handleSetWorkFolder}
               onChangeBackupFolder={handleSetBackupFolder}
               onSyncProject={(projectName) => setSyncProjectTarget(projectName)}
+              onImportZip={handleImportZip}
+              onExportZip={handleExportZip}
               onBuildProject={async (projectName) => {
                 if (!workHandle || !backupHandle) {
                   setToast({ msg: "Both Project Folder and SD Card must be connected.", type: 'error' });
@@ -4364,7 +4653,7 @@ function App() {
                 onRefresh={handleSKRefresh}
                 isRefreshing={isProcessing}
                 onClose={() => setSyncModalState(null)}
-                onConfirm={async (decisions, options: any, importDecisions) => {
+                onConfirm={async (decisions, options: ExportOptions, importDecisions) => {
                   const projectName = syncModalState?.projectName;
                   setSyncModalState(null); // Close modal
 
@@ -4373,121 +4662,149 @@ function App() {
                   setIsProcessing(true);
                   setProgressMsg(`Syncing ${projectName}...`);
 
-                  try {
-                    const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
+                    try {
+                      const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
 
-                    // 1. Prepare export decisions
-                    const finalDecisions = { ...decisions };
-                    if (options.includeConfig && options.configDecision === 'push_to_sk') {
-                      finalDecisions['config'] = 'export';
-                    }
+                      // 1. Verify Blobs (Pre-sync check for NotReadableError)
+                      const unreadable = await verifyProjectBlobs(projectState);
+                      if (unreadable.length > 0) {
+                        const fileList = unreadable.map(u => u.fileName).slice(0, 3).join(', ') + (unreadable.length > 3 ? '...' : '');
+                        setToast({ 
+                          msg: `Unreadable files detected: ${fileList}. Please refresh or re-link project folder.`, 
+                          type: 'error' 
+                        });
+                        setIsProcessing(false);
+                        setProgressMsg('');
+                        return;
+                      }
 
-                    // 2. Export push decisions (push_to_sk, delete_sk)
-                    const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
-                    if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
-                      await exportSDStructure(projectState, {
-                        includeProject: true,
-                        directWrite: true,
-                        smartSync: options.skMode === 'overwrite',
-                        skMode: options.skMode,
-                        userLibrary: userLibrary,
-                        backupSKToProject: options.backupSKToProject,
-                        destinationHandle: backupHandle!,
-                        workHandle: workHandle,
-                        projectName: projectName,
-                        syncDecisions: finalDecisions,
-                        includeConfig: options.includeConfig,
-                        forceOverwrite: options.forceOverwrite,
-                      }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
-                    }
+                      // 2. Prepare decisions and state
+                      const finalDecisions = { ...decisions };
+                      if (options.includeConfig && options.configDecision === 'push_to_sk') {
+                        finalDecisions['config'] = 'export';
+                      }
 
-                    // 3. Apply import decisions (pull_to_slot, toPool)
-                    const importEntries = Object.entries(importDecisions);
-                    if (importEntries.length > 0) {
-                      setProgressMsg('Importing SK files into project...');
-                      const { v4: uuidv4 } = await import('uuid');
                       const TAPE_COLORS_ORDERED = ['Blue', 'Green', 'Pink', 'Red', 'Turquoise', 'Yellow'] as const;
-
-                      // Deep-clone state to mutate safely
+                      // Deep-clone state to mutate safely for imports
                       const newState = JSON.parse(JSON.stringify(state)) as typeof state;
-                      // Blobs can't survive JSON round-trip — restore them in newState.files
                       for (const [id, fr] of Object.entries(state.files)) {
-                        if (newState.files[id]) {
-                          newState.files[id].versions = fr.versions;
-                        }
+                        if (newState.files[id]) newState.files[id].versions = fr.versions;
                       }
 
-                      for (const [slotId, dec] of importEntries) {
-                        if (!dec.file) continue;
+                      // ─── PHASE A: IMPORT / POOL (Read from SD) ───
+                      const importEntries = Object.entries(importDecisions);
+                      if (importEntries.length > 0) {
+                        setProgressMsg('Preserving & Importing SK files...');
 
-                        // SAFE COPY: Read into ArrayBuffer to detach from hardware handle
-                        // This prevents NotReadableError when saving later if permissions change
-                        const arrayBuffer = await dec.file.arrayBuffer();
-                        const blob = new Blob([arrayBuffer], { type: dec.file.type || 'audio/wav' });
-
-                        const fileName = dec.file.name || `${slotId}.wav`;
-
-                        const versionId = uuidv4();
-                        const fileId = uuidv4();
-                        const version = {
-                          id: versionId,
-                          timestamp: Date.now(),
-                          description: `Imported from SK (${slotId})`,
-                          blob,
-                          duration: 0,
-                          processing: [] as ('normalized' | 'trimmed' | 'looped')[],
-                        };
-                        const fileRecord = {
-                          id: fileId,
-                          name: fileName,
-                          originalName: fileName,
-                          versions: [version],
-                          currentVersionId: versionId,
-                          isParked: true,
-                          origin: 'SK Import',
-                        };
-                        newState.files[fileId] = fileRecord;
-
-                        if (dec.pullToSlot) {
-                          // Assign to the tape slot matching current row's color+index
-                          const color = dec.color as typeof TAPE_COLORS_ORDERED[number];
-                          const slotIdx = dec.slotIndex - 1; // convert 1-based to 0-based
-                          if (newState.tapes[color]?.slots[slotIdx] != null) {
-                            newState.tapes[color].slots[slotIdx].fileId = fileId;
-                            fileRecord.isParked = false;
+                        // Verification check for import files
+                        for (const [slotId, dec] of importEntries) {
+                          if (!dec.file) continue;
+                          try {
+                            await dec.file.slice(0, 1).arrayBuffer();
+                          } catch (e: any) {
+                            throw new Error(`SD file unreadable: ${dec.file.name || slotId}. Hardware connection may have been interrupted.`);
                           }
-                          // toPool: isParked stays true — file sits in the pool
                         }
-                      }
 
-                      // 4. Apply config import if requested (outside the for-loop)
-                      const currentDiff = syncModalState?.diff;
-                      if (options.includeConfig && options.configDecision === 'pull_to_slot' && currentDiff?.config?.remoteConfigText) {
-                        try {
-                          const { parseConfigText } = await import('./utils/exportUtils');
-                          const parsedConfig = parseConfigText(currentDiff.config.remoteConfigText);
-                          if (parsedConfig) {
-                            newState.projectConfig = parsedConfig;
+                        const { v4: uuidv4 } = await import('uuid');
+
+                        for (const [slotId, dec] of importEntries) {
+                          if (!dec.file) continue;
+                          const arrayBuffer = await dec.file.arrayBuffer();
+                          const blob = new Blob([arrayBuffer], { type: dec.file.type || 'audio/wav' });
+                          const fileName = dec.file.name || `${slotId}.wav`;
+
+                          const versionId = uuidv4();
+                          const fileId = uuidv4();
+                          const version = {
+                            id: versionId,
+                            timestamp: Date.now(),
+                            description: `Imported from SK (${slotId})`,
+                            blob,
+                            duration: 0,
+                            processing: [] as ('normalized' | 'trimmed' | 'looped')[],
+                          };
+                          const fileRecord = {
+                            id: fileId,
+                            name: fileName,
+                            originalName: fileName,
+                            versions: [version],
+                            currentVersionId: versionId,
+                            isParked: true,
+                            origin: 'SK Import',
+                          };
+                          newState.files[fileId] = fileRecord;
+
+                          if (dec.pullToSlot) {
+                            const color = dec.color as typeof TAPE_COLORS_ORDERED[number];
+                            const slotIdx = dec.slotIndex - 1;
+                            if (newState.tapes[color]?.slots[slotIdx] != null) {
+                              newState.tapes[color].slots[slotIdx].fileId = fileId;
+                              fileRecord.isParked = false;
+                            }
                           }
-                        } catch (e) {
-                          console.warn("Failed to parse remote config during import", e);
                         }
+
+                        // Apply config import if requested
+                        const currentDiff = syncModalState?.diff;
+                        if (options.includeConfig && options.configDecision === 'pull_to_slot' && currentDiff?.config?.remoteConfigText) {
+                          try {
+                            const { parseConfigText } = await import('./utils/exportUtils');
+                            const parsedConfig = parseConfigText(currentDiff.config.remoteConfigText);
+                            if (parsedConfig) newState.projectConfig = parsedConfig;
+                          } catch (e) {
+                            console.warn("Failed to parse remote config during import", e);
+                          }
+                        }
+
+                        // Commit state change early so export reflects the new slots if needed
+                        // Though exportSDStructure uses projectState (shallow clone of current state), 
+                        // we'll update it here to be sure.
+                        isSystemUpdate.current = true;
+                        setState(newState);
                       }
 
-                      isSystemUpdate.current = true;
-                      setState(newState);
+                      // ─── PHASE B: EXPORT / BUILD (Write to SD) ───
+                      const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
+                      if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
+                        if (!backupHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
+                        
+                        await exportSDStructure(newState, { // Use newState which includes pooled files
+                          includeProject: true,
+                          directWrite: true,
+                          smartSync: options.skMode === 'overwrite',
+                          skMode: options.skMode,
+                          userLibrary: userLibrary,
+                          backupSKToProject: options.backupSKToProject,
+                          destinationHandle: backupHandle,
+                          workHandle: workHandle,
+                          projectName: projectName,
+                          syncDecisions: finalDecisions,
+                          includeConfig: options.includeConfig,
+                          forceOverwrite: options.forceOverwrite,
+                        }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
+                      }
+
+                      setToast({ msg: "Hardware Sync Complete", type: "success" });
+                      scanProjects(workHandle, backupHandle);
+                      // ── Background SK Backup (non-blocking) ──
+                      if (workHandle && backupHandle && projectName) {
+                        createSKBackup(projectName, workHandle, backupHandle)
+                          .then(() => {
+                            if (currentProjectName === projectName) {
+                              scanSKBackups(projectName, workHandle!);
+                            }
+                          })
+                          .catch(e => console.warn('SK backup error (non-fatal):', e));
+                      }
+                    } catch (e: any) {
+                      console.error(e);
+                      setToast({ msg: "Sync Failed: " + e.message, type: "error" });
+                    } finally {
+                      setIsProcessing(false);
+                      setProgressMsg('');
                     }
-
-                    setToast({ msg: "Hardware Build Complete", type: "success" });
-                    scanProjects(workHandle, backupHandle);
-                  } catch (e: any) {
-                    console.error(e);
-                    setToast({ msg: "Build Failed: " + e.message, type: "error" });
-                  } finally {
-                    setIsProcessing(false);
-                    setProgressMsg('');
-                  }
-                }}
+                  }}
               />
             )}
 
@@ -4772,6 +5089,18 @@ function App() {
           />
         )
       }
+
+      <CleanupModal
+        isOpen={showCleanupModal}
+        onClose={() => setShowCleanupModal(false)}
+        files={state.files}
+        tapes={state.tapes}
+        currentProjectName={currentProjectName}
+        onConfirm={executeProjectCleanup}
+        skBackups={skBackups}
+        onDeleteSKBackup={handleDeleteSKBackup}
+        skBackupLimit={SK_BACKUP_LIMIT}
+      />
 
       {
         toast && (

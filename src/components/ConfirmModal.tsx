@@ -4,9 +4,11 @@ interface ConfirmModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: () => void;
+    onDiscard?: () => void;
     title: string;
     message: React.ReactNode;
     confirmLabel?: string;
+    discardLabel?: string;
     isDestructive?: boolean;
     showCancel?: boolean;
 }
@@ -15,9 +17,11 @@ export const ConfirmModal = ({
     isOpen,
     onClose,
     onConfirm,
+    onDiscard,
     title,
     message,
     confirmLabel = "Confirm",
+    discardLabel = "Discard",
     isDestructive = false,
     showCancel = true
 }: ConfirmModalProps) => {
@@ -48,6 +52,14 @@ export const ConfirmModal = ({
 
                 {/* Actions */}
                 <div className="p-6 pt-4 border-t border-gray-800 bg-gray-900/50 flex justify-end gap-3 transition-colors">
+                    {onDiscard && (
+                        <button
+                            onClick={onDiscard}
+                            className="px-4 py-2 hover:bg-red-900/30 rounded-lg text-red-400 hover:text-red-300 font-bold text-sm transition-colors border border-transparent hover:border-red-900 mr-auto"
+                        >
+                            {discardLabel}
+                        </button>
+                    )}
                     {showCancel && (
                         <button
                             onClick={onClose}

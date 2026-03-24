@@ -1,4 +1,4 @@
-import { X, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library } from 'lucide-react';
 import { useState } from 'react';
 
 interface HelpModalProps {
@@ -6,7 +6,7 @@ interface HelpModalProps {
 }
 
 export const HelpModal = ({ onClose }: HelpModalProps) => {
-    const [expandedSection, setExpandedSection] = useState<string | null>('structure');
+    const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
 
     const toggleSection = (id: string) => {
         setExpandedSection(prev => prev === id ? null : id);
@@ -51,6 +51,77 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto">
                     <div className="p-6 space-y-2">
+
+                        {/* 0. Core Concepts */}
+                        <div className="border border-gray-700 rounded-lg overflow-hidden">
+                            <SectionHeader id="concepts" title="Core Concepts" icon={BookOpen} />
+
+                            {expandedSection === 'concepts' && (
+                                <div className="p-6 bg-black/20 text-gray-300 space-y-3 font-body">
+                                    <p className="text-sm text-gray-400 mb-4">A quick overview of how this app works before you dive in.</p>
+                                    <table className="w-full text-sm">
+                                        <thead className="text-xs uppercase bg-gray-800 text-gray-400">
+                                            <tr>
+                                                <th className="px-3 py-2 rounded-l text-left w-40">Concept</th>
+                                                <th className="px-3 py-2 rounded-r text-left">What it means</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-800">
+                                            <tr className="bg-white/5">
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-indigo-400 font-semibold">
+                                                        <FolderClosed size={14} /> Project
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    A collection of <strong className="text-white">6 Tapes × 6 Slots</strong>. State is saved in a <code className="bg-gray-800 px-1 rounded text-synthux-yellow">project.json</code> file in a local folder of your choice. You can have multiple projects.
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-orange-400 font-semibold">
+                                                        <HardDrive size={14} /> SD Structure
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    Spotykach needs a strict <code className="bg-gray-800 px-1 rounded text-synthux-orange">SK/</code> folder at the SD card root. This app's primary goal is to <strong className="text-white">build that structure</strong> and convert samples to <strong className="text-white">32-bit float WAV</strong>.
+                                                </td>
+                                            </tr>
+                                            <tr className="bg-white/5">
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-pink-400 font-semibold">
+                                                        <Scissors size={14} /> Audio Editor
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    The editor is <strong className="text-white">destructive</strong>: every save writes a new WAV file. A history of bounced files is kept, but overwritten files cannot be recovered. Back up samples you care about.
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-purple-400 font-semibold">
+                                                        <UploadCloud size={14} /> Build vs. Sync
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> exports your project into the hardware folder structure. <span className="text-synthux-orange font-semibold">Sync</span> copies files between your work folder and the SD card. These are <strong className="text-white">two different operations</strong>.
+                                                </td>
+                                            </tr>
+                                            <tr className="bg-white/5">
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-teal-400 font-semibold">
+                                                        <Library size={14} /> Library
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    Link any folder on your drive as a sample library. Library samples can be <strong className="text-white">shared across multiple projects</strong>.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
 
                         {/* 1. SD Card Structure */}
                         <div className="border border-gray-700 rounded-lg overflow-hidden">

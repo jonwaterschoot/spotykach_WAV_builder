@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause } from 'lucide-react';
+import { Play, Pause, Archive, Trash2 } from 'lucide-react';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -40,8 +40,21 @@ interface SlotGrid6x6Props {
     prefix?: string;
     /** Per-slot action badge shown on occupied cells */
     actionBadges?: Record<string, SlotActionBadge>;
-    /** Per-slot pool flag — shows 📥 indicator */
+    /** Per-slot pool flag — shows indicator */
     poolFlags?: Record<string, boolean>;
+    /** Per-slot trash/delete flag — shows indicator */
+    trashFlags?: Record<string, boolean>;
+    showPlayer?: boolean;
+    /** Per-slot custom indicator borders { variant: 'dashed'|'solid', color: 'border-red-500'|... } */
+    indicatorBorders?: Record<string, { color: string, variant: 'solid' | 'dashed' }>;
+    /** Per-slot dimming flag — for untouched files */
+    dimmedSlots?: Record<string, boolean>;
+    /** Optional slot key to highlight (e.g. on pool hover) */
+    highlightedSlot?: string | null;
+    /** External hover state from another grid */
+    hoveredSlotKey?: string | null;
+    /** Fires when hovering over a slot */
+    onHover?: (slotKey: string | null) => void;
     /** Enable drag from occupied cells */
     draggable?: boolean;
     /** Enable drop onto this grid */
@@ -50,6 +63,8 @@ interface SlotGrid6x6Props {
     onDragStart?: (slotKey: string, prefix: string) => void;
     /** Fires when a slot from another grid is dropped on this grid */
     onDrop?: (draggedKey: string, draggedPrefix: string) => void;
+    /** Fires when a cell's play button is clicked */
+    onPlay?: (blob: Blob, label: string) => void;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -59,17 +74,29 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
     prefix = '',
     actionBadges = {},
     poolFlags = {},
+    trashFlags = {},
+    indicatorBorders = {},
+    dimmedSlots = {},
+    highlightedSlot = null,
+    hoveredSlotKey = null,
+    onHover,
     draggable = false,
     droppable = false,
     onDragStart,
     onDrop,
+    onPlay,
+    showPlayer = true
 }) => {
     const [activeBlob, setActiveBlob] = useState<Blob | null>(null);
     const [activeUrl, setActiveUrl] = useState<string | null>(null);
     const [isDragOver, setIsDragOver] = useState(false);
 
-    const handlePlay = (blob: Blob | null) => {
+    const handlePlay = (blob: Blob | null, label: string) => {
         if (!blob) return;
+        if (onPlay) {
+            onPlay(blob, label);
+            return;
+        }
         if (activeUrl) URL.revokeObjectURL(activeUrl);
         if (activeBlob === blob) { setActiveBlob(null); setActiveUrl(null); return; }
         const url = URL.createObjectURL(blob);
@@ -133,12 +160,19 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
                             const isPlaying = entry?.blob != null && activeBlob === entry.blob;
                             const badge = actionBadges[slotKey];
                             const inPool = poolFlags[slotKey];
+                            const isTrashed = trashFlags[slotKey];
+                            const ib = indicatorBorders[slotKey];
+                            const isDimmed = dimmedSlots[slotKey];
+                            const isHighlighted = highlightedSlot === slotKey;
+                            const isHovered = hoveredSlotKey === slotKey;
 
                             if (!entry || !entry.blob) {
                                 return (
                                     <div
                                         key={slotKey}
-                                        className="flex items-center gap-1 px-1.5 py-1 rounded border-l-2 opacity-20"
+                                        className={`flex items-center gap-1 px-1.5 py-2 h-[26px] rounded border-l-2 opacity-10 grayscale-[0.8] transition-all bg-white/[0.02] ${isHighlighted || isHovered ? 'opacity-100 scale-105 ring-2 ring-indigo-500/50 bg-indigo-500/5 z-20 shadow-lg' : ''} ${ib?.variant === 'dashed' ? `${ib.color} border-dashed border-2 opacity-50` : ''}`}
+                                        onMouseEnter={() => onHover?.(slotKey)}
+                                        onMouseLeave={() => onHover?.(null)}
                                         style={{ borderLeftColor: hex }}
                                         title={cellLabel}
                                     >
@@ -153,18 +187,20 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
                             return (
                                 <div
                                     key={slotKey}
-                                    className="relative group"
+                                    className={`relative group transition-all ${isHighlighted || isHovered ? 'scale-110 z-20' : ''}`}
                                     draggable={draggable}
                                     onDragStart={draggable ? (e) => handleDragStart(e, slotKey) : undefined}
+                                    onMouseEnter={() => onHover?.(slotKey)}
+                                    onMouseLeave={() => onHover?.(null)}
                                     style={{ cursor: draggable ? 'grab' : 'default' }}
                                 >
                                     <button
-                                        onClick={() => handlePlay(entry.blob)}
-                                        className={`flex items-center gap-1 px-1.5 py-1 rounded border-l-2 w-full transition-all text-left ${isPlaying ? 'ring-1 ring-white/20' : ''
-                                            }`}
+                                        onClick={() => handlePlay(entry.blob, entry.name || cellLabel)}
+                                        className={`flex items-center gap-1 px-1.5 py-2 h-[26px] rounded-lg border-l-4 w-full transition-all text-left ${isPlaying ? 'ring-1 ring-white/20' : ''
+                                            } ${isHighlighted || isHovered ? 'ring-2 ring-indigo-500 bg-indigo-500/10 shadow-[0_4px_12px_rgba(99,102,241,0.3)]' : ''} ${isDimmed && !isHighlighted && !isHovered ? 'opacity-[0.25] grayscale-[0.5]' : ''} ${ib?.variant === 'dashed' ? `border-dashed ${ib.color} border-2` : ''}`}
                                         style={{
                                             borderLeftColor: hex,
-                                            background: isPlaying ? `${hex}28` : `${hex}12`,
+                                            background: isPlaying ? `${hex}28` : (isHighlighted || isHovered ? `${hex}22` : `${hex}12`),
                                         }}
                                         title={entry.name || cellLabel}
                                     >
@@ -172,10 +208,21 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
                                             ? <Pause size={8} fill="currentColor" className="shrink-0" style={{ color: hex }} />
                                             : <Play size={8} fill="currentColor" className="shrink-0 opacity-60" style={{ color: hex }} />
                                         }
-                                        <span className="text-[9px] font-mono font-bold leading-none truncate" style={{ color: hex }}>
+                                        <span className="text-[10px] font-mono font-bold leading-none truncate" style={{ color: hex }}>
                                             {cellLabel}
                                         </span>
-                                        {inPool && <span className="ml-auto text-[8px] leading-none">📥</span>}
+                                        <div className="ml-auto flex items-center gap-1">
+                                            {inPool && (
+                                                <div className="p-1 bg-orange-600 border border-orange-400 rounded shadow-[0_0_8px_rgba(249,115,22,0.5)] flex items-center justify-center">
+                                                    <Archive size={8} className="text-white" />
+                                                </div>
+                                            )}
+                                            {isTrashed && (
+                                                <div className="p-1 bg-red-600 border border-red-400 rounded shadow-[0_0_8px_rgba(239,68,68,0.5)] flex items-center justify-center">
+                                                    <Trash2 size={8} className="text-white" />
+                                                </div>
+                                            )}
+                                        </div>
                                     </button>
 
                                     {/* Action badge */}
@@ -192,24 +239,26 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
                     )}
                 </div>
 
-                {/* Scrubbing player — always visible */}
-                <div className="mt-2 pt-2 border-t border-white/8">
-                    {activeUrl ? (
-                        <audio
-                            key={activeUrl}
-                            src={activeUrl}
-                            controls
-                            autoPlay
-                            className="h-7 w-full opacity-90 invert hue-rotate-180"
-                            controlsList="nodownload noplaybackrate"
-                            onEnded={() => { setActiveBlob(null); setActiveUrl(null); }}
-                        />
-                    ) : (
-                        <div className="h-7 w-full rounded bg-white/[0.03] flex items-center justify-center">
-                            <span className="text-[9px] text-gray-700 uppercase tracking-widest font-mono select-none">no file selected</span>
-                        </div>
-                    )}
-                </div>
+                {/* Scrubbing player — optional */}
+                {showPlayer && (
+                    <div className="mt-2 pt-2 border-t border-white/8">
+                        {activeUrl ? (
+                            <audio
+                                key={activeUrl}
+                                src={activeUrl}
+                                controls
+                                autoPlay
+                                className="h-7 w-full opacity-90 invert hue-rotate-180"
+                                controlsList="nodownload noplaybackrate"
+                                onEnded={() => { setActiveBlob(null); setActiveUrl(null); }}
+                            />
+                        ) : (
+                            <div className="h-7 w-full rounded bg-white/[0.03] flex items-center justify-center">
+                                <span className="text-[9px] text-gray-700 uppercase tracking-widest font-mono select-none">no file selected</span>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

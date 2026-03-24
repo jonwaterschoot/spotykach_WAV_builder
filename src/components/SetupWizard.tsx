@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { HardDrive, FolderOpen, ArrowRight, Check, Save } from 'lucide-react';
+import { HardDrive, FolderOpen, ArrowRight, Save, ChevronLeft, ChevronRight, FolderClosed, Scissors, UploadCloud, Library } from 'lucide-react';
 import { resolveAssetPath } from '../utils/assetUtils';
 
 const OVERLAYS = [
@@ -8,16 +8,100 @@ const OVERLAYS = [
 ];
 
 interface SetupWizardProps {
-    onComplete: (workHandle: FileSystemDirectoryHandle, backupHandle: FileSystemDirectoryHandle | null) => void;
+    onComplete: (workHandle: FileSystemDirectoryHandle, backupHandle: FileSystemDirectoryHandle | null, projectName: string | null) => void;
     onSkip: () => void;
     restorableHandles?: { work: FileSystemDirectoryHandle; backup: FileSystemDirectoryHandle | null } | null;
     onRestore?: () => void;
 }
 
-type WizardStep = 'INTRO' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'CONFIRM';
+type WizardStep = 'INTRO' | 'EXPLAINER' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'PROJECT_TITLE';
+
+interface Slide {
+    icon: React.ReactNode;
+    accent: string;      // tailwind color class prefix, e.g. 'indigo'
+    headline: string;
+    body: React.ReactNode;
+}
+
+const EXPLAINER_SLIDES: Slide[] = [
+    {
+        icon: <FolderClosed size={36} />,
+        accent: 'indigo',
+        headline: 'What is a Project?',
+        body: (
+            <>
+                A <strong className="text-white">Project</strong> is a collection of{' '}
+                <strong className="text-white">6 Tapes</strong>, each with{' '}
+                <strong className="text-white">6 Slots</strong> for WAV files.
+                <br /><br />
+                The app stores the project state in a <code className="text-synthux-yellow bg-white/10 px-1 rounded text-sm">project.json</code>{' '}
+                file inside a local folder you choose. You can manage as many projects as you like.
+            </>
+        ),
+    },
+    {
+        icon: <HardDrive size={36} />,
+        accent: 'orange',
+        headline: 'The SD Card Structure',
+        body: (
+            <>
+                Spotykach requires a <strong className="text-white">strict folder structure</strong> on the root of the SD card
+                (the <code className="text-synthux-orange bg-white/10 px-1 rounded text-sm">SK/</code> folder).
+                <br /><br />
+                This app's primary goal is to <strong className="text-white">build that structure</strong> for you and convert samples
+                to the required format{' '}(<strong className="text-white">32-bit float WAV</strong>).
+            </>
+        ),
+    },
+    {
+        icon: <Scissors size={36} />,
+        accent: 'pink',
+        headline: 'Destructive Audio Editing',
+        body: (
+            <>
+                The built-in audio editor is <strong className="text-white">destructive</strong>: every save writes
+                a new WAV file to disk.
+                <br /><br />
+                A <strong className="text-white">history of edits</strong> is kept as separate bounced files,
+                but there is no non-destructive undo once a file is overwritten.
+                Always make backups of samples you care about.
+            </>
+        ),
+    },
+    {
+        icon: <UploadCloud size={36} />,
+        accent: 'purple',
+        headline: 'Build for SD vs. Sync',
+        body: (
+            <>
+                These are <strong className="text-white">two different operations</strong>:
+                <br /><br />
+                <span className="text-synthux-yellow font-semibold">Build for SD</span> — exports your project into
+                the hardware-ready folder structure on the SD card.
+                <br /><br />
+                <span className="text-synthux-orange font-semibold">Sync</span> — copies or updates files between
+                your local work folder and the SD card. Don't confuse them!
+            </>
+        ),
+    },
+    {
+        icon: <Library size={36} />,
+        accent: 'teal',
+        headline: 'Sample Library',
+        body: (
+            <>
+                Link <strong className="text-white">any folder</strong> on your drive to use as a sample library.
+                <br /><br />
+                Library samples can be <strong className="text-white">shared across multiple projects</strong>.
+                You can also build a unique curated library directly inside the app.
+            </>
+        ),
+    },
+];
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, restorableHandles, onRestore }) => {
     const [step, setStep] = useState<WizardStep>('INTRO');
+    const [slideIndex, setSlideIndex] = useState(0);
     const overlayIdx = 1;
     const [isMuted, setIsMuted] = useState(true);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -33,8 +117,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
     }, []);
     const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
     const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
-    const [workAnalysis, setWorkAnalysis] = useState<string | null>(null);
-    const [backupAnalysis, setBackupAnalysis] = useState<string | null>(null);
+    const [projectName, setProjectName] = useState('');
 
     // STEP 1: Select Work Folder
     const handleSelectWork = async () => {
@@ -46,20 +129,15 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
             });
             setWorkHandle(handle);
 
-            // Analyze
-            let analysis = "New Workspace";
             try {
                 // Check for Projects folder
                 await handle.getDirectoryHandle('Projects');
-                analysis = "Existing Projects Found";
             } catch {
                 // Check for SK folder (SD Card structure)
                 try {
                     await handle.getDirectoryHandle('SK');
-                    analysis = "SD Card Structure Detected";
                 } catch { }
             }
-            setWorkAnalysis(analysis);
             setStep('SELECT_BACKUP');
         } catch (e) {
             console.log("Work folder selection cancelled");
@@ -80,14 +158,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
             }
 
             setBackupHandle(handle);
-            // Analyze
-            let analysis = "Empty Backup Target";
             try {
                 await handle.getDirectoryHandle('SK');
-                analysis = "Valid Spotykach SD Card";
             } catch { }
-            setBackupAnalysis(analysis);
-            setStep('CONFIRM');
+            setStep('PROJECT_TITLE');
 
         } catch (e) {
             console.log("Backup folder selection cancelled");
@@ -96,13 +170,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
     const handleSkipBackup = () => {
         setBackupHandle(null);
-        setStep('CONFIRM');
+        setStep('PROJECT_TITLE');
     };
 
     // FINAL: Finish
-    const handleFinish = () => {
+    const handleFinish = (name: string | null) => {
         if (workHandle) {
-            onComplete(workHandle, backupHandle);
+            onComplete(workHandle, backupHandle, name);
         }
     };
 
@@ -143,7 +217,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 )}
 
                 <button
-                    onClick={() => setStep('SELECT_WORK')}
+                    onClick={() => { setSlideIndex(0); setStep('EXPLAINER'); }}
                     className="w-full py-4 bg-indigo-600/60 hover:bg-indigo-500/80 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-indigo-500/20"
                 >
                     Start New Setup <ArrowRight />
@@ -157,6 +231,87 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
             </div>
         </div>
     );
+
+    const accentClasses: Record<string, { bg: string; ring: string; text: string; dot: string; btn: string }> = {
+        indigo: { bg: 'bg-indigo-500/10', ring: 'ring-indigo-500/30', text: 'text-indigo-400', dot: 'bg-indigo-500', btn: 'bg-indigo-600/60 hover:bg-indigo-500/80' },
+        orange: { bg: 'bg-orange-500/10', ring: 'ring-orange-500/30', text: 'text-orange-400', dot: 'bg-orange-500', btn: 'bg-orange-600/60 hover:bg-orange-500/80' },
+        pink:   { bg: 'bg-pink-500/10',   ring: 'ring-pink-500/30',   text: 'text-pink-400',   dot: 'bg-pink-500',   btn: 'bg-pink-600/60 hover:bg-pink-500/80'   },
+        purple: { bg: 'bg-purple-500/10', ring: 'ring-purple-500/30', text: 'text-purple-400', dot: 'bg-purple-500', btn: 'bg-purple-600/60 hover:bg-purple-500/80' },
+        teal:   { bg: 'bg-teal-500/10',   ring: 'ring-teal-500/30',   text: 'text-teal-400',   dot: 'bg-teal-500',   btn: 'bg-teal-600/60 hover:bg-teal-500/80'   },
+    };
+
+    const renderExplainer = () => {
+        const slide = EXPLAINER_SLIDES[slideIndex];
+        const isLast = slideIndex === EXPLAINER_SLIDES.length - 1;
+        const ac = accentClasses[slide.accent];
+        return (
+            <div className="max-w-xl w-full space-y-8 animate-in fade-in duration-300">
+                {/* Progress dots */}
+                <div className="flex justify-center gap-2">
+                    {EXPLAINER_SLIDES.map((_, i) => (
+                        <button
+                            key={i}
+                            onClick={() => setSlideIndex(i)}
+                            className={`transition-all duration-300 rounded-full ${
+                                i === slideIndex ? `w-6 h-2.5 ${ac.dot}` : 'w-2.5 h-2.5 bg-white/20 hover:bg-white/40'
+                            }`}
+                        />
+                    ))}
+                </div>
+
+                {/* Slide card */}
+                <div key={slideIndex} className={`p-8 rounded-3xl border border-white/10 bg-black/40 backdrop-blur-sm space-y-5 animate-in slide-in-from-right-4 duration-300`}>
+                    {/* Icon */}
+                    <div className={`w-16 h-16 ${ac.bg} rounded-2xl flex items-center justify-center mx-auto ${ac.text} ring-1 ${ac.ring}`}>
+                        {slide.icon}
+                    </div>
+                    {/* Headline */}
+                    <h2 className="text-2xl font-bold text-white text-center">{slide.headline}</h2>
+                    {/* Body */}
+                    <p className={`text-gray-300 text-sm leading-relaxed text-center`}>
+                        {slide.body}
+                    </p>
+                </div>
+
+                {/* Navigation */}
+                <div className="flex items-center justify-between gap-4">
+                    <button
+                        onClick={() => slideIndex > 0 ? setSlideIndex(slideIndex - 1) : setStep('INTRO')}
+                        className="flex items-center gap-1 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+                    >
+                        <ChevronLeft size={16} />
+                        {slideIndex === 0 ? 'Back' : 'Previous'}
+                    </button>
+
+                    {isLast ? (
+                        <button
+                            onClick={() => setStep('SELECT_WORK')}
+                            className={`flex-1 py-3 ${ac.btn} rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] shadow-xl`}
+                        >
+                            Continue to Setup <ArrowRight size={18} />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => setSlideIndex(slideIndex + 1)}
+                            className={`flex-1 py-3 ${ac.btn} rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] shadow-xl`}
+                        >
+                            Next <ChevronRight size={18} />
+                        </button>
+                    )}
+                </div>
+
+                {/* Skip */}
+                <div className="text-center">
+                    <button
+                        onClick={() => setStep('SELECT_WORK')}
+                        className="text-gray-600 hover:text-gray-400 text-xs underline underline-offset-2 transition-colors"
+                    >
+                        Skip intro
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     const renderSelectWork = () => (
         <div className="max-w-lg w-full space-y-8 animate-in slide-in-from-right duration-300">
@@ -255,63 +410,61 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
         </div>
     );
 
-    const renderConfirm = () => (
-        <div className="max-w-lg w-full space-y-8 animate-in scale-95 duration-300 text-center">
-            <div>
-                <h2 className="text-4xl font-bold text-white mb-2">You're All Set!</h2>
-                <p className="text-gray-400">Your workspace is ready to go.</p>
-            </div>
-
-            <div className="grid gap-4 text-left">
-                {/* WORK SUMMARY */}
-                <div className="p-5 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center gap-5">
-                    <div className="p-3 bg-indigo-500/20 rounded-xl text-indigo-400">
-                        <HardDrive size={24} />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-indigo-100 text-lg">Work Folder</h3>
-                        <p className="text-sm text-gray-400 font-mono mt-1 opacity-80">{workHandle?.name}</p>
-                        {workAnalysis && <p className="text-xs text-indigo-400 mt-2 flex items-center gap-1"><Check size={10} /> {workAnalysis}</p>}
-                    </div>
+    const renderProjectTitle = () => (
+        <div className="max-w-lg w-full space-y-8 animate-in slide-in-from-right duration-300">
+            <div className="text-center space-y-4">
+                <div className="w-20 h-20 bg-pink-500/10 rounded-3xl flex items-center justify-center mx-auto text-pink-400 ring-1 ring-pink-500/30">
+                    <FolderOpen size={40} />
                 </div>
-
-                {/* BACKUP SUMMARY */}
-                {backupHandle ? (
-                    <div className="p-5 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center gap-5">
-                        <div className="p-3 bg-orange-500/20 rounded-xl text-orange-400">
-                            <Save size={24} />
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-orange-100 text-lg">Backup Target</h3>
-                            <p className="text-sm text-gray-400 font-mono mt-1 opacity-80">{backupHandle.name}</p>
-                            {backupAnalysis && <p className="text-xs text-orange-400 mt-2 flex items-center gap-1"><Check size={10} /> {backupAnalysis}</p>}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="p-5 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-5 opacity-60">
-                        <div className="p-3 bg-white/10 rounded-xl">
-                            <Save size={24} />
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-gray-300 text-lg">No Backup Configured</h3>
-                            <p className="text-sm text-gray-500">You can add this later in Settings.</p>
-                        </div>
-                    </div>
-                )}
+                <div>
+                    <h2 className="text-3xl font-bold text-white">Name Your Project</h2>
+                    <p className="text-gray-400 mt-2">
+                        Give your first project a name to get started.
+                    </p>
+                </div>
             </div>
 
-            <button
-                onClick={handleFinish}
-                className="w-full py-5 bg-gradient-to-r from-indigo-600/60 to-purple-600/60 hover:from-indigo-500/80 hover:to-purple-500/80 rounded-2xl font-bold text-xl text-white shadow-xl shadow-indigo-900/20 transition-all transform hover:scale-[1.02]"
-            >
-                Enter Studio
-            </button>
+            <div className="space-y-4">
+                <input
+                    type="text"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    placeholder="Project Title"
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono text-center text-lg"
+                    autoFocus
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && projectName.trim()) {
+                            handleFinish(projectName.trim());
+                        }
+                    }}
+                />
 
-            <div className="flex flex-col items-center gap-6">
+                <div className="flex flex-col gap-3 mt-8">
+                    <button
+                        onClick={() => {
+                            if (projectName.trim()) {
+                                handleFinish(projectName.trim());
+                            }
+                        }}
+                        disabled={!projectName.trim()}
+                        className={`w-full py-4 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all transform shadow-xl ${projectName.trim() ? 'bg-indigo-600 hover:bg-indigo-500 hover:scale-[1.02]' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+                    >
+                        Create & Enter Studio <ArrowRight size={18} />
+                    </button>
+                    <button
+                        onClick={() => handleFinish(null)}
+                        className="w-full py-4 rounded-xl font-bold text-gray-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                    >
+                        Or go to Project Manager
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex flex-col items-center gap-6 mt-8">
                 <div className="flex justify-center gap-3">
                     <div className="w-3 h-3 rounded-full bg-indigo-900/50"></div>
                     <div className="w-3 h-3 rounded-full bg-orange-900/50"></div>
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-pink-500"></div>
                 </div>
 
                 <button
@@ -346,9 +499,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
             <div className="col-start-1 row-start-1 z-10 w-full h-full flex flex-col items-center justify-center p-6 overflow-x-hidden overflow-y-auto">
                 {step === 'INTRO' && renderIntro()}
+                {step === 'EXPLAINER' && renderExplainer()}
                 {step === 'SELECT_WORK' && renderSelectWork()}
                 {step === 'SELECT_BACKUP' && renderSelectBackup()}
-                {step === 'CONFIRM' && renderConfirm()}
+                {step === 'PROJECT_TITLE' && renderProjectTitle()}
             </div>
 
             <div className="col-start-1 row-start-1 z-20 self-end justify-self-center mb-12 flex gap-4 pointer-events-auto">

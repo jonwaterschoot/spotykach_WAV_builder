@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Folder, FolderOpen, HardDrive, Trash2, Edit2, X, Check, Copy, ArrowLeftRight, RefreshCw, Save } from 'lucide-react';
+import { Folder, FolderOpen, HardDrive, Trash2, Edit2, X, Check, Copy, ArrowLeftRight, RefreshCw, Save, Download, Upload, AlertTriangle } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { ProjectSummary } from '../types';
 import { SlotGrid6x6 } from './SlotGrid6x6';
@@ -30,6 +30,9 @@ interface ProjectManagerProps {
     deviceDiff?: import('../utils/importUtils').DeviceDiff;
     onScan: () => void;
     isScanning?: boolean;
+    onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
+    onImportZip?: () => void;
+    onExportZip?: (projectName: string) => void;
 }
 
 // Sub-component for the editable input to handle focus/select properly on mount
@@ -98,10 +101,14 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     activeSKProject,
     deviceDiff,
     onScan,
-    isScanning
+    isScanning,
+    onCleanupProject,
+    onImportZip,
+    onExportZip,
 }) => {
     const [editingProject, setEditingProject] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
+    const [autoSaveBanner, setAutoSaveBanner] = useState<string | null>(null);
 
     const [renameConfirm, setRenameConfirm] = useState<{ oldName: string, newName: string } | null>(null);
     const [isSDExpanded, setIsSDExpanded] = useState(false);
@@ -114,9 +121,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     const handleSyncWithGuard = (projectName: string) => {
         if (onSyncProject) {
             if (currentProjectName === projectName && hasUnsavedChanges) {
-                // Save first, then open sync
                 onSaveProject(projectName);
-                alert(`"${projectName}" had unsaved changes — it has been saved. You can now sync.`);
+                setAutoSaveBanner(`"${projectName}" had unsaved changes — auto-saved before sync.`);
+                setTimeout(() => setAutoSaveBanner(null), 5000);
             }
             onSyncProject(projectName);
         }
@@ -478,6 +485,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                         <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                                             {onDuplicateProject && <button onClick={() => handleDuplicate(row.name)} className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white" title="Duplicate"><Copy size={12} /></button>}
                                             {onRenameProject && <button onClick={() => startEdit(row.name)} className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white" title="Rename"><Edit2 size={12} /></button>}
+                                            {onExportZip && <button onClick={() => onExportZip(row.name)} className="p-1 hover:bg-indigo-500/10 rounded text-gray-400 hover:text-indigo-400" title="Export project as Zip"><Download size={12} /></button>}
                                             {onDeleteProject && <button onClick={() => onDeleteProject(row.name)} className="p-1 hover:bg-red-500/10 rounded text-gray-400 hover:text-red-400" title="Delete Local"><Trash2 size={12} /></button>}
                                         </div>
                                     </div>
@@ -516,11 +524,6 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
                                         {/* Force Push/Pull */}
                                         <div className="flex flex-col gap-2 mt-2 w-full px-2">
-                                            {onSyncProject && (
-                                                <button onClick={() => handleSyncWithGuard(row.name)} className="flex items-center justify-center gap-1.5 w-full py-1.5 bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 text-green-500/70 rounded text-[10px] uppercase font-bold transition-colors" title="Compare and sync local ↔ backup">
-                                                    <ArrowLeftRight size={12} className="text-green-500" /> Sync ↕ Backup
-                                                </button>
-                                            )}
                                             {onBuildProject && (
                                                 (activeSKProject === row.name && deviceDiff && deviceDiff.newFiles.length === 0 && deviceDiff.updatedFiles.length === 0) ? (
                                                     <button onClick={() => onBuildProject(row.name)} className="flex items-center justify-center gap-1.5 w-full py-1.5 bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/20 text-indigo-400/70 rounded text-[10px] uppercase font-bold transition-colors" title="Hardware is up-to-date (Click to force reinstall)">
@@ -528,9 +531,14 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                                     </button>
                                                 ) : (
                                                     <button onClick={() => onBuildProject(row.name)} className="flex items-center justify-center gap-1.5 w-full py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded text-[10px] uppercase font-bold transition-colors" title="Push Update to SK Hardware">
-                                                        <HardDrive size={12} /> Push SK to SD Root
+                                                        <HardDrive size={12} /> Build SD (Push)
                                                     </button>
                                                 )
+                                            )}
+                                            {onSyncProject && (
+                                                <button onClick={() => handleSyncWithGuard(row.name)} className="flex items-center justify-center gap-1.5 w-full py-1.5 bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 text-green-500/70 rounded text-[10px] uppercase font-bold transition-colors" title="Compare and sync local ↔ backup">
+                                                    <ArrowLeftRight size={12} className="text-green-500" /> Sync ↕ Backup
+                                                </button>
                                             )}
                                         </div>
                                     </>
@@ -547,28 +555,28 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                             )}
                                         </div>
                                         <div className="flex flex-col gap-2 mt-2 w-full px-2">
+                                            {onBuildProject && (
+                                                <button onClick={() => onBuildProject(row.name)} className="flex items-center justify-center gap-1 w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] uppercase font-bold shadow-sm transition-colors">
+                                                    <HardDrive size={12} /> Build SD (Push)
+                                                </button>
+                                            )}
                                             {onSyncProject && (
                                                 <button onClick={() => handleSyncWithGuard(row.name)} className="flex items-center justify-center gap-1 w-full py-1.5 bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/30 text-orange-300 rounded text-[10px] uppercase font-bold shadow-sm transition-colors">
                                                     <ArrowLeftRight size={12} /> Sync ↕ Backup
-                                                </button>
-                                            )}
-                                            {onBuildProject && (
-                                                <button onClick={() => onBuildProject(row.name)} className="flex items-center justify-center gap-1 w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] uppercase font-bold shadow-sm transition-colors">
-                                                    <HardDrive size={12} /> Push SK to SD Root
                                                 </button>
                                             )}
                                         </div>
                                     </>
                                 ) : row.local && !row.backup ? (
                                     <div className="flex flex-col items-center gap-2 w-full px-2">
-                                        {onSyncProject && (
-                                            <button onClick={() => handleSyncWithGuard(row.name)} className="flex items-center justify-center gap-1 w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] uppercase font-bold transition-colors">
-                                                <ArrowLeftRight size={12} /> Sync to Backup
-                                            </button>
-                                        )}
                                         {onBuildProject && (
                                             <button onClick={() => onBuildProject(row.name)} className="flex items-center justify-center gap-1 w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] uppercase font-bold transition-colors">
                                                 <HardDrive size={12} /> Push SK to SD Root
+                                            </button>
+                                        )}
+                                        {onSyncProject && (
+                                            <button onClick={() => handleSyncWithGuard(row.name)} className="flex items-center justify-center gap-1 w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] uppercase font-bold transition-colors">
+                                                <ArrowLeftRight size={12} /> Sync to Backup
                                             </button>
                                         )}
                                         <span className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Not on SD yet</span>
@@ -633,24 +641,50 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                 </div>
 
                 {/* FOOTER */}
-                <div className="p-4 border-t border-white/10 bg-[#1a1a1a] flex justify-between items-center shrink-0">
-                    <div className="text-sm text-gray-500">
-                        {rows.length} Projects Total
-                    </div>
-
-                    <div className="flex gap-3">
-                        <button
-                            onClick={handleDuplicateActive}
-                            className="px-6 py-2.5 bg-[#252525] hover:bg-[#333] text-gray-300 font-bold rounded-lg flex items-center gap-2 transition-colors border border-white/5"
-                        >
-                            <Copy size={18} /> Duplicate Active
-                        </button>
-                        <button
-                            onClick={handleCreateNew}
-                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-indigo-500/20"
-                        >
-                            <Folder size={18} /> Create Empty Project
-                        </button>
+                <div className="p-4 border-t border-white/10 bg-[#1a1a1a] flex flex-col gap-3 shrink-0">
+                    {/* Auto-save banner */}
+                    {autoSaveBanner && (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-300 text-xs font-medium">
+                            <AlertTriangle size={13} className="shrink-0" />
+                            {autoSaveBanner}
+                        </div>
+                    )}
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm text-gray-500">{rows.length} Projects Total</span>
+                            {onImportZip && (
+                                <button
+                                    onClick={onImportZip}
+                                    className="px-3 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 font-bold rounded-lg flex items-center gap-2 transition-colors text-xs"
+                                    title="Import project from a .zip file"
+                                >
+                                    <Upload size={14} /> Import from Zip
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex gap-3">
+                            {currentProjectName && onCleanupProject && (
+                                <button
+                                    onClick={() => { onCleanupProject(); onClose(); }}
+                                    className="px-4 py-2.5 bg-red-600/10 hover:bg-red-600/20 border border-red-500/20 text-red-500 font-bold rounded-lg flex items-center gap-2 transition-colors"
+                                    title="Clean Up Active Project"
+                                >
+                                    <Trash2 size={16} /> Clean Up
+                                </button>
+                            )}
+                            <button
+                                onClick={handleDuplicateActive}
+                                className="px-6 py-2.5 bg-[#252525] hover:bg-[#333] text-gray-300 font-bold rounded-lg flex items-center gap-2 transition-colors border border-white/5"
+                            >
+                                <Copy size={18} /> Duplicate Active
+                            </button>
+                            <button
+                                onClick={handleCreateNew}
+                                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-indigo-500/20"
+                            >
+                                <Folder size={18} /> Create Empty Project
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

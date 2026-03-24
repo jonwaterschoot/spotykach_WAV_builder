@@ -105,8 +105,9 @@ export const safeWriteBlob = async (fileHandle: FileSystemFileHandle, blob: Blob
         if (blob instanceof File) {
             try {
                 dataToWrite = await blob.arrayBuffer();
-            } catch (e) {
-                console.warn(`[SafeWrite] Failed to buffer file into memory`, e);
+            } catch (e: any) {
+                console.error(`[SafeWrite] NotReadableError for ${fileHandle.name}. Ref:`, blob);
+                throw new Error(`File "${fileHandle.name}" is unreadable. It may have been moved, deleted, or locked by another app.`);
             }
         }
         // @ts-ignore
@@ -235,6 +236,45 @@ export const cleanDirectory = async (rootHandle: FileSystemDirectoryHandle, dirN
         await rootHandle.removeEntry(dirName, { recursive: true });
     } catch (e) {
         // Doesn't exist, all good
+    }
+};
+
+// Clean Orphaned Assets Helper
+export const cleanOrphanedAssets = async (rootHandle: FileSystemDirectoryHandle, projectName: string, activeFilesState: AppState['files'], onProgress?: (msg: string) => void) => {
+    try {
+        const projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
+        const projectHandle = await projectsHandle.getDirectoryHandle(projectName, { create: false });
+        const assetsHandle = await projectHandle.getDirectoryHandle('Assets', { create: false });
+
+        // Collect all active version blohrefs (which are filenames)
+        const activeBlobNames = new Set<string>();
+        for (const file of Object.values(activeFilesState)) {
+            for (const version of file.versions) {
+                activeBlobNames.add(`${version.id}.wav`);
+            }
+        }
+
+        let removedCount = 0;
+        // @ts-ignore
+        for await (const [name, entry] of assetsHandle.entries()) {
+            if (entry.kind === 'file' && name.endsWith('.wav')) {
+                if (!activeBlobNames.has(name)) {
+                    try {
+                        onProgress?.(`Removing orphaned asset ${name}...`);
+                        await assetsHandle.removeEntry(name);
+                        removedCount++;
+                    } catch (e) {
+                        console.warn(`Failed to remove orphaned asset ${name}`, e);
+                    }
+                }
+            }
+        }
+        if (removedCount > 0) {
+            onProgress?.(`Cleaned ${removedCount} unused history file(s) from disk.`);
+        }
+    } catch (e) {
+        // Assets folder might not exist, or permission error, ignore gracefully
+        console.warn("Failed to clean orphaned assets from disk", e);
     }
 };
 
