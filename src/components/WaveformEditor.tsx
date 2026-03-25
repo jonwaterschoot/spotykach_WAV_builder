@@ -451,9 +451,11 @@ interface WaveformEditorProps {
     onSaveUnique?: (blob: Blob, duration: number, processing: ('normalized' | 'trimmed' | 'looped')[], createdId: string) => void;
     metadata?: WavMetadata;
     onRenameFile?: (fileId: string, newName: string) => void;
+    onDirtyStateChange?: (isDirty: boolean) => void;
+    showToast: (message: string, type?: 'success' | 'error' | 'warning') => void;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onCleanupProject, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onCleanupProject, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -465,17 +467,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [fadeOut, setFadeOut] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
     const [loopCrossfade, setLoopCrossfade] = useState(0.2); // Default 0.2s
-    // Notification State
-    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' | 'warning' } | null>(null);
-    const notificationTimeout = useRef<NodeJS.Timeout | null>(null);
 
-    const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
-        if (notificationTimeout.current) clearTimeout(notificationTimeout.current);
-        setNotification({ message, type });
-        notificationTimeout.current = setTimeout(() => {
-            setNotification(null);
-        }, 3000);
-    };
     const [isProcessing, setIsProcessing] = useState(false);
     const [helpText, setHelpText] = useState("");
     const [showDbScale, setShowDbScale] = useState(true);
@@ -570,6 +562,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [internalMetadata, setInternalMetadata] = useState<WavMetadata | null>(metadata || null);
 
     // Individual Tool Dirty States
+    // NOTE: Normalize and Loop tools use an instant-apply pattern (click Apply → new version created).
+    // They do NOT participate in the cross-tool dirty warning — only tools with pending/unapplied
+    // state (trim, automation, EQ, limiter, pitch, cutter, slicer) are tracked here.
     const isTrimDirty = fadeIn > 0 || fadeOut > 0 || regionState.start > 0.01 || regionState.end < ((originalBuffer?.duration || 0) - 0.01);
     const isAutomationDirty = automationPoints.length > 0 && (
         automationPoints.length !== 2 
@@ -590,11 +585,31 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         return isTrimDirty || isAutomationDirty || isEqDirty || isLimiterDirty || isPitchDirty || isCutterDirty || isSlicerDirty;
     }, [isTrimDirty, isAutomationDirty, isEqDirty, isLimiterDirty, isPitchDirty, isCutterDirty, isSlicerDirty, originalBuffer]);
 
+    // Report Dirty State to Parent — use a ref so that the effect only fires when isDirty changes,
+    // regardless of whether the parent provides a new function reference on each render.
+    const onDirtyStateChangeRef = useRef(onDirtyStateChange);
+    useEffect(() => { onDirtyStateChangeRef.current = onDirtyStateChange; }, [onDirtyStateChange]);
+    useEffect(() => {
+        onDirtyStateChangeRef.current?.(isDirty);
+    }, [isDirty]);
+
 
     // Sync individual show states with activeTool
     const toggleTool = (tool: ToolId) => {
         const next = activeTool === tool ? null : tool;
-        if (isDirty && activeTool !== null) {
+
+        // Check if the CURRENT tool is dirty
+        let currentToolIsDirty = false;
+        if (activeTool === 'trim') currentToolIsDirty = isTrimDirty;
+        else if (activeTool === 'automation') currentToolIsDirty = isAutomationDirty;
+        else if (activeTool === 'eq') currentToolIsDirty = isEqDirty;
+        else if (activeTool === 'limiter') currentToolIsDirty = isLimiterDirty;
+        else if (activeTool === 'pitch') currentToolIsDirty = isPitchDirty;
+        else if (activeTool === 'cutter') currentToolIsDirty = isCutterDirty;
+        else if (activeTool === 'slicer') currentToolIsDirty = isSlicerDirty;
+        // Normalize and Loop: instant-apply, no pending dirty state to warn about
+
+        if (currentToolIsDirty && activeTool !== null) {
             setPendingTool(next);
             return;
         }
@@ -639,6 +654,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setAdvancedEQBands(new Array(10).fill(0));
         setLimiterThreshold(-6);
         setLimiterCeiling(-0.3);
+        setNormalizationLevel(-1); // Reset normalize tool state
         setCutRegions([]);
         if (initialSlicePoints) setSlicePoints([...initialSlicePoints]);
         
@@ -2411,22 +2427,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 }
             `}</style>
 
-            {/* Toast Notification */}
-            {notification && (
-                <div className="absolute top-8 left-1/2 z-[70] animate-[slideIn_0.3s_ease-out]" style={{ transform: 'translateX(-50%)' }}>
-                    <div className={`px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border ${notification.type === 'success'
-                        ? 'bg-green-900/90 border-green-500 text-green-100'
-                        : 'bg-red-900/90 border-red-500 text-red-100'
-                        }`}>
-                        {notification.type === 'success' ? (
-                            <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-black font-bold text-xs">✓</div>
-                        ) : (
-                            <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-xs">!</div>
-                        )}
-                        <span className="font-medium text-sm">{notification.message}</span>
-                    </div>
-                </div>
-            )}
+
 
             {/* Unsaved Changes Modal */}
             {showUnsavedWarning && (
@@ -2559,7 +2560,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         )}
                     </div>
                     <div className={`flex-1 overflow-y-auto p-2 space-y-2 history-scroll w-full ${!isHistoryExpanded && 'flex flex-col items-center'}`}>
-                        {versions.map((v) => {
+                        {[...versions].sort((a,b) => b.timestamp - a.timestamp).map((v) => {
                             const isActive = v.id === loadedVersionId;
                             const isSelected = selectedVersionIds.has(v.id);
 
@@ -4089,12 +4090,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                 <button
                                     onClick={handlePlayPause}
-                                    className="flex items-center gap-2 px-6 py-2 bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
+                                    className="flex items-center gap-2 px-6 h-12 bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
                                 >
                                     {isPlaying ? <Pause fill="white" size={18} /> : <Play fill="white" size={18} />}
                                     {isPlaying ? 'PAUSE' : 'PLAY'}
                                 </button>
-                                <div title={!isDirty && loadedVersionId === activeVersionId ? "File has not changed" : ""}>
+                                <div title={!isDirty && loadedVersionId === activeVersionId ? "File is assigned and up to date" : "Bake changes and assign to tape"}>
                                     <button
                                         onClick={() => {
                                             if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
@@ -4107,26 +4108,33 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 handleSave();
                                             }
                                         }}
-                                        disabled={isProcessing || (!isDirty && loadedVersionId === activeVersionId)}
-                                        className={`flex items-center gap-2 px-6 py-2 rounded-full text-base font-bold transition-all shadow-lg ${isProcessing || (!isDirty && loadedVersionId === activeVersionId)
-                                            ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
-                                            : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
-                                            }`}
+                                        disabled={isProcessing}
+                                        className={`flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg ${
+                                            isProcessing 
+                                                ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
+                                                : (!isDirty && loadedVersionId === activeVersionId)
+                                                    ? 'bg-green-600/90 hover:bg-green-600 text-white shadow-green-900/40'
+                                                    : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
+                                        }`}
                                     >
-                                        <Save size={18} /> {isProcessing ? 'SAVING...' : 'ASSIGN TO TAPE'}
+                                        {isProcessing ? <RefreshCw className="animate-spin" size={18} /> : (!isDirty && loadedVersionId === activeVersionId) ? <Check size={18} /> : <Save size={18} />}
+                                        {isProcessing ? 'SAVING...' : (!isDirty && loadedVersionId === activeVersionId) ? 'ASSIGNED' : 'ASSIGN TO TAPE'}
                                     </button>
                                 </div>
 
                                 <button
                                     onClick={onClose}
-                                    className={`flex items-center gap-2 px-6 py-2 rounded-full text-base font-bold transition-all shadow-lg border ${
+                                    className={`flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg border ${
                                         isDirty 
                                             ? 'bg-gray-800 hover:bg-gray-700 text-gray-500 border-transparent hover:border-gray-500' 
-                                            : 'bg-green-600 hover:bg-green-500 text-white border-transparent hover:scale-105 active:scale-95 shadow-green-900/50'
+                                            : (!isDirty && (loadedVersionId === activeVersionId || activeVersionId === (versions?.[0]?.id || '')))
+                                                ? 'bg-green-600 hover:bg-green-500 text-white border-transparent hover:scale-105 active:scale-95 shadow-green-900/50'
+                                                : 'bg-gray-800 hover:bg-gray-700 text-gray-400 border-transparent hover:border-gray-500'
                                     }`}
                                     title={isDirty ? "Close without saving" : "Close Editor"}
                                 >
-                                    <Check size={18} /> DONE
+                                    {(!isDirty && (loadedVersionId === activeVersionId || activeVersionId === (versions?.[0]?.id || ''))) ? <Check size={18} /> : <X size={18} />}
+                                    {(!isDirty && (loadedVersionId === activeVersionId || activeVersionId === (versions?.[0]?.id || ''))) ? 'DONE' : 'CLOSE'}
                                 </button>
 
                                 {/* Save Unique Button (For Duplicates) */}
@@ -4175,7 +4183,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }}
                                         disabled={isProcessing}
-                                        className="flex items-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
+                                        className="flex items-center gap-2 px-6 h-12 bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
                                         title="Save as a new unique file and assign to this slot, leaving other duplicates unchanged."
                                     >
                                         <Copy size={16} /> SAVE UNIQUE
@@ -4213,7 +4221,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         finally { setIsProcessing(false); }
                                     }}
                                     disabled={isProcessing}
-                                    className="flex items-center gap-2 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
+                                    className="flex items-center gap-2 px-6 h-12 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
                                     title="Save as a new Parked file (Unassigned)"
                                 >
                                     <Save size={16} /> SAVE COPY TO POOL

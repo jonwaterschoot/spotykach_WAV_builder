@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { AppState, TapeColor, FileRecord, AudioVersion, ProjectSummary } from '../types';
 import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { hashBlob } from './assetUtils';
 
 export type ImportType = 'PROJECT_BACKUP' | 'SD_STRUCTURE' | 'SD_WITH_BACKUP' | 'LOOSE_FILES' | 'UNKNOWN';
 
@@ -321,6 +322,17 @@ export interface DeviceDiff {
     newFiles: DeviceFileChange[];
     updatedFiles: DeviceFileChange[];
 }
+export interface DuplicateEntry {
+    slotId: string;
+    side: 'project' | 'sd';
+    name: string;
+}
+
+export interface DuplicateGroup {
+    hash: string;
+    entries: DuplicateEntry[];
+}
+
 export interface SyncDiff {
     slots: Record<string, SyncSlotDiff>;
     summary: {
@@ -335,6 +347,7 @@ export interface SyncDiff {
         localConfig?: any;
         remoteConfigText?: string;
     };
+    duplicates: DuplicateGroup[];
     // Legacy support (optional, can simulate if needed or refactor consumers)
     newFiles: SyncDiffItemNew[];
     updatedFiles: SyncDiffItemUpdate[];
@@ -477,15 +490,25 @@ export const detectCueChunk = async (file: File): Promise<boolean> => {
 };
 
 
+
 // 1. Calculate Diff
 export const calculateSyncDiff = async (
     projectState: AppState,
     structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
 ): Promise<SyncDiff> => {
+    // hash → [{slotId, side, name}] — used for duplicate detection
+    const hashRegistry = new Map<string, DuplicateEntry[]>();
+
+    const registerHash = (hash: string, entry: DuplicateEntry) => {
+        if (!hashRegistry.has(hash)) hashRegistry.set(hash, []);
+        hashRegistry.get(hash)!.push(entry);
+    };
+
     const diff: SyncDiff = {
         slots: {},
         summary: { matches: 0, conflicts: 0, localOnly: 0, remoteOnly: 0 },
         totalCount: 0,
+        duplicates: [],
         newFiles: [],
         updatedFiles: [],
     };
@@ -536,8 +559,10 @@ export const calculateSyncDiff = async (
                 const remoteMeta = await readWavMetadata(remoteFile);
 
                 let isMatch = false;
+                let localHash: string | null = null;
+                let remoteHash: string | null = null;
 
-                // 1. Check Metadata UUID
+                // 1. Check Metadata UUID (fast path — no hashing needed)
                 if (remoteMeta?.id && localFile.id === remoteMeta.id) {
                     // UUID Match! Check for content changes.
                     isMatch = true;
@@ -550,16 +575,36 @@ export const calculateSyncDiff = async (
                         isMatch = false; // Processing differs -> Update available
                     }
 
-                    // B. Compare Size (Fallback for re-encodes without flag changes)
+                    // B. Compare Size (fast sanity check before full hash)
                     if (isMatch && remoteFile.size !== currentVer?.blob?.size) {
                         isMatch = false;
                     }
                 } else {
-                    // No metadata or ID mismatch
-                    // Fallback to strict Size check
-                    if (currentVer && currentVer.blob && currentVer.blob.size === remoteFile.size) {
-                        isMatch = true;
+                    // No metadata or UUID mismatch — use SHA-256 hash comparison
+                    if (currentVer?.blob) {
+                        [localHash, remoteHash] = await Promise.all([
+                            hashBlob(currentVer.blob),
+                            hashBlob(remoteFile),
+                        ]);
+                        isMatch = localHash === remoteHash;
                     }
+                    // If no local blob at all, we cannot confirm a match
+                }
+
+                // Register hashes for duplicate detection
+                const localBlobToHash = currentVer?.blob;
+                if (localBlobToHash) {
+                    const lHash = localHash ?? await hashBlob(localBlobToHash);
+                    registerHash(lHash, { slotId, side: 'project', name: localFile.name ?? slotId });
+                }
+                
+                // If it's a MATCH, we don't need to register the SD side separately for the same slotId
+                // as it just adds redundant tags to the duplicates banner. 
+                // We only register the SD side if it's different (implies it won't be a MATCH/CONFLICT loop, 
+                // but usually this handles the REMOTE_ONLY case or actual CONFLICT content).
+                if (remoteFile && !isMatch) {
+                    const rHash = remoteHash ?? await hashBlob(remoteFile);
+                    registerHash(rHash, { slotId, side: 'sd', name: remoteFile.name });
                 }
 
                 if (isMatch) {
@@ -606,6 +651,38 @@ export const calculateSyncDiff = async (
     }
 
     diff.totalCount = diff.newFiles.length + diff.updatedFiles.length;
+
+    // ── Duplicate Detection ────────────────────────────────────────────────────
+    // Also register LOCAL_ONLY and REMOTE_ONLY slots that weren't hashed above
+    for (const [slotId, slotDiff] of Object.entries(diff.slots)) {
+        if (slotDiff.status === 'LOCAL_ONLY' && slotDiff.localFile) {
+            const ver = slotDiff.localFile.versions.find(v => v.id === slotDiff.localFile!.currentVersionId);
+            if (ver?.blob) {
+                const h = await hashBlob(ver.blob);
+                // Only register if not already registered for this slotId+side
+                const existing = hashRegistry.get(h);
+                if (!existing?.find(e => e.slotId === slotId && e.side === 'project')) {
+                    registerHash(h, { slotId, side: 'project', name: slotDiff.localFile.name ?? slotId });
+                }
+            }
+        }
+        if (slotDiff.status === 'REMOTE_ONLY' && slotDiff.remoteFile) {
+            const h = await hashBlob(slotDiff.remoteFile);
+            const existing = hashRegistry.get(h);
+            if (!existing?.find(e => e.slotId === slotId && e.side === 'sd')) {
+                registerHash(h, { slotId, side: 'sd', name: slotDiff.remoteFile.name });
+            }
+        }
+    }
+
+    // Any hash with 2+ UNIQUE slot locations = duplicate
+    // (If PR B1 and SD B1 have same audio, it's a MATCH, not a duplicate redundant file elsewhere)
+    for (const [hash, entries] of hashRegistry.entries()) {
+        const uniqueSlots = new Set(entries.map(e => e.slotId));
+        if (uniqueSlots.size >= 2) {
+            diff.duplicates.push({ hash, entries });
+        }
+    }
 
     return diff;
 };

@@ -19,6 +19,7 @@ export interface AudioVersion {
     duration: number;
     processing?: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[];
     blobRef?: string; // Optional path reference used during load/save
+    hash?: string; // SHA-256 content hash for duplicate detection
 }
 
 export interface FileRecord {

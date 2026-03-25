@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import type { SyncDiff, SyncSlotDiff } from '../utils/importUtils';
+import type { SyncDiff, SyncSlotDiff, DuplicateGroup } from '../utils/importUtils';
 import {
     Check, X, Play, AlertTriangle,
     ArrowRight, ArrowLeft, Trash2, Archive, Loader,
-    RefreshCw, Settings2,
+    RefreshCw, Settings2, Copy,
     Save, Shield, Layers, ArrowDown, HardDrive
 } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
@@ -124,6 +124,102 @@ const PRIMARY_LABEL: Record<SKPrimaryDecision, string> = {
 };
 
 
+// ─── DuplicatesBanner ─────────────────────────────────────────────────────────
+
+const SIDE_COLOR: Record<DuplicateGroup['entries'][0]['side'], string> = {
+    project: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+    sd: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+};
+
+const DuplicatesBanner: React.FC<{
+    duplicates: DuplicateGroup[];
+    hoveredSlotKey: string | null;
+    onHoverSlot: (key: string | null) => void;
+    onTrashSlot: (slotId: string, side: 'project' | 'sd') => void;
+    isSlotTrashed: (slotId: string, side: 'project' | 'sd') => boolean;
+}> = ({ duplicates, hoveredSlotKey, onHoverSlot, onTrashSlot, isSlotTrashed }) => {
+    const [open, setOpen] = useState(false);
+    if (!duplicates || duplicates.length === 0) return null;
+
+    const totalFiles = duplicates.reduce((sum, g) => sum + g.entries.length, 0);
+
+    return (
+        <div className="mx-6 mt-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5 overflow-hidden animate-in slide-in-from-top-2 duration-300 shrink-0">
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-yellow-500/10 transition-colors"
+            >
+                <div className="p-1.5 bg-yellow-500/20 rounded-lg shrink-0">
+                    <Copy size={13} className="text-yellow-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <span className="text-[11px] font-black text-yellow-300 uppercase tracking-widest">
+                        {duplicates.length} duplicate group{duplicates.length !== 1 ? 's' : ''} detected
+                    </span>
+                    <span className="text-[10px] text-yellow-500/70 ml-2 font-medium">
+                        {totalFiles} slots share identical audio content
+                    </span>
+                </div>
+                <span className="text-[10px] text-yellow-500/50 font-bold uppercase tracking-wider shrink-0">
+                    {open ? 'Hide ▲' : 'Show ▼'}
+                </span>
+            </button>
+
+            {open && (
+                <div className="px-4 pb-4 flex flex-col gap-2 border-t border-yellow-500/10">
+                    {duplicates.map((group, i) => (
+                        <div key={group.hash} className="flex items-start gap-3 pt-2">
+                            <span className="text-[9px] text-yellow-600 font-mono font-bold mt-1 shrink-0 w-4 text-right">
+                                {i + 1}.
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 flex-1">
+                                {group.entries.map((entry, j) => {
+                                    const isHovered = hoveredSlotKey === entry.slotId;
+                                    const trashed = isSlotTrashed(entry.slotId, entry.side);
+                                    return (
+                                        <div key={`${entry.slotId}-${entry.side}-${j}`} className="relative group/tag">
+                                            <span
+                                                onMouseEnter={() => onHoverSlot(entry.slotId)}
+                                                onMouseLeave={() => onHoverSlot(null)}
+                                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-mono font-black cursor-pointer transition-all ${
+                                                    isHovered
+                                                        ? SIDE_COLOR[entry.side] + ' ring-2 ring-yellow-400/60 scale-110 brightness-125'
+                                                        : SIDE_COLOR[entry.side]
+                                                } ${trashed ? 'opacity-40 grayscale line-through' : ''}`}
+                                            >
+                                                <span className="opacity-50">{entry.side === 'project' ? 'PR' : 'SD'}</span>
+                                                {' '}{entry.slotId}
+                                                <span className="opacity-40 font-normal ml-1 truncate max-w-[80px]" title={entry.name}>
+                                                    {entry.name}
+                                                </span>
+                                            </span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onTrashSlot(entry.slotId, entry.side); }}
+                                                className={`absolute -top-1 -right-1 p-0.5 rounded-full shadow-lg transition-all border ${
+                                                    trashed 
+                                                        ? 'bg-red-600 border-red-400 text-white opacity-100' 
+                                                        : 'bg-white/10 border-white/20 text-white opacity-0 group-hover/tag:opacity-100 hover:bg-red-500'
+                                                }`}
+                                                title={trashed ? "Restore from trash" : "Mark this duplicate for removal"}
+                                            >
+                                                <Trash2 size={8} />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <span className="text-[8px] text-yellow-700 font-mono mt-1 shrink-0 hidden sm:block" title={`SHA-256: ${group.hash}`}>
+                                #{group.hash.slice(0, 8)}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
@@ -159,6 +255,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const [showAll, setShowAll] = useState(false);
     const [isApplying, setIsApplying] = useState(false);
     const [isAdvanced, setIsAdvanced] = useState(false);
+    const [isCustomOverride, setIsCustomOverride] = useState(false);
     const [showConflictSummary, setShowConflictSummary] = useState(false);
     const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
     const [highlightedSlot, setHighlightedSlot] = useState<string | null>(null);
@@ -230,14 +327,17 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     };
 
     const setPrimary = useCallback((id: string, primary: SKPrimaryDecision) => {
+        setIsCustomOverride(false);
         setRows(prev => prev.map(r => r.id === id ? { ...r, primary } : r));
     }, []);
 
     const togglePool = useCallback((id: string) => {
+        setIsCustomOverride(false);
         setRows(prev => prev.map(r => r.id === id ? { ...r, toPool: !r.toPool } : r));
     }, []);
 
     const applyPreset = useCallback((preset: QuickPreset) => {
+        setIsCustomOverride(preset === 'custom');
         if (preset === 'custom') {
             setRows(prev => prev.map(r => ({ ...r, primary: 'skip' as const, toPool: false })));
             setConfigDecision('skip');
@@ -254,9 +354,12 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     }, [diff.config, mode]);
 
     const currentPreset: QuickPreset = useMemo(() => {
-        const presets: QuickPreset[] = ['import_pool_only', 'import_slots_pool', 'import_merge_project', 'import_sync_merge', 'push_sync', 'push_clean'];
+        if (isCustomOverride) return 'custom';
+        const presets: QuickPreset[] = mode === 'import' 
+            ? ['import_pool_only', 'import_slots_pool', 'import_merge_project', 'import_sync_merge']
+            : ['push_sync', 'push_clean'];
         return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p)) ?? 'custom';
-    }, [rows, configDecision, diff.config]);
+    }, [rows, configDecision, diff.config, mode, isCustomOverride]);
 
     const visibleRows = showAll ? rows : rows.filter(r => r.status !== 'MATCH' && r.status !== 'EMPTY');
 
@@ -268,12 +371,44 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const pullCount = rows.filter(r => r.primary === 'pull_to_slot').length;
     const deleteCount = rows.filter(r => r.primary === 'delete_sk' || r.primary === 'delete_local').length;
 
+    const handleTrashSlot = useCallback((slotId: string, side: 'project' | 'sd') => {
+        setIsCustomOverride(true);
+        setRows(prev => prev.map(r => {
+            if (r.id !== slotId) return r;
+            if (side === 'project') {
+                const wasTrashOrPull = r.primary === 'delete_local' || (r.status === 'CONFLICT' && r.primary === 'pull_to_slot');
+                if (wasTrashOrPull) return { ...r, primary: 'skip' as const, toPool: false };
+
+                // If conflict, resolving via trash means pulling SD version into the "freed" slot
+                if (r.status === 'CONFLICT') return { ...r, primary: 'pull_to_slot' as const, toPool: true };
+                return { ...r, primary: 'delete_local' as const };
+            } else {
+                const wasTrashOrPush = r.primary === 'delete_sk' || (r.status === 'CONFLICT' && r.primary === 'push_to_sk');
+                if (wasTrashOrPush) return { ...r, primary: 'skip' as const, toPool: false };
+
+                if (r.status === 'CONFLICT') return { ...r, primary: 'push_to_sk' as const, toPool: true };
+                return { ...r, primary: 'delete_sk' as const };
+            }
+        }));
+    }, []);
+
+    const isSlotTrashed = useCallback((slotId: string, side: 'project' | 'sd') => {
+        const row = rows.find(r => r.id === slotId);
+        if (!row) return false;
+        if (side === 'project') {
+            return row.primary === 'delete_local' || (row.status === 'CONFLICT' && row.primary === 'pull_to_slot');
+        } else {
+            return row.primary === 'delete_sk' || (row.status === 'CONFLICT' && row.primary === 'push_to_sk');
+        }
+    }, [rows]);
+
     // ── Drag state ────────────────────────────────────────────────────────────
     const [_dragSource, setDragSource] = useState<{ slotKey: string; prefix: 'PR' | 'SD' } | null>(null);
     const [poolDragOver, setPoolDragOver] = useState(false);
 
     const handleGridDrop = (droppedKey: string, droppedPrefix: string, targetPrefix: 'PR' | 'SD') => {
         if (droppedPrefix === targetPrefix) return;
+        setIsCustomOverride(false);
         setRows(prev => prev.map(r => {
             const key = `${r.tapeColor}${r.slotNum}`;
             if (key !== droppedKey) return r;
@@ -287,6 +422,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const handlePoolDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setPoolDragOver(false);
+        setIsCustomOverride(false);
         try {
             const { slotKey } = JSON.parse(e.dataTransfer.getData('text/plain'));
             setRows(prev => prev.map(r => `${r.tapeColor}${r.slotNum}` === slotKey ? { ...r, toPool: true } : r));
@@ -550,11 +686,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 <button onClick={() => applyPreset('import_sync_merge')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'import_sync_merge' ? 'bg-indigo-600 text-white border-transparent shadow-lg' : 'border-white/5 text-gray-500 hover:border-white/20'}`}>
                                     Merge into Project + Mirror
                                 </button>
-                                {isAdvanced && (
-                                    <button onClick={() => applyPreset('custom')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'custom' ? 'bg-gray-700 text-white border-transparent' : 'border-white/5 text-gray-400 hover:border-white/10'}`}>
-                                        Custom
-                                    </button>
-                                )}
+                                <button onClick={() => applyPreset('custom')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'custom' ? 'bg-gray-700 text-white border-transparent' : 'border-white/5 text-gray-400 hover:border-white/10'}`}>
+                                    Custom
+                                </button>
                             </>
                         ) : (
                             <>
@@ -586,9 +720,39 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 {/* Scrollable Content Wrapper */}
                 <div className="flex-1 overflow-y-auto min-h-0 bg-[#0c0c0c] flex flex-col custom-scrollbar">
 
+                {/* ════ DUPLICATES BANNER ═════════════════════════════════════ */}
+                <DuplicatesBanner
+                    duplicates={diff.duplicates ?? []}
+                    hoveredSlotKey={hoveredSlotKey}
+                    onHoverSlot={setHoveredSlotKey}
+                    onTrashSlot={handleTrashSlot}
+                    isSlotTrashed={isSlotTrashed}
+                />
+
                 {/* ════ SIMPLE VIEW ════════════════════════════════════════════ */}
                 {!isAdvanced && (
                     <div className="px-6 py-6 flex flex-col gap-8">
+                        {/* CUSTOM MODE ADVICE */}
+                        {currentPreset === 'custom' && (
+                            <div className="flex items-center gap-6 px-6 py-4 bg-orange-500/5 border border-orange-500/20 rounded-2xl animate-in fade-in slide-in-from-top-4 duration-500">
+                                <div className="p-2 bg-orange-500/20 rounded-xl text-orange-400 shrink-0">
+                                    <Settings2 size={20} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-sm font-black text-white tracking-tight">Advanced View Required</h3>
+                                    <p className="text-[11px] text-gray-400 truncate">
+                                        Switch to Advanced mode to make custom changes to individual slots or use the Preservation Pool.
+                                    </p>
+                                </div>
+                                <button 
+                                    onClick={() => setIsAdvanced(true)}
+                                    className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg hover:-translate-y-0.5 shrink-0"
+                                >
+                                    Switch to Advanced
+                                </button>
+                            </div>
+                        )}
+
                         {/* BEFORE SYNC */}
                         <div className="flex gap-4 items-stretch">
                             <SlotGrid6x6
@@ -666,6 +830,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                             </div>
                         )}
+
                     </div>
                 )}
 
@@ -850,12 +1015,12 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                             <span className="text-[9px] text-green-500 font-bold flex items-center gap-1"><Check size={9} /> In sync</span>
                                         ) : (
                                             <div className="flex items-center gap-0.5">
-                                                <button onClick={() => setConfigDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk')}
+                                                <button onClick={() => { setIsCustomOverride(false); setConfigDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk'); }}
                                                     className={['p-1.5 rounded transition-all', configDecision === 'push_to_sk' ? 'bg-indigo-600 text-white shadow-sm scale-110' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
                                                     <ArrowRight size={12} />
                                                 </button>
                                                 <span className="text-gray-700 text-[10px] mx-0.5 select-none">|</span>
-                                                <button onClick={() => setConfigDecision(prev => prev === 'pull_to_slot' ? 'skip' : 'pull_to_slot')}
+                                                <button onClick={() => { setIsCustomOverride(false); setConfigDecision(prev => prev === 'pull_to_slot' ? 'skip' : 'pull_to_slot'); }}
                                                     className={['p-1.5 rounded transition-all', configDecision === 'pull_to_slot' ? 'bg-teal-600 text-white shadow-sm scale-110' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
                                                     <ArrowLeft size={12} />
                                                 </button>
@@ -901,8 +1066,16 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 };
 
                                 const parts: string[] = [];
-                                if (row.primary !== 'skip') parts.push(PRIMARY_LABEL[row.primary]);
-                                if (row.toPool) parts.push('+ Pool');
+                                // If PR is trashed AND we are pulling from SD
+                                if (row.primary === 'pull_to_slot' && row.status === 'CONFLICT') {
+                                    parts.push('🗑️ Trashed & Imported');
+                                } else if (row.primary === 'push_to_sk' && row.status === 'CONFLICT') {
+                                    // If SD is trashed AND we are pushing from PR
+                                    parts.push('🗑️ Trashed & Pushed');
+                                } else if (row.primary !== 'skip') {
+                                    parts.push(PRIMARY_LABEL[row.primary]);
+                                }
+                                if (row.toPool && row.primary !== 'pull_to_slot' && row.primary !== 'push_to_sk') parts.push('+ Pool');
                                 const activeLabel = parts.length ? parts.join(' ') : 'Skip';
 
                                 return (

@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.3.1] - 2026-03-25
+
+### Added
+- **Persistent Log Tracker**: 
+    - Introduced a dedicated logging service (`logger.ts`) that captures all system info, warnings, and errors.
+    - Logs are persisted to `logs.txt` within the active project work folder.
+    - Added a **Log Viewer Modal** with filtering and session export (.txt) capabilities.
+    - Replaced the "Reset App" button in the sidebar with a **Logs** accessibility button.
+- **Notification Stacking**:
+    - Refactored the notification system to support a vertical stack of messages, preventing UI overlaps in the Waveform Editor.
+    - Implemented React Portal-based rendering for notifications to ensure they always stay on the top layer.
+    - Auto-logging: All toast notifications are now automatically mirrored to the system logs for auditability.
+
+### Fixed
+- **UI Overlap**: Resolved a regression where multiple tool messages and "Edit Saved" notifications would overlap and become unreadable.
+
 ## [3.3.0] - 2026-03-24
 
 ### Added
@@ -9,6 +25,9 @@
     - Unified preset button layouts across Simple and Advanced views for better consistency.
     - Added clear visual feedback for destructive sync actions (trash icons and high-visibility red dashed borders).
     - Compacted the Build & Import modal layout, featuring a "Before & After" comparison view and streamlined header/footer.
+    - Implemented **SHA-256 Hash Comparison**: Replaced the unreliable size-only sync diff fallback with a bit-for-bit SHA-256 content hash check, ensuring 100% accuracy in detecting file changes even for identical file sizes.
+    - Introduced **Duplicate Group Detection**: Automatically identifies audio content that exists in multiple slots across both project and SD card.
+    - Added **Duplicates Banner**: A highlights-aware, collapsible amber banner that lists redundant files with hover-to-highlight integration for the main slot grids.
 - **Onboarding & Workflow Enhancements**:
     - Refined the setup flow: users can now enter a project title immediately after "Start New Setup" or "Skip Intro," bypassing the Project Manager to load directly into the Tapes view.
     - Enhanced "Resume Session" to skip the Project Manager and load the latest session automatically.
@@ -24,6 +43,7 @@
 ### Fixed
 - **UI Stability**: Resolved layout collapse issues in the Cleanup Modal and fixed duplicate "Apply" buttons in the Pitch tool.
 - **CORS & Assets**: Switched sample hosting to jsDelivr to resolve CORS issues and optimized file sizes to stay within CDN limits.
+- **SD Sync Accuracy**: Fixed a bug where files of the same size were incorrectly marked as "Matched" (e.g., G4 collision) by implementing content hashing.
 - **Project Structure**: Removed obsolete V1 routes and implemented redirects to ensure a seamless transition to the V2 application.
 
 ## [3.2.0] - 2026-03-18

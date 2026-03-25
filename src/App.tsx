@@ -31,7 +31,9 @@ import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePl
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ConfirmModal } from './components/ConfirmModal';
-import { Toast, type ToastType } from './components/Toast';
+import { Toast, type ToastType, type ToastData } from './components/Toast';
+import { LogModal } from './components/LogModal';
+import { logger } from './utils/logger';
 import { SetupWizard } from './components/SetupWizard';
 import { SettingsModal } from './components/SettingsModal';
 import { ExportPreviewModal } from './components/ExportPreviewModal';
@@ -45,7 +47,7 @@ import { Rnd } from 'react-rnd';
 // Confirm Action Helper
 import { loadStateFromDB, clearState } from './utils/persistence';
 import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
-import { resolveAssetPath } from './utils/assetUtils';
+import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 
 const sanitizeFilename = (name: string) => {
   return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
@@ -98,6 +100,7 @@ function App() {
   const [showExport, setShowExport] = useState(false);
   const [showExportProgress, setShowExportProgress] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [sampleBrowserPos, setSampleBrowserPos] = useState({
     x: Math.max(20, (window.innerWidth - 1000) / 2),
     y: 50
@@ -117,7 +120,16 @@ function App() {
   const [exportProgress, setExportProgress] = useState<number | null>(null);
 
   // General UI
-  const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+  const showToast = useCallback((msg: string, type: ToastType = 'success') => {
+    setToasts(prev => [...prev, { id: Date.now().toString() + Math.random(), msg, type }]);
+    // Map ToastType to LogLevel
+    const level = type === 'error' ? 'error' : (type === 'warning' ? 'warn' : 'info');
+    logger[level](msg);
+  }, []);
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
 
@@ -140,6 +152,7 @@ function App() {
   const [showCleanupModal, setShowCleanupModal] = useState(false);
   const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
+  const [isEditorDirty, setIsEditorDirty] = useState(false);
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
   const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(() => localStorage.getItem('spotykach_current_project') || undefined);
   const [skBackups, setSkBackups] = useState<{ timestamp: string; sizeBytes: number }[]>([]);
@@ -300,16 +313,16 @@ function App() {
         .then(d => d.getDirectoryHandle('_sk_backups', { create: false }));
       await backupsDir.removeEntry(timestamp, { recursive: true });
       setSkBackups(prev => prev.filter(b => b.timestamp !== timestamp));
-      setToast({ msg: 'SK backup deleted', type: 'success' });
+      showToast('SK backup deleted', 'success');
     } catch (e: any) {
-      setToast({ msg: 'Failed to delete backup: ' + e.message, type: 'error' });
+      showToast('Failed to delete backup: ' + e.message, 'error');
     }
   };
 
   // ── Zip Import / Export ───────────────────────────────────────────────────
   const handleImportZip = async () => {
     if (!workHandle) {
-      setToast({ msg: 'Connect a Work Folder first.', type: 'error' });
+      showToast('Connect a Work Folder first.', 'error');
       return;
     }
     try {
@@ -354,9 +367,9 @@ function App() {
       }
 
       await scanProjects(workHandle, backupHandle);
-      setToast({ msg: `"${projectName}" imported from zip`, type: 'success' });
+      showToast(`"${projectName}" imported from zip`, 'success');
     } catch (e: any) {
-      if (e.name !== 'AbortError') setToast({ msg: 'Import failed: ' + e.message, type: 'error' });
+      if (e.name !== 'AbortError') showToast('Import failed: ' + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -365,7 +378,7 @@ function App() {
 
   const handleExportZip = async (projectName: string) => {
     if (!workHandle) {
-      setToast({ msg: 'Connect a Work Folder first.', type: 'error' });
+      showToast('Connect a Work Folder first.', 'error');
       return;
     }
     setIsProcessing(true);
@@ -399,9 +412,9 @@ function App() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setToast({ msg: `"${projectName}" exported as zip`, type: 'success' });
+      showToast(`"${projectName}" exported as zip`, 'success');
     } catch (e: any) {
-      setToast({ msg: 'Export failed: ' + e.message, type: 'error' });
+      showToast('Export failed: ' + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -483,7 +496,7 @@ function App() {
 
   const handleSaveVisualSettings = async () => {
     if (!projectRootHandleRef.current) {
-      setToast({ msg: "No active project folder found", type: "error" });
+      showToast("No active project folder found", "error");
       return;
     }
 
@@ -492,10 +505,10 @@ function App() {
       const writable = await (fileHandle as any).createWritable();
       await writable.write(JSON.stringify(visualFilters, null, 2));
       await writable.close();
-      setToast({ msg: "Visual settings saved to workspace", type: "success" });
+      showToast("Visual settings saved to workspace", "success");
     } catch (e) {
       console.error("Failed to save visual settings", e);
-      setToast({ msg: "Save failed - folder access might be restricted", type: "error" });
+      showToast("Save failed - folder access might be restricted", "error");
     }
   };
 
@@ -515,6 +528,10 @@ function App() {
   const isFirstRender = useRef(true);
   const isSystemUpdate = useRef(false);
 
+  useEffect(() => {
+    logger.setWorkHandle(workHandle);
+  }, [workHandle]);
+
   const handleReset = () => {
     setConfirmAction({
       title: "Reset Application?",
@@ -531,11 +548,11 @@ function App() {
           await clearState();
           localStorage.removeItem('spotykach_state');
           setState(getInitialState());
-          setToast({ msg: "Application Reset", type: "success" });
+          showToast("Application Reset", "success");
           window.location.reload();
         } catch (e) {
           console.error(e);
-          setToast({ msg: "Reset Failed", type: "error" });
+          showToast("Reset Failed", "error");
         }
       }
     });
@@ -548,18 +565,10 @@ function App() {
     const hasTapeNotes = TAPE_COLORS.some(color => !!(state.tapes[color]?.notes && state.tapes[color].notes!.trim() !== ''));
     const isProjectEmpty = !hasAnyFiles && !hasProjectNotes && !hasTapeNotes;
 
-    if (hasUnsavedChanges && !isProjectEmpty) {
-      setConfirmAction({
-        title: "Unsaved Changes",
-        message: "You have unsaved changes. Discard them?",
-        confirmLabel: "Discard Changes",
-        isDestructive: true,
-        showCancel: true,
-        onConfirm: () => {
-          setConfirmAction(null);
-          action();
-        }
-      });
+    // Only warn if something changed AND the project isn't empty (we don't care about saving empty projects)
+    if ((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty) {
+      const confirmed = window.confirm("You have unsaved changes. These will be lost. Continue anyway?");
+      if (confirmed) action();
     } else {
       action();
     }
@@ -678,17 +687,14 @@ function App() {
         });
 
         const sdMatchCount = recoverableRefs.size;
-        setToast({
-          msg: `Project "${projectName}" loaded with ${missingAssets.length} missing asset(s).${sdMatchCount > 0 ? ` ${sdMatchCount} match(es) found on SD.` : ''}`,
-          type: 'info'
-        });
+        showToast(`Project "${projectName}" loaded with ${missingAssets.length} missing asset(s).${sdMatchCount > 0 ? ` ${sdMatchCount} match(es) found on SD.` : ''}`, 'info');
         setMissingFilesWarning(projectMissingAssets);
       } else {
-        setToast({ msg: `Project "${projectName}" Loaded`, type: 'success' });
+        showToast(`Project "${projectName}" Loaded`, 'success');
       }
     } catch (e) {
       console.error(e);
-      setToast({ msg: "Failed to load project", type: 'error' });
+      showToast("Failed to load project", "error");
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -804,7 +810,7 @@ function App() {
         tapes: newTapes
       }));
 
-      setToast({ msg: `Successfully imported ${importedCount} files from device.`, type: "success" });
+      showToast(`Successfully imported ${importedCount} files from device.`, "success");
       setDeviceDiff(null);
     }
     setShowDeviceImport(false);
@@ -814,7 +820,7 @@ function App() {
   const handleCreateEmptyProject = async (projectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
     const activeWorkHandle = overrideWorkHandle || workHandle;
     if (!activeWorkHandle) {
-      setToast({ msg: "Please set a Work Folder first.", type: 'error' });
+      showToast("Please set a Work Folder first.", "error");
       return;
     }
 
@@ -842,12 +848,12 @@ function App() {
       setState(emptyState);
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
-      setToast({ msg: "Empty Project Created", type: 'success' });
+      showToast("Empty Project Created", "success");
 
       handleSmartScan(activeWorkHandle);
     } catch (e: any) {
       console.error(e);
-      setToast({ msg: "Failed to create project: " + e.message, type: 'error' });
+      showToast("Failed to create project: " + e.message, "error");
     } finally {
       setIsProcessing(false);
     }
@@ -857,7 +863,7 @@ function App() {
     // If we are in Browser Mode (no workHandle), we can't "Save As" to disk directly without picking a folder.
     // The UI should handle this by asking to Set Work Folder first.
     if (!workHandle) {
-      setToast({ msg: "Please set a Work Folder first.", type: 'error' });
+      showToast("Please set a Work Folder first.", "error");
       return;
     }
 
@@ -882,7 +888,7 @@ function App() {
 
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
-      setToast({ msg: "Project Created & Saved", type: 'success' });
+      showToast("Project Created & Saved", 'success');
 
       // Refresh found projects list?
       // Maybe trigger a silent scan or just add to list?
@@ -891,7 +897,7 @@ function App() {
 
     } catch (e: any) {
       console.error(e);
-      setToast({ msg: "Failed to create project: " + e.message, type: 'error' });
+      showToast("Failed to create project: " + e.message, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -912,7 +918,7 @@ function App() {
         try {
           const { deleteProject } = await import('./utils/exportUtils');
           await deleteProject(workHandle, projectName);
-          setToast({ msg: "Project Deleted", type: 'success' });
+          showToast("Project Deleted", 'success');
 
           // If current project was deleted, create new
           if (currentProjectName === projectName) {
@@ -924,7 +930,7 @@ function App() {
           await scanProjects(workHandle, backupHandle);
         } catch (e: any) {
           console.error(e);
-          setToast({ msg: "Delete Failed: " + e.message, type: 'error' });
+          showToast("Delete Failed: " + e.message, 'error');
         } finally {
           setIsProcessing(false);
           setProgressMsg('');
@@ -1003,10 +1009,10 @@ function App() {
         setHasUnsavedChanges(false);
       }
 
-      setToast({ msg: `Cleaned ${removedFilesCount} files and ${removedVersionsCount} history versions. Project saved.`, type: 'success' });
+      showToast(`Cleaned ${removedFilesCount} files and ${removedVersionsCount} history versions. Project saved.`, 'success');
     } catch (e: any) {
       console.error(e);
-      setToast({ msg: "Cleanup Failed: " + e.message, type: 'error' });
+      showToast("Cleanup Failed: " + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -1027,13 +1033,13 @@ function App() {
           setProgressMsg("Renaming Backup...");
           // @ts-ignore
           await renameProject(backupHandle, oldName, newName);
-          setToast({ msg: `Renamed Local & Backup to "${newName}"`, type: 'success' });
+          showToast(`Renamed Local & Backup to "${newName}"`, 'success');
         } catch (e) {
           console.error("Backup rename failed", e);
-          setToast({ msg: `Renamed Local, but Backup failed`, type: 'info' });
+          showToast(`Renamed Local, but Backup failed`, 'info');
         }
       } else {
-        setToast({ msg: `Renamed to "${newName}"`, type: 'success' });
+        showToast(`Renamed to "${newName}"`, 'success');
       }
 
       if (currentProjectName === oldName) {
@@ -1042,7 +1048,7 @@ function App() {
       handleScanProjects();
     } catch (e) {
       console.error(e);
-      setToast({ msg: "Failed to rename project", type: 'error' });
+      showToast("Failed to rename project", 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -1066,10 +1072,10 @@ function App() {
       const diff = await calculateSyncDiff(projectState, structureMap);
 
       setSyncModalState(prev => prev ? { ...prev, diff } : null);
-      setToast({ msg: "SD Card rescanned", type: "success" });
+      showToast("SD Card rescanned", "success");
     } catch (e: any) {
       console.error(e);
-      setToast({ msg: "SK scan failed: " + e.message, type: 'error' });
+      showToast("SK scan failed: " + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -1090,7 +1096,6 @@ function App() {
 
     if (isSystemUpdate.current) {
       isSystemUpdate.current = false;
-      setHasUnsavedChanges(false);
       return;
     }
 
@@ -1169,7 +1174,7 @@ function App() {
     }
 
     if (workPermission !== 'granted') {
-      setToast({ msg: "Permission denied for Work Folder", type: 'error' });
+      showToast("Permission denied for Work Folder", 'error');
       return;
     }
 
@@ -1189,7 +1194,7 @@ function App() {
     }
 
     setIsWelcomeActive(false);
-    setToast({ msg: "Session Restored", type: 'success' });
+    showToast("Session Restored", 'success');
 
     // Scan
     await handleSmartScan(restorableHandles.work);
@@ -1362,6 +1367,52 @@ function App() {
     }
   }, [showLibraryManager, workHandle]);
 
+
+  // --- Background Hashing for Duplicate Detection ---
+  useEffect(() => {
+    let changed = false;
+    const nextFiles = { ...state.files };
+
+    const runHashScan = async () => {
+      // Find all file versions that are assigned to slots but missing a hash
+      const assignedFileIds = new Set<string>();
+      Object.values(state.tapes).forEach(tape => {
+        tape.slots.forEach(slot => {
+          if (slot.fileId) assignedFileIds.add(slot.fileId);
+        });
+      });
+
+      for (const fileId of assignedFileIds) {
+        const file = nextFiles[fileId];
+        if (!file) continue;
+
+        const version = file.versions.find(v => v.id === file.currentVersionId);
+        if (version && version.blob && !version.hash) {
+          try {
+            const h = await hashBlob(version.blob);
+            // Update the version in our local copy
+            const updatedVersions = file.versions.map(v => 
+              v.id === version.id ? { ...v, hash: h } : v
+            );
+            nextFiles[fileId] = { ...file, versions: updatedVersions };
+            changed = true;
+          } catch (e) {
+            console.warn(`Failed to hash file ${file.name}`, e);
+          }
+        }
+      }
+
+      if (changed) {
+        // Use functional update to avoid capturing stale state, 
+        // though we are careful with nextFiles here.
+        isSystemUpdate.current = true; // Prevent "Unsaved Changes" toast for background hashing
+        setState(prev => ({ ...prev, files: { ...prev.files, ...nextFiles } }));
+      }
+    };
+
+    runHashScan();
+  }, [state.tapes, state.files]); // Re-run when tapes (assignments) or files change
+
   // ==========================================
   // HANDLERS
   // ==========================================
@@ -1370,19 +1421,25 @@ function App() {
 
 
 
-  // Duplicate Detection
-  // Map<FileID, Array<{slotId, color}>>
-  const duplicatesMap = new Map<string, { slotId: number, color: TapeColor }[]>();
+  // Duplicate Detection - Bit-Level (SHA-256)
+  // Map<HashOrFileID, Array<{slotId, color, fileId}>>
+  const duplicatesMap = new Map<string, { slotId: number, color: TapeColor, fileId: string }[]>();
   const duplicateFileIds = new Set<string>();
 
   // Helper to calculate duplicates
-  // We scan all tapes and build the map
+  // We scan all tapes and build the map based on content hash
   Object.entries(state.tapes).forEach(([color, tape]) => {
     tape.slots.forEach(slot => {
       if (slot.fileId) {
-        const currentList = duplicatesMap.get(slot.fileId) || [];
-        currentList.push({ slotId: slot.id, color: color as TapeColor });
-        duplicatesMap.set(slot.fileId, currentList);
+        const file = state.files[slot.fileId];
+        const version = file?.versions.find(v => v.id === file.currentVersionId);
+        
+        // Use hash as identity if available, otherwise fallback to fileId
+        const identity = version?.hash || slot.fileId;
+        
+        const currentList = duplicatesMap.get(identity) || [];
+        currentList.push({ slotId: slot.id, color: color as TapeColor, fileId: slot.fileId });
+        duplicatesMap.set(identity, currentList);
       }
     });
   });
@@ -1392,20 +1449,27 @@ function App() {
     if (locs.length <= 1) {
       duplicatesMap.delete(id);
     } else {
-      duplicateFileIds.add(id);
+      // For cross-file identification, we need to know all involved file IDs
+      locs.forEach(l => duplicateFileIds.add(l.fileId));
     }
   }
 
-  const handleResolveKeep = (fileId: string, keepLocation: { slotId: number, color: TapeColor }) => {
+  const handleResolveKeep = (identity: string, keepLocation: { slotId: number, color: TapeColor, fileId: string }) => {
     setState(prev => {
       const nextTapes = { ...prev.tapes };
 
-      // Iterate all tapes to find occurrences of this fileId
+      // Iterate all tapes to find occurrences that match this identity
       (Object.keys(nextTapes) as TapeColor[]).forEach(c => {
         nextTapes[c] = {
           ...nextTapes[c],
           slots: nextTapes[c].slots.map(s => {
-            if (s.fileId === fileId) {
+            if (!s.fileId) return s;
+            
+            const file = prev.files[s.fileId];
+            const version = file?.versions.find(v => v.id === file.currentVersionId);
+            const slotIdentity = version?.hash || s.fileId;
+
+            if (slotIdentity === identity) {
               // If this is the one to keep, leave it.
               if (c === keepLocation.color && s.id === keepLocation.slotId) {
                 return s;
@@ -1420,58 +1484,45 @@ function App() {
 
       return { ...prev, tapes: nextTapes };
     });
-    // Check if this was the last duplicate to close modal? 
-    // Effect will re-calc duplicatesMap, if empty modal can close or update.
   };
 
-  const handleResolveUnique = (fileId: string) => {
+  const handleResolveUnique = (identity: string) => {
     setState(prev => {
-      const fileToClone = prev.files[fileId];
-      if (!fileToClone) return prev; // Should not happen
+      const locations = duplicatesMap.get(identity);
+      if (!locations || locations.length < 2) return prev;
 
       const nextFiles = { ...prev.files };
       const nextTapes = { ...prev.tapes };
 
-      // Get all locations
-      const locations = duplicatesMap.get(fileId);
-      if (!locations) return prev;
-
-      // Keep the first one as original (or just first in list), clone others
-      // Actually, let's clone ALL except the very first one found in our map to keep ID stable for at least one.
-      // locations[0] keeps `fileId`. locations[1..n] get new IDs.
-
+      // Keep the first one as is, others get clones
+      // Important: We clone the FileRecord so they have different IDs
       for (let i = 1; i < locations.length; i++) {
         const loc = locations[i];
+        const sourceFile = prev.files[loc.fileId];
+        if (!sourceFile) continue;
+
         const newFileId = generateId();
-
-        // Create deep copy of file record
-        // We also need to clone versions if we want them truly independent? 
-        // Yes, otherwise editing version in one affects other? 
-        // Wait, versions are Inside the file record. So just cloning the file record is enough 
-        // IF we don't share reference to version objects.
-
-        const clonedVersions = fileToClone.versions.map(v => ({ ...v })); // Shallow copy version objects
+        const clonedVersions = sourceFile.versions.map(v => ({ ...v }));
 
         const newFile: FileRecord = {
-          ...fileToClone,
+          ...sourceFile,
           id: newFileId,
-          name: `${fileToClone.name}_${i + 1}`, // Suffix to distinguish?
-          originalName: fileToClone.originalName,
+          name: `${sourceFile.name}_${i + 1}`, // Suffix to distinguish
+          originalName: sourceFile.originalName,
           versions: clonedVersions,
-          currentVersionId: clonedVersions[0].id, // New file points to its own first version
-          isParked: false, // It's assigned immediately
-          origin: fileToClone.origin,
-          license: fileToClone.license
+          currentVersionId: clonedVersions.find(v => v.id === sourceFile.currentVersionId)?.id || clonedVersions[0].id,
+          isParked: false,
+          origin: sourceFile.origin,
+          license: sourceFile.license
         };
 
         nextFiles[newFileId] = newFile;
 
-        // Update Slot
+        // Update the slot to point to the new unique file
+        const tape = nextTapes[loc.color];
         nextTapes[loc.color] = {
-          ...nextTapes[loc.color],
-          slots: nextTapes[loc.color].slots.map(s =>
-            s.id === loc.slotId ? { ...s, fileId: newFileId } : s
-          )
+          ...tape,
+          slots: tape.slots.map(s => s.id === loc.slotId ? { ...s, fileId: newFileId } : s)
         };
       }
 
@@ -1514,7 +1565,7 @@ function App() {
         setWorkHandle(handle);
         setCurrentProjectName(undefined);
         setHasUnsavedChanges(false);
-        setToast({ msg: `Work Folder Set: ${handle.name}`, type: 'success' });
+        showToast(`Work Folder Set: ${handle.name}`, 'success');
 
         // Save for persistence
         saveDirectoryHandle('work', handle).catch(console.error);
@@ -1526,7 +1577,7 @@ function App() {
       } catch (e: any) {
         if (e.name !== 'AbortError') {
           console.error("Setup failed", e);
-          setToast({ msg: "Could not access folder.", type: 'error' });
+          showToast("Could not access folder.", 'error');
         }
       }
     });
@@ -1543,10 +1594,10 @@ function App() {
 
       setBackupHandle(handle);
       saveDirectoryHandle('backup', handle).catch(console.error);
-      setToast({ msg: `Backup Folder Set: ${handle.name}`, type: 'success' });
+      showToast(`Backup Folder Set: ${handle.name}`, 'success');
     } catch (e: any) {
       if (e.name !== 'AbortError') {
-        setToast({ msg: "Could not access folder.", type: 'error' });
+        showToast("Could not access folder.", 'error');
       }
     }
   };
@@ -1667,13 +1718,13 @@ function App() {
       if (loadedState) {
         setState(loadedState);
         setImportAnalysis(null);
-        setToast({ msg: "Project Restored Successfully", type: 'success' });
+        showToast("Project Restored Successfully", 'success');
       } else {
-        setToast({ msg: "Failed to load project from backup.", type: 'error' });
+        showToast("Failed to load project from backup.", 'error');
       }
     } catch (e) {
       console.error(e);
-      setToast({ msg: "Restore Failed", type: 'error' });
+      showToast("Restore Failed", 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -1696,6 +1747,257 @@ function App() {
         }
       };
     });
+    setHasUnsavedChanges(true);
+  };
+  // Save File Version Handler (Bakes changes into existing file record)
+  const handleSaveFile = (newBlob: Blob, duration: number, description?: string, isDirty: boolean = true, processing: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[] = []) => {
+    if (!activeFileId) return;
+
+    if (!isDirty) {
+      setIsEditorDirty(false);
+      return;
+    }
+
+    const fileId = activeFileId;
+    const versionId = generateId();
+    const version: AudioVersion = {
+      id: versionId,
+      timestamp: Date.now(),
+      description: description || 'Edited',
+      blob: newBlob,
+      duration,
+      processing
+    };
+
+    setState(prev => ({
+      ...prev,
+      files: {
+        ...prev.files,
+        [fileId]: {
+          ...prev.files[fileId],
+          currentVersionId: versionId,
+          versions: [...prev.files[fileId].versions, version]
+        }
+      }
+    }));
+    console.log(`[handleSaveFile] Setting hasUnsavedChanges=true, isEditorDirty=false`);
+    setHasUnsavedChanges(true);
+    setIsEditorDirty(false);
+    showToast("Edit Saved", 'success');
+  };
+
+  // Save as Unique Handler (Creates a new file record and assigns it to the slot)
+  const handleSaveUnique = (newBlob: Blob, duration: number, processing: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[] = [], createdId: string) => {
+    if (!activeSlotId || !activeFile) return;
+
+    // 1. Generate IDs
+    const newFileId = createdId;
+    const newVersionId = generateId();
+
+    // 2. Create Version
+    const version: AudioVersion = {
+      id: newVersionId,
+      timestamp: Date.now(),
+      description: 'Unique Version from ' + activeFile.name,
+      blob: newBlob,
+      duration,
+      processing
+    };
+
+    // 3. Create New File Record
+    const newFile: FileRecord = {
+      id: newFileId,
+      name: activeFile.name + " (Unique)",
+      originalName: activeFile.originalName,
+      versions: [version],
+      currentVersionId: newVersionId,
+      isParked: false // It will be assigned immediately
+    };
+
+    // 4. Update State
+    setState(prev => {
+      // a. Add new file
+      const updatedFiles = { ...prev.files, [newFileId]: newFile };
+
+      // b. Update the Tape Slot to point to newFileId
+      const updatedTapes = { ...prev.tapes };
+      const tape = updatedTapes[currentTapeColor as TapeColor];
+      if (tape) {
+        updatedTapes[currentTapeColor as TapeColor] = {
+          ...tape,
+          slots: tape.slots.map(s => s.id === activeSlotId ? { ...s, fileId: newFileId } : s)
+        };
+      }
+
+      return {
+        ...prev,
+        files: updatedFiles,
+        tapes: updatedTapes
+      };
+    });
+
+    console.log(`[handleSaveUnique] Setting hasUnsavedChanges=true, isEditorDirty=false`);
+    setHasUnsavedChanges(true); // Explicitly mark project as unsaved
+    setIsEditorDirty(false);
+    showToast("Created Unique Copy", 'success');
+
+    // 5. Close Editor (Since we switched file, keeping editor open might be tricky without full re-mount)
+    setActiveSlotId(null);
+  };
+  // Save as Copy Handler (Saves edited version to pool without affecting current slot)
+  const handleSaveAsCopy = (newBlob: Blob, duration: number, createdId: string) => {
+    if (!activeFileId || !activeFile) return;
+
+    const fileId = createdId;
+    const versionId = generateId();
+    const version: AudioVersion = {
+      id: versionId,
+      timestamp: Date.now(),
+      description: 'Copy from ' + activeFile.name,
+      blob: newBlob,
+      duration
+    };
+
+    const newFile: FileRecord = {
+      id: fileId,
+      name: activeFile.name + "_COPY",
+      originalName: activeFile.originalName,
+      versions: [version],
+      currentVersionId: versionId,
+      isParked: true
+    };
+
+    // ALSO record this action in the source file's history
+    const sourceVersionId = generateId();
+    const sourceVersion: AudioVersion = {
+      id: sourceVersionId,
+      timestamp: Date.now(),
+      description: 'Saved to Pool',
+      blob: newBlob,
+      duration
+    };
+
+    setState(prev => ({
+      ...prev,
+      files: {
+        ...prev.files,
+        [fileId]: newFile,
+        // Update active file history
+        [activeFileId]: {
+          ...prev.files[activeFileId],
+          versions: [sourceVersion, ...prev.files[activeFileId].versions],
+          currentVersionId: sourceVersionId
+        }
+      }
+    }));
+    console.log(`[handleSaveAsCopy] Setting hasUnsavedChanges=true`);
+    setHasUnsavedChanges(true);
+    showToast("Saved copy to pool", 'success');
+  };
+
+  const handleDeleteVersion = (versionId: string) => {
+    if (!activeFileId) return;
+
+    setState(prev => {
+      const file = prev.files[activeFileId];
+      if (!file) return prev;
+      if (file.versions.length <= 1) return prev; // Keep at least one
+
+      const newVersions = file.versions.filter(v => v.id !== versionId);
+      let newCurrentId = file.currentVersionId;
+
+      // If current version is deleted, switch to the newest available
+      if (file.currentVersionId === versionId) {
+        newCurrentId = newVersions[0].id;
+      }
+
+      return {
+        ...prev,
+        files: {
+          ...prev.files,
+          [activeFileId]: {
+            ...file,
+            versions: newVersions,
+            currentVersionId: newCurrentId
+          }
+        }
+      };
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleAssignVersion = (versionId: string) => {
+    if (!activeFileId) return;
+    setState(prev => ({
+      ...prev,
+      files: {
+        ...prev.files,
+        [activeFileId]: {
+          ...prev.files[activeFileId],
+          currentVersionId: versionId
+        }
+      }
+    }));
+    setHasUnsavedChanges(true);
+    showToast("Version Assigned to Slot 🫡", "success");
+  };
+
+  const handleMoveVersionToPool = (versionId: string) => {
+    if (!activeFileId) return;
+    const file = state.files[activeFileId];
+    if (!file) return;
+    const versionToMove = file.versions.find(v => v.id === versionId);
+    if (!versionToMove) return;
+
+    if (file.versions.length <= 1) {
+      showToast("Cannot move the only version. Use 'Save Copy' instead.", "error");
+      return;
+    }
+
+    // 1. Create New File from Version
+    const newFileId = generateId();
+    const newVersionId = generateId();
+
+    const newVersion: AudioVersion = {
+      ...versionToMove,
+      id: newVersionId,
+      timestamp: Date.now(),
+      description: `Extracted from ${file.name}`
+    };
+
+    const newFile: FileRecord = {
+      id: newFileId,
+      name: `${file.name}_v${new Date(versionToMove.timestamp).getTime().toString().slice(-4)}`,
+      originalName: file.name,
+      versions: [newVersion],
+      currentVersionId: newVersionId,
+      isParked: true
+    };
+
+    setState(prev => {
+      const currentFile = prev.files[activeFileId];
+      const newVersions = currentFile.versions.filter(v => v.id !== versionId);
+      let newCurrentId = currentFile.currentVersionId;
+
+      if (currentFile.currentVersionId === versionId) {
+        newCurrentId = newVersions[0].id;
+      }
+
+      return {
+        ...prev,
+        files: {
+          ...prev.files,
+          [newFileId]: newFile,
+          [activeFileId]: {
+            ...currentFile,
+            versions: newVersions,
+            currentVersionId: newCurrentId
+          }
+        }
+      };
+    });
+    setHasUnsavedChanges(true);
+    showToast("Version moved to Unassigned Pool", "success");
   };
 
   // Save Project Handler
@@ -1792,15 +2094,15 @@ function App() {
           return remaining.length > 0 ? remaining : null;
         });
 
-        setToast({ msg: `Successfully relocated ${resolvedCount} file(s).`, type: 'success' });
+        showToast(`Successfully relocated ${resolvedCount} file(s).`, 'success');
       } else {
-        setToast({ msg: "No matching files found in the selected folder.", type: 'info' });
+        showToast("No matching files found in the selected folder.", 'info');
       }
 
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error("Smart relocate failed", e);
-        setToast({ msg: "Folder scan failed.", type: 'error' });
+        showToast("Folder scan failed.", 'error');
       }
     } finally {
       setIsProcessing(false);
@@ -1816,7 +2118,7 @@ function App() {
 
     const version = fileRecord.versions.find(v => v.id === asset.versionId);
     if (!version || !version.blob) {
-      setToast({ msg: "No audio data found in browser cache for this file.", type: 'error' });
+      showToast("No audio data found in browser cache for this file.", 'error');
       return;
     }
 
@@ -1833,7 +2135,7 @@ function App() {
       await writable.write(version.blob);
       await writable.close();
 
-      setToast({ msg: `Recovered ${asset.fileName} from cache.`, type: 'success' });
+      showToast(`Recovered ${asset.fileName} from cache.`, 'success');
 
       setMissingFilesWarning(prev => {
         if (!prev) return null;
@@ -1842,7 +2144,7 @@ function App() {
       });
     } catch (e: any) {
       console.error("Cache recovery failed", e);
-      setToast({ msg: "Failed to write file to disk: " + e.message, type: 'error' });
+      showToast("Failed to write file to disk: " + e.message, 'error');
     }
   };
 
@@ -1880,7 +2182,7 @@ function App() {
       }
 
       if (recoveredCount > 0) {
-        setToast({ msg: `Recovered ${recoveredCount} files from cache.`, type: 'success' });
+        showToast(`Recovered ${recoveredCount} files from cache.`, 'success');
         setMissingFilesWarning(prev => {
           if (!prev) return null;
           const remaining = prev.filter(a => {
@@ -1891,11 +2193,11 @@ function App() {
           return remaining.length > 0 ? remaining : null;
         });
       } else {
-        setToast({ msg: "No files could be recovered from cache.", type: 'info' });
+        showToast("No files could be recovered from cache.", 'info');
       }
     } catch (e: any) {
       console.error("Bulk recovery failed", e);
-      setToast({ msg: "Recovery error: " + e.message, type: 'error' });
+      showToast("Recovery error: " + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -1937,7 +2239,7 @@ function App() {
       await writable.write(backupFile);
       await writable.close();
 
-      setToast({ msg: `Recovered ${asset.fileName} from SD backup.`, type: 'success' });
+      showToast(`Recovered ${asset.fileName} from SD backup.`, 'success');
 
       setMissingFilesWarning(prev => {
         if (!prev) return null;
@@ -1946,7 +2248,7 @@ function App() {
       });
     } catch (e: any) {
       console.error("SD recovery failed", e);
-      setToast({ msg: "Failed to recover from SD: " + e.message, type: 'error' });
+      showToast("Failed to recover from SD: " + e.message, 'error');
     }
   };
 
@@ -1998,18 +2300,18 @@ function App() {
       }
 
       if (recoveredRefs.size > 0) {
-        setToast({ msg: `Recovered ${recoveredRefs.size} files from SD backup.`, type: 'success' });
+        showToast(`Recovered ${recoveredRefs.size} files from SD backup.`, 'success');
         setMissingFilesWarning(prev => {
           if (!prev) return null;
           const remaining = prev.filter(a => !recoveredRefs.has(a.versionId));
           return remaining.length > 0 ? remaining : null;
         });
       } else {
-        setToast({ msg: "No eligible files found locally on SD backup.", type: 'info' });
+        showToast("No eligible files found locally on SD backup.", 'info');
       }
     } catch (e: any) {
       console.error("Bulk SD recovery failed", e);
-      setToast({ msg: "SD Recovery error: " + e.message, type: 'error' });
+      showToast("SD Recovery error: " + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -2076,14 +2378,14 @@ function App() {
 
       setMissingLibraryFiles(missingFromDisk);
       if (matchesCount > 0) {
-        setToast({ msg: `Smart Scan Complete: Linked ${matchesCount} samples.`, type: 'success' });
+        showToast(`Smart Scan Complete: Linked ${matchesCount} samples.`, 'success');
       } else {
-        setToast({ msg: "No matching files found in the selected folder.", type: 'info' });
+        showToast("No matching files found in the selected folder.", 'info');
       }
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error("Library smart scan failed", e);
-        setToast({ msg: 'Scan failed: ' + e.message, type: 'error' });
+        showToast('Scan failed: ' + e.message, 'error');
       }
     } finally {
       setIsProcessing(false);
@@ -2102,11 +2404,11 @@ function App() {
         // @ts-ignore
         await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), currentProjectName);
 
-        setToast({ msg: "Project Saved Successfully", type: 'success' });
+        showToast("Project Saved Successfully", 'success');
         setHasUnsavedChanges(false);
       } catch (e: any) {
         console.error(e);
-        setToast({ msg: "Save Failed: " + e.message, type: 'error' });
+        showToast("Save Failed: " + e.message, 'error');
       } finally {
         setIsProcessing(false);
         setProgressMsg('');
@@ -2137,12 +2439,12 @@ function App() {
     setProgressMsg(`Duplicating "${sourceName}" to "${newName}"...`);
     try {
       await duplicateProject(workHandle, sourceName, newName);
-      setToast({ msg: "Project Duplicated Successfully", type: 'success' });
+      showToast("Project Duplicated Successfully", 'success');
       // Refresh list
       await handleSmartScan(workHandle);
     } catch (e: any) {
       console.error(e);
-      setToast({ msg: "Duplicate Failed: " + e.message, type: 'error' });
+      showToast("Duplicate Failed: " + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -2257,7 +2559,7 @@ function App() {
       const safeName = sanitizeFilename(file.name);
 
       if (safeName !== file.name) {
-        setToast({ msg: `Renamed "${file.name}" to "${safeName}"`, type: 'info' });
+        showToast(`Renamed "${file.name}" to "${safeName}"`, 'info');
       }
 
       const newFile: FileRecord = {
@@ -2463,7 +2765,7 @@ function App() {
             },
             tapes: newTapes
           }));
-          setToast({ msg: "File unassigned from all slots", type: "success" });
+          showToast("File unassigned from all slots", "success");
         }
         setConfirmAction(null);
       }
@@ -2505,7 +2807,7 @@ function App() {
             }
           });
 
-          setToast({ msg: `Unassigned ${count} files`, type: "success" });
+          showToast(`Unassigned ${count} files`, "success");
           return { ...prev, tapes: newTapes, files: newFiles };
         });
         setConfirmAction(null);
@@ -2565,7 +2867,7 @@ function App() {
           setActiveSlotId(null);
         }
         setConfirmAction(null);
-        setToast({ msg: "File permanently deleted", type: "success" });
+        showToast("File permanently deleted", "success");
       }
     });
   };
@@ -2637,6 +2939,7 @@ function App() {
 
       return { files: nextFiles, tapes: nextTapes };
     });
+    setHasUnsavedChanges(true); // Mark project as dirty after slot movement
   };
 
   // Handle Drop on "View All" Icon (Auto-Fill first free slot)
@@ -2702,6 +3005,7 @@ function App() {
 
       return { files: nextFiles, tapes: nextTapes };
     });
+    setHasUnsavedChanges(true); // Mark project as dirty after slot movement
   };
 
 
@@ -2896,7 +3200,7 @@ function App() {
           onConfirm: () => setConfirmAction(null)
         });
       } else {
-        setToast({ msg: `Assigned ${assignCount} files (${mode})`, type: "success" });
+        showToast(`Assigned ${assignCount} files (${mode})`, "success");
       }
 
       return { ...prev, files: nextFiles, tapes: nextTapes };
@@ -2995,7 +3299,7 @@ function App() {
         onConfirm: () => setConfirmAction(null)
       });
     } else {
-      setToast({ msg: `Assigned ${assignedCount} files to slots`, type: 'success' });
+      showToast(`Assigned ${assignedCount} files to slots`, 'success');
     }
   };
 
@@ -3008,7 +3312,7 @@ function App() {
 
       // Determine Target Tape (Use arg if provided, otherwise default to current or search?)
       // It's safer to rely on argument now.
-      // But for backward compat (if called elsewhere), we can fallback to search or current?
+      // But for backward compat (if called elsewhere), we can fallback to search or current?)
       // Given the bug, we should prioritize explicit color.
 
       let targetTapeColor: TapeColor | null = color || null;
@@ -3303,7 +3607,7 @@ function App() {
       setImportAnalysis(analysis);
     } catch (e) {
       console.error("Import analysis failed", e);
-      setToast({ msg: "Failed to analyze import", type: "error" });
+      showToast("Failed to analyze import", "error");
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -3346,7 +3650,7 @@ function App() {
       const safeName = sanitizeFilename(name);
 
       if (safeName !== name) {
-        setToast({ msg: `Renamed "${name}" to "${safeName}"`, type: 'info' });
+        showToast(`Renamed "${name}" to "${safeName}"`, 'info');
       }
 
       const newFile: FileRecord = {
@@ -3380,11 +3684,11 @@ function App() {
       });
 
       // Feedback toast
-      setToast({ msg: `Imported ${name}`, type: 'success' });
+      showToast(`Imported ${name}`, 'success');
 
     } catch (e) {
       console.error(e);
-      setToast({ msg: "Error importing sample", type: 'error' });
+      showToast("Error importing sample", 'error');
     } finally {
       if (slotTarget !== null) {
         isSlotSampleImportInFlightRef.current = false;
@@ -3428,10 +3732,10 @@ function App() {
           files: { ...prev.files, [fileId]: newFile }
         }));
       }
-      setToast({ msg: `Added ${files.length} file(s) to pool`, type: 'success' });
+      showToast(`Added ${files.length} file(s) to pool`, 'success');
     } catch (e) {
       console.error(e);
-      setToast({ msg: 'Import to pool failed', type: 'error' });
+      showToast('Import to pool failed', 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -3487,10 +3791,10 @@ function App() {
           return { ...prev, files: nextFiles, tapes: nextTapes };
         });
       }
-      setToast({ msg: `Added ${files.length} file(s) to Tape ${targetTape}`, type: 'success' });
+      showToast(`Added ${files.length} file(s) to Tape ${targetTape}`, 'success');
     } catch (e) {
       console.error(e);
-      setToast({ msg: `Import to Tape ${targetTape} failed`, type: 'error' });
+      showToast(`Import to Tape ${targetTape} failed`, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -3499,7 +3803,7 @@ function App() {
 
   const handleResetEmptySlotBrowserPreference = () => {
     localStorage.removeItem('spotykach_emptySlotPreferredBrowser');
-    setToast({ msg: 'Empty slot browser preference reset', type: 'success' });
+    showToast('Empty slot browser preference reset', 'success');
   };
   const missingFileIds = useMemo(() => new Set((missingFilesWarning || []).map(a => a.fileId)), [missingFilesWarning]);
 
@@ -3511,7 +3815,7 @@ function App() {
             setWorkHandle(work);
             setBackupHandle(backup || null);
             setIsWelcomeActive(false);
-            setToast({ msg: "Workspace Configured!", type: 'success' });
+            showToast("Workspace Configured!", 'success');
 
             // Save handles
             saveDirectoryHandle('work', work);
@@ -3550,7 +3854,7 @@ function App() {
             onToggleAllView={() => setViewMode('all')}
             onDropOnTape={handleTapeDrop}
             onDropOnViewAll={handleDropOnViewAll}
-            onReset={handleReset}
+            onOpenLogs={() => setIsLogModalOpen(true)}
           />
 
           {/* Duplicates Banner */}
@@ -3580,8 +3884,8 @@ function App() {
                         <>
                           <span className="text-gray-600">/</span>
                           <span className="text-white font-bold truncate">{currentProjectName}</span>
-                          {hasUnsavedChanges && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_5px_rgba(250,204,21,0.5)] shrink-0" title="Unsaved changes" />
+                          {(hasUnsavedChanges || isEditorDirty) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_5px_rgba(250,204,21,0.5)] shrink-0 animate-pulse" title={isEditorDirty ? "Unapplied changes in editor" : "Unsaved changes"} />
                           )}
                         </>
                       )}
@@ -3648,7 +3952,7 @@ function App() {
                         const diff = await calculateSyncDiff(state, structureMap);
                         setSyncModalState({ isOpen: true, projectName: currentProjectName, diff, defaultMode: 'push' });
                       } catch (e: any) {
-                        setToast({ msg: 'SK scan failed: ' + e.message, type: 'error' });
+                        showToast('SK scan failed: ' + e.message, 'error');
                       } finally {
                         setIsProcessing(false);
                         setProgressMsg('');
@@ -3675,7 +3979,7 @@ function App() {
                         const diff = await calculateSyncDiff(state, structureMap);
                         setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                       } catch (e: any) {
-                        setToast({ msg: 'SK scan failed: ' + e.message, type: 'error' });
+                        showToast('SK scan failed: ' + e.message, 'error');
                       } finally {
                         setIsProcessing(false);
                         setProgressMsg('');
@@ -3695,15 +3999,19 @@ function App() {
                 {/* Save */}
                 <button
                   onClick={handleSaveProject}
-                  title={hasUnsavedChanges ? `Save ${currentProjectName || 'Project'} (unsaved changes)` : `Save ${currentProjectName || 'Project'}`}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all ${hasUnsavedChanges
-                    ? 'border-yellow-500/50 text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20'
+                  title={hasUnsavedChanges || isEditorDirty ? `Save ${currentProjectName || 'Project'} (unsaved changes)` : `Save ${currentProjectName || 'Project'}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all ${hasUnsavedChanges || isEditorDirty
+                    ? 'border-yellow-500/50 text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 shadow-[0_0_10px_rgba(234,179,8,0.1)]'
                     : 'border-white/10 text-gray-400 hover:text-white hover:bg-white/5'
-                    }`}
+                    } ${(hasUnsavedChanges || isEditorDirty) ? 'animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]' : ''}`}
                 >
                   <Save size={13} strokeWidth={2.5} />
                   <span className="hidden sm:inline">Save</span>
-                  {hasUnsavedChanges && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />}
+                  {(hasUnsavedChanges || isEditorDirty) && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse border border-yellow-500/50" />}
+                  {(() => {
+                    // console.log(`[Render] SaveButton: hasUnsavedChanges=${hasUnsavedChanges}, isEditorDirty=${isEditorDirty}`);
+                    return null;
+                  })()}
                 </button>
 
                 {/* New Project */}
@@ -4032,253 +4340,21 @@ function App() {
                         tapeColor={currentTapeColor}
                         isDuplicate={duplicateFileIds.has(activeFile.id)}
                         metadata={activeFile.metadata}
-                        onClose={() => setActiveSlotId(null)}
-                        onCleanupProject={handleCleanupProject}
-                        onRenameFile={handleRenameFile}
-                        onSaveUnique={(newBlob, duration, processing, createdId) => {
-                          if (!activeFileId || !activeSlotId) return;
-
-                          // 1. Generate IDs
-                          const newFileId = createdId;
-                          const newVersionId = generateId();
-
-                          // 2. Create Version
-                          const version: AudioVersion = {
-                            id: newVersionId,
-                            timestamp: Date.now(),
-                            description: 'Unique Version from ' + activeFile.name,
-                            blob: newBlob,
-                            duration,
-                            processing
-                          };
-
-                          // 3. Create New File Record
-                          const newFile: FileRecord = {
-                            id: newFileId,
-                            name: activeFile.name + " (Unique)",
-                            originalName: activeFile.originalName,
-                            versions: [version],
-                            currentVersionId: newVersionId,
-                            isParked: false // It will be assigned immediately
-                          };
-
-                          // 4. Update State
-                          setState(prev => {
-                            // a. Add new file
-                            const updatedFiles = { ...prev.files, [newFileId]: newFile };
-
-                            // b. Update the Tape Slot to point to newFileId
-                            // b. Update the Tape Slot to point to newFileId
-                            const updatedTapes = { ...prev.tapes };
-                            // const targetTape = updatedTapes[activeSlot!.color]; // Removed: inactive code causing error
-
-                            const tape = updatedTapes[currentTapeColor as TapeColor];
-                            if (tape) {
-                              updatedTapes[currentTapeColor as TapeColor] = {
-                                ...tape,
-                                slots: tape.slots.map(s => s.id === activeSlotId ? { ...s, fileId: newFileId } : s)
-                              };
-                            }
-
-                            return {
-                              ...prev,
-                              files: updatedFiles,
-                              tapes: updatedTapes
-                            };
-                          });
-
-                          // 5. Close Editor (Since we switched file, keeping editor open might be tricky without full re-mount)
-                          // User likely wants to confirm it's done.
+                        onClose={() => {
                           setActiveSlotId(null);
                         }}
-                        onSave={(newBlob, duration, description, isDirty, processing) => {
-                          if (!activeFileId) return;
-
-                          // SMART SAVE LOGIC
-                          if (!isDirty) {
-                            // File unchanged. Just ensure assignment (already done usually).
-                            // We could force re-assignment validation here if needed, but for now just close.
-                            // Maybe update timestamp or something? No, keep it clean.
-                            // showToast is handled by Editor? No, Editor closed.
-                            // Editor called onClose().
-                            // Wait, if Editor calls onClose(), we just unmount.
-                            // We don't need to do anything here except maybe ensure the slot points to this file (it does).
-                            return;
-                          }
-
-                          const fileId = activeFileId;
-                          const versionId = generateId();
-                          const version: AudioVersion = {
-                            id: versionId,
-                            timestamp: Date.now(),
-                            description: description || 'Edited',
-                            blob: newBlob,
-                            duration,
-                            processing
-                          };
-
-                          setState(prev => ({
-                            ...prev,
-                            files: {
-                              ...prev.files,
-                              [fileId]: {
-                                ...prev.files[fileId],
-                                versions: [version, ...prev.files[fileId].versions],
-                                currentVersionId: versionId
-                              }
-                            }
-                          }));
-
+                        onCleanupProject={handleCleanupProject}
+                        onRenameFile={handleRenameFile}
+                        onDirtyStateChange={(dirty) => {
+                          setIsEditorDirty(dirty);
                         }}
-                        onSaveAsCopy={(newBlob, duration, createdId) => {
-                          const fileId = createdId;
-                          const versionId = generateId();
-                          const version: AudioVersion = {
-                            id: versionId,
-                            timestamp: Date.now(),
-                            description: 'Copy from ' + activeFile.name,
-                            blob: newBlob,
-                            duration
-                          };
-
-                          const newFile: FileRecord = {
-                            id: fileId,
-                            name: activeFile.name + "_COPY",
-                            originalName: activeFile.originalName,
-                            versions: [version],
-                            currentVersionId: versionId,
-                            isParked: true
-                          };
-
-                          // ALSO record this action in the source file's history
-                          const sourceVersionId = generateId();
-                          const sourceVersion: AudioVersion = {
-                            id: sourceVersionId,
-                            timestamp: Date.now(),
-                            description: 'Saved to Pool',
-                            blob: newBlob,
-                            duration
-                          };
-
-                          setState(prev => ({
-                            ...prev,
-                            files: {
-                              ...prev.files,
-                              [fileId]: newFile,
-                              // Update active file history
-                              [activeFileId!]: {
-                                ...prev.files[activeFileId!],
-                                versions: [sourceVersion, ...prev.files[activeFileId!].versions],
-                                currentVersionId: sourceVersionId
-                              }
-                            }
-                          }));
-                        }}
-                        onDeleteVersion={(versionId) => {
-                          if (!activeFileId) return;
-
-                          setState(prev => {
-                            const file = prev.files[activeFileId];
-                            if (!file) return prev;
-                            if (file.versions.length <= 1) return prev; // Keep at least one
-
-                            const newVersions = file.versions.filter(v => v.id !== versionId);
-                            let newCurrentId = file.currentVersionId;
-
-                            // If current version is deleted, switch to the first available one
-                            // (Which will be the previous one since we prepend new ones)
-                            if (file.currentVersionId === versionId) {
-                              newCurrentId = newVersions[0].id; // New newest version
-                            }
-
-                            return {
-                              ...prev,
-                              files: {
-                                ...prev.files,
-                                [activeFileId]: {
-                                  ...file,
-                                  versions: newVersions,
-                                  currentVersionId: newCurrentId
-                                }
-                              }
-                            };
-                          });
-                        }}
-                        onAssignVersion={(versionId) => {
-                          if (!activeFileId) return;
-                          setState(prev => ({
-                            ...prev,
-                            files: {
-                              ...prev.files,
-                              [activeFileId]: {
-                                ...prev.files[activeFileId],
-                                currentVersionId: versionId
-                              }
-                            }
-                          }));
-                          setToast({ msg: "Version Assigned to Slot 🫡", type: "success" });
-                        }}
-                        onMoveVersionToPool={(versionId) => {
-                          if (!activeFileId) return;
-                          const file = state.files[activeFileId];
-                          const versionToMove = file.versions.find(v => v.id === versionId);
-                          if (!versionToMove) return;
-
-                          // 1. Create New File from Version
-                          const newFileId = generateId();
-                          const newVersionId = generateId(); // New ID for independence? Or keep same? Let's give new ID.
-
-                          const newVersion: AudioVersion = {
-                            ...versionToMove,
-                            id: newVersionId,
-                            timestamp: Date.now(),
-                            description: `Extracted from ${file.name}`
-                          };
-
-                          const newFile: FileRecord = {
-                            id: newFileId,
-                            name: `${file.name}_v${new Date(versionToMove.timestamp).getTime().toString().slice(-4)}`,
-                            originalName: file.originalName,
-                            versions: [newVersion],
-                            currentVersionId: newVersionId,
-                            isParked: true // Unassigned
-                          };
-
-                          // 2. Remove Version from Source (if not the only one/current?)
-                          // User wants "Move", implying removal from source history.
-                          // If it's the current version, we need to handle that (switch to another).
-                          // If it's the ONLY version, we probably shouldn't fully remove it? Or maybe we can?
-                          // If we remove the only version, the file is empty/invalid.
-
-                          if (file.versions.length <= 1) {
-                            setToast({ msg: "Cannot move the only version. Use 'Save Copy' instead.", type: "error" });
-                            return;
-                          }
-
-                          setState(prev => {
-                            const currentFile = prev.files[activeFileId];
-                            const newVersions = currentFile.versions.filter(v => v.id !== versionId);
-                            let newCurrentId = currentFile.currentVersionId;
-
-                            if (currentFile.currentVersionId === versionId) {
-                              newCurrentId = newVersions[0].id; // Fallback to first available
-                            }
-
-                            return {
-                              ...prev,
-                              files: {
-                                ...prev.files,
-                                [newFileId]: newFile,
-                                [activeFileId]: {
-                                  ...currentFile,
-                                  versions: newVersions,
-                                  currentVersionId: newCurrentId
-                                }
-                              }
-                            };
-                          });
-                          setToast({ msg: "Version moved to Unassigned Pool", type: "success" });
-                        }}
+                        onSaveUnique={handleSaveUnique}
+                        onSave={handleSaveFile}
+                        onSaveAsCopy={handleSaveAsCopy}
+                        onDeleteVersion={handleDeleteVersion}
+                        onAssignVersion={handleAssignVersion}
+                        onMoveVersionToPool={handleMoveVersionToPool}
+                        showToast={showToast}
                       />
                     );
                   })()}
@@ -4387,10 +4463,10 @@ function App() {
                   onRestoreProject={(projectState) => {
                     setState(projectState);
                     setImportAnalysis(null);
-                    setToast({ msg: "Project Restored Successfully", type: "success" });
+                    showToast("Project Restored Successfully", "success");
                   }}
                   onImportStructure={async (structureMap) => {
-                    setToast({ msg: "Importing Structure...", type: "neutral" });
+                    showToast("Importing Structure...", "neutral");
 
                     import('./utils/importUtils').then(({ processSDStructure }) => {
                       setState(prev => {
@@ -4398,7 +4474,7 @@ function App() {
                         return { ...prev, files: result.files, tapes: result.tapes };
                       });
                       setImportAnalysis(null);
-                      setToast({ msg: "SD Structure Imported", type: "success" });
+                      showToast("SD Structure Imported", "success");
                     });
                   }}
                   onImportFiles={(files) => {
@@ -4411,7 +4487,7 @@ function App() {
                           ...prev,
                           files: { ...prev.files, ...newFiles }
                         }));
-                        setToast({ msg: `Imported ${count} files to Pool`, type: "success" });
+                        showToast(`Imported ${count} files to Pool`, "success");
                       }
                       setImportAnalysis(null);
                     });
@@ -4456,10 +4532,10 @@ function App() {
                         .getDirectoryHandle('WAV_Builder', { create: false })
                         .then(d => d.getDirectoryHandle('Projects', { create: false }));
                       await projectsDir.removeEntry(name, { recursive: true });
-                      setToast({ msg: `SD backup "${name}" deleted`, type: 'success' });
+                      showToast(`SD backup "${name}" deleted`, 'success');
                       await scanProjects(workHandle, backupHandle);
                     } catch (e: any) {
-                      setToast({ msg: 'Delete failed: ' + e.message, type: 'error' });
+                      showToast('Delete failed: ' + e.message, 'error');
                     } finally {
                       setIsProcessing(false);
                       setProgressMsg('');
@@ -4482,10 +4558,10 @@ function App() {
                     await new Promise(r => setTimeout(r, 500 - elapsed));
                   }
 
-                  setToast({ msg: "Project scan complete", type: "success" });
+                  showToast("Project scan complete", "success");
                 } catch (e) {
                   console.error("Scan failed", e);
-                  setToast({ msg: "Scan failed", type: "error" });
+                  showToast("Scan failed", "error");
                 } finally {
                   setIsProcessing(false);
                 }
@@ -4502,7 +4578,7 @@ function App() {
               onExportZip={handleExportZip}
               onBuildProject={async (projectName) => {
                 if (!workHandle || !backupHandle) {
-                  setToast({ msg: "Both Project Folder and SD Card must be connected.", type: 'error' });
+                  showToast("Both Project Folder and SD Card must be connected.", 'error');
                   return;
                 }
 
@@ -4528,7 +4604,7 @@ function App() {
 
                 } catch (e: any) {
                   console.error(e);
-                  setToast({ msg: "Failed to build diff: " + e.message, type: 'error' });
+                  showToast("Failed to build diff: " + e.message, 'error');
                 } finally {
                   setIsProcessing(false);
                   setProgressMsg('');
@@ -4536,7 +4612,7 @@ function App() {
               }}
               onImportSK={async () => {
                 if (!backupHandle) {
-                  setToast({ msg: "SD card not connected.", type: 'error' });
+                  showToast("SD card not connected.", 'error');
                   return;
                 }
                 setIsProcessing(true);
@@ -4548,7 +4624,7 @@ function App() {
                   setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                 } catch (e: any) {
                   console.error(e);
-                  setToast({ msg: "SK scan failed: " + e.message, type: 'error' });
+                  showToast("SK scan failed: " + e.message, 'error');
                 } finally {
                   setIsProcessing(false);
                   setProgressMsg('');
@@ -4573,10 +4649,10 @@ function App() {
                       const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
                       const { saveUserLibraryToDirectory } = await import('./utils/exportUtils');
                       await saveUserLibraryToDirectory(userLibrary, wavBuilderDir, new Set(missingLibraryFiles), (msg) => setProgressMsg(msg));
-                      setToast({ msg: 'User Library successfully synced to SD card!', type: 'success' });
+                      showToast('User Library successfully synced to SD card!', 'success');
                     } catch (e: any) {
                       console.error(e);
-                      setToast({ msg: 'Library sync failed: ' + e.message, type: 'error' });
+                      showToast('Library sync failed: ' + e.message, 'error');
                     } finally {
                       setIsProcessing(false);
                       setProgressMsg('');
@@ -4629,12 +4705,12 @@ function App() {
                       setHasUnsavedChanges(false);
                     }
 
-                    setToast({ msg: `${syncProjectTarget} synced successfully`, type: 'success' });
+                    showToast(`${syncProjectTarget} synced successfully`, 'success');
                     setSyncProjectTarget(null);
                     await scanProjects(workHandle, backupHandle);
                   } catch (e: any) {
                     console.error(e);
-                    setToast({ msg: 'Sync failed: ' + e.message, type: 'error' });
+                    showToast('Sync failed: ' + e.message, 'error');
                   } finally {
                     setIsProcessing(false);
                     setProgressMsg('');
@@ -4669,10 +4745,7 @@ function App() {
                       const unreadable = await verifyProjectBlobs(projectState);
                       if (unreadable.length > 0) {
                         const fileList = unreadable.map(u => u.fileName).slice(0, 3).join(', ') + (unreadable.length > 3 ? '...' : '');
-                        setToast({ 
-                          msg: `Unreadable files detected: ${fileList}. Please refresh or re-link project folder.`, 
-                          type: 'error' 
-                        });
+                        showToast(`Unreadable files detected: ${fileList}. Please refresh or re-link project folder.`, 'error');
                         setIsProcessing(false);
                         setProgressMsg('');
                         return;
@@ -4785,7 +4858,7 @@ function App() {
                         }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
                       }
 
-                      setToast({ msg: "Hardware Sync Complete", type: "success" });
+                      showToast("Hardware Sync Complete", "success");
                       scanProjects(workHandle, backupHandle);
                       // ── Background SK Backup (non-blocking) ──
                       if (workHandle && backupHandle && projectName) {
@@ -4799,7 +4872,7 @@ function App() {
                       }
                     } catch (e: any) {
                       console.error(e);
-                      setToast({ msg: "Sync Failed: " + e.message, type: "error" });
+                      showToast("Sync Failed: " + e.message, "error");
                     } finally {
                       setIsProcessing(false);
                       setProgressMsg('');
@@ -5102,15 +5175,10 @@ function App() {
         skBackupLimit={SK_BACKUP_LIMIT}
       />
 
-      {
-        toast && (
-          <Toast
-            message={toast.msg}
-            type={toast.type}
-            onClose={() => setToast(null)}
-          />
-        )
-      }
+      <Toast
+        toasts={toasts}
+        onRemove={removeToast}
+      />
 
       {
         showDeviceImport && (
@@ -5181,7 +5249,7 @@ function App() {
           } catch (e: any) {
             if (e.name !== 'AbortError') {
               console.error("Relocation failed", e);
-              setToast({ msg: 'Failed to relocate file: ' + e.message, type: 'error' });
+              showToast('Failed to relocate file: ' + e.message, 'error');
             }
           }
         }}
@@ -5205,7 +5273,12 @@ function App() {
       }
 
 
-    </ErrorBoundary >
+      <LogModal 
+        isOpen={isLogModalOpen} 
+        onClose={() => setIsLogModalOpen(false)} 
+      />
+      <Toast toasts={toasts} onRemove={removeToast} />
+    </ErrorBoundary>
   );
 }
 

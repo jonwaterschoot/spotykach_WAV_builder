@@ -1,6 +1,6 @@
 import { TAPE_COLORS } from '../types';
 import type { TapeColor } from '../types';
-import { LayoutGrid } from 'lucide-react';
+import { LayoutGrid, Terminal } from 'lucide-react';
 
 import { TapeIcon } from './TapeIcon';
 
@@ -11,10 +11,10 @@ interface TapeSelectorProps {
     onToggleAllView: () => void;
     onDropOnTape: (color: TapeColor, fileId: string, source: string, isDuplicate: boolean) => void;
     onDropOnViewAll: (fileId: string, source: string, isDuplicate: boolean) => void;
-    onReset: () => void;
+    onOpenLogs: () => void;
 }
 
-export const TapeSelector = ({ currentTape, isAllView, onSelect, onToggleAllView, onDropOnTape, onDropOnViewAll, onReset }: TapeSelectorProps) => {
+export const TapeSelector = ({ currentTape, isAllView, onSelect, onToggleAllView, onDropOnTape, onDropOnViewAll, onOpenLogs }: TapeSelectorProps) => {
 
     // Drag Handlers
     const handleDragOver = (e: React.DragEvent) => {
@@ -115,17 +115,17 @@ export const TapeSelector = ({ currentTape, isAllView, onSelect, onToggleAllView
                 </div>
             </div>
 
-            {/* Reset Button (Bottom) */}
+            {/* Logs Button (Bottom) */}
             <div className="mt-auto w-full pt-4 border-t border-gray-800 flex flex-col items-center gap-2">
                 <button
-                    onClick={onReset}
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-red-400 bg-gray-800 border border-red-900/60 hover:bg-red-600 hover:text-white hover:border-red-500 hover:shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all duration-200 group"
-                    title="Reset Application"
+                    onClick={onOpenLogs}
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-indigo-400 bg-gray-800 border border-indigo-900/60 hover:bg-indigo-600 hover:text-white hover:border-indigo-500 hover:shadow-[0_0_10px_rgba(79,70,229,0.5)] transition-all duration-200 group"
+                    title="View System Logs"
                 >
-                    <span className="text-xl font-bold group-hover:scale-110 transition-transform">×</span>
+                    <Terminal size={18} className="group-hover:scale-110 transition-transform" />
                 </button>
                 <div className="text-[9px] text-synthux-yellow font-mono text-center uppercase tracking-widest leading-none transition-colors">
-                    Reset App
+                    Logs
                 </div>
             </div>
         </div>
