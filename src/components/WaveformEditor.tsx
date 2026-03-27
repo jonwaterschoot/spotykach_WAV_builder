@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, XCircle, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
@@ -353,6 +353,191 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
     );
 };
 
+// Loop Crossfade Overlay Component
+interface LoopOverlayProps {
+    width: number;
+    height: number;
+    duration: number;
+    region: { start: number, end: number };
+    crossfade: number;
+    onCrossfadeChange: (val: number) => void;
+    active?: boolean;
+    isPreview?: boolean;
+}
+
+const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeChange, active = true, isPreview = false }: LoopOverlayProps) => {
+    if (duration <= 0 || !active) return null;
+
+    const pxPerSec = width / duration;
+    
+    // In Preview Mode, we just show a highlight at the beginning where the crossfade happened
+    if (isPreview) {
+        const xfPx = crossfade * pxPerSec;
+        return (
+            <svg
+                className="absolute top-0 left-0 pointer-events-none"
+                style={{ width: '100%', height: '100%', zIndex: 999 }}
+                viewBox={`0 0 ${width} ${height}`}
+                preserveAspectRatio="none"
+            >
+                {/* Crossfade Region Highlight */}
+                <rect x={0} y={0} width={xfPx} height={height} fill="rgba(0, 163, 255, 0.2)" />
+                <line x1={xfPx} y1={0} x2={xfPx} y2={height} stroke="#00A3FF" strokeWidth="1" strokeDasharray="4 2" />
+                <text x={xfPx + 5} y={15} fill="#00A3FF" fontSize="9" fontWeight="bold" className="uppercase tracking-tighter">Loop Seam</text>
+                <text x={xfPx + 5} y={25} fill="#00A3FF" fontSize="8" className="opacity-60 uppercase tracking-tighter">Transition Join</text>
+
+                {/* End Point Indicator */}
+                <line x1={width - 1} y1={0} x2={width - 1} y2={height} stroke="#00A3FF" strokeWidth="2" strokeDasharray="2 2" />
+                <rect x={width - 40} y={height - 25} width={40} height={15} rx={2} fill="rgba(0, 163, 255, 0.8)" />
+                <text x={width - 36} y={height - 14} fill="white" fontSize="9" fontWeight="bold" className="uppercase tracking-tighter">End 🔁</text>
+            </svg>
+        );
+    }
+
+    const regionStartPx = region.start * pxPerSec;
+    const regionEndPx = region.end * pxPerSec;
+    const xfPx = crossfade * pxPerSec;
+
+    const [dragging, setDragging] = useState<boolean>(false);
+    const [dragStart, setDragStart] = useState<{ x: number, initialXf: number } | null>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (!active) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(true);
+        setDragStart({ x: e.clientX, initialXf: crossfade });
+        (e.target as Element).setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!dragging || !dragStart || !svgRef.current) return;
+        e.preventDefault();
+
+        // Simpler: just calculate the new xf based on current cursor position relative to region boundaries.
+        const rect = svgRef.current.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const cursorTime = (cursorX / width) * duration;
+
+        let newXf = crossfade;
+        const distFromStart = Math.abs(cursorTime - region.start);
+        const distFromEnd = Math.abs(cursorTime - region.end);
+
+        if (distFromStart < distFromEnd) {
+            newXf = cursorTime - region.start;
+        } else {
+            newXf = region.end - cursorTime;
+        }
+
+        // Clamp
+        const maxCf = Math.min(10, (region.end - region.start) / 2);
+        newXf = Math.max(0, Math.min(maxCf, newXf));
+        
+        onCrossfadeChange(Math.round(newXf * 100) / 100);
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        setDragging(false);
+        setDragStart(null);
+        (e.target as Element).releasePointerCapture(e.pointerId);
+    };
+
+    return (
+        <svg
+            ref={svgRef}
+            className="absolute top-0 left-0 loop-overlay-svg-container"
+            style={{
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 999,
+                position: 'absolute',
+                top: 0,
+                left: 0
+            }}
+            viewBox={`0 0 ${width} ${height}`}
+            preserveAspectRatio="none"
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+        >
+            <defs>
+                <linearGradient id="loopGradientStart" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#00A3FF" stopOpacity="0.4" />
+                    <stop offset="100%" stopColor="#00A3FF" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="loopGradientEnd" x1="100%" y1="0%" x2="0%" y2="0%">
+                    <stop offset="0%" stopColor="#00A3FF" stopOpacity="0.4" />
+                    <stop offset="100%" stopColor="#00A3FF" stopOpacity="0" />
+                </linearGradient>
+            </defs>
+
+            {/* Start Zone */}
+            <rect
+                x={regionStartPx}
+                y={0}
+                width={xfPx}
+                height={height}
+                fill="url(#loopGradientStart)"
+                style={{ pointerEvents: 'none' }}
+            />
+            <path
+                d={`M ${regionStartPx},${height} C ${regionStartPx + xfPx / 2},${height} ${regionStartPx + xfPx / 2},0 ${regionStartPx + xfPx},0`}
+                fill="none"
+                stroke="#00A3FF"
+                strokeWidth="2"
+                strokeDasharray="4 2"
+                opacity="0.6"
+            />
+
+            {/* End Zone */}
+            <rect
+                x={regionEndPx - xfPx}
+                y={0}
+                width={xfPx}
+                height={height}
+                fill="url(#loopGradientEnd)"
+                style={{ pointerEvents: 'none' }}
+            />
+            <path
+                d={`M ${regionEndPx - xfPx},0 C ${regionEndPx - xfPx / 2},0 ${regionEndPx - xfPx / 2},${height} ${regionEndPx},${height}`}
+                fill="none"
+                stroke="#00A3FF"
+                strokeWidth="2"
+                strokeDasharray="4 2"
+                opacity="0.6"
+            />
+
+            {/* Start Handle */}
+            <g style={{ cursor: 'col-resize', pointerEvents: 'auto' }} onPointerDown={handlePointerDown}>
+                <line x1={regionStartPx + xfPx} y1={0} x2={regionStartPx + xfPx} y2={height} stroke="#00A3FF" strokeWidth="2" />
+                <rect x={regionStartPx + xfPx - 10} y={0} width={20} height={height} fill="transparent" />
+                <circle cx={regionStartPx + xfPx} cy={height / 2} r={4} fill="#00A3FF" />
+            </g>
+
+            {/* End Handle */}
+            <g style={{ cursor: 'col-resize', pointerEvents: 'auto' }} onPointerDown={handlePointerDown}>
+                <line x1={regionEndPx - xfPx} y1={0} x2={regionEndPx - xfPx} y2={height} stroke="#00A3FF" strokeWidth="2" />
+                <rect x={regionEndPx - xfPx - 10} y={0} width={20} height={height} fill="transparent" />
+                <circle cx={regionEndPx - xfPx} cy={height / 2} r={4} fill="#00A3FF" />
+            </g>
+
+            {/* Label */}
+            <text
+                x={regionStartPx + xfPx + 5}
+                y={20}
+                fill="#00A3FF"
+                fontSize="10"
+                fontWeight="bold"
+                style={{ textShadow: '0 1px 2px black' }}
+            >
+                {crossfade.toFixed(2)}s X-Fade
+            </text>
+        </svg>
+    );
+};
+
 // Custom BPM Input Component
 const BpmInput = ({ value, onChange }: { value: number | null, onChange: (val: number | null) => void }) => {
     const [isDragging, setIsDragging] = useState(false);
@@ -467,6 +652,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [fadeOut, setFadeOut] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
     const [loopCrossfade, setLoopCrossfade] = useState(0.2); // Default 0.2s
+    const [loopFitTo42, setLoopFitTo42] = useState(false);
+    const [hasLoopInteracted, setHasLoopInteracted] = useState(false);
 
     const [isProcessing, setIsProcessing] = useState(false);
     const [helpText, setHelpText] = useState("");
@@ -560,12 +747,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
     const [stereoSplitView, setStereoSplitView] = useState(false);
     const [internalMetadata, setInternalMetadata] = useState<WavMetadata | null>(metadata || null);
+    const [hasTrimInteracted, setHasTrimInteracted] = useState(false);
 
     // Individual Tool Dirty States
     // NOTE: Normalize and Loop tools use an instant-apply pattern (click Apply → new version created).
     // They do NOT participate in the cross-tool dirty warning — only tools with pending/unapplied
     // state (trim, automation, EQ, limiter, pitch, cutter, slicer) are tracked here.
-    const isTrimDirty = fadeIn > 0 || fadeOut > 0 || regionState.start > 0.01 || regionState.end < ((originalBuffer?.duration || 0) - 0.01);
+    const isTrimDirty = hasTrimInteracted && (fadeIn > 0 || fadeOut > 0 || regionState.start > 0.01 || regionState.end < ((originalBuffer?.duration || 0) - 0.01));
     const isAutomationDirty = automationPoints.length > 0 && (
         automationPoints.length !== 2 
         || automationPoints[0].value !== 1 
@@ -580,10 +768,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const isSlicerDirty = slicePoints.length !== (initialSlicePoints?.length || 0) || slicePoints.some((p, i) => Math.abs(p - (initialSlicePoints?.[i] || 0)) > 0.001) || tempo !== initialTempo;
 
     // Calculated Dirty State
+    const isLoopDirty = hasLoopInteracted && (loopCrossfade !== 0.2 || loopFitTo42 || hasTrimInteracted);
+    // Calculated Dirty State
     const isDirty = useMemo(() => {
         if (!originalBuffer) return false;
-        return isTrimDirty || isAutomationDirty || isEqDirty || isLimiterDirty || isPitchDirty || isCutterDirty || isSlicerDirty;
-    }, [isTrimDirty, isAutomationDirty, isEqDirty, isLimiterDirty, isPitchDirty, isCutterDirty, isSlicerDirty, originalBuffer]);
+        return isTrimDirty || isAutomationDirty || isEqDirty || isLimiterDirty || isPitchDirty || isCutterDirty || isSlicerDirty || isLoopDirty;
+    }, [isTrimDirty, isAutomationDirty, isEqDirty, isLimiterDirty, isPitchDirty, isCutterDirty, isSlicerDirty, isLoopDirty, originalBuffer]);
 
     // Report Dirty State to Parent — use a ref so that the effect only fires when isDirty changes,
     // regardless of whether the parent provides a new function reference on each render.
@@ -607,7 +797,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         else if (activeTool === 'pitch') currentToolIsDirty = isPitchDirty;
         else if (activeTool === 'cutter') currentToolIsDirty = isCutterDirty;
         else if (activeTool === 'slicer') currentToolIsDirty = isSlicerDirty;
-        // Normalize and Loop: instant-apply, no pending dirty state to warn about
+        else if (activeTool === 'loop') currentToolIsDirty = isLoopDirty;
 
         if (currentToolIsDirty && activeTool !== null) {
             setPendingTool(next);
@@ -618,6 +808,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
     const executeToolSwitch = (next: ToolId) => {
         setActiveTool(next);
+        if (next === 'trim') setHasTrimInteracted(true);
+        if (next === 'loop') setHasLoopInteracted(true);
 
         // Auto-create automation points when toggling on
         if (next === 'automation' && automationPoints.length === 0) {
@@ -639,11 +831,35 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 selected: true
             }]);
         }
+
+        // Auto-play loop when entering loop tool
+        if (next === 'loop') {
+            setIsLooping(true);
+            // Apply loop to region if trim tool was active
+            if (regions.current) {
+                const list = regions.current.getRegions();
+                const trimRegion = list.find((r: any) => r.id === 'trim-region');
+                if (trimRegion) trimRegion.setOptions({ loop: true });
+            }
+        } else if (activeTool === 'loop') {
+            // Turning off loop tool
+            setIsLooping(false);
+            if (wavesurfer.current) {
+                wavesurfer.current.pause();
+                wavesurfer.current.setVolume(1.0); // Reset volume to prevent stuck mutes
+            }
+            if (regions.current) {
+                const list = regions.current.getRegions();
+                const trimRegion = list.find((r: any) => r.id === 'trim-region');
+                if (trimRegion) trimRegion.setOptions({ loop: false });
+            }
+        }
     };
 
     const handleDiscardChanges = async () => {
         setFadeIn(0);
         setFadeOut(0);
+        setHasTrimInteracted(false);
         if (originalBuffer) {
             setRegionState({ start: 0, end: originalBuffer.duration });
         }
@@ -656,6 +872,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setLimiterCeiling(-0.3);
         setNormalizationLevel(-1); // Reset normalize tool state
         setCutRegions([]);
+        setLoopCrossfade(0.2);
+        setLoopFitTo42(false);
+        setHasLoopInteracted(false);
         if (initialSlicePoints) setSlicePoints([...initialSlicePoints]);
         
         setIsPreviewing(false);
@@ -735,6 +954,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 try { wavesurfer.current.destroy(); } catch (e) { console.warn(e); }
                 wavesurfer.current = null;
             }
+            if (previewAudio) {
+                try { 
+                    previewAudio.pause(); 
+                    previewAudio.src = ""; 
+                } catch (e) { console.warn("Cleanup previewAudio fail", e); }
+            }
         };
     }, [currentBlob]); // Depend on currentBlob, not slot.blob directly
 
@@ -761,6 +986,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setSlicePoints([]);
         setCutRegions([]);
         setAutomationPoints([]);
+        setHasTrimInteracted(false);
     }, [currentBlob, loadedVersionId, versions]);
 
     // If slot.blob changes from parent (e.g. external update?), sync it.
@@ -1003,6 +1229,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             wsRegions.on('region-updated', (r: any) => {
                 if (r.id === 'trim-region') {
                     setRegionState({ start: r.start, end: r.end });
+                    setHasTrimInteracted(true);
                     if (isMounted.current) handleDirtyChange();
                 } else {
                     // Volume Selection Deprecated
@@ -1172,11 +1399,37 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             if (regions.current) {
                 const list = regions.current.getRegions();
                 if (list.length > 0) {
-                    list[0].setOptions({ loop: true });
+                    list[0].setOptions({ loop: true, drag: true, resize: !loopFitTo42 });
                 }
             }
         }
-    }, [activeTool]);
+    }, [activeTool, loopFitTo42]);
+
+    // Enforce 42s Fit Logic
+    useEffect(() => {
+        if (!loopFitTo42 || !originalBuffer || !regions.current) return;
+
+        const list = regions.current.getRegions();
+        const trimRegion = list.find((r: any) => r.id === 'trim-region');
+        if (!trimRegion) return;
+
+        // Target length = 42 + xfade
+        const targetLen = 42 + loopCrossfade;
+        const currentLen = trimRegion.end - trimRegion.start;
+
+        if (Math.abs(currentLen - targetLen) > 0.001) {
+            let newEnd = trimRegion.start + targetLen;
+            let newStart = trimRegion.start;
+
+            if (newEnd > originalBuffer.duration) {
+                newEnd = originalBuffer.duration;
+                newStart = Math.max(0, newEnd - targetLen);
+            }
+
+            trimRegion.setOptions({ start: newStart, end: newEnd, resize: false, drag: true });
+            setRegionState({ start: newStart, end: newEnd });
+        }
+    }, [loopFitTo42, loopCrossfade, originalBuffer]);
 
 
     // Keyboard shortcuts
@@ -1346,6 +1599,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const regionList = regions.current?.getRegions();
             const trimRegion = regionList?.find((r: any) => r.id === 'trim-region');
 
+            if (previewingVersionId) {
+                previewAudio.pause();
+                setPreviewingVersionId(null);
+            }
+
             // Only bind playback to trim region if the TRIM TOOL is active
             if (activeTool === 'trim' && trimRegion) {
                 const currentTime = wavesurfer.current.getCurrentTime();
@@ -1436,6 +1694,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const newBlob = await audioProcessor.toWav(processed, meta);
             triggerSafePause(async () => {
                 if (wavesurfer.current) {
+                    if (previewingVersionId) {
+                        previewAudio.pause();
+                        setPreviewingVersionId(null);
+                    }
                     await wavesurfer.current.loadBlob(newBlob);
                     wavesurfer.current.play();
                 }
@@ -1549,6 +1811,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     wavesurfer.current.play();
                 }
             });
+            if (previewingVersionId) {
+                previewAudio.pause();
+                setPreviewingVersionId(null);
+            }
             setIsPreviewingLimiter(true);
             showToast(`Previewing ${limiterMode === 'peak' ? 'Peak Limiter' : 'Limiter'}...`, "success");
         } catch (e) {
@@ -1628,6 +1894,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     wavesurfer.current.play();
                 }
             });
+            if (previewingVersionId) {
+                previewAudio.pause();
+                setPreviewingVersionId(null);
+            }
             setIsPreviewingCut(true);
             showToast("Previewing Cut...", "success");
         } catch (e) {
@@ -1952,6 +2222,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const { buffer: processed, previewRegions } = await audioProcessor.applyMultiPitchShift(originalBuffer, pitchRegions);
             const blob = await audioProcessor.toWav(processed);
             if (wavesurfer.current) {
+                if (previewingVersionId) {
+                    previewAudio.pause();
+                    setPreviewingVersionId(null);
+                }
                 wavesurfer.current.pause();
                 await wavesurfer.current.loadBlob(blob);
                 wavesurfer.current.play();
@@ -2080,8 +2354,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const handlePreviewLoop = async () => {
         if (!originalBuffer || !wavesurfer.current) return;
 
-        // Always regenerate (Refresh behavior)
-        /*
+        // Toggle: If already previewing, stop and return to edit mode
         if (isPreviewingLoop) {
             if (currentBlob) await wavesurfer.current.loadBlob(currentBlob);
             // Disable Loop
@@ -2090,7 +2363,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             setIsPreviewingLoop(false);
             return;
         }
-        */
 
         setIsProcessing(true);
         try {
@@ -2116,6 +2388,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             if (media) media.loop = true;
 
             wavesurfer.current.play();
+            if (previewingVersionId) {
+                previewAudio.pause();
+                setPreviewingVersionId(null);
+            }
             setIsPreviewingLoop(true);
             showToast("Previewing Loop... (Click again to stop)", "success");
         } catch (e) {
@@ -2283,6 +2559,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             setPreviewingVersionId(null);
         } else {
             if (v.blob) {
+                if (isPlaying || isPausing) {
+                    if (wavesurfer.current) wavesurfer.current.pause();
+                    setIsPlaying(false);
+                    setIsPausing(false);
+                    isPausingRef.current = false;
+                }
                 const url = URL.createObjectURL(v.blob);
                 previewAudio.src = url;
                 previewAudio.play().catch(e => console.error("Preview fail", e));
@@ -2950,12 +3232,19 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => handleApplyNormalization(normalizationLevel)}
-                                                    disabled={isProcessing || hasNormalized}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${hasNormalized ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-yellow-400 hover:text-yellow-300 hover:border-yellow-800'
+                                                    disabled={isProcessing}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${isProcessing
+                                                        ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50'
+                                                        : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-yellow-400 hover:text-yellow-300 hover:border-yellow-800'
                                                         }`}
                                                 >
-                                                    <BarChart2 size={12} /> {hasNormalized ? "Normalized" : "Normalize"}
+                                                    <BarChart2 size={12} /> Normalize
                                                 </button>
+                                                {hasNormalized && (
+                                                    <span className="text-[10px] font-bold text-yellow-500/80 uppercase tracking-tight italic bg-yellow-500/5 px-2 py-1 rounded border border-yellow-500/10 whitespace-nowrap">
+                                                        Normalization has already been applied
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -3137,16 +3426,36 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
+                                            {originalBuffer && originalBuffer.duration > 42 && (
+                                                <>
+                                                    <div className="h-6 w-px bg-gray-800"></div>
+                                                    <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-gray-800">
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                id="loop-fit-42"
+                                                                checked={loopFitTo42}
+                                                                onChange={(e) => setLoopFitTo42(e.target.checked)}
+                                                                className="w-3 h-3 accent-synthux-blue"
+                                                            />
+                                                            <label htmlFor="loop-fit-42" className="text-[10px] font-bold uppercase text-gray-500 cursor-pointer select-none">
+                                                                Fit result to 42.00s
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+
                                             <div className="h-6 w-px bg-gray-800"></div>
 
                                             <div className="flex items-center gap-2">
                                                 <button onClick={handlePreviewLoop}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLoop ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white'}`}
-                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Refresh Loop Preview" : "Preview Loop")}
+                                                    onMouseEnter={() => setHelpText(isPreviewingLoop ? "Stop Preview & Return to Edit" : "Preview Loop")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 >
-                                                    {isPreviewingLoop ? <RefreshCw size={12} /> : <Play size={12} />}
-                                                    {isPreviewingLoop ? "Refresh" : "Preview"}
+                                                    {isPreviewingLoop ? <XCircle size={12} /> : <Play size={12} />}
+                                                    {isPreviewingLoop ? "Edit" : "Preview"}
                                                 </button>
                                                 <button onClick={handleApplyLoop}
                                                     className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
@@ -3942,6 +4251,26 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 />
                                             </div>
                                         )}
+
+                                        {/* Loop Overlay */}
+                                        {activeTool === 'loop' && editorDuration > 0 && (
+                                            <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
+                                                <LoopOverlay
+                                                    width={contentWidth}
+                                                    height={256}
+                                                    duration={editorDuration}
+                                                    region={regionState}
+                                                    crossfade={loopCrossfade}
+                                                    onCrossfadeChange={(val) => {
+                                                        setLoopCrossfade(val);
+                                                        handleDirtyChange();
+                                                    }}
+                                                    active={activeTool === 'loop'}
+                                                    isPreview={isPreviewingLoop}
+                                                />
+                                            </div>
+                                        )}
+
                                         {/* Center Line Visual */}
                                         <div className="absolute inset-0 pointer-events-none border-t border-b border-dashed border-gray-700/30 top-1/2 -translate-y-1/2 h-0 z-0"></div>
                                     </div>

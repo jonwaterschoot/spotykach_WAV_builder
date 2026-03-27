@@ -638,13 +638,15 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowFuture(v => !v)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${showFuture ? 'bg-green-600/20 border-green-500/50 text-green-400' : 'border-white/10 text-gray-400 hover:text-white hover:border-white/20'}`}
-                        >
-                            {showFuture ? <X size={13} /> : <Check size={13} />}
-                            {showFuture ? 'Hide Result' : 'Show Result'}
-                        </button>
+                        {!isAdvanced && (
+                            <button
+                                onClick={() => setShowFuture(v => !v)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${showFuture ? 'bg-green-600/20 border-green-500/50 text-green-400' : 'border-white/10 text-gray-400 hover:text-white hover:border-white/20'}`}
+                            >
+                                {showFuture ? <X size={13} /> : <Check size={13} />}
+                                {showFuture ? 'Hide Result' : 'Show Result'}
+                            </button>
+                        )}
                         {onRefresh && (
                             <button
                                 onClick={onRefresh}
@@ -704,17 +706,19 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             </>
                         )}
                     </div>
-                    <div className="flex items-center gap-4 ml-auto">
-                        <label className="flex items-center gap-1.5 cursor-pointer select-none group">
-                            <input
-                                type="checkbox"
-                                checked={showAll}
-                                onChange={(e) => setShowAll(e.target.checked)}
-                                className="w-3.5 h-3.5 rounded bg-white/10 border-white/20 text-indigo-500 focus:ring-0 focus:ring-offset-0"
-                            />
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none group-hover:text-white transition-colors">Show all slots</span>
-                        </label>
-                    </div>
+                    {isAdvanced && (
+                        <div className="flex items-center gap-4 ml-auto">
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none group">
+                                <input
+                                    type="checkbox"
+                                    checked={showAll}
+                                    onChange={(e) => setShowAll(e.target.checked)}
+                                    className="w-3.5 h-3.5 rounded bg-white/10 border-white/20 text-indigo-500 focus:ring-0 focus:ring-offset-0"
+                                />
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none group-hover:text-white transition-colors">Show all slots</span>
+                            </label>
+                        </div>
+                    )}
                 </div>
 
                 {/* Scrollable Content Wrapper */}

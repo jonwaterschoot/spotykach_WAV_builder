@@ -104,7 +104,7 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> exports your project into the hardware folder structure. <span className="text-synthux-orange font-semibold">Sync</span> copies files between your work folder and the SD card. These are <strong className="text-white">two different operations</strong>.
+                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> exports your project into the hardware folder structure. <span className="text-synthux-orange font-semibold">Sync</span> copies a backup of the full project folder between your work folder and the SD card. These are <strong className="text-white">two different operations</strong>.
                                                 </td>
                                             </tr>
                                             <tr className="bg-white/5">
@@ -114,7 +114,7 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    Link any folder on your drive as a sample library. Library samples can be <strong className="text-white">shared across multiple projects</strong>.
+                                                    Link any folder on your drive as a sample library. Library samples can be <strong className="text-white">shared across multiple projects</strong>. + Option to build a custom curated library of your favorite samples.
                                                 </td>
                                             </tr>
                                         </tbody>

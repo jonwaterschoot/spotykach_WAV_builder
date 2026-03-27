@@ -25,8 +25,8 @@ import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
 import { ProjectManager } from './components/ProjectManager';
 import { ProjectSyncModal } from './components/ProjectSyncModal';
-import { DeviceImportModal } from './components/DeviceImportModal';
 import { LibraryManager } from './components/LibraryManager';
+import { LibrarySyncModal } from './components/LibrarySyncModal';
 import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight, Settings, StickyNote, ScrollText, ChevronDown, X, FileText } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
@@ -43,6 +43,8 @@ import { MissingFilesResolver, type MissingAsset } from './components/MissingFil
 import { ConfigModal } from './components/ConfigModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Rnd } from 'react-rnd';
+
+import { useAudioPlayer } from './contexts/AudioPlayerContext';
 
 // Confirm Action Helper
 import { loadStateFromDB, clearState } from './utils/persistence';
@@ -76,6 +78,8 @@ function App() {
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
+
+  const { stop: stopGlobalPlayer } = useAudioPlayer();
 
   // Modals & UI State
   const [showInfo, setShowInfo] = useState(false);
@@ -150,6 +154,7 @@ function App() {
   // Project Manager State
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const [showLibrarySyncModal, setShowLibrarySyncModal] = useState(false);
   const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
   const [isEditorDirty, setIsEditorDirty] = useState(false);
@@ -232,7 +237,6 @@ function App() {
 
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
-  const [showDeviceImport, setShowDeviceImport] = useState(false);
 
   // ── SK Backup helpers ─────────────────────────────────────────────────────
   const scanSKBackups = async (projectName: string, handle: FileSystemDirectoryHandle) => {
@@ -701,120 +705,7 @@ function App() {
     }
   };
 
-  const handleImportDeviceChanges = async (selectedFiles: import('./utils/importUtils').DeviceFileChange[], toPoolOnly: boolean = false) => {
-    console.log("[DeviceImport] Starting import for", selectedFiles.length, "files", toPoolOnly ? "(Pool Only)" : "");
 
-    const newFiles: Record<string, import('./types').FileRecord> = {};
-    const newTapes = { ...state.tapes };
-    let importedCount = 0;
-
-    for (const change of selectedFiles) {
-      try {
-        const file = change.file;
-
-        // FORCE SAFE COPY: Read into ArrayBuffer to detach from file system
-        const arrayBuffer = await file.arrayBuffer();
-        const safeBlob = new Blob([arrayBuffer], { type: "audio/wav" });
-
-        // Validate size
-        if (safeBlob.size === 0) {
-          console.warn(`[DeviceImport] Warning: Read 0 bytes from ${change.slot}`);
-        }
-
-        const isMod = 'originalFileId' in change && change.originalFileId;
-
-        if (isMod) {
-          // MODIFIED FILE: Create new version
-          const originalId = change.originalFileId!;
-          const originalFile = state.files[originalId];
-
-          if (originalFile) {
-            console.log(`[DeviceImport] Updating version for ${originalFile.originalName} (${originalId})`);
-
-            const newVersionId = crypto.randomUUID();
-            const newVersion = {
-              id: newVersionId,
-              timestamp: Date.now(),
-              description: `Device Import (${new Date().toLocaleTimeString()})`,
-              blob: safeBlob,
-              duration: 0
-            };
-
-            const updatedFile = {
-              ...originalFile,
-              versions: [...originalFile.versions, newVersion],
-              currentVersionId: newVersionId
-            };
-
-            newFiles[originalId] = updatedFile;
-            importedCount++;
-          }
-        } else {
-          // NEW FILE: Create new asset
-          console.log(`[DeviceImport] Importing new file for slot ${change.slot}`);
-
-          const newId = crypto.randomUUID();
-          const versionId = crypto.randomUUID();
-
-          const newFile: import('./types').FileRecord = {
-            id: newId,
-            name: file.name,
-            originalName: file.name,
-            versions: [{
-              id: versionId,
-              timestamp: Date.now(),
-              description: 'Device Import',
-              blob: safeBlob,
-              duration: 0
-            }],
-            currentVersionId: versionId,
-            isParked: toPoolOnly
-          };
-          newFiles[newId] = newFile;
-
-          // Assign to Slot if color/slotId available AND not toPoolOnly
-          if (!toPoolOnly && change.color && change.slotId) {
-            const tapeColor = change.color as import('./types').TapeColor;
-            const slotIndex = change.slotId - 1; // 0-based
-
-            if (newTapes[tapeColor] && slotIndex >= 0 && slotIndex < 6) {
-              // Clone the tape object to avoid mutation
-              // @ts-ignore
-              const updatedTape = { ...newTapes[tapeColor] };
-              // Clone the slots array
-              // @ts-ignore
-              updatedTape.slots = [...newTapes[tapeColor].slots];
-
-              // Update the specific slot
-              // @ts-ignore
-              updatedTape.slots[slotIndex] = { id: slotIndex + 1, fileId: newId };
-
-              // Assign back to tapes object
-              // @ts-ignore
-              newTapes[tapeColor] = updatedTape;
-            }
-          }
-          importedCount++;
-        }
-
-      } catch (e) {
-        console.error(`[DeviceImport] Failed to import ${change.slot}`, e);
-      }
-    }
-
-    // Apply changes
-    if (importedCount > 0) {
-      setState(prev => ({
-        ...prev,
-        files: { ...prev.files, ...newFiles },
-        tapes: newTapes
-      }));
-
-      showToast(`Successfully imported ${importedCount} files from device.`, "success");
-      setDeviceDiff(null);
-    }
-    setShowDeviceImport(false);
-  };
 
 
   const handleCreateEmptyProject = async (projectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
@@ -1328,6 +1219,55 @@ function App() {
       console.error('Failed to load workspace User_Library', e);
     }
   }, [workHandle]);
+
+  const handleDownloadLibraryZip = async () => {
+    const files = Object.values(userLibrary.files);
+    if (files.length === 0) {
+      showToast("Library is empty.", "warning");
+      return;
+    }
+
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      let addedCount = 0;
+
+      for (const file of files) {
+        const currentVersion = file.versions.find(v => v.id === file.currentVersionId) || file.versions[0];
+        if (currentVersion?.blob) {
+          zip.file(file.name, currentVersion.blob);
+          addedCount++;
+        }
+      }
+
+      if (addedCount === 0) {
+        showToast("No files with audio data found in library.", "warning");
+        return;
+      }
+
+      // @ts-ignore
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Spotykach_Library_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("ZIP Generation failed", e);
+      showToast("Failed to generate ZIP.", "error");
+    }
+  };
+
+  const handleOpenLibraryManager = (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => {
+    setShowSampleBrowser(false);
+    setTargetSlotForUpload(null);
+    if (tab) setLibraryManagerInitialTab(tab);
+    setLibraryManagerHighlightFileId(highlightFileId || null);
+    setShowLibraryManager(true);
+  };
 
   const handleRemoveLibraryFile = useCallback(async (id: string) => {
     const fileRec = userLibrary.files[id];
@@ -2517,6 +2457,12 @@ function App() {
   const activeFileId = activeSlot?.fileId;
   const activeFile = activeFileId ? state.files[activeFileId] : null;
   const showEditor = activeFile !== null;
+
+  useEffect(() => {
+    if (showEditor) {
+      stopGlobalPlayer();
+    }
+  }, [showEditor, stopGlobalPlayer]);
 
   // Helper for IDs (Safe for non-secure contexts like local network dev)
   const generateId = () => {
@@ -4567,8 +4513,8 @@ function App() {
                 }
               }}
               isScanning={isProcessing}
+              onOpenHelp={() => setShowHelp(true)}
               deviceDiff={deviceDiff || undefined}
-              onImportDeviceChanges={() => setShowDeviceImport(true)}
               workHandle={workHandle}
               backupHandle={backupHandle}
               onChangeWorkFolder={handleSetWorkFolder}
@@ -4630,36 +4576,7 @@ function App() {
                   setProgressMsg('');
                 }
               }}
-              onSyncUserLibraryToSD={async () => {
-                setConfirmAction({
-                  title: 'Sync User Library to SD?',
-                  message: (
-                    <div className="space-y-3">
-                      <p>This will copy your entire User Library to the SD card.</p>
-                      <p className="text-yellow-400"><strong>Note:</strong> Depending on the size of your library, this may take up significant space on the SD.</p>
-                    </div>
-                  ),
-                  confirmLabel: 'Sync to SD',
-                  onConfirm: async () => {
-                    setConfirmAction(null);
-                    if (!backupHandle) return;
-                    setIsProcessing(true);
-                    setProgressMsg('Syncing User Library to SD...');
-                    try {
-                      const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
-                      const { saveUserLibraryToDirectory } = await import('./utils/exportUtils');
-                      await saveUserLibraryToDirectory(userLibrary, wavBuilderDir, new Set(missingLibraryFiles), (msg) => setProgressMsg(msg));
-                      showToast('User Library successfully synced to SD card!', 'success');
-                    } catch (e: any) {
-                      console.error(e);
-                      showToast('Library sync failed: ' + e.message, 'error');
-                    } finally {
-                      setIsProcessing(false);
-                      setProgressMsg('');
-                    }
-                  }
-                });
-              }}
+              onSyncUserLibraryToSD={() => setShowLibrarySyncModal(true)}
               activeSKProject={activeSKProject || undefined}
             />
 
@@ -4920,16 +4837,11 @@ function App() {
                   projects={foundProjects}
                   workHandle={workHandle}
                   mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
-                  onOpenLibraryManager={(tab, highlightFileId) => {
-                    setShowSampleBrowser(false);
-                    setTargetSlotForUpload(null);
-                    if (tab) setLibraryManagerInitialTab(tab);
-                    setLibraryManagerHighlightFileId(highlightFileId || null);
-                    setShowLibraryManager(true);
-                  }}
+                  onOpenLibraryManager={handleOpenLibraryManager}
                   currentProjectName={currentProjectName}
                   onImportToPool={handleImportToPool}
                   onImportToTape={handleImportToTape}
+                  forceStop={showEditor}
                 />
               </Rnd>
             )}
@@ -4951,10 +4863,13 @@ function App() {
               onSmartScan={handleLibrarySmartScan}
               onRefreshLibrary={handleRefreshLibrary}
               onDeleteLibraryFile={handleRemoveLibraryFile}
+              onOpenLibrarySync={() => setShowLibrarySyncModal(true)}
+              onDownloadZip={handleDownloadLibraryZip}
               initialTab={libraryManagerInitialTab}
               initialHighlightFileId={libraryManagerHighlightFileId}
               onResetBrowserPreference={handleResetEmptySlotBrowserPreference}
             />
+
 
 
 
@@ -5180,17 +5095,7 @@ function App() {
         onRemove={removeToast}
       />
 
-      {
-        showDeviceImport && (
-          <DeviceImportModal
-            isOpen={showDeviceImport}
-            onClose={() => setShowDeviceImport(false)}
-            diff={deviceDiff}
-            projectState={state}
-            onImport={handleImportDeviceChanges}
-          />
-        )
-      }
+
 
       {/* MISSING FILES RESOLVER */}
       <MissingFilesResolver
@@ -5278,6 +5183,20 @@ function App() {
         onClose={() => setIsLogModalOpen(false)} 
       />
       <Toast toasts={toasts} onRemove={removeToast} />
+      <LibrarySyncModal
+        isOpen={showLibrarySyncModal}
+        onClose={() => setShowLibrarySyncModal(false)}
+        userLibrary={userLibrary}
+        backupHandle={backupHandle}
+        onSetBackupFolder={handleSetBackupFolder}
+        onOpenProjectManager={() => {
+          setShowLibrarySyncModal(false);
+          setShowLibraryManager(false);
+          setShowProjectManager(true);
+        }}
+        onDownloadZip={handleDownloadLibraryZip}
+        onSyncComplete={() => handleRefreshLibrary()}
+      />
     </ErrorBoundary>
   );
 }

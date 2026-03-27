@@ -673,7 +673,7 @@ const FileItem = ({
 
             {/* Duplicate Icon - Top Right */}
 
-            <div className={`flex-1 min-w-0 flex flex-col justify-center ${isMinified ? '' : 'pr-5'}`}>
+            <div className={`flex-1 min-w-0 flex flex-col justify-center ${isMinified ? '' : 'pr-16'}`}>
                 {isRenaming ? (
                     <input
                         autoFocus
@@ -714,7 +714,7 @@ const FileItem = ({
             </div>
 
             {/* Actions: Unassign / Delete */}
-            <div className={`flex items-center gap-1 ${isMinified ? 'ml-1' : `absolute bottom-1.5 z-10 ${location ? 'right-12' : 'right-1'}`}`}>
+            <div className={`flex items-center gap-1 ${isMinified ? 'ml-1' : `absolute right-1 z-10 ${location ? 'bottom-7' : 'bottom-1.5'}`}`}>
                 {/* Unassign (Only if assigned/location exists) */}
                 {location && onUnassign && (
                     <button

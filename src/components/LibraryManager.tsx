@@ -35,6 +35,8 @@ interface LibraryManagerProps {
     initialTab?: 'upload' | 'project' | 'manage' | 'settings';
     initialHighlightFileId?: string | null;
     onResetBrowserPreference?: () => void;
+    onOpenLibrarySync?: () => void;
+    onDownloadZip?: () => void;
 }
 
 interface UploadDraft {
@@ -138,7 +140,13 @@ const ProjectFileRow = ({ file, isExpanded, onToggle, onCopy, status }: {
     );
 };
 
-export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, projectFiles, projectName, workHandle, missingLibraryFiles, onSmartScan, onRefreshLibrary, onDeleteLibraryFile, initialTab = 'upload', initialHighlightFileId, onResetBrowserPreference }: LibraryManagerProps) => {
+export const LibraryManager = ({ 
+    isOpen, onClose, userLibrary, setUserLibrary, projectFiles, 
+    projectName, workHandle, missingLibraryFiles, onSmartScan, 
+    onRefreshLibrary, onDeleteLibraryFile, initialTab = 'upload', 
+    initialHighlightFileId, onResetBrowserPreference,
+    onOpenLibrarySync, onDownloadZip
+}: LibraryManagerProps) => {
     const [activeTab, setActiveTab] = useState<'upload' | 'project' | 'manage' | 'settings'>(initialTab);
     const [isConvertingBatch, setIsConvertingBatch] = useState(false);
     const [batchProgress, setBatchProgress] = useState(0);
@@ -628,6 +636,8 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
             return { ...prev, files: next };
         });
     };
+
+
 
     const selectedTagCounts = selectedLibraryFiles.reduce<Record<string, number>>((acc, file) => {
         (file.tags || []).forEach(tag => {
@@ -1768,6 +1778,28 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                                 </div>
 
                                 <div className="pt-8 border-t border-white/5 space-y-4">
+                                    {/* Library Actions */}
+                                    <div className="bg-black/20 p-4 rounded-xl border border-gray-800/50 space-y-4">
+                                        <div className="space-y-1">
+                                            <h4 className="text-white font-bold text-sm">Library Actions</h4>
+                                            <p className="text-xs text-gray-400">Synchronize your library with the workspace folder or download a backup.</p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3">
+                                            <button
+                                                onClick={onOpenLibrarySync}
+                                                className="px-4 py-2 bg-gray-800 hover:bg-synthux-blue/20 border border-gray-700 hover:border-synthux-blue/50 text-gray-300 hover:text-synthux-blue rounded-lg text-xs font-bold transition-all flex items-center gap-2 group"
+                                            >
+                                                <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-500" /> Sync Library
+                                            </button>
+                                            <button
+                                                onClick={onDownloadZip}
+                                                className="px-4 py-2 bg-gray-800 hover:bg-synthux-green/20 border border-gray-700 hover:border-synthux-green/50 text-gray-300 hover:text-synthux-green rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                                            >
+                                                <Upload size={14} className="rotate-180" /> Download ZIP
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-gray-800/50">
                                         <div className="space-y-1">
                                             <h4 className="text-white font-bold text-sm">Browser Choice Preference</h4>
@@ -2040,6 +2072,7 @@ export const LibraryManager = ({ isOpen, onClose, userLibrary, setUserLibrary, p
                     </div>
                 </div>
             </div>
+
         </div>
     );
 };

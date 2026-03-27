@@ -20,6 +20,7 @@ interface SampleBrowserProps {
     mode?: 'global' | 'slot-selection'; // Context for future extensions
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
+    forceStop?: boolean;
 }
 
 // OS Folder Handle Type
@@ -40,7 +41,8 @@ export const SampleBrowser = ({
     workHandle,
     mode = 'global',
     onImportToPool,
-    onImportToTape
+    onImportToTape,
+    forceStop
 }: SampleBrowserProps) => {
 
     // Core Selection State
@@ -243,6 +245,18 @@ export const SampleBrowser = ({
             }
         };
     }, []);
+
+    // --------------------------------------------------------------------------------
+    // 4b. External Stop Signal
+    // --------------------------------------------------------------------------------
+    useEffect(() => {
+        if (forceStop && audioRef.current && !audioRef.current.paused) {
+            audioRef.current.pause();
+            setIsPreviewPlaying(false);
+            setPlayingSample(null);
+            setPlayingSampleName('');
+        }
+    }, [forceStop]);
 
 
     // --------------------------------------------------------------------------------

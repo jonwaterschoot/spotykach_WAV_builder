@@ -6,18 +6,23 @@
 
 ## Active Roadmap
 
+- **Example project**
+    - Add an example project to the app.
+        - populate with some samples
+        - make use of sample pack, (create new samples)
+        - use tapes as categories, 3 files per tape
+            - use the notes feature to clarify, 
+                - notes per tape to add categories titles and explainer of the used samples.
+                - general notes that describe the content of this project
+        - categories: Textures, Percussion, Bass, ... (6 categories)
+        - what's a good title for this example project?
+
 ---
 
-### Done / Reviewed (2026-03-25)
+### under consideration
 
-- [x] **Notification Overlap Fix**: Resolved issue where tool messages and "Edit Saved" notifications would overlap. Refactored to a vertical stacking system.
-- [x] **Persistent Log Tracker**: 
-    - Added `logger.ts` and `logs.txt` persistence in the work folder.
-    - Added Log Viewer modal with filter and export features.
-    - Replaced "Reset App" button with "Logs" button in the sidebar.
 
 ---
-
 - **Project Manager** Draft
 
     - options on top, options bottom bar, ... to be streamlined.
@@ -26,17 +31,6 @@
     - File -> Open Project -> list of recent projects
     - File -> Save Project -> save current project
     - File -> Save Project As -> save current project as new project
-
-info text explaining sync, the ? help modal currently reads:
-Build vs. Sync
-Build for SD exports your project into the hardware folder structure. Sync copies files between your work folder and the SD card. These are two different operations.
-
-We'll update that text to read: 
-Build for SD exports your project into the hardware folder structure. Sync copies a backup of the full project folder between your work folder and the SD card. These are two different operations.
-
-----
-
-### under consideration
 
 - **History & Trashcan** *(under consideration)*
     - Dedicated trashcan for deleted files with Restore capability.
@@ -53,17 +47,6 @@ Build for SD exports your project into the hardware folder structure. Sync copie
 - **Offline Sample Packs**
     - Allow downloading GitHub sample packs instead of only streaming them.
 
-- **Example project**
-    - Add an example project to the app.
-        - populate with some samples
-        - make use of sample pack, (create new samples)
-        - use tapes as categories, 3 files per tape
-            - use the notes feature to clarify, 
-                - notes per tape to add categories titles and explainer of the used samples.
-                - general notes that describe the content of this project
-        - categories: Textures, Percussion, Bass, ... (6 categories)
-        - what's a good title for this example project?
-
 ---
 
 ### Long Term (not in scope for now)
@@ -76,3 +59,14 @@ Build for SD exports your project into the hardware folder structure. Sync copie
 
 ---
 
+---
+
+## Done / Reviewed
+
+- **Centralized Library Sync (v3.4.0)**: Migrated sync logic and modal to `App.tsx` for a unified experience across the app.
+- **Loop Tool Finalization (v3.4.0)**: Added discard protection, auto-reset state, and a Preview/Edit toggle.
+- **Playback Mutual Exclusion (v3.4.0)**: Prevented overlapping audio by stopping one playback stream when another starts.
+- **SHA-256 Content Hashing (v3.3.0)**: Replaced size-only sync comparison with accurate bit-for-bit hashing.
+- **Persistent Log Tracker (v3.3.1)**: Implemented `logs.txt` persistence and a dedicated Log Viewer modal.
+- **SD Import Presets (v3.3.0)**: Standardized import workflows with selectable presets.
+- **Notification Stacking (v3.3.1)**: Refactored toasts to stack vertically, preventing UI overlap.

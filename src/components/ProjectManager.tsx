@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Folder, FolderOpen, HardDrive, Trash2, Edit2, X, Check, Copy, ArrowLeftRight, RefreshCw, Save, Download, Upload, AlertTriangle } from 'lucide-react';
+import { Folder, FolderOpen, HardDrive, Trash2, Edit2, X, Check, Copy, ArrowLeftRight, RefreshCw, Save, Download, Upload, AlertTriangle, HelpCircle } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { ProjectSummary } from '../types';
 import { SlotGrid6x6 } from './SlotGrid6x6';
@@ -24,7 +24,6 @@ interface ProjectManagerProps {
     onSyncProject?: (projectName: string) => void;
     onBuildProject?: (projectName: string) => void;
     onImportSK?: () => void;
-    onImportDeviceChanges?: () => void;
     onSyncUserLibraryToSD?: () => void;
     activeSKProject?: string;
     deviceDiff?: import('../utils/importUtils').DeviceDiff;
@@ -33,6 +32,7 @@ interface ProjectManagerProps {
     onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
     onImportZip?: () => void;
     onExportZip?: (projectName: string) => void;
+    onOpenHelp?: () => void;
 }
 
 // Sub-component for the editable input to handle focus/select properly on mount
@@ -95,7 +95,6 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     onSyncProject,
     onBuildProject,
     onImportSK,
-    onImportDeviceChanges,
     onSyncUserLibraryToSD,
     onDeleteBackupProject,
     activeSKProject,
@@ -105,6 +104,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     onCleanupProject,
     onImportZip,
     onExportZip,
+    onOpenHelp,
 }) => {
     const [editingProject, setEditingProject] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
@@ -290,6 +290,15 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                         >
                             <RefreshCw size={20} className={isScanning ? "animate-spin" : ""} />
                         </button>
+                        {onOpenHelp && (
+                            <button
+                                onClick={onOpenHelp}
+                                className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+                                title="Open Help"
+                            >
+                                <HelpCircle size={20} />
+                            </button>
+                        )}
                         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white">
                             <X size={24} />
                         </button>
@@ -406,14 +415,6 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                         )}
 
                         {/* Import Device Changes (Legacy or Specific) */}
-                        {onImportDeviceChanges && (
-                            <button
-                                onClick={onImportDeviceChanges}
-                                className="px-2 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded text-[10px] uppercase font-bold transition-colors"
-                            >
-                                Fix Slots
-                            </button>
-                        )}
                     </div>
                 </div>
 

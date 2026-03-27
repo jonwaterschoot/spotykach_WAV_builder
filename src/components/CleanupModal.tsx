@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { Trash2, AlertTriangle, X, ChevronRight, Play, Pause, RotateCcw, Volume2, Info, Skull } from 'lucide-react';
+import { Trash2, AlertTriangle, X, ChevronRight, Play, Pause, RotateCcw, Volume2, Info, Skull, Folder, ScrollText } from 'lucide-react';
 import type { FileRecord, TapeColor, Tape, AudioVersion } from '../types';
 
 interface CleanupModalProps {
@@ -27,6 +27,13 @@ const formatDuration = (seconds: number) => {
     const min = Math.floor(seconds / 60);
     const sec = Math.floor(seconds % 60);
     return `${min}:${sec.toString().padStart(2, '0')}`;
+};
+
+const parseBackupTimestamp = (ts: string) => {
+    // Converts YYYY-MM-DDTHH-mm-ss-msZ to YYYY-MM-DDTHH:mm:ss.msZ
+    const iso = ts.replace(/(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, '$1:$2:$3.$4Z');
+    const date = new Date(iso);
+    return isNaN(date.getTime()) ? null : date;
 };
 
 interface SelectionDotProps {
@@ -220,9 +227,7 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                 filesToDelete++;
             });
             assignedFiles.forEach(f => {
-                const sorted = [...f.versions].sort((a, b) => a.timestamp - b.timestamp);
-                const originalId = sorted[0]?.id;
-                const toClean = f.versions.filter(v => v.id !== f.currentVersionId && v.id !== originalId);
+                const toClean = f.versions.filter(v => v.id !== f.currentVersionId);
                 toClean.forEach(v => {
                     savings += (v.blob?.size || 0);
                     versionsToDelete++;
@@ -313,7 +318,7 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
         } else if (confirmAction === 'all') {
             const vMap: Record<string, string[]> = {};
             assignedFiles.forEach(f => {
-                const toClean = f.versions.filter(v => v.id !== f.currentVersionId && f.versions[0] && v.id !== f.versions[0].id);
+                const toClean = f.versions.filter(v => v.id !== f.currentVersionId);
                 if (toClean.length > 0) vMap[f.id] = toClean.map(v => v.id);
             });
             onConfirm(unassignedPool.map(f => f.id), vMap);
@@ -548,32 +553,65 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
 
                         {/* SK Backups Section */}
                         {(skBackups.length > 0 || onDeleteSKBackup) && (
-                            <div className="space-y-4">
+                            <div className="space-y-4 pt-4 border-t border-white/5">
                                 <div className="flex items-center justify-between px-2">
-                                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-[0.3em]">SK Backups</h3>
-                                    <span className="text-[10px] text-gray-600 font-mono">{skBackups.length} / {skBackupLimit} kept</span>
+                                    <div className="flex items-center gap-3">
+                                        <h3 className="text-xs font-black text-white/40 uppercase tracking-[0.3em]">SK Backups</h3>
+                                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-[9px] text-gray-500 font-mono">{skBackups.length} / {skBackupLimit} kept</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[9px] text-gray-600 font-bold uppercase tracking-widest bg-white/5 px-2 py-1 rounded-lg">
+                                        <Folder size={10} /> Local Storage
+                                    </div>
                                 </div>
+
+                                {/* Explainer for Backups */}
+                                <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex gap-4">
+                                    <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                                        <RotateCcw size={16} className="text-gray-500" />
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 leading-relaxed italic">
+                                        These are full project snapshots automatically saved to the <span className="text-gray-400 font-mono">_sk_backups</span> folder in your project directory. 
+                                        They act as safety nets for complete project restoration.
+                                    </div>
+                                </div>
+
                                 {skBackups.length === 0 ? (
-                                    <p className="text-[11px] text-gray-600 italic px-2">No SK backups found in this project folder.</p>
+                                    <p className="text-[11px] text-gray-600 italic px-2">No SK backups found for this project.</p>
                                 ) : (
                                     <div className="space-y-2">
-                                        {[...skBackups].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map(bk => (
-                                            <div key={bk.timestamp} className="flex items-center justify-between bg-white/5 border border-white/5 rounded-xl px-4 py-3">
-                                                <div>
-                                                    <p className="text-xs text-white font-mono">{new Date(bk.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</p>
-                                                    <p className="text-[10px] text-gray-500 mt-0.5">{formatSize(bk.sizeBytes)}</p>
-                                                </div>
-                                                {onDeleteSKBackup && (
-                                                    <button
-                                                        onClick={() => onDeleteSKBackup(bk.timestamp)}
-                                                        className="p-2 hover:bg-red-500/10 rounded-lg text-gray-500 hover:text-red-400 transition-colors"
-                                                        title="Delete this SK backup"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
+                                        {[...skBackups]
+                                            .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+                                            .map(bk => {
+                                                const date = parseBackupTimestamp(bk.timestamp);
+                                                return (
+                                                    <div key={bk.timestamp} className="flex items-center justify-between bg-white/5 border border-white/5 rounded-xl px-4 py-3 group/bk hover:bg-white/[0.08] transition-colors">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-gray-600">
+                                                                <ScrollText size={18} />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs text-white font-black tracking-tight">
+                                                                    {date ? date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : "Unknown Snapshot"}
+                                                                </p>
+                                                                <div className="flex items-center gap-2 mt-0.5">
+                                                                    <span className="text-[10px] text-gray-500 font-mono uppercase tracking-tighter">{formatSize(bk.sizeBytes)}</span>
+                                                                    <span className="text-[10px] text-gray-700">•</span>
+                                                                    <span className="text-[10px] text-gray-600 font-mono">{bk.timestamp.split('T')[0]}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {onDeleteSKBackup && (
+                                                            <button
+                                                                onClick={() => onDeleteSKBackup(bk.timestamp)}
+                                                                className="p-3 bg-white/0 hover:bg-red-500/10 rounded-xl text-gray-600 hover:text-red-400 transition-all active:scale-95"
+                                                                title="Delete this SK backup"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                     </div>
                                 )}
                             </div>
@@ -598,10 +636,19 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                 <div className="p-8 border-t border-gray-800 bg-synthux-panel flex items-center justify-between shrink-0 gap-4 z-50">
                     <button onClick={onClose} className="px-6 py-4 text-xs font-black text-gray-500 hover:text-white uppercase tracking-[0.2em] transition-all">Cancel</button>
                     <div className="flex gap-3">
-                        <button onClick={() => setConfirmAction('custom')} disabled={totalSavings === 0} className="px-6 py-4 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black rounded-2xl border border-white/10 disabled:opacity-20 transition-all uppercase tracking-widest">Clean Custom</button>
-                        <button onClick={() => setConfirmAction('history')} className="px-6 py-4 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black rounded-2xl border border-white/10 transition-all uppercase tracking-widest">History Only</button>
-                        <button onClick={() => setConfirmAction('all')} className="px-8 py-4 bg-red-600 hover:bg-red-500 text-white text-[11px] font-black rounded-2xl shadow-xl shadow-red-600/20 flex items-center gap-3 transition-all uppercase tracking-widest group">
-                            <Trash2 size={16} fill="white" className="group-hover:scale-110 transition-transform" /> Clean All
+                        <button onClick={() => setConfirmAction('custom')} disabled={totalSavings === 0} className="px-6 py-4 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black rounded-2xl border border-white/10 disabled:opacity-20 transition-all uppercase tracking-widest">
+                            <span className="block opacity-40 text-[9px] mb-0.5 tracking-tight">Manual Selection</span>
+                            Clean Custom
+                        </button>
+                        <button onClick={() => setConfirmAction('history')} className="px-10 py-4 bg-red-600 hover:bg-red-500 text-white text-[11px] font-black rounded-2xl shadow-xl shadow-red-600/20 transition-all uppercase tracking-widest group">
+                            <span className="block opacity-70 text-[9px] mb-0.5 tracking-tight group-hover:opacity-100 transition-opacity">Keep original + current verison</span>
+                            History Only
+                        </button>
+                        <button onClick={() => setConfirmAction('all')} className="px-8 py-4 bg-white/5 hover:bg-red-900/40 text-red-500 text-[11px] font-black rounded-2xl border border-red-500/20 transition-all uppercase tracking-widest group">
+                            <span className="block opacity-60 text-[9px] mb-0.5 tracking-tight group-hover:opacity-100 transition-opacity">Delete history + original</span>
+                            <span className="flex items-center gap-2 justify-center">
+                                <Trash2 size={14} className="group-hover:scale-110 transition-transform" /> Clean All
+                            </span>
                         </button>
                     </div>
                 </div>

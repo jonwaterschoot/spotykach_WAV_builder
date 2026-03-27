@@ -1,5 +1,49 @@
 # Changelog
 
+## [3.4.0] - 2026-03-27
+
+### Added
+- **Loop Tool Finalization**:
+    - Implemented **Discard Protection**: The Loop tool now tracks user interaction (`hasLoopInteracted`) and integrates with the global "unsaved changes" warning system.
+    - **Auto-Reset on Discard**: Canceling loop edits now automatically resets crossfade duration and "Fit-to-42s" mode for a clean state.
+    - **Improved UI Workflow**: Replaced the static Preview button with a "Preview/Edit" toggle for more intuitive tool interaction.
+- **Centralized Library Sync**:
+    - Unified the "Library Sync" experience by migrating core logic and `LibrarySyncModal` into `App.tsx`.
+    - Streamlined access from both `ProjectManager` and `LibraryManager` via centralized handlers.
+- **Enhanced Help & Onboarding**:
+    - Added a direct **Help Icon** to the Project Manager header for instant accessibility to documentation.
+    - Updated help content with revised descriptions for "Build vs. Sync" and "Library" management concepts.
+
+### Improved
+- **Audio Playback Management**:
+    - Implemented **Playback Mutual Exclusion**: Starting main waveform playback now automatically halts history version previews (and vice versa) to prevent overlapping audio streams.
+- **Trim Tool Logic**:
+    - Refined "Unsaved Changes" (dirty state) detection to distinguish between automatic 42s trims and manual user adjustments.
+- **Normalize Tool UX**:
+    - Added an informative note ("Normalization already applied") for files that have already been processed, improving feedback over simply disabling the button.
+- **Browser Panel Layout**:
+    - Optimized dense list views by repositioning action icons above tape labels, providing better readability for long names.
+
+### Fixed
+- **Cleanup & Maintenance**:
+    - Removed obsolete **Fix Slots** functionality from the Project Manager.
+    - Deleted unused `DeviceImportModal.tsx` component and its associated state/logic.
+ 
+## [3.3.2] - 2026-03-25
+
+### Added
+- **Project Cleanup Enhancements**:
+    - Simplified the "Project Cleanup" workflow by making **History Only** the default primary action.
+    - Updated button labels to clearly clarify that **History Only** preserves the original version plus the latest step.
+    - Refactored **Clean All** to include the original version in the deletion mapping for a more thorough project wipe.
+    - Improved UI prominence by making the safest action ("History Only") the primary red button.
+- **SK Backup Refinements**:
+    - Added an explanatory section for SK Backups, detailing their purpose and local storage folder (`_sk_backups`).
+    - Improved the backup list layout with better typography and icons.
+
+### Fixed
+- **Backup Date Bug**: Resolved an issue where SK Backups displayed "Invalid Date" by implementing a custom parser for folder-safe ISO timestamps.
+
 ## [3.3.1] - 2026-03-25
 
 ### Added
