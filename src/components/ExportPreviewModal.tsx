@@ -724,7 +724,6 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 {/* Scrollable Content Wrapper */}
                 <div className="flex-1 overflow-y-auto min-h-0 bg-[#0c0c0c] flex flex-col custom-scrollbar">
 
-                {/* ════ DUPLICATES BANNER ═════════════════════════════════════ */}
                 <DuplicatesBanner
                     duplicates={diff.duplicates ?? []}
                     hoveredSlotKey={hoveredSlotKey}
@@ -732,6 +731,18 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                     onTrashSlot={handleTrashSlot}
                     isSlotTrashed={isSlotTrashed}
                 />
+                
+                {diff.config?.location === 'root' && (
+                    <div className="mx-6 mt-4 rounded-xl border border-orange-500/30 bg-orange-500/5 px-4 py-3 flex items-center gap-3 animate-in slide-in-from-top-2 duration-300">
+                        <div className="p-1.5 bg-orange-500/20 rounded-lg shrink-0">
+                            <AlertTriangle size={13} className="text-orange-400" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-[11px] font-black text-white uppercase tracking-wider">Legacy Config Location Detected</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">Your config.txt is at the SD root. Building will move it to the SK/ folder for future firmware compatibility.</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* ════ SIMPLE VIEW ════════════════════════════════════════════ */}
                 {!isAdvanced && (
@@ -1034,7 +1045,14 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     <div className="p-3 flex items-center gap-2 min-w-0 flex-row-reverse">
                                         <div className="flex-1 min-w-0 text-right">
                                             <p className="text-xs text-white font-medium truncate">config.txt</p>
-                                            <p className="text-[10px] text-gray-500 mt-0.5">on SD Root</p>
+                                            <div className="flex flex-col items-end gap-1 mt-0.5">
+                                                <p className="text-[10px] text-gray-500">on SD {diff.config.location === 'sk' ? 'SK folder' : 'Root'}</p>
+                                                {diff.config.location === 'root' && (
+                                                    <p className="text-[8px] text-orange-400 font-bold uppercase tracking-tight bg-orange-400/10 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                                        <AlertTriangle size={8} /> Old Location
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -4904,6 +4904,7 @@ function App() {
         projects={foundProjects}
         currentProjectName={currentProjectName}
         workHandle={workHandle}
+        sdHandle={backupHandle}
       />
 
       {showProjectNotes && (

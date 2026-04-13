@@ -12,6 +12,7 @@ interface ConfigModalProps {
     projects: ProjectSummary[];
     currentProjectName?: string;
     workHandle: FileSystemDirectoryHandle | null;
+    sdHandle?: FileSystemDirectoryHandle | null;
 }
 
 interface Preset {
@@ -40,7 +41,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     onChange,
     projects,
     currentProjectName,
-    workHandle
+    workHandle,
+    sdHandle
 }) => {
     const [pos, setPos] = useState({ x: window.innerWidth / 2 - 250, y: 100 });
     const [presets, setPresets] = useState<Preset[]>([]);
@@ -120,17 +122,19 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     };
 
     const handleSaveToSD = async () => {
-        if (!workHandle) {
-            alert("No SD card / Workspace folder is currently open. Please open your SD card root first, or use the Download button.");
-            return;
-        }
-
         try {
+            const targetHandle = sdHandle || workHandle;
+            if (!targetHandle) {
+                alert("No SD card / Workspace folder is currently open. Please open your SD card root first, or use the Download button.");
+                return;
+            }
+
             const text = generateConfigText(config);
             const blob = new Blob([text], { type: 'text/plain' });
-            const configHandle = await workHandle.getFileHandle('config.txt', { create: true });
+            const skHandle = await targetHandle.getDirectoryHandle('SK', { create: true });
+            const configHandle = await skHandle.getFileHandle('config.txt', { create: true });
             await safeWriteBlob(configHandle, blob, true); // Force overwrite
-            setSaveStatus("Saved to SD card!");
+            setSaveStatus(sdHandle ? "Saved to Hardware SD card!" : "Saved to SD (Work Folder)!");
         } catch (e) {
             console.error("Failed to save to SD", e);
             alert("Failed to save to SD. Make sure you have granted write permissions.");

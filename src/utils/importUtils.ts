@@ -346,6 +346,7 @@ export interface SyncDiff {
         status: SyncStatus;
         localConfig?: any;
         remoteConfigText?: string;
+        location?: 'root' | 'sk';
     };
     duplicates: DuplicateGroup[];
     // Legacy support (optional, can simulate if needed or refactor consumers)
@@ -494,7 +495,7 @@ export const detectCueChunk = async (file: File): Promise<boolean> => {
 // 1. Calculate Diff
 export const calculateSyncDiff = async (
     projectState: AppState,
-    structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
+    structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string, configLocation?: 'root' | 'sk' }
 ): Promise<SyncDiff> => {
     // hash → [{slotId, side, name}] — used for duplicate detection
     const hashRegistry = new Map<string, DuplicateEntry[]>();
@@ -531,7 +532,8 @@ export const calculateSyncDiff = async (
     diff.config = {
         status: configStatus,
         localConfig,
-        remoteConfigText
+        remoteConfigText,
+        location: structureMap.configLocation
     };
 
     if (configStatus === 'MATCH') diff.summary.matches++;
@@ -926,18 +928,35 @@ export const scanDeviceChanges = async (skHandle: FileSystemDirectoryHandle): Pr
  * Scans the root SD handle for the 'SK' folder and reads its Tape structure.
  * This ensures we iterate correctly using the master TAPE_COLORS.
  */
-export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Promise<{ [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string }> => {
-    const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string } = {};
+export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Promise<{ [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string, configLocation?: 'root' | 'sk' }> => {
+    const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string, configLocation?: 'root' | 'sk' } = {};
 
     try {
-        // Read config.txt at root if it exists
+        let skRoot: FileSystemDirectoryHandle | null = null;
         try {
-            const configHandle = await rootHandle.getFileHandle('config.txt', { create: false });
-            const configFile = await configHandle.getFile();
-            structureMap.configText = await configFile.text();
-        } catch { /* No config.txt at root */ }
+            skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
+        } catch { /* SK folder entirely missing */ }
 
-        const skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
+        // 1. Read config.txt (Priority: SK/config.txt, Fallback: root/config.txt)
+        if (skRoot) {
+            try {
+                const configHandle = await skRoot.getFileHandle('config.txt', { create: false });
+                const configFile = await configHandle.getFile();
+                structureMap.configText = await configFile.text();
+                structureMap.configLocation = 'sk';
+            } catch { /* No config.txt in SK */ }
+        }
+
+        if (!structureMap.configText) {
+            try {
+                const configHandle = await rootHandle.getFileHandle('config.txt', { create: false });
+                const configFile = await configHandle.getFile();
+                structureMap.configText = await configFile.text();
+                structureMap.configLocation = 'root';
+            } catch { /* No config.txt at root */ }
+        }
+
+        if (!skRoot) return structureMap;
 
         for (const color of TAPE_COLORS) {
             const letter = color.charAt(0).toUpperCase();
@@ -960,7 +979,7 @@ export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Pr
             }
         }
     } catch (e) {
-        // SK folder entirely missing, return structure map (might still have configText)
+        // Broad error
     }
 
     return structureMap;

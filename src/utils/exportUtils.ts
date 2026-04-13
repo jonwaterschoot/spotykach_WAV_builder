@@ -499,7 +499,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 if (finalConfig) {
                     onProgress?.("Writing config.txt...", 18);
                     const configText = generateConfigText(finalConfig);
-                    const configHandle = await rootHandle.getFileHandle('config.txt', { create: true });
+                    const configHandle = await skHandle.getFileHandle('config.txt', { create: true });
                     await safeWriteBlob(configHandle, new Blob([configText], { type: 'text/plain' }), options.forceOverwrite);
                 }
             }
@@ -629,7 +629,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
     // Config.txt
     if (options.includeConfig !== false && state.projectConfig) {
-        zip.file("config.txt", generateConfigText(state.projectConfig));
+        skFolder.file("config.txt", generateConfigText(state.projectConfig));
     }
 
     let filesAdded = 0;
