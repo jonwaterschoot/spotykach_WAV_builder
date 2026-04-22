@@ -2818,6 +2818,74 @@ function App() {
     });
   };
 
+  const onBulkDeleteFiles = (fileIds: string[]) => {
+    if (fileIds.length === 0) return;
+
+    // Check if any of these are used in slots
+    let usedInSlotsCount = 0;
+    const fileIdSet = new Set(fileIds);
+
+    (Object.values(state.tapes) as any[]).forEach(tape => {
+      tape.slots.forEach((s: any) => {
+        if (s.fileId && fileIdSet.has(s.fileId)) {
+          usedInSlotsCount++;
+        }
+      });
+    });
+
+    const isPlural = fileIds.length > 1;
+    const title = isPlural 
+      ? `Permanently delete ${fileIds.length} samples?`
+      : `Permanently delete "${state.files[fileIds[0]]?.name}"?`;
+
+    const message = usedInSlotsCount > 0
+      ? `This will remove ${isPlural ? 'them' : 'it'} from all assigned slots and the project.`
+      : `This will permanently remove ${isPlural ? 'them' : 'it'} from the project.`;
+
+    setConfirmAction({
+      title,
+      message,
+      isDestructive: true,
+      confirmLabel: isPlural ? "Delete Samples" : "Delete Forever",
+      onConfirm: () => {
+        // 1. Remove from all slots
+        const newTapes = { ...state.tapes };
+        let anyUsed = false;
+
+        (Object.keys(newTapes) as TapeColor[]).forEach(color => {
+          const tape = newTapes[color];
+          if (tape.slots.some(s => s.fileId && fileIdSet.has(s.fileId))) {
+            newTapes[color] = {
+              ...tape,
+              slots: tape.slots.map(s => s.fileId && fileIdSet.has(s.fileId) ? { ...s, fileId: null } : s)
+            };
+            anyUsed = true;
+          }
+        });
+
+        // 2. Remove from files
+        const newFiles = { ...state.files };
+        fileIds.forEach(id => {
+          delete newFiles[id];
+        });
+
+        setState(prev => ({
+          ...prev,
+          files: newFiles,
+          tapes: anyUsed ? newTapes : prev.tapes
+        }));
+
+        // 3. Close editor if any of the deleted files were active
+        if (activeFileId && fileIdSet.has(activeFileId)) {
+          setActiveSlotId(null);
+        }
+
+        setConfirmAction(null);
+        showToast(isPlural ? `${fileIds.length} files deleted` : "File deleted", "success");
+      }
+    });
+  };
+
   const handleSlotClick = (id: number) => {
     const currentTape = state.tapes[currentTapeColor];
     const slot = currentTape.slots.find(s => s.id === id);
@@ -3576,7 +3644,8 @@ function App() {
     setIsProcessing(true);
     setProgressMsg(`Downloading ${name}...`);
     try {
-      const response = await fetch(url);
+      // Use CORS mode for remote R2 assets to satisfy COEP requirements
+      const response = await fetch(url, { mode: 'cors' });
       if (!response.ok) throw new Error("Network response was not ok");
       const blob = await response.blob();
 
@@ -3644,103 +3713,123 @@ function App() {
     }
   };
 
-  // Import files directly to pool (unassigned)
-  const handleImportToPool = async (files: { file: File, path: string }[]) => {
+  // Generalized Bulk Import Handler for both Remote (URL) and Local (File) samples
+  const handleBulkSampleImport = async (
+    items: { url?: string; file?: File; name: string }[],
+    target: 'pool' | 'slots' | TapeColor,
+    origin?: string,
+    license?: string
+  ) => {
     setIsProcessing(true);
-    setProgressMsg(`Adding ${files.length} file(s) to pool...`);
+    setProgressMsg(`Preparing to import ${items.length} sample(s)...`);
+
     try {
-      for (const { file } of files) {
-        const { buffer, blob: processedBlob } = await audioEngine.loadAndProcessAudio(file);
-        const fileId = generateId();
-        const versionId = generateId();
-        const safeName = sanitizeFilename(file.name);
+      const nextFiles = { ...state.files };
+      const newFileIds: string[] = [];
 
-        const version: AudioVersion = {
-          id: versionId,
-          timestamp: Date.now(),
-          description: 'Imported Sample',
-          blob: processedBlob,
-          duration: buffer.duration
-        };
-
-        const newFile: FileRecord = {
-          id: fileId,
-          name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
-          originalName: file.name,
-          versions: [version],
-          currentVersionId: versionId,
-          isParked: true, // Always to pool
-          origin: 'Local Folder'
-        };
-
-        setState(prev => ({
-          ...prev,
-          files: { ...prev.files, [fileId]: newFile }
-        }));
-      }
-      showToast(`Added ${files.length} file(s) to pool`, 'success');
-    } catch (e) {
-      console.error(e);
-      showToast('Import to pool failed', 'error');
-    } finally {
-      setIsProcessing(false);
-      setProgressMsg('');
-    }
-  };
-
-  // Import files targeting a specific tape
-  const handleImportToTape = async (files: { file: File, path: string }[], targetTape: TapeColor) => {
-    setIsProcessing(true);
-    setProgressMsg(`Adding ${files.length} file(s) to Tape ${targetTape}...`);
-    try {
-      for (const { file } of files) {
-        const { buffer, blob: processedBlob } = await audioEngine.loadAndProcessAudio(file);
-        const fileId = generateId();
-        const versionId = generateId();
-        const safeName = sanitizeFilename(file.name);
-
-        const version: AudioVersion = {
-          id: versionId,
-          timestamp: Date.now(),
-          description: 'Imported Sample',
-          blob: processedBlob,
-          duration: buffer.duration
-        };
-
-        const newFile: FileRecord = {
-          id: fileId,
-          name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
-          originalName: file.name,
-          versions: [version],
-          currentVersionId: versionId,
-          isParked: false,
-          origin: 'Local Folder'
-        };
-
-        setState(prev => {
-          const nextFiles = { ...prev.files, [fileId]: newFile };
-          const nextTapes = { ...prev.tapes };
-          const tape = { ...nextTapes[targetTape] };
-          const slots = [...tape.slots];
-
-          // Find first free slot on this tape
-          const freeIdx = slots.findIndex(s => s.fileId === null);
-          if (freeIdx >= 0) {
-            slots[freeIdx] = { ...slots[freeIdx], fileId };
-            tape.slots = slots;
-            nextTapes[targetTape] = tape;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        try {
+          setProgressMsg(`Processing ${i + 1}/${items.length}: ${item.name}...`);
+          
+          let blob: Blob;
+          if (item.file) {
+            blob = item.file;
+          } else if (item.url) {
+            const response = await fetch(item.url, { mode: 'cors' });
+            if (!response.ok) throw new Error("Download failed");
+            blob = await response.blob();
           } else {
-            // Tape full — park it instead
-            nextFiles[fileId] = { ...nextFiles[fileId], isParked: true };
+            continue;
           }
 
-          return { ...prev, files: nextFiles, tapes: nextTapes };
-        });
+          const { buffer, blob: processedBlob } = await audioEngine.loadAndProcessAudio(blob);
+          const fileId = generateId();
+          const versionId = generateId();
+          const safeName = sanitizeFilename(item.name);
+
+          const version: AudioVersion = {
+            id: versionId,
+            timestamp: Date.now(),
+            description: 'Bulk Imported Sample',
+            blob: processedBlob,
+            duration: buffer.duration
+          };
+
+          const newFile: FileRecord = {
+            id: fileId,
+            name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
+            originalName: item.name,
+            versions: [version],
+            currentVersionId: versionId,
+            isParked: true, // Start as parked, will unpark if assigned to slot
+            origin: origin || (item.file ? 'Local Folder' : 'Sample Pack'),
+            license
+          };
+
+          nextFiles[fileId] = newFile;
+          newFileIds.push(fileId);
+        } catch (err) {
+          console.error(`Failed to import ${item.name}:`, err);
+          showToast(`Failed to import ${item.name}`, 'error');
+        }
       }
-      showToast(`Added ${files.length} file(s) to Tape ${targetTape}`, 'success');
-    } catch (e) {
+
+      if (newFileIds.length === 0) {
+        showToast("No samples were successfully imported.", 'error');
+        return;
+      }
+
+      // ─── Phase 2: Assignment ───
+      if (target === 'pool') {
+        setState(prev => ({ ...prev, files: nextFiles }));
+        showToast(`Added ${newFileIds.length} sample(s) to pool`, 'success');
+      } else {
+        const nextTapes = { ...state.tapes };
+        const targetTapeColor = target === 'slots' ? null : target as TapeColor;
+        
+        let assignedCount = 0;
+        let currentTapeIdx = targetTapeColor ? TAPE_COLORS.indexOf(targetTapeColor) : 0;
+        let currentSlotIdx = 0;
+        const maxTapes = targetTapeColor ? currentTapeIdx + 1 : TAPE_COLORS.length;
+
+        for (const fileId of newFileIds) {
+          let assigned = false;
+          while (currentTapeIdx < maxTapes) {
+            const color = TAPE_COLORS[currentTapeIdx];
+            let tape = nextTapes[color];
+            
+            // Clone tape lazily
+            if (tape === state.tapes[color]) {
+              tape = { ...tape, slots: [...tape.slots] };
+              nextTapes[color] = tape;
+            }
+
+            while (currentSlotIdx < tape.slots.length) {
+              if (tape.slots[currentSlotIdx].fileId === null) {
+                tape.slots[currentSlotIdx] = { ...tape.slots[currentSlotIdx], fileId };
+                nextFiles[fileId] = { ...nextFiles[fileId], isParked: false };
+                assigned = true;
+                assignedCount++;
+                currentSlotIdx++;
+                break;
+              }
+              currentSlotIdx++;
+            }
+
+            if (assigned) break;
+            currentTapeIdx++;
+            currentSlotIdx = 0;
+          }
+        }
+
+        setState(prev => ({ ...prev, files: nextFiles, tapes: nextTapes }));
+        showToast(`Imported ${newFileIds.length} sample(s). Assigned ${assignedCount} to slots.`, 'success');
+      }
+
+    } catch (e: any) {
       console.error(e);
-      showToast(`Import to Tape ${targetTape} failed`, 'error');
+      showToast('Bulk import failed: ' + e.message, 'error');
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -4004,6 +4093,7 @@ function App() {
                 onUnassignFile={onUnassignFile}
                 onBulkUnassign={handleBulkUnassign}
                 onDeleteFile={onDeleteFile}
+                onBulkDeleteFiles={onBulkDeleteFiles}
                 onFillFreeSlots={handleFillAllFreeSlots}
                 onRenameFile={handleRenameFile}
               />
@@ -4839,8 +4929,9 @@ function App() {
                   mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
                   onOpenLibraryManager={handleOpenLibraryManager}
                   currentProjectName={currentProjectName}
-                  onImportToPool={handleImportToPool}
-                  onImportToTape={handleImportToTape}
+                  onImportToPool={(files) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), 'pool')}
+                  onImportToTape={(files, color) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), color)}
+                  onRemoteBulkImport={(samples, target) => handleBulkSampleImport(samples, target)}
                   forceStop={showEditor}
                 />
               </Rnd>
@@ -4896,7 +4987,7 @@ function App() {
       <ConfigModal
         isOpen={showConfigModal}
         onClose={() => setShowConfigModal(false)}
-        config={state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false }}
+        config={state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false, pre_load: true }}
         onChange={(config) => {
           setState(prev => ({ ...prev, projectConfig: config }));
           setHasUnsavedChanges(true);

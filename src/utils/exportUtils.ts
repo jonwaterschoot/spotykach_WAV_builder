@@ -46,6 +46,7 @@ export const generateConfigText = (config: ProjectConfig): string => {
     appendSetting('mid_ch_b', config?.mid_ch_b ?? 2);
     appendSetting('mid_ps_a', config?.mid_ps_a ?? false);
     appendSetting('mid_ps_b', config?.mid_ps_b ?? false);
+    appendSetting('pre_load', config?.pre_load ?? true);
     return lines.join('\n');
 };
 
@@ -849,6 +850,7 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                                     mid_ch_b: 2,
                                     mid_ps_a: false,
                                     mid_ps_b: false,
+                                    pre_load: true,
                                     ...(json.projectConfig || {})
                                 }
                             } : undefined,
@@ -1059,6 +1061,7 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
             mid_ch_b: 2,
             mid_ps_a: false,
             mid_ps_b: false,
+            pre_load: true,
             ...(state.projectConfig || {})
         } as ProjectConfig;
 
@@ -1262,7 +1265,8 @@ export const parseConfigText = (text: string): ProjectConfig | null => {
             mid_ch_a: 1,
             mid_ch_b: 2,
             mid_ps_a: false,
-            mid_ps_b: false
+            mid_ps_b: false,
+            pre_load: true
         };
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
         for (let i = 0; i < lines.length; i += 2) {
@@ -1275,6 +1279,7 @@ export const parseConfigText = (text: string): ProjectConfig | null => {
             else if (key.startsWith('MID_CH_B')) config.mid_ch_b = parseInt(val) || 2;
             else if (key.startsWith('MID_PS_A')) config.mid_ps_a = val === '1';
             else if (key.startsWith('MID_PS_B')) config.mid_ps_b = val === '1';
+            else if (key.startsWith('PRE_LOAD')) config.pre_load = val === '1';
         }
         return config;
     } catch (e) {

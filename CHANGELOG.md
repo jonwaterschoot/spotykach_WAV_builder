@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.5.0] - 2026-04-22
+
+### Added
+- **Cloudflare R2 Migration**:
+    - Migrated sample and project hosting from GitHub Pages to Cloudflare R2 to overcome GitHub Pages storage limitations.
+    - Added `manifest.json` for centralized metadata resolution and fetching of available community packs and project files.
+    - Updated "Download Full Pack" links to fetch ZIP downloads directly from the R2 storage location.
+- **Config Management**:
+    - Added a `pre_load` toggle setting to the `config.txt` generation and parsing logic, accessible directly from the Config Modal UI.
+
+### Improved
+- **Sample Browser UI**:
+    - Resolved TypeErrors occurring during bulk sample imports.
+    - Standardized tape color indicators and improved the visual consistency of file selection borders.
+    - Implemented robust CORS/COEP-compliant audio fetching for remote assets.
+
+### Removed
+- Removed locally hosted audio sample pack files (`public/samples/`) in favor of remote fetching, freeing up repository storage and speeding up build times.
+
 ## [3.4.0] - 2026-03-27
 
 ### Added

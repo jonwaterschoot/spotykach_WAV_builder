@@ -72,6 +72,7 @@ export interface ProjectConfig {
     mid_ch_b: number; // 1-16
     mid_ps_a: boolean; // Start/stop deck A from MIDI
     mid_ps_b: boolean; // Start/stop deck B from MIDI
+    pre_load: boolean; // Enable/disable pre-loading
 }
 
 // Normalized State

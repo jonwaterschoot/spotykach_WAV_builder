@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Disc, Play, Trash2, FolderOpen, Plus, Check, Download, ExternalLink, HardDrive } from 'lucide-react';
+import { X, Save, Disc, Play, Trash2, FolderOpen, Plus, Check, Download, ExternalLink, HardDrive, Info } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import type { ProjectConfig, ProjectSummary } from '../types';
 import { generateConfigText, downloadBlob, safeWriteBlob } from '../utils/exportUtils';
@@ -24,12 +24,12 @@ const FACTORY_PRESETS: Preset[] = [
     {
         id: 'factory-1',
         name: 'A+B Play (Deck A:1, Deck B:2)',
-        config: { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: true, mid_ps_b: true }
+        config: { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: true, mid_ps_b: true, pre_load: true }
     },
     {
         id: 'factory-2',
         name: 'A+B No Play (Deck A:1, Deck B:2)',
-        config: { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false }
+        config: { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false, pre_load: true }
     }
 ];
 
@@ -48,6 +48,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     const [showProjectBrowser, setShowProjectBrowser] = useState(false);
     const [newPresetName, setNewPresetName] = useState('');
     const [saveStatus, setSaveStatus] = useState<string | null>(null);
+    const [showPreloadInfo, setShowPreloadInfo] = useState(false);
 
     // Load presets from localStorage
     useEffect(() => {
@@ -100,7 +101,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             const { loadProjectFromDirectory } = await import('../utils/exportUtils');
             const state = await loadProjectFromDirectory(projectName, workHandle);
             if (state && state.projectConfig) {
-                onChange(state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false });
+                onChange(state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false, pre_load: true });
                 setShowProjectBrowser(false);
                 setSaveStatus(`Loaded from ${projectName}`);
             } else {
@@ -197,6 +198,47 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                                     />
                                     <span className="w-8 text-center font-mono text-white bg-black/40 rounded py-1 text-sm border border-gray-800">{config.mid_ch_b}</span>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Configuration & Transport */}
+                    <div className="space-y-4">
+                        <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-2">Device Configuration</h3>
+                        
+                        <div className="grid grid-cols-1 gap-3">
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => onChange({ ...config, pre_load: !config.pre_load })}
+                                        className={`flex-1 flex items-center justify-between p-3 rounded-xl border transition-all ${config.pre_load ? 'bg-synthux-yellow/5 border-synthux-yellow/30 text-white' : 'bg-black/20 border-gray-800 text-gray-500 hover:border-gray-700'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-lg ${config.pre_load ? 'bg-synthux-yellow/20 text-synthux-yellow' : 'bg-gray-800 text-gray-600'}`}>
+                                                <Save size={16} fill={config.pre_load ? "currentColor" : "none"} />
+                                            </div>
+                                            <div className="text-left">
+                                                <div className="text-xs font-bold">Pre-loading</div>
+                                                <div className="text-[10px] opacity-60">Enable audio pre-loading</div>
+                                            </div>
+                                        </div>
+                                        <div className={`w-8 h-5 rounded-full relative transition-colors ${config.pre_load ? 'bg-synthux-yellow' : 'bg-gray-800'}`}>
+                                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${config.pre_load ? 'right-1' : 'left-1'}`} />
+                                        </div>
+                                    </button>
+                                    <button 
+                                        onClick={() => setShowPreloadInfo(!showPreloadInfo)}
+                                        className={`p-3 rounded-xl border transition-all ${showPreloadInfo ? 'bg-white/10 border-white/20 text-white' : 'bg-black/20 border-gray-800 text-gray-500 hover:text-white hover:border-gray-700'}`}
+                                        title="More Info"
+                                    >
+                                        <Info size={16} />
+                                    </button>
+                                </div>
+                                {showPreloadInfo && (
+                                    <div className="p-3 mt-1 rounded-lg bg-black/40 border border-gray-800 text-[10px] text-gray-400 leading-relaxed animate-in fade-in slide-in-from-top-1">
+                                        Whenever you load a sample to the buffer or save to SD card, Spotykach remembers the tape and the slot and next time you power the device on, the sample will be pre-loaded.
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

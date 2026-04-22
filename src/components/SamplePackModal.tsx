@@ -185,7 +185,9 @@ export const SamplePackModal = ({ isOpen, onClose, onImport, userLibrary, projec
                     const blobUrl = URL.createObjectURL(sample._blob);
                     previewUrlRef.current = blobUrl;
                     audioRef.current.src = blobUrl;
+                    audioRef.current.crossOrigin = null; // No CORS needed for blobs
                 } else {
+                    audioRef.current.crossOrigin = 'anonymous'; // Trigger CORS for R2
                     audioRef.current.src = resolveAssetPath(sample.path);
                 }
                 setPlaybackTime(0);

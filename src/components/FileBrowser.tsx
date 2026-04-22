@@ -14,10 +14,11 @@ interface FileBrowserProps {
     onUnassignFile?: (fileId: string) => void;
     onBulkUnassign?: (fileIds: string[]) => void;
     onDeleteFile?: (fileId: string) => void;
+    onBulkDeleteFiles?: (fileIds: string[]) => void;
     onFillFreeSlots?: (fileIds: string[]) => void;
     onRenameFile?: (fileId: string, newName: string) => void;
 }
-export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, duplicates, onOpenDuplicateModal, onUnassignFile, onBulkUnassign, onDeleteFile, onFillFreeSlots, onRenameFile }: FileBrowserProps) => {
+export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, duplicates, onOpenDuplicateModal, onUnassignFile, onBulkUnassign, onDeleteFile, onBulkDeleteFiles, onFillFreeSlots, onRenameFile }: FileBrowserProps) => {
     const [isAssignedOpen, setAssignedOpen] = useState(true);
     const [isUnassignedOpen, setUnassignedOpen] = useState(true);
     const [isMinified, setIsMinified] = useState(false);
@@ -207,9 +208,17 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
     };
 
     const handleBatchDelete = () => {
-        if (!onDeleteFile) return;
+        if (!onDeleteFile && !onBulkDeleteFiles) return;
+
+        if (onBulkDeleteFiles) {
+            onBulkDeleteFiles(Array.from(selectedFileIds));
+            setSelectedFileIds(new Set());
+            return;
+        }
+
+        // Fallback for single delete confirmation (Legacy / If no bulk handler)
         if (confirm(`Are you sure you want to delete ${selectedFileIds.size} files? This cannot be undone.`)) {
-            selectedFileIds.forEach(id => onDeleteFile(id));
+            selectedFileIds.forEach(id => onDeleteFile!(id));
             setSelectedFileIds(new Set());
         }
     };

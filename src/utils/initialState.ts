@@ -25,6 +25,7 @@ export const getInitialState = (): AppState => {
             mid_ch_b: 2,
             mid_ps_a: false,
             mid_ps_b: false,
+            pre_load: true,
         },
     };
 };

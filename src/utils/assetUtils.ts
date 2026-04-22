@@ -1,69 +1,78 @@
 /**
  * Utility to resolve asset paths for the application.
- * Handles both external sample assets (from GitHub Releases) 
- * and internal assets (videos, images) that need base path prefixing.
  */
 
-// External sample asset base URL (e.g., pointing to GitHub Releases or CDN)
-// We default to jsDelivr which supports CORS and preserves the repository structure.
-const DEFAULT_SAMPLE_BASE_URL = 'https://cdn.jsdelivr.net/gh/jonwaterschoot/spotykach_WAV_builder@main/public';
-const externalSampleAssetBaseUrl = (import.meta.env.VITE_SAMPLE_ASSET_BASE_URL || DEFAULT_SAMPLE_BASE_URL).replace(/\/+$/, '');
+// R2 Public URL for samples (Hardcoded fallback for reliability)
+export const R2_SAMPLE_BASE_URL = 'https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev';
 
-// Internal application base URL (provided by Vite)
+// Access import.meta.env safely
+const getEnv = (key: string): string | undefined => {
+    try {
+        const val = (import.meta.env as any)[key];
+        return val === '' ? undefined : val;
+    } catch {
+        return undefined;
+    }
+};
+
+export const externalSampleAssetBaseUrl = (
+    getEnv('VITE_SAMPLE_ASSET_BASE_URL') || 
+    R2_SAMPLE_BASE_URL
+).replace(/\/+$/, '');
+
 const appBaseUrl = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
-
 const absoluteUrlPattern = /^(?:[a-z]+:)?\/\//i;
-const audioSamplePathPattern = /\/samples\/.+\.(?:wav|flac)$/i;
 
 /**
  * Resolves an asset path to its final URL.
- * 
- * 1. Absolute URLs are returned as-is.
- * 2. Audio samples (/samples/...) are resolved against VITE_SAMPLE_ASSET_BASE_URL (or jsDelivr) if set.
- * 3. Other relative paths are prefixed with the app's BASE_URL (e.g. for /vid/, /assets/).
- * 
- * @param path The relative path to the asset (e.g., "/vid/video.mp4" or "/samples/kick.wav")
- * @returns The resolved URL
  */
 export const resolveAssetPath = (path: string): string => {
     if (!path) return '';
+    if (absoluteUrlPattern.test(path)) return path;
 
-    // 1. If it's already an absolute URL, return it
-    if (absoluteUrlPattern.test(path)) {
-        return path;
-    }
-
-    // 2. Specialized handling for audio samples (external hosting)
-    // We check this BEFORE early-returning for appBaseUrl to handle cases where 
-    // the path is already prefixed but needs redirection to external storage.
-    if (audioSamplePathPattern.test(path)) {
-        if (externalSampleAssetBaseUrl) {
-            // Prepend the external base URL to the relative path (preserving folder hierarchy)
-            const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-            return `${externalSampleAssetBaseUrl}${normalizedPath}`;
-        }
-    }
-
-    // 3. Prevent double-prefixing for non-sample assets
-    // If it already starts with appBaseUrl (and appBaseUrl isn't just /), return it
-    if (appBaseUrl && appBaseUrl !== '/' && path.startsWith(appBaseUrl)) {
-        return path;
-    }
-
-    // 4. General internal assets (handle subdirectories like /v2/)
-    // Ensure the path starts with a slash for consistent joining
+    // Normalize path to start with /
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-    // If we're at the root, just return the path
+    // DETECT EXTERNAL R2 ASSETS
+    // Any path that isn't a known internal asset or the root is treated as an R2 candidate.
+    const internalPaths = [
+        '/manifest.json', '/favicon.ico', '/vite.svg', '/assets', 
+        '/img', '/vid', '/v2', '/ffmpeg-core', '/ffmpeg-worker', 
+        '/spotykachtapeicon.svg', '/spotytape.svg', '/og-image.png'
+    ];
+    
+    const isInternal = internalPaths.some(p => normalizedPath.startsWith(p));
+    
+    // It's R2 if it's not internal, not the root, and looks like a deep path (e.g. /pack/file)
+    const isR2 = !isInternal && normalizedPath !== '/' && (
+        normalizedPath.startsWith('/samples/') || 
+        normalizedPath.includes('/', 1)
+    );
+
+    if (isR2) {
+        // Fallback to R2_SAMPLE_BASE_URL if the env-derived one is somehow empty
+        const baseUrl = externalSampleAssetBaseUrl || R2_SAMPLE_BASE_URL;
+        
+        // Ensure the path includes the /samples/ prefix for R2 assets
+        const r2Path = normalizedPath.startsWith('/samples/') 
+            ? normalizedPath 
+            : `/samples${normalizedPath}`;
+            
+        return `${baseUrl}${r2Path}`;
+    }
+
+    // INTERNAL ASSETS
+    if (appBaseUrl && appBaseUrl !== '/' && normalizedPath.startsWith(appBaseUrl)) {
+        return normalizedPath;
+    }
+
     if (!appBaseUrl || appBaseUrl === '/') {
         return normalizedPath;
     }
 
-    // Otherwise prefix with base URL
     return `${appBaseUrl}${normalizedPath}`;
 };
 
-/** Returns a lowercase hex SHA-256 digest of the given Blob or File. */
 export const hashBlob = async (source: Blob | File): Promise<string> => {
     const buf = await source.arrayBuffer();
     const digest = await crypto.subtle.digest('SHA-256', buf);
