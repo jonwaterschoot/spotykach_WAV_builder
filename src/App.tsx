@@ -24,10 +24,13 @@ import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
 import { ProjectManager } from './components/ProjectManager';
+import { PresetsPanel } from './components/PresetsPanel';
 import { ProjectSyncModal } from './components/ProjectSyncModal';
+import { fetchSampleManifest, type PresetManifestEntry } from './data/samplePacks';
+import { parseProjectDescriptor, hydrateDescriptor } from './utils/projectDescriptorUtils';
 import { LibraryManager } from './components/LibraryManager';
 import { LibrarySyncModal } from './components/LibrarySyncModal';
-import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight, Settings, StickyNote, ScrollText, ChevronDown, X, FileText } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, ArrowLeft, ArrowRight, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ConfirmModal } from './components/ConfirmModal';
@@ -52,7 +55,7 @@ import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 
 const sanitizeFilename = (name: string) => {
-  return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+  return name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.\-_]/g, '');
 };
 
 const getNotePreview = (notes?: string) => {
@@ -154,6 +157,11 @@ function App() {
   // Project Manager State
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const [orphanedAssets, setOrphanedAssets] = useState<{ name: string, size: number }[]>([]);
+
+  // Presets Panel State
+  const [showPresetsPanel, setShowPresetsPanel] = useState(false);
+  const [presets, setPresets] = useState<PresetManifestEntry[]>([]);
   const [showLibrarySyncModal, setShowLibrarySyncModal] = useState(false);
   const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
@@ -329,6 +337,15 @@ function App() {
       showToast('Connect a Work Folder first.', 'error');
       return;
     }
+
+    // 1. Check for unsaved changes in current project
+    if (hasUnsavedChanges && currentProjectName) {
+      const confirmLoad = window.confirm(`"${currentProjectName}" has unsaved changes. Save before importing a new project?`);
+      if (confirmLoad) {
+        await handleSaveProject();
+      }
+    }
+
     try {
       // @ts-ignore – showOpenFilePicker is not in all TS libs yet
       const [handle] = await window.showOpenFilePicker({
@@ -342,6 +359,9 @@ function App() {
       // Determine project name from zip (top-level folder or filename)
       const entries = Object.keys(zip.files);
       const topFolders = [...new Set(entries.map(e => e.split('/')[0]).filter(Boolean))];
+      
+      // If ZIP was created with spaces in title but filename has -, use filename as fallback?
+      // Actually, let's trust the top folder if it exists.
       const projectName = topFolders.length === 1 ? topFolders[0] : file.name.replace(/\.zip$/i, '');
 
       setIsProcessing(true);
@@ -372,6 +392,10 @@ function App() {
 
       await scanProjects(workHandle, backupHandle);
       showToast(`"${projectName}" imported from zip`, 'success');
+      
+      // 2. Automatically load the imported project
+      await handleLoadProject(projectName);
+
     } catch (e: any) {
       if (e.name !== 'AbortError') showToast('Import failed: ' + e.message, 'error');
     } finally {
@@ -380,32 +404,38 @@ function App() {
     }
   };
 
-  const handleExportZip = async (projectName: string) => {
+  const handleExportZip = async (projectName: string, settingsOnly?: boolean) => {
     if (!workHandle) {
       showToast('Connect a Work Folder first.', 'error');
       return;
     }
     setIsProcessing(true);
-    setProgressMsg(`Zipping "${projectName}"...`);
+    setProgressMsg(`Zipping "${projectName}"${settingsOnly ? ' (Settings Only)' : ''}...`);
     try {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
-      const projectDir = await workHandle
-        .getDirectoryHandle('Projects', { create: false })
-        .then(d => d.getDirectoryHandle(projectName, { create: false }));
 
-      const addDir = async (dir: FileSystemDirectoryHandle, zipPath: string) => {
-        for await (const [name, entry] of (dir as any).entries()) {
-          if ((entry as any).kind === 'file') {
-            const file = await (entry as FileSystemFileHandle).getFile();
-            const buf = await file.arrayBuffer();
-            zip.file(`${zipPath}/${name}`, buf);
-          } else {
-            await addDir(entry as FileSystemDirectoryHandle, `${zipPath}/${name}`);
-          }
-        }
-      };
-      await addDir(projectDir, projectName);
+      let projectState: AppState;
+      
+      if (projectName === currentProjectName) {
+        // Use active state for current project to include unsaved changes/metadata
+        projectState = state;
+      } else {
+        const { loadProjectFromDirectory } = await import('./utils/exportUtils');
+        projectState = await loadProjectFromDirectory(projectName, workHandle);
+      }
+
+      const { buildDescriptorFromState } = await import('./utils/projectDescriptorUtils');
+      const { descriptor, customBlobs } = buildDescriptorFromState(projectState, { 
+        settingsOnly: !!settingsOnly, 
+        name: projectName 
+      });
+
+      zip.file(`${projectName}/project-descriptor.json`, JSON.stringify(descriptor, null, 2));
+
+      for (const [blobRef, blob] of Object.entries(customBlobs)) {
+        zip.file(`${projectName}/${blobRef}`, await blob.arrayBuffer());
+      }
 
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
       const url = URL.createObjectURL(blob);
@@ -708,14 +738,15 @@ function App() {
 
 
 
-  const handleCreateEmptyProject = async (projectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
+  const handleCreateEmptyProject = async (rawProjectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
     const activeWorkHandle = overrideWorkHandle || workHandle;
     if (!activeWorkHandle) {
       showToast("Please set a Work Folder first.", "error");
       return;
     }
 
-    if (!projectName) return;
+    if (!rawProjectName) return;
+    const projectName = sanitizeFilename(rawProjectName);
 
     setIsProcessing(true);
     setProgressMsg(`Creating Empty Project ${projectName}...`);
@@ -750,7 +781,7 @@ function App() {
     }
   };
 
-  const handleSaveProjectAs = async (projectName: string) => {
+  const handleSaveProjectAs = async (rawProjectName: string) => {
     // If we are in Browser Mode (no workHandle), we can't "Save As" to disk directly without picking a folder.
     // The UI should handle this by asking to Set Work Folder first.
     if (!workHandle) {
@@ -758,7 +789,8 @@ function App() {
       return;
     }
 
-    if (!projectName) return;
+    if (!rawProjectName) return;
+    const projectName = sanitizeFilename(rawProjectName);
 
     setIsProcessing(true);
     setProgressMsg(`Creating Project ${projectName}...`);
@@ -830,7 +862,14 @@ function App() {
     });
   };
 
-  const handleCleanupProject = () => {
+  const handleCleanupProject = async () => {
+    if (workHandle && currentProjectName) {
+      const { getOrphanedAssets } = await import('./utils/exportUtils');
+      const orphans = await getOrphanedAssets(workHandle, currentProjectName, state.files);
+      setOrphanedAssets(orphans);
+    } else {
+      setOrphanedAssets([]);
+    }
     setShowCleanupModal(true);
   };
 
@@ -910,8 +949,9 @@ function App() {
     }
   };
 
-  const handleRenameProject = async (oldName: string, newName: string, renameBackup: boolean = false) => {
+  const handleRenameProject = async (oldName: string, rawNewName: string, renameBackup: boolean = false) => {
     if (!workHandle) return;
+    const newName = sanitizeFilename(rawNewName);
     try {
       setIsProcessing(true);
       setProgressMsg("Renaming Project...");
@@ -992,6 +1032,64 @@ function App() {
 
     setHasUnsavedChanges(true);
   }, [state]);
+
+  // Load manifest (packs + presets) on mount
+  useEffect(() => {
+    fetchSampleManifest()
+      .then(({ presets: fetchedPresets }) => {
+        setPresets(fetchedPresets);
+      })
+      .catch(e => {
+        console.warn('[Presets] Failed to load manifest:', e);
+      });
+  }, []);
+
+  // Handle loading a preset into the app
+  const handleLoadPreset = async (entry: PresetManifestEntry) => {
+    try {
+      // 1. Fetch the descriptor JSON
+      const url = entry.descriptorPath;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Failed to fetch preset descriptor: HTTP ${resp.status}`);
+      const json = await resp.json();
+      const descriptor = parseProjectDescriptor(json);
+
+      // 2. Hydrate (fetch blobs from R2)
+      const newState = await hydrateDescriptor(descriptor, undefined, (msg, pct) => {
+        setProgressMsg(`${msg} (${Math.round(pct)}%)`);
+      });
+
+      // 3. Deduplicate project name
+      let baseName = descriptor.name || entry.name || 'Preset';
+      let finalName = baseName;
+      let counter = 1;
+      while (foundProjects.some(p => p.name === finalName)) {
+        finalName = `${baseName}_${counter++}`;
+      }
+
+      // 4. Save as a new local project (if workHandle available)
+      if (workHandle) {
+        setIsProcessing(true);
+        setProgressMsg(`Saving "${finalName}"…`);
+        await saveProjectToDirectory(newState, workHandle, (msg) => setProgressMsg(msg || ''), finalName);
+        await scanProjects(workHandle, backupHandle);
+      }
+
+      // 5. Load into UI
+      isSystemUpdate.current = true;
+      setState(newState);
+      setCurrentProjectName(finalName);
+      setHasUnsavedChanges(false);
+      setShowPresetsPanel(false);
+      showToast(`Preset "${finalName}" loaded${newState.loadIssues?.missingAssets?.length ? ' (some samples missing — check internet connection)' : ' successfully'}`, newState.loadIssues?.missingAssets?.length ? 'warning' : 'success');
+    } catch (e: any) {
+      console.error('[handleLoadPreset]', e);
+      throw e; // Let PresetsPanel surface the error inline
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
 
   // Initial Load
   useEffect(() => {
@@ -2373,8 +2471,9 @@ function App() {
 
 
 
-  const handleDuplicateProject = async (sourceName: string, newName: string) => {
+  const handleDuplicateProject = async (sourceName: string, rawNewName: string) => {
     if (!workHandle) return;
+    const newName = sanitizeFilename(rawNewName);
     setIsProcessing(true);
     setProgressMsg(`Duplicating "${sourceName}" to "${newName}"...`);
     try {
@@ -3676,7 +3775,8 @@ function App() {
         currentVersionId: versionId,
         isParked: slotTarget === null, // Unassigned by default if not targeting a slot
         origin,
-        license
+        license,
+        sourceSamplePath: url
       };
 
       setState(prev => {
@@ -3764,7 +3864,8 @@ function App() {
             currentVersionId: versionId,
             isParked: true, // Start as parked, will unpark if assigned to slot
             origin: origin || (item.file ? 'Local Folder' : 'Sample Pack'),
-            license
+            license,
+            sourceSamplePath: item.url
           };
 
           nextFiles[fileId] = newFile;
@@ -4075,6 +4176,16 @@ function App() {
                 >
                   <Folder size={13} strokeWidth={2.5} />
                   <span className="hidden sm:inline">Project Manager</span>
+                </button>
+
+                {/* Presets */}
+                <button
+                  onClick={() => setShowPresetsPanel(true)}
+                  title="Starter Presets"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-500/30 text-violet-300 hover:text-white hover:bg-violet-500/10 text-[11px] font-bold uppercase tracking-wider transition-all"
+                >
+                  <Package size={13} strokeWidth={2.5} />
+                  <span className="hidden sm:inline">Presets</span>
                 </button>
 
               </div>
@@ -4536,6 +4647,13 @@ function App() {
 
 
 
+            <PresetsPanel
+              isOpen={showPresetsPanel}
+              onClose={() => setShowPresetsPanel(false)}
+              presets={presets}
+              onLoadPreset={handleLoadPreset}
+            />
+
             <ProjectManager
               isOpen={showProjectManager}
               onClose={() => setShowProjectManager(false)}
@@ -4925,6 +5043,7 @@ function App() {
                   onImport={handleSampleImport}
                   userLibrary={userLibrary}
                   projects={foundProjects}
+                  currentFiles={state.files}
                   workHandle={workHandle}
                   mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
                   onOpenLibraryManager={handleOpenLibraryManager}
@@ -5175,6 +5294,7 @@ function App() {
         files={state.files}
         tapes={state.tapes}
         currentProjectName={currentProjectName}
+        orphanedAssets={orphanedAssets}
         onConfirm={executeProjectCleanup}
         skBackups={skBackups}
         onDeleteSKBackup={handleDeleteSKBackup}

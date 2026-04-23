@@ -33,33 +33,59 @@ export const loadProjectFromZip = async (zipFile: File, onProgress?: (msg: strin
     try {
         onProgress?.('Reading ZIP file...');
         const zip = await JSZip.loadAsync(zipFile);
-        const projectJson = zip.file("project.json");
+        
+        const descriptorJson = zip.file("project-descriptor.json") || zip.file(Object.keys(zip.files).find(p => p.endsWith('/project-descriptor.json')) || '');
+        const projectJson = zip.file("project.json") || zip.file(Object.keys(zip.files).find(p => p.endsWith('/project.json')) || '');
+
+        if (descriptorJson) {
+            onProgress?.('Parsing project descriptor...');
+            const content = await descriptorJson.async("string");
+            const { parseProjectDescriptor, hydrateDescriptor } = await import('./projectDescriptorUtils');
+            const descriptor = parseProjectDescriptor(JSON.parse(content));
+
+            // Extract custom blobs
+            const customAssets: Record<string, Blob> = {};
+            
+            for (const [path, file] of Object.entries(zip.files)) {
+                if (!file.dir && path.includes('custom_assets/')) {
+                    // Normalize path to "custom_assets/filename.wav"
+                    const parts = path.split('custom_assets/');
+                    const assetName = parts[parts.length - 1];
+                    const blob = await file.async("blob");
+                    customAssets[`custom_assets/${assetName}`] = blob;
+                }
+            }
+
+            return await hydrateDescriptor(descriptor, customAssets, (msg) => {
+                onProgress?.(msg);
+            });
+        }
 
         if (projectJson) {
             onProgress?.('Parsing project data...');
             const content = await projectJson.async("string");
             const state = JSON.parse(content) as AppState;
-            const blobsFolder = zip.folder("blobs");
+            
+            const prefix = projectJson.name.replace('project.json', '');
+            const blobsPrefix = `${prefix}blobs/`;
 
-            if (blobsFolder) {
-                const totalFiles = Object.keys(state.files).length;
-                let processed = 0;
+            const totalFiles = Object.keys(state.files).length;
+            let processed = 0;
 
-                for (const fileId of Object.keys(state.files)) {
-                    const file = state.files[fileId];
-                    if (file && file.versions) { // Guard checks
-                        for (const version of file.versions) {
-                            const blobName = `${version.id}.wav`;
-                            const blobFile = blobsFolder.file(blobName);
-                            if (blobFile) {
-                                version.blob = await blobFile.async("blob");
-                            }
+            for (const fileId of Object.keys(state.files)) {
+                const file = state.files[fileId];
+                if (file && file.versions) { // Guard checks
+                    for (const version of file.versions) {
+                        const blobName = `${version.id}.wav`;
+                        const blobFile = zip.file(`${blobsPrefix}${blobName}`) || zip.file(`blobs/${blobName}`);
+                        if (blobFile) {
+                            version.blob = await blobFile.async("blob");
                         }
                     }
-                    processed++;
-                    if (processed % 5 === 0 || processed === totalFiles) {
-                        onProgress?.(`Loading audio blobs... (${processed}/${totalFiles})`);
-                    }
+                }
+                processed++;
+                if (processed % 5 === 0 || processed === totalFiles) {
+                    onProgress?.(`Loading audio blobs... (${processed}/${totalFiles})`);
                 }
             }
             return state;
@@ -930,14 +956,20 @@ export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Pr
     const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string } = {};
 
     try {
-        // Read config.txt at root if it exists
+        const skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
+        
+        // Read config.txt (Prioritize SK/ folder, fallback to root)
         try {
-            const configHandle = await rootHandle.getFileHandle('config.txt', { create: false });
+            const configHandle = await skRoot.getFileHandle('config.txt', { create: false });
             const configFile = await configHandle.getFile();
             structureMap.configText = await configFile.text();
-        } catch { /* No config.txt at root */ }
-
-        const skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
+        } catch {
+            try {
+                const configHandle = await rootHandle.getFileHandle('config.txt', { create: false });
+                const configFile = await configHandle.getFile();
+                structureMap.configText = await configFile.text();
+            } catch { /* No config.txt anywhere */ }
+        }
 
         for (const color of TAPE_COLORS) {
             const letter = color.charAt(0).toUpperCase();

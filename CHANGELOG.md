@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.6.0] - 2026-04-23
+
+### Added
+- **Project Export & Presets Reform**:
+    - **Automatic Project Loading**: Projects imported via ZIP now load automatically, featuring a "Discard Changes" safety check to prevent data loss.
+    - **Community Presets**: Introduced a dedicated Presets system with a pre-populated `public/presets/` library for quick setup.
+    - **Metadata Healing**: Implemented automated attribution and license verification during export, ensuring all samples have proper origin and license tags.
+    - **Enhanced SD Export**: Organized the `SK/` folder structure to strictly follow firmware requirements, including centralized `config.txt` and `notes.md` placement.
+    - **License Transparency**: Exported projects now include a detailed `README.md` with full sample attribution, license information, and usage instructions.
+- **Documentation**:
+    - Added [docs/how_to_copy_to_SDcard.md](./docs/how_to_copy_to_SDcard.md) with step-by-step instructions for hardware synchronization.
+
+### Improved
+- **Import/Export Logic**:
+    - Synchronized project metadata during SD import/export to preserve file origins and license information.
+    - Added support for `project-descriptor.json` for more robust project metadata handling in ZIP archives.
+    - Improved path resolution in ZIP imports to handle nested folder structures more gracefully.
+- **UI/UX**:
+    - Refined the Project Manager with better feedback during duplication and renaming operations.
+    - Standardized metadata display across the application for better license visibility.
+
 ## [3.5.0] - 2026-04-22
 
 ### Added

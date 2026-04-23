@@ -241,6 +241,35 @@ export const cleanDirectory = async (rootHandle: FileSystemDirectoryHandle, dirN
 };
 
 // Clean Orphaned Assets Helper
+export const getOrphanedAssets = async (rootHandle: FileSystemDirectoryHandle, projectName: string, activeFilesState: AppState['files']) => {
+    try {
+        const projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
+        const projectHandle = await projectsHandle.getDirectoryHandle(projectName, { create: false });
+        const assetsHandle = await projectHandle.getDirectoryHandle('Assets', { create: false });
+
+        const activeBlobNames = new Set<string>();
+        for (const file of Object.values(activeFilesState)) {
+            for (const version of file.versions) {
+                activeBlobNames.add(`${version.id}.wav`);
+            }
+        }
+
+        const orphans: { name: string, size: number }[] = [];
+        // @ts-ignore
+        for await (const [name, entry] of assetsHandle.entries()) {
+            if (entry.kind === 'file' && name.endsWith('.wav')) {
+                if (!activeBlobNames.has(name)) {
+                    const file = await (entry as FileSystemFileHandle).getFile();
+                    orphans.push({ name, size: file.size });
+                }
+            }
+        }
+        return orphans;
+    } catch (e) {
+        return [];
+    }
+};
+
 export const cleanOrphanedAssets = async (rootHandle: FileSystemDirectoryHandle, projectName: string, activeFilesState: AppState['files'], onProgress?: (msg: string) => void) => {
     try {
         const projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
@@ -296,6 +325,24 @@ ${state.projectNotes}
 `;
     }
 
+    // --- NEW: Tape Notes under Project Notes ---
+    let hasTapeNotes = false;
+    TAPE_COLORS.forEach(c => { if (state.tapes[c].notes) hasTapeNotes = true; });
+
+    if (hasTapeNotes) {
+        content += `------------------------------------------------------------------------
+TAPE NOTES
+------------------------------------------------------------------------
+`;
+        TAPE_COLORS.forEach(c => {
+            const notes = state.tapes[c].notes;
+            if (notes) {
+                content += `[${c.toUpperCase()}]: ${notes}\n`;
+            }
+        });
+        content += '\n';
+    }
+
     content += `========================================================================
 ========================================================================
 FOLDER STRUCTURE (STRICT MODE)
@@ -312,9 +359,8 @@ This is required by the Spotykach firmware.
 
         if (activeSlots.length > 0 || tape.notes) {
             content += `[${color.toUpperCase()}] -> SK/${folderName}/\n`;
-            if (tape.notes) {
-                content += `  Notes:\n    ${tape.notes.split('\n').join('\n    ')}\n\n`;
-            }
+            // Tape notes already shown above in the Notes section, but keep them here too for folder context if desired?
+            // User requested them under project notes, so I'll keep this section focused on the files.
             activeSlots.forEach(slot => {
                 const file = state.files[slot.fileId!];
                 content += `  Slot ${slot.id}: ${slot.id}.WAV  (Source: "${file?.originalName || file?.name || 'Unknown'}")\n`;
@@ -329,17 +375,44 @@ LEGAL / LICENSES
 ========================================================================
 `;
 
-    // specific license collection
+    // 1. Gather all files actually used in tapes
+    const usedFileIds = new Set<string>();
+    TAPE_COLORS.forEach(c => {
+        state.tapes[c].slots.forEach(s => {
+            if (s.fileId) usedFileIds.add(s.fileId);
+        });
+    });
+
+    // 2. Specific license and origin collection
     const licenses = new Set<string>();
     const origins = new Set<string>();
 
-    Object.values(state.files).forEach(file => {
-        // Check if file is used in any slot? Or just mention all files in project?
-        // Let's mention all files that are relevant (assigned or if bundling project)
-        // For SD export, we usually care about assigned files.
-        // But checking every file in state is safer for attribution.
-        if (file.license) licenses.add(`${file.origin ? `[${file.origin}] ` : ''}${file.license}`);
-        if (file.origin) origins.add(file.origin);
+    usedFileIds.forEach(id => {
+        const file = state.files[id];
+        if (!file) return;
+
+        let origin = file.origin;
+        let license = file.license;
+
+        // HEALING: Handle legacy/generic origins for the Hainbach pack specifically if metadata is missing
+        const isHainbachPath = file.sourceSamplePath?.toLowerCase().includes('/hainbach/');
+        if ((!origin || origin === 'Sample Pack') && isHainbachPath) {
+            origin = "Hainbach's Spotykach Tapes";
+            license = "free to use in your music, no reselling as part of sample pack or instrument.";
+        }
+
+        if (license) {
+            const displayOrigin = origin && origin !== 'Sample Pack' ? origin : 'Hainbach\'s Spotykach Tapes';
+            licenses.add(`[${displayOrigin}] ${license}`);
+        }
+        
+        if (origin && origin !== 'Sample Pack') {
+            origins.add(origin);
+        } else if (isHainbachPath) {
+            origins.add("Hainbach's Spotykach Tapes");
+        } else {
+            origins.add('Custom Upload / SK Import');
+        }
     });
 
     if (licenses.size > 0) {
@@ -500,7 +573,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 if (finalConfig) {
                     onProgress?.("Writing config.txt...", 18);
                     const configText = generateConfigText(finalConfig);
-                    const configHandle = await rootHandle.getFileHandle('config.txt', { create: true });
+                    const configHandle = await skHandle.getFileHandle('config.txt', { create: true });
                     await safeWriteBlob(configHandle, new Blob([configText], { type: 'text/plain' }), options.forceOverwrite);
                 }
             }
@@ -567,7 +640,19 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 },
                 projectConfig: state.projectConfig,
                 projectNotes: state.projectNotes,
-                tapes: state.tapes
+                tapes: state.tapes,
+                files: Object.entries(state.files).reduce((acc, [id, f]) => {
+                    // Only include necessary metadata for identity/re-import
+                    acc[id] = {
+                        name: f.name,
+                        originalName: f.originalName,
+                        origin: f.origin,
+                        license: f.license,
+                        tags: f.tags,
+                        sourceSamplePath: f.sourceSamplePath
+                    };
+                    return acc;
+                }, {} as Record<string, any>)
             };
             const identityHandle = await skHandle.getFileHandle('project.json', { create: true });
             const identityWritable = await identityHandle.createWritable();
@@ -810,7 +895,13 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                     let hasMeta = false;
                     let fileCount = 0;
                     try {
-                        const projectFileHandle = await handle.getFileHandle('project.json', { create: false });
+                        let projectFileHandle: FileSystemFileHandle;
+                        try {
+                            projectFileHandle = await handle.getFileHandle('project-descriptor.json', { create: false });
+                        } catch (e) {
+                            projectFileHandle = await handle.getFileHandle('project.json', { create: false });
+                        }
+                        
                         // Basic validation that it's a project
                         hasMeta = true;
                         console.log(`[scanForProjects] Valid project structure found: ${name}`);
@@ -824,7 +915,14 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
 
                             const text = await file.text();
                             json = JSON.parse(text);
-                            if (json.files) fileCount = Object.keys(json.files).length;
+                            
+                            // Support both legacy .files and descriptor .files structure
+                            if (json.files) {
+                                fileCount = Object.keys(json.files).length;
+                            } else if (json.metadata && typeof json.metadata.fileCount === 'number') {
+                                // Some descriptors might have a summary count
+                                fileCount = json.metadata.fileCount;
+                            }
 
                             // Prefer internal metadata timestamp if available
                             if (json.metadata && json.metadata.exportDate) {
@@ -833,7 +931,7 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                                     lastModified = exportTime;
                                 }
                             }
-                        } catch (e) { console.warn("Failed to read project.json meta", e); }
+                        } catch (e) { console.warn("Failed to read meta for " + name, e); }
 
                         projects.push({
                             name,
@@ -1048,74 +1146,100 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
         const projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
         const projectDirHandle = await projectsHandle.getDirectoryHandle(projectName, { create: false });
 
-        // 1. Read project.json
-        onProgress?.("Reading project.json...", 10);
-        const projectFileHandle = await projectDirHandle.getFileHandle('project.json', { create: false });
-        const file = await projectFileHandle.getFile();
-        const text = await file.text();
-        const state: AppState = JSON.parse(text);
-
-        // Ensure projectConfig is complete with defaults for backward compatibility
-        state.projectConfig = {
-            mid_ch_a: 1,
-            mid_ch_b: 2,
-            mid_ps_a: false,
-            mid_ps_b: false,
-            pre_load: true,
-            ...(state.projectConfig || {})
-        } as ProjectConfig;
-
-        const missingAssets: NonNullable<AppState['loadIssues']>['missingAssets'] = [];
-
-        // 2. Rehydrate Blobs
-        onProgress?.("Loading Assets...", 20);
-        let assetsHandle: FileSystemDirectoryHandle | null = null;
+        // 1. Read project.json or project-descriptor.json
+        onProgress?.("Reading project manifest...", 10);
+        let text = '';
+        let isDescriptor = false;
         try {
-            assetsHandle = await projectDirHandle.getDirectoryHandle('Assets', { create: false });
+            const descHandle = await projectDirHandle.getFileHandle('project-descriptor.json', { create: false });
+            text = await (await descHandle.getFile()).text();
+            isDescriptor = true;
         } catch (e) {
-            console.warn("No Assets folder found, skipping blob rehydration.");
+            const projectFileHandle = await projectDirHandle.getFileHandle('project.json', { create: false });
+            text = await (await projectFileHandle.getFile()).text();
         }
 
-        if (assetsHandle) {
-            // Pre-fetch all asset files? Or on demand?
-            // Let's iterate the files once.
-            // Actually, we can just get them by name as needed.
+        let state: AppState;
 
-            let totalFiles = Object.keys(state.files).length;
-            let processed = 0;
-
-            for (const [, fileRecord] of Object.entries(state.files)) {
-                processed++;
-                onProgress?.(`Loading assets for ${fileRecord.name}...`, 20 + ((processed / totalFiles) * 70));
-
-                fileRecord.versions = await Promise.all(fileRecord.versions.map(async (v: any) => {
-                    // If it has a blobRef, load it
-                    if (v.blobRef && typeof v.blobRef === 'string') {
-                        try {
-                            // path is "Assets/filename.wav"
-                            const parts = v.blobRef.split('/');
-                            const fileName = parts[parts.length - 1];
-
-                            const fileHandle = await assetsHandle!.getFileHandle(fileName, { create: false });
-                            const fileData = await fileHandle.getFile(); // Returns File which is a Blob
-                            return { ...v, blob: fileData };
-                        } catch (e) {
-                            const errMsg = e instanceof Error ? e.message : String(e);
-                            console.warn(`Failed to load asset ${v.blobRef}`, e);
-                            missingAssets.push({
-                                fileId: fileRecord.id,
-                                fileName: fileRecord.name,
-                                versionId: v.id || 'unknown',
-                                blobRef: v.blobRef,
-                                reason: errMsg,
-                            });
-                            return { ...v, blob: null }; // Explicitly mark missing blob
-                        }
+        if (isDescriptor) {
+            const { parseProjectDescriptor, hydrateDescriptor } = await import('./projectDescriptorUtils');
+            const descriptor = parseProjectDescriptor(JSON.parse(text));
+            
+            // Read all custom blobs into memory for hydration
+            const customAssets: Record<string, Blob> = {};
+            try {
+                const customDir = await projectDirHandle.getDirectoryHandle('custom_assets', { create: false });
+                // @ts-ignore
+                for await (const [name, entry] of customDir.entries()) {
+                    if (entry.kind === 'file') {
+                        const file = await (entry as FileSystemFileHandle).getFile();
+                        customAssets[`custom_assets/${name}`] = file;
                     }
-                    return v;
-                }));
+                }
+            } catch (e) {
+                // Ignore if no custom_assets directory
+            }
 
-                // Fix types if needed (cast to AudioVersion)
+            state = await hydrateDescriptor(descriptor, customAssets, (msg, pct) => {
+                onProgress?.(msg, 10 + (pct * 0.8));
+            });
+        } else {
+            state = JSON.parse(text);
+
+            // Ensure projectConfig is complete with defaults for backward compatibility
+            state.projectConfig = {
+                mid_ch_a: 1,
+                mid_ch_b: 2,
+                mid_ps_a: false,
+                mid_ps_b: false,
+                pre_load: true,
+                ...(state.projectConfig || {})
+            } as ProjectConfig;
+        }
+
+        const missingAssets: NonNullable<AppState['loadIssues']>['missingAssets'] = state.loadIssues?.missingAssets || [];
+
+        // 2. Rehydrate Blobs (only for legacy project.json)
+        if (!isDescriptor) {
+            onProgress?.("Loading Assets...", 20);
+            let assetsHandle: FileSystemDirectoryHandle | null = null;
+            try {
+                assetsHandle = await projectDirHandle.getDirectoryHandle('Assets', { create: false });
+            } catch (e) {
+                console.warn("No Assets folder found, skipping blob rehydration.");
+            }
+
+            if (assetsHandle) {
+                let totalFiles = Object.keys(state.files).length;
+                let processed = 0;
+
+                for (const [, fileRecord] of Object.entries(state.files)) {
+                    processed++;
+                    onProgress?.(`Loading assets for ${fileRecord.name}...`, 20 + ((processed / totalFiles) * 70));
+
+                    fileRecord.versions = await Promise.all(fileRecord.versions.map(async (v: any) => {
+                        if (v.blobRef && typeof v.blobRef === 'string') {
+                            try {
+                                const parts = v.blobRef.split('/');
+                                const fileName = parts[parts.length - 1];
+
+                                const fileHandle = await assetsHandle!.getFileHandle(fileName, { create: false });
+                                const fileData = await fileHandle.getFile();
+                                return { ...v, blob: fileData };
+                            } catch (e: any) {
+                                console.warn(`Asset file missing: ${v.blobRef}`, e);
+                                missingAssets.push({
+                                    fileId: fileRecord.id,
+                                    fileName: fileRecord.name,
+                                    versionId: v.id,
+                                    blobRef: v.blobRef,
+                                    reason: 'File missing from Assets folder.'
+                                });
+                            }
+                        }
+                        return v;
+                    }));
+                }
             }
         }
 
@@ -1126,7 +1250,6 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
             };
             onProgress?.(`Loaded with warnings: ${missingAssets.length} missing asset file(s).`, 98);
         } else if (state.loadIssues?.missingAssets?.length) {
-            // Clear stale runtime warnings if project.json carried old in-memory state by mistake.
             state.loadIssues = {
                 ...state.loadIssues,
                 missingAssets: [],
@@ -1147,65 +1270,7 @@ export const deleteProject = async (rootHandle: FileSystemDirectoryHandle, proje
     await projectsHandle.removeEntry(projectName, { recursive: true });
 };
 
-export const renameProject = async (rootHandle: FileSystemDirectoryHandle, oldName: string, newName: string) => {
-    let projectsHandle: FileSystemDirectoryHandle;
 
-    // Try to find 'Projects' directly (Work Folder style)
-    try {
-        projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
-    } catch (e) {
-        // Not found, try 'WAV_Builder/Projects' (SD Card style)
-        try {
-            const wavBuilder = await rootHandle.getDirectoryHandle('WAV_Builder', { create: false });
-            projectsHandle = await wavBuilder.getDirectoryHandle('Projects', { create: false });
-        } catch (e2) {
-            console.error("Could not find Projects directory in root or WAV_Builder");
-            throw new Error("Projects folder not found");
-        }
-    }
-
-    // 1. Get Source
-    const sourceHandle = await projectsHandle.getDirectoryHandle(oldName);
-
-    // 2. Create Target
-    const targetHandle = await projectsHandle.getDirectoryHandle(newName, { create: true });
-
-    // 3. Copy Content (files only for now, projects are shallow structured: project.json + Assets folder)
-
-    // Copy project.json
-    try {
-        const jsonHandle = await sourceHandle.getFileHandle('project.json');
-        const file = await jsonHandle.getFile();
-        const jsonTarget = await targetHandle.getFileHandle('project.json', { create: true });
-        const writer = await jsonTarget.createWritable();
-        await writer.write(file);
-        await writer.close();
-    } catch (e) {
-        console.warn("No project.json found in source to rename");
-    }
-
-    // Copy Assets
-    try {
-        const assetsSource = await sourceHandle.getDirectoryHandle('Assets');
-        const assetsTarget = await targetHandle.getDirectoryHandle('Assets', { create: true });
-
-        // @ts-ignore
-        for await (const [name, handle] of assetsSource.entries()) {
-            if (handle.kind === 'file') {
-                const file = await handle.getFile();
-                const targetFile = await assetsTarget.getFileHandle(name, { create: true });
-                const writer = await targetFile.createWritable();
-                await writer.write(file);
-                await writer.close();
-            }
-        }
-    } catch (e) {
-        console.warn("No Assets folder found to copy");
-    }
-
-    // 4. Delete Old
-    await projectsHandle.removeEntry(oldName, { recursive: true });
-};
 
 export const duplicateProject = async (rootHandle: FileSystemDirectoryHandle, sourceName: string, newName: string) => {
     const projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
@@ -1216,14 +1281,55 @@ export const duplicateProject = async (rootHandle: FileSystemDirectoryHandle, so
     // 2. Create Target
     const targetHandle = await projectsHandle.getDirectoryHandle(newName, { create: true });
 
-    // 3. Copy Content
+    // 3. Copy Helpers
+    const copyFile = async (src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle, fileName: string) => {
+        try {
+            const h = await src.getFileHandle(fileName);
+            const file = await h.getFile();
+            const th = await dst.getFileHandle(fileName, { create: true });
+            const w = await th.createWritable();
+            await w.write(file);
+            await w.close();
+            return true;
+        } catch (e) { return false; }
+    };
 
-    // Copy project.json
+    const copyDir = async (src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle, dirName: string) => {
+        try {
+            const sDir = await src.getDirectoryHandle(dirName);
+            const tDir = await dst.getDirectoryHandle(dirName, { create: true });
+            // @ts-ignore
+            for await (const [name, handle] of sDir.entries()) {
+                if (handle.kind === 'file') {
+                    await copyFile(sDir, tDir, name);
+                }
+            }
+            return true;
+        } catch (e) { return false; }
+    };
+
+    // 4. Copy Metadata
+    let foundMeta = false;
+    // Try Descriptor
+    try {
+        const jsonHandle = await sourceHandle.getFileHandle('project-descriptor.json');
+        const file = await jsonHandle.getFile();
+        const text = await file.text();
+        const json = JSON.parse(text);
+        if (json.name) json.name = newName;
+        if (json.metadata) json.metadata.exportDate = new Date().toISOString();
+
+        const jsonTarget = await targetHandle.getFileHandle('project-descriptor.json', { create: true });
+        const writer = await jsonTarget.createWritable();
+        await writer.write(JSON.stringify(json, null, 2));
+        await writer.close();
+        foundMeta = true;
+    } catch (e) {}
+
+    // Try Legacy JSON
     try {
         const jsonHandle = await sourceHandle.getFileHandle('project.json');
         const file = await jsonHandle.getFile();
-
-        // Update Project Name in JSON
         const text = await file.text();
         const json = JSON.parse(text);
         if (json.metadata) {
@@ -1235,28 +1341,31 @@ export const duplicateProject = async (rootHandle: FileSystemDirectoryHandle, so
         const writer = await jsonTarget.createWritable();
         await writer.write(JSON.stringify(json, null, 2));
         await writer.close();
-    } catch (e) {
-        console.warn("No project.json found in source to copy");
+        foundMeta = true;
+    } catch (e) {}
+
+    if (!foundMeta) {
+        console.warn("No project metadata found to copy during duplication");
     }
 
-    // Copy Assets
-    try {
-        const assetsSource = await sourceHandle.getDirectoryHandle('Assets');
-        const assetsTarget = await targetHandle.getDirectoryHandle('Assets', { create: true });
+    // 5. Assets
+    await copyDir(sourceHandle, targetHandle, 'Assets');
+    await copyDir(sourceHandle, targetHandle, 'custom_assets');
+    
+    // 6. Notes & Config
+    await copyFile(sourceHandle, targetHandle, 'notes.md');
+    await copyFile(sourceHandle, targetHandle, 'config.txt');
+    await copyFile(sourceHandle, targetHandle, 'visual_settings.json');
+};
 
-        // @ts-ignore
-        for await (const [name, handle] of assetsSource.entries()) {
-            if (handle.kind === 'file') {
-                const file = await handle.getFile();
-                const targetFile = await assetsTarget.getFileHandle(name, { create: true });
-                const writer = await targetFile.createWritable();
-                await writer.write(file);
-                await writer.close();
-            }
-        }
-    } catch (e) {
-        console.warn("No Assets folder found to copy");
-    }
+export const renameProject = async (rootHandle: FileSystemDirectoryHandle, oldName: string, newName: string) => {
+    const projectsHandle = await rootHandle.getDirectoryHandle('Projects', { create: false });
+    
+    // Use duplicate logic
+    await duplicateProject(rootHandle, oldName, newName);
+    
+    // Delete source
+    await projectsHandle.removeEntry(oldName, { recursive: true });
 };
 
 export const parseConfigText = (text: string): ProjectConfig | null => {

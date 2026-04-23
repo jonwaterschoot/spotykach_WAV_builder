@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings, Crosshair, ChevronUp, ChevronDown, LayoutList, ArrowRightToLine, Layers } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings, Crosshair, ChevronDown, Layers } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { SamplePack } from '../data/samplePacks';
 import { resolveAssetPath } from '../utils/assetUtils';
@@ -17,11 +17,12 @@ interface SampleBrowserProps {
     projects: ProjectSummary[];
     onOpenLibraryManager: (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => void;
     currentProjectName?: string;
+    currentFiles?: Record<string, FileRecord>;
     workHandle: FileSystemDirectoryHandle | null;
     mode?: 'global' | 'slot-selection'; // Context for future extensions
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
-    onRemoteBulkImport?: (samples: { url: string, name: string }[], target: 'pool' | 'slots' | TapeColor) => Promise<void>;
+    onRemoteBulkImport?: (samples: { url: string, name: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
     forceStop?: boolean;
 }
 
@@ -40,6 +41,7 @@ export const SampleBrowser = ({
     projects,
     onOpenLibraryManager,
     currentProjectName,
+    currentFiles,
     workHandle,
     mode = 'global',
     onImportToPool,
@@ -130,6 +132,23 @@ export const SampleBrowser = ({
     const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
     const [showActionMenu, setShowActionMenu] = useState(false);
 
+    // Track added samples globally based on the project's current files
+    const allAddedPaths = useMemo(() => {
+        const paths = new Set<string>(addedSamples);
+        const addedNames = new Set<string>();
+        
+        if (currentFiles) {
+            Object.values(currentFiles).forEach(file => {
+                if (file.sourceSamplePath) {
+                    paths.add(file.sourceSamplePath);
+                } else if (file.origin && file.origin !== 'SD Card' && file.origin !== 'User Library') {
+                    if (file.originalName) addedNames.add(file.originalName);
+                }
+            });
+        }
+        return { paths, addedNames };
+    }, [currentFiles, addedSamples]);
+
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';
     const isCustomFolderSelected = selectedPackId === 'custom-folder';
@@ -142,7 +161,7 @@ export const SampleBrowser = ({
         const loadFolders = async () => {
             try {
                 // Fetch remote manifest packs
-                const packs = await fetchSampleManifest();
+                const { packs } = await fetchSampleManifest();
                 setRemotePacks(packs);
                 setIsManifestLoading(false);
 
@@ -205,7 +224,7 @@ export const SampleBrowser = ({
             }).filter((s): s is { url: string, name: string } => s !== null);
 
             if (samplesToImport.length > 0) {
-                await onRemoteBulkImport(samplesToImport, target);
+                await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
                 setSelectedSamplePaths(new Set());
             }
         } else if (isUserLibrarySelected || isProjectSamplesSelected) {
@@ -913,7 +932,7 @@ export const SampleBrowser = ({
                                                             {samples.map((sample: any, idx: number) => {
                                                                 const isPlaying = playingSample === sample.path;
                                                                 const isImporting = importingSample === sample.path;
-                                                                const isAdded = addedSamples.has(sample.path);
+                                                                const isAdded = allAddedPaths.paths.has(sample.path) || allAddedPaths.addedNames.has(sample.name);
                                                                 const isSelected = selectedSamplePaths.has(sample.path);
 
                                                                 return (
@@ -958,9 +977,9 @@ export const SampleBrowser = ({
                                                                         <div className="text-right">
                                                                             <button
                                                                                 onClick={(e) => { e.stopPropagation(); handleImport(sample); }}
-                                                                                disabled={isImporting || isAdded}
-                                                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm disabled:cursor-not-allowed ${isAdded
-                                                                                    ? 'bg-synthux-yellow text-black border border-synthux-yellow shadow-synthux-yellow/20'
+                                                                                disabled={isImporting}
+                                                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm ${isImporting ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:scale-[1.02] active:scale-95'} ${isAdded
+                                                                                    ? 'bg-synthux-yellow hover:bg-yellow-400 text-black border border-synthux-yellow shadow-synthux-yellow/20'
                                                                                     : 'bg-synthux-blue/20 hover:bg-synthux-blue hover:text-black text-synthux-blue border border-synthux-blue/50'
                                                                                     }`}
                                                                             >
@@ -970,7 +989,7 @@ export const SampleBrowser = ({
                                                                                     </>
                                                                                 ) : isAdded ? (
                                                                                     <>
-                                                                                        <Check size={14} /> Added
+                                                                                        <Check size={14} /> Added (Add Again)
                                                                                     </>
                                                                                 ) : (
                                                                                     <>

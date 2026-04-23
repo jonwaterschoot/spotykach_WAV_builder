@@ -9,6 +9,7 @@ interface CleanupModalProps {
     tapes: Record<TapeColor, Tape>;
     currentProjectName?: string;
     onConfirm: (deleteFileIds: string[], deleteVersionIds: Record<string, string[]>) => void;
+    orphanedAssets?: { name: string, size: number }[];
     skBackups?: { timestamp: string; sizeBytes: number }[];
     onDeleteSKBackup?: (timestamp: string) => void;
     skBackupLimit?: number;
@@ -141,6 +142,7 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
     tapes,
     currentProjectName,
     onConfirm,
+    orphanedAssets = [],
     skBackups = [],
     onDeleteSKBackup,
     skBackupLimit = 5,
@@ -252,6 +254,14 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                 }
             });
         }
+        
+        // Add orphaned assets to savings
+        if (orphanedAssets) {
+            orphanedAssets.forEach((o: { name: string, size: number }) => {
+                savings += o.size;
+            });
+        }
+
         return { totalSavings: savings, totalFilesToDelete: filesToDelete, totalVersionsToDelete: versionsToDelete };
     }, [confirmAction, selectedFilesForDeletion, selectedVersionsForDeletion, assignedFiles, unassignedPool]);
 
@@ -547,6 +557,46 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                                 </div>
                                 <div className="space-y-3">
                                     {unassignedPool.map(file => <FileRow key={file.id} file={file} isUnassigned={true} />)}
+                                </div>
+                            </div>
+                        )}
+
+                        {orphanedAssets && orphanedAssets.length > 0 && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between px-2">
+                                    <div className="flex items-center gap-3">
+                                        <h3 className="text-xs font-black text-red-500/60 uppercase tracking-[0.3em]">Orphaned Disk Assets</h3>
+                                        <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-[9px] text-red-500 font-mono">{orphanedAssets.length} files</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-red-500/5 border border-red-500/10 rounded-[24px] p-5 flex gap-4">
+                                    <div className="p-3 bg-red-500/20 text-red-500 rounded-xl shrink-0 h-fit">
+                                        <Skull size={20} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <h4 className="text-[11px] font-black uppercase text-red-500 tracking-wider">Lingering Data Detected</h4>
+                                        <p className="text-[10px] text-gray-500 leading-relaxed font-medium">
+                                            The following files exist in the project folder but are no longer referenced by any project record. They will be deleted upon confirmation.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {orphanedAssets.map((asset: { name: string, size: number }) => (
+                                        <div key={asset.name} className="flex items-center justify-between bg-white/[0.03] border border-white/5 rounded-xl px-4 py-3 group">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center text-red-500/40">
+                                                    <Trash2 size={14} />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="text-[12px] font-bold text-gray-300 truncate">{asset.name}</div>
+                                                    <div className="text-[9px] text-gray-600 font-mono">{formatSize(asset.size)}</div>
+                                                </div>
+                                            </div>
+                                            <div className="text-[8px] font-black text-red-500/40 uppercase tracking-tighter border border-red-500/10 px-1.5 py-0.5 rounded">Orphan</div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}
