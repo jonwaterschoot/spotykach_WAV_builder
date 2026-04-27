@@ -224,7 +224,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 </button>
                 <button
                     onClick={onSkip}
-                    className="text-gray-500 hover:text-gray-300 text-sm py-2"
+                    className="text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20"
                 >
                     Skip setup (Use Browser Cache)
                 </button>
@@ -277,7 +277,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 <div className="flex items-center justify-between gap-4">
                     <button
                         onClick={() => slideIndex > 0 ? setSlideIndex(slideIndex - 1) : setStep('INTRO')}
-                        className="flex items-center gap-1 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+                        className="flex items-center gap-1 text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20"
                     >
                         <ChevronLeft size={16} />
                         {slideIndex === 0 ? 'Back' : 'Previous'}
@@ -304,7 +304,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 <div className="text-center">
                     <button
                         onClick={() => setStep('SELECT_WORK')}
-                        className="text-gray-600 hover:text-gray-400 text-xs underline underline-offset-2 transition-colors"
+                        className="text-gray-500 hover:text-white text-xs py-1 px-2.5 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 underline underline-offset-2"
                     >
                         Skip intro
                     </button>
@@ -329,7 +329,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
             <button
                 onClick={handleSelectWork}
-                className="w-full py-12 border-2 border-dashed border-white/10 hover:border-indigo-500/50 bg-white/5 hover:bg-white/10 rounded-3xl flex flex-col items-center justify-center gap-4 transition-all group"
+                className="w-full py-12 border-2 border-dashed border-white/10 hover:border-indigo-500/50 bg-black/40 backdrop-blur-sm hover:bg-black/60 rounded-3xl flex flex-col items-center justify-center gap-4 transition-all group"
             >
                 <div className="p-4 bg-black/50 rounded-full group-hover:scale-110 transition-transform">
                     <FolderOpen className="text-gray-400 group-hover:text-indigo-400 transition-colors" size={32} />
@@ -346,7 +346,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
                 <button
                     onClick={() => setStep('INTRO')}
-                    className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2"
+                    className="text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 flex items-center gap-2"
                 >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -374,7 +374,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
             <div className="space-y-4">
                 <button
                     onClick={handleSelectBackup}
-                    className="w-full py-10 border-2 border-dashed border-white/10 hover:border-orange-500/50 bg-white/5 hover:bg-white/10 rounded-3xl flex flex-col items-center justify-center gap-3 transition-all group"
+                    className="w-full py-10 border-2 border-dashed border-white/10 hover:border-orange-500/50 bg-black/40 backdrop-blur-sm hover:bg-black/60 rounded-3xl flex flex-col items-center justify-center gap-3 transition-all group"
                 >
                     <div className="p-4 bg-black/50 rounded-full group-hover:scale-110 transition-transform">
                         <FolderOpen className="text-gray-400 group-hover:text-orange-400 transition-colors" size={32} />
@@ -384,7 +384,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
                 <button
                     onClick={handleSkipBackup}
-                    className="w-full py-4 text-gray-500 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+                    className="w-full py-4 text-gray-400 hover:text-white bg-black/40 backdrop-blur-sm border border-white/5 hover:border-white/20 rounded-xl transition-all"
                 >
                     Skip for now
                 </button>
@@ -399,7 +399,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
                 <button
                     onClick={() => setStep('SELECT_WORK')}
-                    className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2"
+                    className="text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 flex items-center gap-2"
                 >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -469,7 +469,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
                 <button
                     onClick={() => setStep('SELECT_BACKUP')}
-                    className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2"
+                    className="text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 flex items-center gap-2"
                 >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

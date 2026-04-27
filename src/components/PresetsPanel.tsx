@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Play, Download, Loader, ChevronRight, Package, AlertTriangle, Check } from 'lucide-react';
+import { X, Play, Download, Loader, ChevronRight, Package, Check } from 'lucide-react';
 import type { PresetManifestEntry } from '../data/samplePacks';
 
 interface PresetsPanelProps {
@@ -57,7 +57,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                         <div>
                             <h2 className="text-xl font-bold text-white">Starter Presets</h2>
                             <p className="text-gray-400 text-sm mt-0.5">
-                                Curated patches using built-in sample packs · Samples load from cloud
+                                Curated project presets using built-in sample packs · Samples load from cloud
                             </p>
                         </div>
                     </div>
@@ -70,12 +70,36 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                 </header>
 
                 {/* Info strip */}
-                <div className="px-6 py-3 bg-violet-500/5 border-b border-violet-500/10 text-xs text-violet-300 flex items-center gap-2 shrink-0">
-                    <AlertTriangle size={12} className="shrink-0" />
-                    <span>
-                        These presets use the built-in sample packs. No audio files are stored in the preset — they fetch from the cloud when you load them.
-                        You can share the resulting project as a full or settings-only ZIP from the Project Manager.
-                    </span>
+                <div className="px-6 py-4 bg-violet-500/5 border-b border-violet-500/10 shrink-0">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="flex gap-3">
+                            <Package size={16} className="shrink-0 text-violet-400 mt-0.5" />
+                            <div>
+                                <p className="text-[11px] font-bold text-violet-200 uppercase tracking-wider mb-0.5">Shared Samples</p>
+                                <p className="text-[11px] text-violet-300/70 leading-normal">
+                                    Uses built-in packs also available in the normal sample browser.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 md:border-l md:border-white/5 md:pl-6">
+                            <Download size={16} className="shrink-0 text-violet-400 mt-0.5" />
+                            <div>
+                                <p className="text-[11px] font-bold text-violet-200 uppercase tracking-wider mb-0.5">Cloud Fetch</p>
+                                <p className="text-[11px] text-violet-300/70 leading-normal">
+                                    Audio fetches from cloud on load and stores locally for full editing.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 md:border-l md:border-white/5 md:pl-6">
+                            <Play size={16} className="shrink-0 text-violet-400 mt-0.5" />
+                            <div>
+                                <p className="text-[11px] font-bold text-violet-200 uppercase tracking-wider mb-0.5">Create & Share</p>
+                                <p className="text-[11px] text-violet-300/70 leading-normal">
+                                    Save your own projects or share them through the Project Manager.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Cards */}
@@ -107,6 +131,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                                                 <img
                                                     src={entry.coverImage}
                                                     alt={entry.name}
+                                                    crossOrigin="anonymous"
                                                     className="w-full h-full object-cover opacity-80"
                                                 />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-[#161616] via-transparent to-transparent" />

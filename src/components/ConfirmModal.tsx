@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
 
 interface ConfirmModalProps {
@@ -25,6 +26,16 @@ export const ConfirmModal = ({
     isDestructive = false,
     showCancel = true
 }: ConfirmModalProps) => {
+    // Escape key listener
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     if (!isOpen) return null;
 
     return (

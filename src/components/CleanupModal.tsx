@@ -148,6 +148,16 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
     skBackupLimit = 5,
 }) => {
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     const [selectedFilesForDeletion, setSelectedFilesForDeletion] = useState<Set<string>>(new Set());
     const [selectedVersionsForDeletion, setSelectedVersionsForDeletion] = useState<Record<string, Set<string>>>({});
     const [playingVersion, setPlayingVersion] = useState<AudioVersion | null>(null);
@@ -205,8 +215,17 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
         if (isOpen) {
             resetToDefault();
             setConfirmAction(null);
+
+            const handleKeyDown = (e: KeyboardEvent) => {
+                if (e.key === 'Escape') {
+                    if (confirmAction) setConfirmAction(null);
+                    else onClose();
+                }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
         }
-    }, [isOpen, assignedFiles, unassignedPool]);
+    }, [isOpen, confirmAction, onClose]);
 
     const { totalSavings, totalFilesToDelete, totalVersionsToDelete } = useMemo(() => {
         let savings = 0;

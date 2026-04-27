@@ -1,5 +1,5 @@
 import { X, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface HelpModalProps {
     onClose: () => void;
@@ -7,6 +7,14 @@ interface HelpModalProps {
 
 export const HelpModal = ({ onClose }: HelpModalProps) => {
     const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
 
     const toggleSection = (id: string) => {
         setExpandedSection(prev => prev === id ? null : id);

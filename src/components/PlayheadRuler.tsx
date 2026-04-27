@@ -233,7 +233,7 @@ export const PlayheadRuler: React.FC<PlayheadRulerProps> = ({
 
             {/* Playhead Indicator */}
             <div
-                className="absolute top-0 bottom-0 w-0 z-10 pointer-events-none transition-all duration-75 ease-linear flex flex-col items-center -translate-x-1/2"
+                className="absolute top-0 bottom-0 w-0 z-10 pointer-events-none flex flex-col items-center -translate-x-1/2"
                 style={{ left: `${progressPercent}%` }}
             >
                 {/* Visual Triangle */}

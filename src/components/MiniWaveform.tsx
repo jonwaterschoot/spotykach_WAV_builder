@@ -141,29 +141,31 @@ export const MiniWaveform = ({ blob, buffer: propBuffer, width = 100, height = 4
 
     return (
         <div
-            ref={containerRef}
-            className={`flex items-center justify-center opacity-80 relative w-full h-full ${className} ${onSeek ? 'cursor-ew-resize' : ''}`}
+            className={`opacity-80 w-full h-full ${className} ${onSeek ? 'cursor-ew-resize' : ''}`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onClick={(e) => e.stopPropagation()} // Prevent opening editor on click
         >
-            {peaks.length > 0 ? (
-                <>
-                    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="pointer-events-none">
-                        <path d={pathData} fill={color} />
-                    </svg>
-                    {/* Playhead */}
-                    {progress > 0 && (
-                        <div
-                            className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_4px_rgba(0,0,0,0.5)] pointer-events-none transition-all duration-75"
-                            style={{ left: `${progress * 100}%` }}
-                        />
-                    )}
-                </>
-            ) : (
-                <div className="w-full h-[1px] bg-gray-700 animate-pulse"></div>
-            )}
+            <div ref={containerRef} className="relative w-full h-full flex items-center justify-center">
+                {peaks.length > 0 ? (
+                    <>
+                        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="pointer-events-none">
+                            <path d={pathData} fill={color} />
+                        </svg>
+                        {/* Playhead */}
+                        {progress > 0 && (
+                            <div
+                                className="absolute top-0 bottom-0 w-[1.5px] bg-white shadow-[0_0_6px_rgba(255,255,255,0.5)] pointer-events-none z-20 rounded-full"
+                                style={{ left: `${progress * 100}%`, transform: 'translateX(-50%)' }}
+                            />
+                        )}
+                    </>
+                ) : (
+                    <div className="w-full h-[1px] bg-gray-700 animate-pulse"></div>
+                )}
+            </div>
         </div>
     );
 };
+

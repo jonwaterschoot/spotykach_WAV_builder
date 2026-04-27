@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, RefreshCw, Check, AlertTriangle, Loader, Trash2, ArrowRight, ArrowLeftRight, FolderOpen, Settings } from 'lucide-react';
 import type { UserLibrary, FileRecord } from '../types';
-import { saveUserLibraryToDirectory } from '../utils/exportUtils';
+// dynamic utility imports
 
 interface LibrarySyncModalProps {
     isOpen: boolean;
@@ -41,6 +41,16 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [syncProgress, setSyncProgress] = useState<string>('');
     const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
 
     const compareLibrary = useCallback(async () => {
         if (!backupHandle) return;
@@ -128,7 +138,16 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
                 setPhase('review');
             }
         }
-    }, [isOpen, backupHandle, compareLibrary]);
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, backupHandle, compareLibrary, onClose]);
 
     const handleSync = async () => {
         if (!backupHandle) return;
@@ -151,6 +170,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
             };
 
             if (toPush.length > 0) {
+                const { saveUserLibraryToDirectory } = await import('../utils/exportUtils');
                 await saveUserLibraryToDirectory(pushLibrary, backupHandle, undefined, (msg) => setSyncProgress(msg));
             }
 

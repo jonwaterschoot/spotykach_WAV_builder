@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import type { AppState, TapeColor, FileRecord, AudioVersion, ProjectSummary } from '../types';
 import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,6 +31,7 @@ export interface ImportAnalysis {
 export const loadProjectFromZip = async (zipFile: File, onProgress?: (msg: string) => void): Promise<AppState | null> => {
     try {
         onProgress?.('Reading ZIP file...');
+        const JSZip = (await import('jszip')).default;
         const zip = await JSZip.loadAsync(zipFile);
         
         const descriptorJson = zip.file("project-descriptor.json") || zip.file(Object.keys(zip.files).find(p => p.endsWith('/project-descriptor.json')) || '');

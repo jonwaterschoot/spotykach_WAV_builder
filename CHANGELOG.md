@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.6.2] - 2026-04-27
+
+### Improved
+- **Playhead Animation**: Enhanced the playhead smoothness in tape views (Single and All Tapes) by implementing a high-frequency `requestAnimationFrame` update loop, matching the visual performance of the main sample editor.
+- **Global Modal Support**: Added universal `Escape` key support to close all modals and overlays, improving keyboard navigation and UX consistency.
+- **Vite Build Optimization**: Refined the Vite configuration and build chunking strategy to improve loading times and production bundle efficiency.
+
+### Fixed
+- **Playhead Bounds**: Resolved an issue where the sample playhead in tape views could bleed into the padded margins of the card. The playhead is now strictly contained within the waveform content area.
+
+
+## [3.6.1] - 2026-04-26
+
+### Improved
+- **Header & Navigation**: Streamlined the main header layout by reorganizing menu items for better accessibility and focus.
+- **Onboarding Experience**: Refined the onboarding/welcome screen UI with improved typography and contrast for better readability.
+
+### Fixed
+- **Presets Panel**: Resolved an issue where preset cover images failed to load from Cloudflare R2 due to Cross-Origin Embedder Policy (COEP) restrictions. Added `crossOrigin="anonymous"` to ensure proper CORS/COEP compliance.
+
 ## [3.6.0] - 2026-04-23
 
 ### Added

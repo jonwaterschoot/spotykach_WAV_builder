@@ -44,6 +44,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
     const [pos, setPos] = useState({ x: -1, y: 64 }); // -1 uses default right:16
     const [isDragging, setIsDragging] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     const [customPresets, setCustomPresets] = useState<Record<string, Partial<VisualFilters>>>(() => {
         try {
             const saved = localStorage.getItem('spotykach_custom_presets');
@@ -105,17 +115,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             document.body.style.userSelect = '';
         };
 
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+
         if (isDragging) {
             window.addEventListener('mousemove', handleMouseMove);
             window.addEventListener('mouseup', handleMouseUp);
             document.body.style.userSelect = 'none';
         }
+
+        window.addEventListener('keydown', handleKeyDown);
+
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('keydown', handleKeyDown);
             document.body.style.userSelect = '';
         };
-    }, [isDragging]);
+    }, [isDragging, isOpen, onClose]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         const modal = (e.currentTarget as HTMLElement).closest('.settings-modal-card') as HTMLElement;

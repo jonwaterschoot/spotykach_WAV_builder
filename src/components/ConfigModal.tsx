@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, Disc, Play, Trash2, FolderOpen, Plus, Check, Download, ExternalLink, HardDrive, Info } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import type { ProjectConfig, ProjectSummary } from '../types';
-import { generateConfigText, downloadBlob, safeWriteBlob } from '../utils/exportUtils';
+// dynamic utility imports
 
 interface ConfigModalProps {
     isOpen: boolean;
@@ -48,6 +48,16 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     const [showProjectBrowser, setShowProjectBrowser] = useState(false);
     const [newPresetName, setNewPresetName] = useState('');
     const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     const [showPreloadInfo, setShowPreloadInfo] = useState(false);
 
     // Load presets from localStorage
@@ -113,7 +123,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         }
     };
 
-    const handleDownloadConfig = () => {
+    const handleDownloadConfig = async () => {
+        const { generateConfigText, downloadBlob } = await import('../utils/exportUtils');
         const text = generateConfigText(config);
         const blob = new Blob([text], { type: 'text/plain' });
         downloadBlob(blob, 'config.txt');
@@ -127,6 +138,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         }
 
         try {
+            const { generateConfigText, safeWriteBlob } = await import('../utils/exportUtils');
             const text = generateConfigText(config);
             const blob = new Blob([text], { type: 'text/plain' });
             const configHandle = await workHandle.getFileHandle('config.txt', { create: true });
@@ -146,6 +158,15 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             }
         }
     }, [showPresets, showProjectBrowser]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
 
     if (!isOpen) return null;
 

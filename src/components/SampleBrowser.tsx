@@ -5,8 +5,7 @@ import type { SamplePack } from '../data/samplePacks';
 import { resolveAssetPath } from '../utils/assetUtils';
 import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../types';
 import { TAPE_COLORS, COLOR_MAP } from '../types';
-import { loadProjectFromDirectory } from '../utils/exportUtils';
-import { loadCustomFoldersFromDB, saveCustomFoldersToDB } from '../utils/persistence';
+// dynamic utility imports
 import { LocalFolderBrowser } from './LocalFolderBrowser';
 
 interface SampleBrowserProps {
@@ -170,6 +169,7 @@ export const SampleBrowser = ({
                     setSelectedPackId(packs[0].id);
                 }
 
+                const { loadCustomFoldersFromDB } = await import('../utils/persistence');
                 const folders: any[] = await loadCustomFoldersFromDB();
                 if (folders && Array.isArray(folders)) {
                     // Verify handles
@@ -248,6 +248,7 @@ export const SampleBrowser = ({
             setCustomFolders(updated);
 
             // Save to DB
+            const { saveCustomFoldersToDB } = await import('../utils/persistence');
             await saveCustomFoldersToDB(updated);
 
             setSelectedPackId('custom-folder');
@@ -263,7 +264,9 @@ export const SampleBrowser = ({
         const updated = customFolders.filter(f => f.id !== folderId);
         setCustomFolders(updated);
 
-        saveCustomFoldersToDB(updated);
+        import('../utils/persistence').then(({ saveCustomFoldersToDB }) => {
+            saveCustomFoldersToDB(updated);
+        });
 
         if (selectedCustomFolderId === folderId) {
             setSelectedPackId('my-library');
@@ -328,7 +331,8 @@ export const SampleBrowser = ({
         setLoadingProjectId(selectedProjectId);
         setProjectLoadError(null);
 
-        loadProjectFromDirectory(selectedProjectId, workHandle)
+        import('../utils/exportUtils').then(({ loadProjectFromDirectory }) => {
+            loadProjectFromDirectory(selectedProjectId, workHandle)
             .then((state) => {
                 if (cancelled) return;
                 const missingAssets = state.loadIssues?.missingAssets || [];
@@ -352,6 +356,7 @@ export const SampleBrowser = ({
             .finally(() => {
                 if (!cancelled) setLoadingProjectId(null);
             });
+        });
 
         return () => { cancelled = true; };
     }, [isProjectSamplesSelected, selectedProjectId, projectFilesCache, workHandle]);
@@ -1066,7 +1071,7 @@ export const SampleBrowser = ({
                     </div>
                     <div className="relative w-full h-1.5 bg-black rounded-full overflow-hidden">
                         <div
-                            className="absolute top-0 left-0 h-full bg-synthux-orange transition-all duration-100"
+                            className="absolute top-0 left-0 h-full bg-synthux-orange"
                             style={{ width: `${playbackDuration > 0 ? (playbackTime / playbackDuration) * 100 : 0}%` }}
                         />
                         <input

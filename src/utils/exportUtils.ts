@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
 import { TAPE_COLORS } from '../types';
 import type { AppState, ProjectConfig } from '../types';
 
@@ -437,6 +437,7 @@ LEGAL / LICENSES
 
 export const exportSaveState = async (state: AppState, returnZip = false, onProgress?: (msg: string | undefined, progress?: number) => void): Promise<JSZip | void> => {
     onProgress?.("Starting project backup...", 0);
+    const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
 
     const serializedFiles: any = {};
@@ -707,6 +708,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
     // B. ZIP EXPORT
     onProgress?.("Preparing SD Card ZIP...", 0);
+    const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
     const skFolder = zip.folder("SK");
     if (!skFolder) throw new Error("Failed to create ZIP folder");
@@ -762,6 +764,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
 export const exportFilesOnly = async (state: AppState, options: { keepStructure: boolean; fileIds: string[] }, onProgress?: (msg: string | undefined, progress?: number) => void) => {
     onProgress?.("Starting File Export...", 0);
+    const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
 
     // Add README
@@ -833,6 +836,7 @@ export const exportFilesOnly = async (state: AppState, options: { keepStructure:
 export const exportSingleTape = async (color: string, tape: any, files: Record<string, any>) => {
     // ... (Keep existing if needed for Single Tape view, updating to strict if required by user? 
     // For now, let's strictly name them too as it matches the "Tape" concept)
+    const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
     const folderName = color.charAt(0).toUpperCase();
     const tapeFolder = zip.folder(folderName);

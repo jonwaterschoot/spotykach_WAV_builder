@@ -13,6 +13,21 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/spotykach_WAV_builder/' : '/',
   build: {
     assetsInlineLimit: 0,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('jszip')) return 'jszip';
+            if (id.includes('wavesurfer.js')) return 'wavesurfer';
+            if (id.includes('lucide-react') || id.includes('react-icons')) return 'icons';
+            return 'vendor';
+          }
+          if (id.includes('src/utils/exportUtils') || id.includes('src/utils/importUtils')) {
+            return 'utils-io';
+          }
+        }
+      }
+    }
   },
   server: {
     host: true,

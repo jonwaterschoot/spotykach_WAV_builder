@@ -15,11 +15,21 @@ export const LogModal = ({ isOpen, onClose }: LogModalProps) => {
     useEffect(() => {
         if (isOpen) {
             setLogs(logger.getLogs());
-            return logger.subscribe((newLogs) => {
+            const unsubscribe = logger.subscribe((newLogs) => {
                 setLogs(newLogs);
             });
+
+            const handleKeyDown = (e: KeyboardEvent) => {
+                if (e.key === 'Escape') onClose();
+            };
+            window.addEventListener('keydown', handleKeyDown);
+
+            return () => {
+                unsubscribe();
+                window.removeEventListener('keydown', handleKeyDown);
+            };
         }
-    }, [isOpen]);
+    }, [isOpen, onClose]);
 
     if (!isOpen) return null;
 
