@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { X, Upload, Trash2, Edit2, Check, Settings, Plus, FileAudio, FolderOpen, AlertCircle, Info, ChevronDown, ChevronRight, Play, Pause, Square, RotateCcw, RefreshCw } from 'lucide-react';
 import type { FileRecord, UserLibrary, UserLibraryMetadata, AudioVersion } from '../types';
 import { useAudioConverter } from '../utils/useAudioConverter';
-import { type CustomFolderRecord, loadCustomFoldersFromDB, saveCustomFoldersToDB } from '../utils/persistence';
+import type { CustomFolderRecord } from '../utils/persistence';
 import { SmartTagInput } from './SmartTagInput';
 import { NotesEditor } from './NotesEditor';
 import { LocalFolderBrowser } from './LocalFolderBrowser';
@@ -203,17 +203,31 @@ export const LibraryManager = ({
     // --- Custom Folder Logic ---
     useEffect(() => {
         if (isOpen) {
-            loadCustomFoldersFromDB().then(setCustomFolders);
+            import('../utils/persistence').then(({ loadCustomFoldersFromDB }) => {
+                loadCustomFoldersFromDB().then(setCustomFolders);
+            });
             if (initialTab) setActiveTab(initialTab);
 
             if (!hasAutoRefreshed.current) {
                 onRefreshLibrary?.(); // Auto-sync with disk on open
                 hasAutoRefreshed.current = true;
             }
+
+            const handleKeyDown = (e: KeyboardEvent) => {
+                if (e.key === 'Escape') {
+                    if (pendingUploadDrafts) {
+                        handleCloseReview();
+                    } else {
+                        handleCloseManager();
+                    }
+                }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
         } else {
             hasAutoRefreshed.current = false;
         }
-    }, [isOpen, initialTab, onRefreshLibrary]);
+    }, [isOpen, initialTab, onRefreshLibrary, pendingUploadDrafts]);
 
     const getLicenseAbbr = (licenseText?: string) => {
         if (!licenseText) return '';
@@ -404,6 +418,7 @@ export const LibraryManager = ({
 
             const updated = [...customFolders, newFolder];
             setCustomFolders(updated);
+            const { saveCustomFoldersToDB } = await import('../utils/persistence');
             await saveCustomFoldersToDB(updated);
 
         } catch (e: any) {
@@ -418,6 +433,7 @@ export const LibraryManager = ({
         e.stopPropagation();
         const updated = customFolders.filter(f => f.id !== id);
         setCustomFolders(updated);
+        const { saveCustomFoldersToDB } = await import('../utils/persistence');
         await saveCustomFoldersToDB(updated);
         if (activeCustomFolder === id) {
             setActiveCustomFolder(null);
@@ -1115,6 +1131,36 @@ export const LibraryManager = ({
 
                         {activeTab === 'upload' && (
                             <div className="space-y-6">
+                                {/* Library Info Block */}
+                                <div className="bg-synthux-blue/10 border border-synthux-blue/20 rounded-xl p-6 flex gap-6 items-start animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="p-3 bg-synthux-blue/20 text-synthux-blue rounded-xl">
+                                        <Info size={24} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Library vs. Local Folders</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-xs leading-relaxed">
+                                            <div className="space-y-1">
+                                                <div className="text-synthux-orange font-bold flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full bg-synthux-orange" /> Physical User Library
+                                                </div>
+                                                <p className="text-gray-400">
+                                                    Files in the <code className="bg-black/40 px-1 rounded text-synthux-orange font-mono">User_Library</code> folder of your Workspace. 
+                                                    These are indexed, searchable, and can be synced directly to your SD card.
+                                                </p>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <div className="text-synthux-blue font-bold flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full bg-synthux-blue" /> External Local Folders
+                                                </div>
+                                                <p className="text-gray-400">
+                                                    Read-only access to any folder on your computer. Great for browsing your own sample collection without moving files. 
+                                                    Use the <span className="text-white font-bold">Review</span> button to import them into your physical library.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {/* Traditional Upload Box */}
                                     <div className="md:col-span-1 bg-black/20 border-2 border-dashed border-gray-700 rounded-xl p-6 text-center hover:border-synthux-orange/50 transition-colors flex flex-col justify-center">

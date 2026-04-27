@@ -33,8 +33,14 @@ export interface FileRecord {
     license?: string; // e.g., "CC-BY 4.0"
     tags?: string[]; // User tags for filtering/organization
     metadata?: WavMetadata;
-    sourceFileId?: string; // NEW: Source project file ID
-    sourceVersionId?: string; // NEW: Source project version ID
+    sourceFileId?: string; // Source project file ID
+    sourceVersionId?: string; // Source project version ID
+    /**
+     * Relative path within the R2 bucket, e.g. "/Hainbach/Roaring-Drone.flac".
+     * Set by hydrateDescriptor when loading a preset or settings-only ZIP.
+     * Used by buildDescriptorFromState to omit the blob on settings-only re-export.
+     */
+    sourceSamplePath?: string;
 }
 
 export interface WavMetadata {
@@ -72,6 +78,7 @@ export interface ProjectConfig {
     mid_ch_b: number; // 1-16
     mid_ps_a: boolean; // Start/stop deck A from MIDI
     mid_ps_b: boolean; // Start/stop deck B from MIDI
+    pre_load: boolean; // Enable/disable pre-loading
 }
 
 // Normalized State

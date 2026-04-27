@@ -5,13 +5,10 @@ import {
 } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { AppState } from '../types';
-import {
-    type SlotSyncEntry,
-    type NoteSyncEntry,
-    type SyncDecision,
-    loadBackupProjectState,
-    compareProjectStates,
-    applyProjectSync,
+import type {
+    SlotSyncEntry,
+    NoteSyncEntry,
+    SyncDecision,
 } from '../utils/projectSyncUtils';
 
 // Color dot map
@@ -61,6 +58,7 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     useEffect(() => {
         const run = async () => {
             try {
+                const { loadBackupProjectState, compareProjectStates } = await import('../utils/projectSyncUtils');
                 const bs = await loadBackupProjectState(backupHandle, projectName);
                 setBackupState(bs);
                 const { slots, notes } = compareProjectStates(localState, bs);
@@ -108,6 +106,7 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     const handleApply = async () => {
         setPhase('applying');
         try {
+            const { applyProjectSync } = await import('../utils/projectSyncUtils');
             const newState = applyProjectSync(localState, entries, noteEntries);
             await onApply(newState);
             setPhase('done');

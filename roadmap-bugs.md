@@ -4,18 +4,20 @@
 
 ---
 
-## Active Roadmap
+escape key -> close modal [DONE]
 
-- **Example project**
-    - Add an example project to the app.
-        - populate with some samples
-        - make use of sample pack, (create new samples)
-        - use tapes as categories, 3 files per tape
-            - use the notes feature to clarify, 
-                - notes per tape to add categories titles and explainer of the used samples.
-                - general notes that describe the content of this project
-        - categories: Textures, Percussion, Bass, ... (6 categories)
-        - what's a good title for this example project?
+My library manager:
+- default view is first tab Upload
+  - upload tab: add a short info block about that this is your local library. Files stored here are copied into the workspace, note that you could also add folders outside the workspace from local drives, curated library allows to build a custom set for yourself that you like to reuse on Spotykach.
+
+
+Sample playhead on tapes view is going over full card width instead of staying in bounds of the actual sample.
+Playhead is also sluggish animated vs the preview playhead in the sample editor.
+
+
+
+
+## Active Roadmap
 
 ---
 
@@ -62,6 +64,18 @@
 ---
 
 ## Done / Reviewed
+
+-[x] **Example project** Done
+    - Add an example project to the app.
+        - populate with some samples
+        - make use of sample pack, (create new samples)
+        - use tapes as categories, 3 files per tape
+            - use the notes feature to clarify, 
+                - notes per tape to add categories titles and explainer of the used samples.
+                - general notes that describe the content of this project
+        - categories: Textures, Percussion, Bass, ... (6 categories)
+        - what's a good title for this example project?
+
 
 - **Centralized Library Sync (v3.4.0)**: Migrated sync logic and modal to `App.tsx` for a unified experience across the app.
 - **Loop Tool Finalization (v3.4.0)**: Added discard protection, auto-reset state, and a Preview/Edit toggle.

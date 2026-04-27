@@ -1,8 +1,14 @@
 mid_ch_a
-15
+1
 
 mid_ch_b
-16
+2
 
-mid_play
+mid_ps_a
+1
+
+mid_ps_b
+1
+
+pre_load
 1

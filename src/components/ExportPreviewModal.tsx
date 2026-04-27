@@ -227,7 +227,18 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     onRefresh, isRefreshing, onChangeSDCard
 }) => {
     const [mode, setMode] = useState<'import' | 'push'>(defaultMode);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     const initialPreset: QuickPreset = mode === 'import' ? 'import_pool_only' : 'push_sync';
+
 
     const buildRows = useCallback((preset: QuickPreset, currentMode: 'import' | 'push'): SlotRow[] => {
         const rows: SlotRow[] = [];
@@ -312,10 +323,18 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
     // Clean up URLs
     useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
         return () => {
             if (activePreviewUrl) URL.revokeObjectURL(activePreviewUrl);
+            window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [activePreviewUrl]);
+    }, [activePreviewUrl, isOpen, onClose]);
 
     const [configDecision, setConfigDecision] = useState<SKPrimaryDecision>(() => {
         if (!diff.config) return 'skip';

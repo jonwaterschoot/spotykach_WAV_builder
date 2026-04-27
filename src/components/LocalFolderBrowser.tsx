@@ -19,6 +19,7 @@ import {
     HardDrive
 } from 'lucide-react';
 import type { TapeColor } from '../types';
+import { COLOR_MAP } from '../types';
 
 interface LocalFolderBrowserProps {
     rootHandle: FileSystemDirectoryHandle;
@@ -812,7 +813,7 @@ export const LocalFolderBrowser = ({
                                             onClick={() => handleActionWithTarget(color)}
                                             className="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2"
                                         >
-                                            <div className={`w-2.5 h-2.5 rounded-full`} style={{ backgroundColor: `var(--color-synthux-${color.toLowerCase()})` }} />
+                                            <div className={`w-2.5 h-2.5 rounded-full ${COLOR_MAP[color]}`} />
                                             Tape {color}
                                         </button>
                                     ))}

@@ -1,4 +1,4 @@
-import { downloadBlob } from './exportUtils';
+// dynamic utility imports
 
 // Helper to write strings
 function writeString(view: DataView, offset: number, string: string) {
@@ -149,7 +149,8 @@ export function generateTestWavWithMetadata(): Blob {
     return new Blob([buffer], { type: 'audio/wav' });
 }
 
-export const downloadTestWav = () => {
+export const downloadTestWav = async () => {
     const blob = generateTestWavWithMetadata();
+    const { downloadBlob } = await import('./exportUtils');
     downloadBlob(blob, 'SPOTYKACH_METADATA_TEST.WAV');
 };

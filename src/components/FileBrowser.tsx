@@ -14,10 +14,28 @@ interface FileBrowserProps {
     onUnassignFile?: (fileId: string) => void;
     onBulkUnassign?: (fileIds: string[]) => void;
     onDeleteFile?: (fileId: string) => void;
+    onBulkDeleteFiles?: (fileIds: string[]) => void;
     onFillFreeSlots?: (fileIds: string[]) => void;
     onRenameFile?: (fileId: string, newName: string) => void;
+    currentProjectName?: string;
+    workFolderName?: string;
 }
-export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, duplicates, onOpenDuplicateModal, onUnassignFile, onBulkUnassign, onDeleteFile, onFillFreeSlots, onRenameFile }: FileBrowserProps) => {
+export const FileBrowser = ({ 
+    files, 
+    tapes, 
+    onParkRequest, 
+    onOpenSampleBrowser, 
+    duplicates, 
+    onOpenDuplicateModal, 
+    onUnassignFile, 
+    onBulkUnassign, 
+    onDeleteFile, 
+    onBulkDeleteFiles, 
+    onFillFreeSlots, 
+    onRenameFile,
+    currentProjectName,
+    workFolderName
+}: FileBrowserProps) => {
     const [isAssignedOpen, setAssignedOpen] = useState(true);
     const [isUnassignedOpen, setUnassignedOpen] = useState(true);
     const [isMinified, setIsMinified] = useState(false);
@@ -207,9 +225,17 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
     };
 
     const handleBatchDelete = () => {
-        if (!onDeleteFile) return;
+        if (!onDeleteFile && !onBulkDeleteFiles) return;
+
+        if (onBulkDeleteFiles) {
+            onBulkDeleteFiles(Array.from(selectedFileIds));
+            setSelectedFileIds(new Set());
+            return;
+        }
+
+        // Fallback for single delete confirmation (Legacy / If no bulk handler)
         if (confirm(`Are you sure you want to delete ${selectedFileIds.size} files? This cannot be undone.`)) {
-            selectedFileIds.forEach(id => onDeleteFile(id));
+            selectedFileIds.forEach(id => onDeleteFile!(id));
             setSelectedFileIds(new Set());
         }
     };
@@ -381,13 +407,31 @@ export const FileBrowser = ({ files, tapes, onParkRequest, onOpenSampleBrowser, 
                         )}
                     </div>
                 ) : (
-                    <div>
-                        <h3 className="text-gray-400 uppercase text-xs font-bold flex items-center gap-2">
-                            <FileAudio size={14} /> File Registry
-                        </h3>
-                        <p className="text-[10px] text-gray-500 mt-1">
-                            All imported files.
-                        </p>
+                    <div className="min-w-0 flex-1 pr-2">
+                        <div className="flex items-center gap-2 mb-0.5">
+                            <h3 className="text-gray-400 uppercase text-[10px] font-black tracking-widest flex items-center gap-1.5 shrink-0">
+                                <FileAudio size={11} className="text-synthux-blue" /> Registry
+                            </h3>
+                            {currentProjectName && (
+                                <div className="h-2 w-px bg-gray-800" />
+                            )}
+                            {currentProjectName && (
+                                <span className="text-white font-bold text-[11px] truncate" title={currentProjectName}>
+                                    {currentProjectName}
+                                </span>
+                            )}
+                        </div>
+                        {workFolderName && (
+                            <p className="text-[9px] text-gray-500 font-mono flex items-center gap-1 truncate" title={`Workspace: ${workFolderName}`}>
+                                <span className="w-1 h-1 rounded-full bg-indigo-500/50" />
+                                {workFolderName}
+                            </p>
+                        )}
+                        {!currentProjectName && !workFolderName && (
+                           <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-wider font-bold">
+                               All imported files.
+                           </p>
+                        )}
                     </div>
                 )}
 

@@ -54,6 +54,29 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         };
     }, []);
 
+    // Smooth Playhead Update Loop
+    const rafRef = useRef<number | null>(null);
+    useEffect(() => {
+        const updateProgress = () => {
+            if (audioRef.current && !audioRef.current.paused) {
+                setCurrentTime(audioRef.current.currentTime);
+                rafRef.current = requestAnimationFrame(updateProgress);
+            }
+        };
+
+        if (isPlaying) {
+            rafRef.current = requestAnimationFrame(updateProgress);
+        } else {
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+
+        return () => {
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        };
+    }, [isPlaying]);
+
+
     const fadeIntervalRef = useRef<number | null>(null);
     const pendingActionRef = useRef<(() => void) | null>(null);
 

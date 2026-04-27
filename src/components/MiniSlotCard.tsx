@@ -24,9 +24,10 @@ interface MiniSlotCardProps {
 }
 
 export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, onDrop, onDropInternal, onClick, isDuplicate, onBulkAssign, isSelected, onToggleSlotSelection, onSlotDragStart, onRenameFile, isMissing }: MiniSlotCardProps) => {
-    const { play, pause, isPlaying, activeFileId } = useAudioPlayer();
+    const { play, pause, isPlaying, activeFileId, currentTime, duration } = useAudioPlayer();
 
     const isThisPlaying = isPlaying && activeFileId === fileRecord?.id;
+    const progress = isThisPlaying ? (currentTime / (duration || 1)) : 0;
     const currentVersion = fileRecord?.versions.find(v => v.id === fileRecord.currentVersionId);
 
     // Get color hex/class logic. We can reuse COLOR_MAP or just use CSS variables if set up.
@@ -233,6 +234,7 @@ export const MiniSlotCard = ({ slot, fileRecord, tapeColor, onRemove, onDelete, 
                                 height={60}
                                 color={isThisPlaying ? "#ffffff" : "#6b7280"} // White if playing, gray otherwise
                                 className="w-full h-full p-2"
+                                progress={progress}
                             />
                         )}
                     </div>

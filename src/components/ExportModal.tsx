@@ -1,8 +1,8 @@
 import { X, HardDrive, FileAudio, Archive, Download, FolderInput, Info, FileDown } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type FileRecord, type TapeColor, TAPE_COLORS } from '../types';
 import { TapeIcon } from './TapeIcon';
-import { downloadBlob } from '../utils/exportUtils';
+// dynamic utility imports
 
 interface ExportModalProps {
     files: Record<string, FileRecord>;
@@ -17,6 +17,14 @@ type ExportTab = 'sd' | 'manual' | 'files' | 'project';
 
 export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, onExportProject }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('sd');
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
 
     // SD Options
     const [sdIncludeProject, setSdIncludeProject] = useState(true);
@@ -39,11 +47,12 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
     // Helpers
     const getColorVar = (color: string) => `var(--color-synthux-${color.toLowerCase()})`;
 
-    const handleDownloadSlot = (fileId: string, slotId: number) => {
+    const handleDownloadSlot = async (fileId: string, slotId: number) => {
         const file = files[fileId];
         if (!file) return;
         const version = file.versions.find(v => v.id === file.currentVersionId);
         if (version?.blob) {
+            const { downloadBlob } = await import('../utils/exportUtils');
             downloadBlob(version.blob, `${slotId}.WAV`);
         }
     };

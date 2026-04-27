@@ -1,11 +1,65 @@
 # Changelog
 
-## [3.4.1] - 2026-04-14
+## [3.6.2] - 2026-04-27
+
+### Improved
+- **Playhead Animation**: Enhanced the playhead smoothness in tape views (Single and All Tapes) by implementing a high-frequency `requestAnimationFrame` update loop, matching the visual performance of the main sample editor.
+- **Global Modal Support**: Added universal `Escape` key support to close all modals and overlays, improving keyboard navigation and UX consistency.
+- **Vite Build Optimization**: Refined the Vite configuration and build chunking strategy to improve loading times and production bundle efficiency.
 
 ### Fixed
-- config.txt location was set to root folder instead of SK folder
-- download button worked, but save to SD was only saving to project folder not to the SD card
-- changes applie dto all appropriate files where the function is called
+- **Playhead Bounds**: Resolved an issue where the sample playhead in tape views could bleed into the padded margins of the card. The playhead is now strictly contained within the waveform content area.
+
+
+## [3.6.1] - 2026-04-26
+
+### Improved
+- **Header & Navigation**: Streamlined the main header layout by reorganizing menu items for better accessibility and focus.
+- **Onboarding Experience**: Refined the onboarding/welcome screen UI with improved typography and contrast for better readability.
+
+### Fixed
+- **Presets Panel**: Resolved an issue where preset cover images failed to load from Cloudflare R2 due to Cross-Origin Embedder Policy (COEP) restrictions. Added `crossOrigin="anonymous"` to ensure proper CORS/COEP compliance.
+
+## [3.6.0] - 2026-04-23
+
+### Added
+- **Project Export & Presets Reform**:
+    - **Automatic Project Loading**: Projects imported via ZIP now load automatically, featuring a "Discard Changes" safety check to prevent data loss.
+    - **Community Presets**: Introduced a dedicated Presets system with a pre-populated `public/presets/` library for quick setup.
+    - **Metadata Healing**: Implemented automated attribution and license verification during export, ensuring all samples have proper origin and license tags.
+    - **Enhanced SD Export**: Organized the `SK/` folder structure to strictly follow firmware requirements, including centralized `config.txt` and `notes.md` placement.
+    - **License Transparency**: Exported projects now include a detailed `README.md` with full sample attribution, license information, and usage instructions.
+- **Documentation**:
+    - Added [docs/how_to_copy_to_SDcard.md](./docs/how_to_copy_to_SDcard.md) with step-by-step instructions for hardware synchronization.
+
+### Improved
+- **Import/Export Logic**:
+    - Synchronized project metadata during SD import/export to preserve file origins and license information.
+    - Added support for `project-descriptor.json` for more robust project metadata handling in ZIP archives.
+    - Improved path resolution in ZIP imports to handle nested folder structures more gracefully.
+- **UI/UX**:
+    - Refined the Project Manager with better feedback during duplication and renaming operations.
+    - Standardized metadata display across the application for better license visibility.
+
+## [3.5.0] - 2026-04-22
+
+### Added
+- **Cloudflare R2 Migration**:
+    - Migrated sample and project hosting from GitHub Pages to Cloudflare R2 to overcome GitHub Pages storage limitations.
+    - Added `manifest.json` for centralized metadata resolution and fetching of available community packs and project files.
+    - Updated "Download Full Pack" links to fetch ZIP downloads directly from the R2 storage location.
+- **Config Management**:
+    - Added a `pre_load` toggle setting to the `config.txt` generation and parsing logic, accessible directly from the Config Modal UI.
+
+### Improved
+- **Sample Browser UI**:
+    - Resolved TypeErrors occurring during bulk sample imports.
+    - Standardized tape color indicators and improved the visual consistency of file selection borders.
+    - Implemented robust CORS/COEP-compliant audio fetching for remote assets.
+
+### Removed
+- Removed locally hosted audio sample pack files (`public/samples/`) in favor of remote fetching, freeing up repository storage and speeding up build times.
+>>>>>>> projectpreload
 
 ## [3.4.0] - 2026-03-27
 

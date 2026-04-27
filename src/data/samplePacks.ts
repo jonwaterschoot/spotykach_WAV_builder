@@ -4,6 +4,7 @@ export interface Sample {
     name: string;
     path: string;
     category?: string;
+    tags?: string[];
 }
 
 export interface SamplePack {
@@ -16,130 +17,74 @@ export interface SamplePack {
     samples: Sample[];
 }
 
-const RAW_SAMPLE_PACKS: SamplePack[] = [
-    {
-        id: 'synthux-horror',
-        name: 'Synthux Horror Sample Pack 2025',
-        description: 'A community collection of eerie soundscapes, drones, and textures created with, or with the help of the Synthux Audrey II synths.',
-        license: `CC-BY 4.0
-The author keeps full ownership of the recordings.
-Synthux Academy and others can share, remix, or use these sounds — including commercially — as long as they give credit.
-Crediting can be done by linking to author or mentioning the name.
-Nobody else can claim this work as their own.`,
-        links: [
-            { label: "View Full Credits & Source", url: "https://github.com/jonwaterschoot/spotykach_WAV_builder/tree/main/public/samples/horror/p1" }
-        ],
-        coverImage: '/samples/horror/p1/Audrey-II-Horror-Sample-Pack-2026-Synthux-Academy.png',
-        samples: [
-            // KHAGE
-            { name: "C-Larinet Der Wal", path: "/samples/horror/p1/KG/Clarinet_Rixdorf.mp3", category: "KHAGE" },
+/** A single entry in the manifest's presets[] array */
+export interface PresetManifestEntry {
+    id: string;
+    name: string;
+    description: string;
+    coverImage?: string;
+    /** Pack ids from manifest.json — used for UI badge display */
+    requiredPacks: string[];
+    /** Relative path to the in-app descriptor JSON (served from public/presets/) */
+    descriptorPath: string;
+    /**
+     * Optional direct R2 URL to a manually built SD-ready ZIP.
+     * When present the PresetsPanel shows a "Download SD ZIP" button.
+     * When absent the button is hidden.
+     */
+    sdExportUrl?: string;
+}
 
-            // Machine Oil
-            { name: "Acid Box Echo Fix 1", path: "/samples/horror/p1/MO/AcidBox_Echo1.flac", category: "Machine Oil" },
-            { name: "Acid Box Echo Fix 2", path: "/samples/horror/p1/MO/AcidBox_Echo2.flac", category: "Machine Oil" },
-            { name: "Echo Fix 1", path: "/samples/horror/p1/MO/Echo1.flac", category: "Machine Oil" },
-            { name: "Echo Fix 2", path: "/samples/horror/p1/MO/Echo2.flac", category: "Machine Oil" },
-            { name: "Echo Fix 3", path: "/samples/horror/p1/MO/Echo3.flac", category: "Machine Oil" },
-            { name: "Echo Fix 4", path: "/samples/horror/p1/MO/Echo4.flac", category: "Machine Oil" },
+export interface SampleManifest {
+    version: string;
+    packs: SamplePack[];
+    presets?: PresetManifestEntry[];
+}
 
-            // Neuromorph
-            { name: "Neuromorph CF 1", path: "/samples/horror/p1/NM/CF_1.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 2", path: "/samples/horror/p1/NM/CF_2.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 3", path: "/samples/horror/p1/NM/CF_3.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 4", path: "/samples/horror/p1/NM/CF_4.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 5", path: "/samples/horror/p1/NM/CF_5.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 6", path: "/samples/horror/p1/NM/CF_6.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 7", path: "/samples/horror/p1/NM/CF_7.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 8", path: "/samples/horror/p1/NM/CF_8.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 9", path: "/samples/horror/p1/NM/CF_9.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 10", path: "/samples/horror/p1/NM/CF_10.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 11", path: "/samples/horror/p1/NM/CF_11.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 12", path: "/samples/horror/p1/NM/CF_12.flac", category: "Neuromorph" },
-            { name: "Neuromorph CF 13", path: "/samples/horror/p1/NM/CF_13.flac", category: "Neuromorph" },
-
-            // The Pedalboard Orchestra
-            { name: "Audrey II Horrorscape Pt 1", path: "/samples/horror/p1/TPO/Horrorscape_Pt1.flac", category: "The Pedalboard Orchestra" },
-            { name: "Audrey II Horrorscape Pt 2", path: "/samples/horror/p1/TPO/Horrorscape_Pt2.flac", category: "The Pedalboard Orchestra" },
-            { name: "Audrey II Horrorscape Pt 3", path: "/samples/horror/p1/TPO/Horrorscape_Pt3.flac", category: "The Pedalboard Orchestra" },
-
-            // enkaytee
-            { name: "Arhythmic", path: "/samples/horror/p1/NKT/Arhythmic.flac", category: "enkaytee" },
-            { name: "Cosmic Winds", path: "/samples/horror/p1/NKT/CosmicWinds.flac", category: "enkaytee" },
-            { name: "Midnight Chimes", path: "/samples/horror/p1/NKT/MidnightChimes.flac", category: "enkaytee" },
-            { name: "Silent Bells", path: "/samples/horror/p1/NKT/SilentBells.flac", category: "enkaytee" },
-
-            // jonwtr
-            { name: "Model Cycles Audrey Touch Pt 1.1", path: "/samples/horror/p1/JW/ModelCycles_Pt1-1.flac", category: "jonwtr" },
-            { name: "Model Cycles Audrey Touch Pt 1.2", path: "/samples/horror/p1/JW/ModelCycles_Pt1-2.flac", category: "jonwtr" },
-            { name: "Model Cycles Audrey Touch Pt 2", path: "/samples/horror/p1/JW/ModelCycles_Pt2.flac", category: "jonwtr" }
-        ]
-    },
-    {
-        id: 'jonwtr-explorations',
-        name: 'Jonwtr Explorations',
-        description: 'A collection of noisy textures, field recordings, and voice sounds explored during the development of Spotykach.',
-        license: `DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
-Version 2, December 2004
-
-Copyright (C) 2026 @jonwtr
-
-Everyone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.`,
-        links: [
-            { label: "Read Documentation", url: "https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/samples/jonwtr/README.md" },
-            { label: "Instagram (@jonwtr)", url: "https://instagram.com/jonwtr" },
-            { label: "YouTube (@jonwtr)", url: "https://youtube.com/@jonwtr" }
-        ],
-        coverImage: '/samples/jonwtr/og-image.png',
-        samples: [
-            // Voice
-            { name: "Tractatus Logico Robovoice", path: "/samples/jonwtr/Tractatus_logico_robovoice.flac", category: "Voice" },
-            { name: "Voice Glitch Raw", path: "/samples/jonwtr/voice_prrrrttttsktsk_rawCut.flac", category: "Voice" },
-
-            // Textures & Drone
-            { name: "Noise Trickle Distorted 1", path: "/samples/jonwtr/noise_trickle_distorted1.flac", category: "Textures" },
-            { name: "Noise Trickle Distorted 2", path: "/samples/jonwtr/noise_trickle_distorted2.flac", category: "Textures" },
-            { name: "Noise Drone", path: "/samples/jonwtr/noisedrone.flac", category: "Textures" },
-            { name: "Noisy Bass Pad", path: "/samples/jonwtr/noisybasspadC2G1.flac", category: "Textures" },
-
-            // Field Recordings
-            { name: "Drainpipe UZ", path: "/samples/jonwtr/drainpipeUZ.flac", category: "Field Recordings" },
-            { name: "Trickling Stones Dense", path: "/samples/jonwtr/tricklingstones_dense.flac", category: "Field Recordings" },
-            { name: "Trickling Stones Sparse", path: "/samples/jonwtr/tricklingstones_lessdense.flac", category: "Field Recordings" },
-
-            // Instruments
-            { name: "Mini Kalimba Dry", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G.flac", category: "Instruments" },
-            { name: "Mini Kalimba Distorted", path: "/samples/jonwtr/minikalimbadry-120bpm-C_E_G_distorted.flac", category: "Instruments" },
-
-            // Vinyl Crackle
-            { name: "Vinyl Crackle 12 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle12_densedirty35rpm.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 13 (Dense 35rpm)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle13_densedirty35rpm.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 14 (End of Chord)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle14_endofchord.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 15 (Aggressive)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle15_moreagressivestereo.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 17 (Manipulating)", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle17_manipulatinghand.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 18", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle18.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 19", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle19.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 20", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle20.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 21", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle21.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 22", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle22.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 23", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle23.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 24", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle24.flac", category: "Vinyl Crackle" },
-            { name: "Vinyl Crackle 25", path: "/samples/jonwtr/Vinyl_crackle/Vinyl_crackle25.flac", category: "Vinyl Crackle" },
-
-            // Foley
-            { name: "Dragging Branch", path: "/samples/jonwtr/foley2/draggingbranch.flac", category: "Foley" },
-            { name: "Kicking Ice 1", path: "/samples/jonwtr/foley2/kicking-ice.flac", category: "Foley" },
-            { name: "Kicking Ice 2", path: "/samples/jonwtr/foley2/kicking-ice01.flac", category: "Foley" },
-            { name: "Shaker (Bad Timing)", path: "/samples/jonwtr/foley2/shaker_badtiming.flac", category: "Foley" },
-            { name: "Shaker (Bad Timing Edit)", path: "/samples/jonwtr/foley2/shaker_badtiming_edit.flac", category: "Foley" }
-        ]
-    }
-];
-
-export const SAMPLE_PACKS: SamplePack[] = RAW_SAMPLE_PACKS.map(pack => ({
+/**
+ * Normalizes a SamplePack by resolving all its internal asset paths.
+ */
+export const normalizeSamplePack = (pack: SamplePack): SamplePack => ({
     ...pack,
-    coverImage: resolveAssetPath(pack.coverImage || ''),
+    coverImage: pack.coverImage ? resolveAssetPath(pack.coverImage) : undefined,
+    links: pack.links?.map(link => ({
+        ...link,
+        url: resolveAssetPath(link.url)
+    })),
     samples: pack.samples.map(sample => ({
         ...sample,
         path: resolveAssetPath(sample.path)
     }))
-}));
+});
+
+/**
+ * Fetches the sample manifest and returns normalized packs and preset entries.
+ */
+export const fetchSampleManifest = async (): Promise<{
+    packs: SamplePack[];
+    presets: PresetManifestEntry[];
+}> => {
+    try {
+        const response = await fetch('/manifest.json');
+        if (!response.ok) throw new Error('Failed to fetch sample manifest');
+
+        const manifest: SampleManifest = await response.json();
+
+        // Normalize cover images on preset entries too
+        const presets: PresetManifestEntry[] = (manifest.presets || []).map(p => ({
+            ...p,
+            coverImage: p.coverImage ? resolveAssetPath(p.coverImage) : undefined,
+        }));
+
+        return {
+            packs: manifest.packs.map(normalizeSamplePack),
+            presets,
+        };
+    } catch (error) {
+        console.error('Error loading sample manifest:', error);
+        return { packs: [], presets: [] };
+    }
+};
+
+// We keep this exported for backward compatibility during the transition.
+export const SAMPLE_PACKS: SamplePack[] = [];

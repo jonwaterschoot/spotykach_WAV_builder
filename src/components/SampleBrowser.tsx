@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings, Crosshair } from 'lucide-react';
-import { SAMPLE_PACKS } from '../data/samplePacks';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings, Crosshair, ChevronDown, Layers } from 'lucide-react';
+import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
+import type { SamplePack } from '../data/samplePacks';
 import { resolveAssetPath } from '../utils/assetUtils';
 import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../types';
-import { TAPE_COLORS } from '../types';
-import { loadProjectFromDirectory } from '../utils/exportUtils';
-import { loadCustomFoldersFromDB, saveCustomFoldersToDB } from '../utils/persistence';
+import { TAPE_COLORS, COLOR_MAP } from '../types';
+// dynamic utility imports
 import { LocalFolderBrowser } from './LocalFolderBrowser';
 
 interface SampleBrowserProps {
@@ -16,10 +16,12 @@ interface SampleBrowserProps {
     projects: ProjectSummary[];
     onOpenLibraryManager: (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => void;
     currentProjectName?: string;
+    currentFiles?: Record<string, FileRecord>;
     workHandle: FileSystemDirectoryHandle | null;
     mode?: 'global' | 'slot-selection'; // Context for future extensions
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
+    onRemoteBulkImport?: (samples: { url: string, name: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
     forceStop?: boolean;
 }
 
@@ -38,10 +40,12 @@ export const SampleBrowser = ({
     projects,
     onOpenLibraryManager,
     currentProjectName,
+    currentFiles,
     workHandle,
     mode = 'global',
     onImportToPool,
     onImportToTape,
+    onRemoteBulkImport,
     forceStop
 }: SampleBrowserProps) => {
 
@@ -49,6 +53,51 @@ export const SampleBrowser = ({
     const [selectedPackId, setSelectedPackId] = useState<string>(SAMPLE_PACKS[0]?.id || 'my-library');
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
     const [selectedCustomFolderId, setSelectedCustomFolderId] = useState<string | null>(null);
+    const [remotePacks, setRemotePacks] = useState<SamplePack[]>([]);
+    const [isManifestLoading, setIsManifestLoading] = useState(true);
+
+    const resetSelection = () => {
+        setSelectedSamplePaths(new Set());
+        setLastSelectedPath(null);
+        setShowActionMenu(false);
+    };
+
+    // Selection logic
+    const toggleSampleSelection = (path: string, allSamplesInList: any[], event?: React.MouseEvent) => {
+        const newSelection = new Set(selectedSamplePaths);
+
+        if (event?.shiftKey && lastSelectedPath) {
+            const currentIndex = allSamplesInList.findIndex(s => s.path === path);
+            const lastIndex = allSamplesInList.findIndex(s => s.path === lastSelectedPath);
+
+            if (currentIndex !== -1 && lastIndex !== -1) {
+                const start = Math.min(currentIndex, lastIndex);
+                const end = Math.max(currentIndex, lastIndex);
+
+                for (let i = start; i <= end; i++) {
+                    newSelection.add(allSamplesInList[i].path);
+                }
+            }
+        } else {
+            if (newSelection.has(path)) {
+                newSelection.delete(path);
+            } else {
+                newSelection.add(path);
+            }
+        }
+
+        setSelectedSamplePaths(newSelection);
+        setLastSelectedPath(path);
+    };
+
+    const selectAllInCategory = (samples: any[], select: boolean) => {
+        const newSelection = new Set(selectedSamplePaths);
+        samples.forEach(s => {
+            if (select) newSelection.add(s.path);
+            else newSelection.delete(s.path);
+        });
+        setSelectedSamplePaths(newSelection);
+    };
 
     // Data Caches
     const [projectFilesCache, setProjectFilesCache] = useState<Record<string, FileRecord[]>>({});
@@ -68,6 +117,7 @@ export const SampleBrowser = ({
     const [playbackDuration, setPlaybackDuration] = useState(0);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const previewUrlRef = useRef<string | null>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     // Tag & Filtering State
     const [userLibraryTagFilter, setUserLibraryTagFilter] = useState('');
@@ -75,6 +125,28 @@ export const SampleBrowser = ({
     const [importingSample, setImportingSample] = useState<string | null>(null);
     const [addedSamples, setAddedSamples] = useState<Set<string>>(new Set());
     const [locateTarget, setLocateTarget] = useState<string | null>(null);
+
+    // Multi-select state
+    const [selectedSamplePaths, setSelectedSamplePaths] = useState<Set<string>>(new Set());
+    const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+    const [showActionMenu, setShowActionMenu] = useState(false);
+
+    // Track added samples globally based on the project's current files
+    const allAddedPaths = useMemo(() => {
+        const paths = new Set<string>(addedSamples);
+        const addedNames = new Set<string>();
+        
+        if (currentFiles) {
+            Object.values(currentFiles).forEach(file => {
+                if (file.sourceSamplePath) {
+                    paths.add(file.sourceSamplePath);
+                } else if (file.origin && file.origin !== 'SD Card' && file.origin !== 'User Library') {
+                    if (file.originalName) addedNames.add(file.originalName);
+                }
+            });
+        }
+        return { paths, addedNames };
+    }, [currentFiles, addedSamples]);
 
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';
@@ -87,6 +159,17 @@ export const SampleBrowser = ({
         if (!isOpen) return;
         const loadFolders = async () => {
             try {
+                // Fetch remote manifest packs
+                const { packs } = await fetchSampleManifest();
+                setRemotePacks(packs);
+                setIsManifestLoading(false);
+
+                // If no pack is selected yet and we have remote packs, select the first one
+                if (selectedPackId === 'my-library' && packs.length > 0) {
+                    setSelectedPackId(packs[0].id);
+                }
+
+                const { loadCustomFoldersFromDB } = await import('../utils/persistence');
                 const folders: any[] = await loadCustomFoldersFromDB();
                 if (folders && Array.isArray(folders)) {
                     // Verify handles
@@ -104,12 +187,52 @@ export const SampleBrowser = ({
                     }
                     setCustomFolders(validFolders);
                 }
+                if (selectedPackId === 'my-library' && packs.length > 0) {
+                    setSelectedPackId(packs[0].id);
+                }
             } catch (e) {
-                console.error("Failed to load custom folders from DB", e);
+                console.error("Manifest load failed", e);
             }
         };
         loadFolders();
     }, [isOpen]);
+
+    useEffect(() => {
+        resetSelection();
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    }, [selectedPackId, selectedProjectId, selectedCustomFolderId]);
+
+    const handleBulkActionWithTarget = async (target: 'pool' | 'slots' | TapeColor) => {
+        setShowActionMenu(false);
+        if (selectedSamplePaths.size === 0) return;
+
+        const allPacks = [...SAMPLE_PACKS, ...remotePacks];
+        const pack = allPacks.find(p => p.id === selectedPackId);
+        
+        if (pack && onRemoteBulkImport) {
+            const allSamples = pack.samples || [];
+            const samplesToImport = Array.from(selectedSamplePaths).map(path => {
+                const s = allSamples.find(sample => sample.path === path);
+                if (s) {
+                    let url = resolveAssetPath(s.path);
+                    if ((s as any)._isVirtual && (s as any)._blob) {
+                        url = URL.createObjectURL((s as any)._blob);
+                    }
+                    return { url, name: s.name };
+                }
+                return null;
+            }).filter((s): s is { url: string, name: string } => s !== null);
+
+            if (samplesToImport.length > 0) {
+                await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
+                setSelectedSamplePaths(new Set());
+            }
+        } else if (isUserLibrarySelected || isProjectSamplesSelected) {
+            // Local project files bulk assignment
+            // This is a future enhancement, but we could call onBulkAssign here if needed
+            console.info("Bulk actions for local library coming soon!");
+        }
+    };
 
 
     // --------------------------------------------------------------------------------
@@ -125,6 +248,7 @@ export const SampleBrowser = ({
             setCustomFolders(updated);
 
             // Save to DB
+            const { saveCustomFoldersToDB } = await import('../utils/persistence');
             await saveCustomFoldersToDB(updated);
 
             setSelectedPackId('custom-folder');
@@ -140,7 +264,9 @@ export const SampleBrowser = ({
         const updated = customFolders.filter(f => f.id !== folderId);
         setCustomFolders(updated);
 
-        saveCustomFoldersToDB(updated);
+        import('../utils/persistence').then(({ saveCustomFoldersToDB }) => {
+            saveCustomFoldersToDB(updated);
+        });
 
         if (selectedCustomFolderId === folderId) {
             setSelectedPackId('my-library');
@@ -205,7 +331,8 @@ export const SampleBrowser = ({
         setLoadingProjectId(selectedProjectId);
         setProjectLoadError(null);
 
-        loadProjectFromDirectory(selectedProjectId, workHandle)
+        import('../utils/exportUtils').then(({ loadProjectFromDirectory }) => {
+            loadProjectFromDirectory(selectedProjectId, workHandle)
             .then((state) => {
                 if (cancelled) return;
                 const missingAssets = state.loadIssues?.missingAssets || [];
@@ -229,6 +356,7 @@ export const SampleBrowser = ({
             .finally(() => {
                 if (!cancelled) setLoadingProjectId(null);
             });
+        });
 
         return () => { cancelled = true; };
     }, [isProjectSamplesSelected, selectedProjectId, projectFilesCache, workHandle]);
@@ -262,7 +390,8 @@ export const SampleBrowser = ({
     // --------------------------------------------------------------------------------
     // 5. Build Final Active Selection 
     // --------------------------------------------------------------------------------
-    let selectedPack: any = SAMPLE_PACKS.find(p => p.id === selectedPackId);
+    const allPacks = [...SAMPLE_PACKS, ...remotePacks];
+    let selectedPack: any = allPacks.find(p => p.id === selectedPackId);
 
     if (isUserLibrarySelected) {
         selectedPack = {
@@ -577,10 +706,15 @@ export const SampleBrowser = ({
                             )}
                         </div>
 
-                        {/* BUILT-IN PACKS */}
+                        {/* BUILT-IN PACKS (Remote + Local) */}
                         <div>
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase px-1 mb-2">Built-in Packs</h3>
-                            {SAMPLE_PACKS.map((pack: any) => (
+                            {isManifestLoading && remotePacks.length === 0 && (
+                                <div className="px-3 py-2 text-xs text-gray-600 flex items-center gap-2">
+                                    <Loader size={12} className="animate-spin" /> Loading manifest...
+                                </div>
+                            )}
+                            {allPacks.map((pack: any) => (
                                 <button
                                     key={pack.id}
                                     onClick={() => { setSelectedPackId(pack.id); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
@@ -599,36 +733,133 @@ export const SampleBrowser = ({
 
                 {/* Main View: Sample List */}
                 <div className="flex-1 bg-synthux-main flex flex-col overflow-hidden relative noise-texture">
-                    <div className="flex-1 p-6 overflow-y-auto relative z-10">
+                    <div ref={scrollRef} className="flex-1 p-6 overflow-y-auto relative z-10">
                         {selectedPack ? (
                             <>
-                                <div className="mb-6">
-                                    <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">{selectedPack.name}</h1>
-                                    <p className="text-gray-400 text-sm max-w-2xl mb-4 leading-relaxed font-body">{selectedPack.description}</p>
-
-                                    {selectedPack.license && (
-                                        <div className="bg-black/40 p-3 rounded border border-gray-800 text-[10px] text-gray-400 font-mono whitespace-pre-wrap mb-4 max-w-2xl">
-                                            <strong className="block text-gray-500 mb-1 uppercase tracking-wider">License info</strong>
-                                            {selectedPack.license}
+                                <div className="mb-10 w-full">
+                                    {/* HERO BANNER */}
+                                    <div className="relative w-full h-80 rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black/40 group mb-8">
+                                        {selectedPack.coverImage ? (
+                                            <img
+                                                src={selectedPack.coverImage}
+                                                alt={selectedPack.name}
+                                                crossOrigin="anonymous"
+                                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                            />
+                                        ) : (
+                                            /* Fallback for local folders/library */
+                                            <div className="w-full h-full bg-gradient-to-br from-synthux-orange/20 via-black to-synthux-blue/20 flex items-center justify-center">
+                                                <FolderOpen size={80} className="text-white/5" />
+                                            </div>
+                                        )}
+                                        
+                                        {/* Overlay with Title */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent flex flex-col justify-end p-8 md:p-10">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className="px-2 py-0.5 bg-synthux-orange/90 text-white text-[10px] font-bold uppercase tracking-widest rounded-sm shadow-lg">
+                                                        {isCustomFolderSelected ? 'Local Folder' : 
+                                                         isProjectSamplesSelected ? 'Project Samples' : 
+                                                         isUserLibrarySelected ? 'System Library' : 'Free Sample Pack'}
+                                                    </span>
+                                                    {!isCustomFolderSelected && (
+                                                        <span className="px-2 py-0.5 bg-white/10 backdrop-blur-md text-gray-300 text-[10px] font-medium uppercase tracking-widest rounded-sm border border-white/5">
+                                                            {selectedPack.samples.length > 100 ? '+100 Files' : `${selectedPack.samples.length} Files`}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <h1 className="text-4xl md:text-5xl font-black text-white tracking-tighter drop-shadow-2xl">
+                                                    {selectedPack.name}
+                                                </h1>
+                                            </div>
                                         </div>
-                                    )}
+                                    </div>
 
-                                    {selectedPack.links && selectedPack.links.length > 0 && (
-                                        <div className="flex gap-2 mb-4 flex-wrap text-sm">
-                                            {selectedPack.links.map((link: any, i: number) => (
-                                                <a
-                                                    key={i}
-                                                    href={link.url}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-synthux-blue rounded border border-gray-700 shadow-sm transition-colors"
-                                                >
-                                                    {link.label}
-                                                </a>
-                                            ))}
+                                    {/* INFO SECTION - Single Column Flow */}
+                                    <div className="space-y-10 px-2 lg:px-4">
+                                        <div className="space-y-6">
+                                            <div>
+                                                <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">About this pack</h4>
+                                                <div className="text-gray-300 text-base leading-relaxed font-body max-w-4xl whitespace-pre-wrap">
+                                                    {selectedPack.description.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => 
+                                                        /(https?:\/\/[^\s]+)/g.test(part) ? (
+                                                            <a key={i} href={part} target="_blank" rel="noreferrer" className="text-synthux-blue hover:underline">
+                                                                {part}
+                                                            </a>
+                                                        ) : part
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {selectedPack.license && (
+                                                <div className="max-w-4xl bg-black/30 backdrop-blur-sm p-4 rounded-xl border border-white/5">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-synthux-orange shadow-[0_0_8px_rgba(242,101,34,0.8)]" />
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Usage Context</span>
+                                                    </div>
+                                                    <p className="text-[11px] text-gray-400 font-mono leading-relaxed">{selectedPack.license}</p>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
+
+                                        {selectedPack.links && selectedPack.links.length > 0 && (
+                                            <div className="space-y-10 border-t border-white/5 pt-8">
+                                                {/* ZIP DOWNLOADS */}
+                                                {selectedPack.links.some((l: any) => l.label.toLowerCase().includes('.zip') || l.label.toLowerCase().includes('download')) && (
+                                                    <div>
+                                                        <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Available Assets</h4>
+                                                        <div className="flex gap-4 flex-wrap">
+                                                            {selectedPack.links.filter((l: any) => l.label.toLowerCase().includes('.zip') || l.label.toLowerCase().includes('download')).map((link: any, i: number) => (
+                                                                <a
+                                                                    key={i}
+                                                                    href={link.url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="group flex flex-1 min-w-[280px] max-w-[400px] items-center justify-between px-5 py-4 bg-synthux-blue/10 hover:bg-synthux-blue/20 text-synthux-blue rounded-xl border border-synthux-blue/30 transition-all active:scale-95"
+                                                                >
+                                                                    <div className="flex items-center gap-4">
+                                                                        <Download size={20} className="group-hover:animate-bounce-subtle" />
+                                                                        <span className="font-bold text-sm tracking-tight">{link.label}</span>
+                                                                    </div>
+                                                                    <span className="text-[10px] opacity-40 font-mono">.ZIP</span>
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* EXTERNAL LINKS */}
+                                                <div>
+                                                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Connections</h4>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {selectedPack.links.filter((l: any) => 
+                                                            !l.label.toLowerCase().includes('.zip') && 
+                                                            !l.label.toLowerCase().includes('download')
+                                                        ).map((link: any, i: number) => {
+                                                            const isSynthux = link.label.toLowerCase().includes('synthux') || link.label.toLowerCase().includes('website');
+                                                            return (
+                                                                <a
+                                                                    key={i}
+                                                                    href={link.url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:-translate-y-0.5 ${
+                                                                        isSynthux 
+                                                                        ? 'bg-synthux-orange/10 border-synthux-orange/30 text-synthux-orange hover:bg-synthux-orange/20' 
+                                                                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10'
+                                                                    }`}
+                                                                >
+                                                                    {link.label}
+                                                                </a>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
+
 
                                 {isCustomFolderSelected && selectedCustomFolderId && customFolders.find(f => f.id === selectedCustomFolderId) ? (
                                     <LocalFolderBrowser
@@ -675,76 +906,111 @@ export const SampleBrowser = ({
                                     />
                                 ) : (
                                     <div className="space-y-6 pb-20">
-                                        {categorizedSamples.map(([category, samples]) => (
-                                            <div key={category} className="bg-black/20 rounded-lg overflow-hidden border border-white/5">
-                                                <h3 className="sticky top-0 z-20 bg-[#151515] text-[10px] font-bold text-gray-400 uppercase tracking-widest py-2 px-4 shadow-sm border-b border-gray-800">
-                                                    {category}
-                                                </h3>
-                                                <div className="divide-y divide-gray-800/50">
-                                                    {samples.map((sample: any, idx: number) => {
-                                                        const isPlaying = playingSample === sample.path;
-                                                        const isImporting = importingSample === sample.path;
-                                                        const isAdded = addedSamples.has(sample.path);
+                                        {(() => {
+                                            const allSamplesInView = categorizedSamples.flatMap(([_, s]) => s);
+                                            return categorizedSamples.map(([category, samples]) => {
+                                                const selectedInCategory = samples.filter(s => selectedSamplePaths.has(s.path));
+                                                const isAllSelected = selectedInCategory.length === samples.length && samples.length > 0;
+                                                const isSomeSelected = selectedInCategory.length > 0 && selectedInCategory.length < samples.length;
 
-                                                        return (
-                                                            <div key={idx} className="grid grid-cols-[40px_1fr_auto_100px] gap-4 items-center px-4 py-2 hover:bg-gray-800/80 transition-colors group">
+                                                return (
+                                                    <div key={category} className="bg-black/20 rounded-lg overflow-hidden border border-white/5">
+                                                        <h3 className="sticky top-0 z-20 bg-[#151515] text-[10px] font-bold text-gray-400 uppercase tracking-widest py-2 px-4 shadow-sm border-b border-gray-800 flex items-center justify-between">
+                                                            <span>{category}</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[9px] opacity-40 font-mono lowercase mr-2">{samples.length} files</span>
                                                                 <button
-                                                                    onClick={() => handlePlay(sample)}
-                                                                    className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${isPlaying && isPreviewPlaying ? 'text-black bg-synthux-yellow scale-110 shadow-lg' : 'text-gray-400 hover:text-white bg-black hover:bg-gray-700 border border-gray-700'
+                                                                    onClick={() => selectAllInCategory(samples, !isAllSelected)}
+                                                                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all border ${isAllSelected
+                                                                        ? 'bg-synthux-orange/20 border-synthux-orange/40 text-synthux-orange'
+                                                                        : 'bg-black/40 border-white/10 text-gray-500 hover:text-gray-300'
                                                                         }`}
                                                                 >
-                                                                    {isPlaying && isPreviewPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" className="ml-0.5" />}
+                                                                    <div className={`w-3 h-3 rounded-[3px] border flex items-center justify-center transition-colors ${isAllSelected ? 'bg-synthux-orange border-synthux-orange' : 'bg-black/60 border-gray-700'}`}>
+                                                                        {isAllSelected ? <Check size={8} className="text-black stroke-[4]" /> : isSomeSelected ? <div className="w-1.5 h-0.5 bg-gray-500 rounded-full" /> : null}
+                                                                    </div>
+                                                                    <span className="uppercase tracking-widest text-[8px]">{isAllSelected ? 'Deselect Category' : 'Select Category'}</span>
                                                                 </button>
-
-                                                                <div className="font-mono text-sm text-gray-300 group-hover:text-white truncate">
-                                                                    <div className="truncate font-bold">{sample.name}</div>
-                                                                    {sample.tags && sample.tags.length > 0 && (
-                                                                        <div className="mt-0.5 text-[10px] text-gray-500 truncate flex gap-1">
-                                                                            {sample.tags.map((t: string) => <span key={t} className="bg-gray-800 px-1 py-0.5 rounded text-gray-400">#{t}</span>)}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-
-                                                                {isUserLibrarySelected && (
-                                                                    <button
-                                                                        onClick={() => onOpenLibraryManager('manage', sample.path)}
-                                                                        className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded opacity-0 group-hover:opacity-100 transition-all"
-                                                                        title="Edit in Library Manager"
-                                                                    >
-                                                                        <Edit2 size={14} />
-                                                                    </button>
-                                                                )}
-
-                                                                <div className="text-right">
-                                                                    <button
-                                                                        onClick={() => handleImport(sample)}
-                                                                        disabled={isImporting || isAdded}
-                                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm disabled:cursor-not-allowed ${isAdded
-                                                                            ? 'bg-synthux-yellow text-black border border-synthux-yellow shadow-synthux-yellow/20'
-                                                                            : 'bg-synthux-blue/20 hover:bg-synthux-blue hover:text-black text-synthux-blue border border-synthux-blue/50'
-                                                                            }`}
-                                                                    >
-                                                                        {isImporting ? (
-                                                                            <>
-                                                                                <Loader size={12} className="animate-spin" /> Adding
-                                                                            </>
-                                                                        ) : isAdded ? (
-                                                                            <>
-                                                                                <Check size={14} /> Added
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <Download size={14} /> {mode === 'slot-selection' ? 'Assign' : 'Add'}
-                                                                            </>
-                                                                        )}
-                                                                    </button>
-                                                                </div>
                                                             </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        ))}
+                                                        </h3>
+                                                        <div className="divide-y divide-gray-800/50">
+                                                            {samples.map((sample: any, idx: number) => {
+                                                                const isPlaying = playingSample === sample.path;
+                                                                const isImporting = importingSample === sample.path;
+                                                                const isAdded = allAddedPaths.paths.has(sample.path) || allAddedPaths.addedNames.has(sample.name);
+                                                                const isSelected = selectedSamplePaths.has(sample.path);
+
+                                                                return (
+                                                                    <div 
+                                                                        key={idx} 
+                                                                        onClick={(e) => toggleSampleSelection(sample.path, allSamplesInView, e)}
+                                                                        className={`grid grid-cols-[30px_40px_1fr_auto_100px] gap-3 items-center px-4 py-2 hover:bg-gray-800/80 transition-all group cursor-pointer border rounded-md ${isSelected ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
+                                                                    >
+                                                                        <div className="flex items-center justify-center">
+                                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-synthux-orange border-synthux-orange shadow-[0_0_8px_rgba(249,115,22,0.3)]' : 'bg-black/40 border-gray-700 group-hover:border-gray-500'}`}>
+                                                                                {isSelected && <Check size={10} className="text-black stroke-[3]" />}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handlePlay(sample); }}
+                                                                            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${isPlaying && isPreviewPlaying ? 'text-black bg-synthux-yellow scale-110 shadow-lg' : 'text-gray-400 hover:text-white bg-black hover:bg-gray-700 border border-gray-700'
+                                                                                }`}
+                                                                        >
+                                                                            {isPlaying && isPreviewPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" className="ml-0.5" />}
+                                                                        </button>
+
+                                                                        <div className="font-mono text-sm text-gray-300 group-hover:text-white truncate">
+                                                                            <div className="truncate font-bold">{sample.name}</div>
+                                                                            {sample.tags && sample.tags.length > 0 && (
+                                                                                <div className="mt-0.5 text-[10px] text-gray-500 truncate flex gap-1">
+                                                                                    {sample.tags.map((t: string) => <span key={t} className="bg-gray-800 px-1 py-0.5 rounded text-gray-400">#{t}</span>)}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {isUserLibrarySelected && (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); onOpenLibraryManager('manage', sample.path); }}
+                                                                                className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                                                                title="Edit in Library Manager"
+                                                                            >
+                                                                                <Edit2 size={14} />
+                                                                            </button>
+                                                                        )}
+
+                                                                        <div className="text-right">
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); handleImport(sample); }}
+                                                                                disabled={isImporting}
+                                                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm ${isImporting ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:scale-[1.02] active:scale-95'} ${isAdded
+                                                                                    ? 'bg-synthux-yellow hover:bg-yellow-400 text-black border border-synthux-yellow shadow-synthux-yellow/20'
+                                                                                    : 'bg-synthux-blue/20 hover:bg-synthux-blue hover:text-black text-synthux-blue border border-synthux-blue/50'
+                                                                                    }`}
+                                                                            >
+                                                                                {isImporting ? (
+                                                                                    <>
+                                                                                        <Loader size={12} className="animate-spin" /> Adding
+                                                                                    </>
+                                                                                ) : isAdded ? (
+                                                                                    <>
+                                                                                        <Check size={14} /> Added (Add Again)
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <Download size={14} /> {mode === 'slot-selection' ? 'Assign' : 'Add'}
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
                                     </div>
                                 )}
                             </>
@@ -805,7 +1071,7 @@ export const SampleBrowser = ({
                     </div>
                     <div className="relative w-full h-1.5 bg-black rounded-full overflow-hidden">
                         <div
-                            className="absolute top-0 left-0 h-full bg-synthux-orange transition-all duration-100"
+                            className="absolute top-0 left-0 h-full bg-synthux-orange"
                             style={{ width: `${playbackDuration > 0 ? (playbackTime / playbackDuration) * 100 : 0}%` }}
                         />
                         <input
@@ -826,8 +1092,10 @@ export const SampleBrowser = ({
                 </div>
             </div>
 
+
             <audio
                 ref={audioRef}
+                crossOrigin="anonymous"
                 onLoadedMetadata={() => {
                     if (!audioRef.current) return;
                     setPlaybackDuration(audioRef.current.duration || 0);
@@ -841,6 +1109,85 @@ export const SampleBrowser = ({
                 onEnded={() => setIsPreviewPlaying(false)}
             />
 
+            {/* Bulk Action Sticky Bar — matches LocalFolderBrowser pattern */}
+            {selectedSamplePaths.size > 0 && (
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-4 duration-300">
+                    {/* Submenu dropdown */}
+                    {showActionMenu && (
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-[#1a1a1a] border border-gray-700/50 rounded-xl shadow-2xl py-2 min-w-[280px] animate-in fade-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
+                            <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] border-b border-white/5 mb-1">Import Target</div>
+                            
+                            <button
+                                onClick={() => handleBulkActionWithTarget('slots')}
+                                className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-synthux-orange/10 hover:text-synthux-orange transition-colors flex items-center gap-3 group"
+                            >
+                                <Plus size={14} className="group-hover:scale-110 transition-transform" /> 
+                                <div className="flex flex-col">
+                                    <span className="font-bold">Add to Slot / Active Tape</span>
+                                </div>
+                            </button>
+
+                            <button
+                                onClick={() => handleBulkActionWithTarget('pool')}
+                                className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-3 group border-t border-white/5"
+                            >
+                                <Layers size={14} className="text-gray-400 group-hover:text-white" />
+                                <div className="flex flex-col">
+                                    <span className="font-bold">Add all to Pool</span>
+                                </div>
+                            </button>
+
+                            <div className="mx-2 my-1 border-t border-white/5" />
+                            <div className="px-4 py-1.5 text-[9px] font-bold text-gray-500 uppercase tracking-widest">Target Tape</div>
+                            
+                            <div className="grid grid-cols-6 gap-1 px-3 py-1">
+                                {TAPE_COLORS.map(color => (
+                                    <button
+                                        key={color}
+                                        onClick={() => handleBulkActionWithTarget(color)}
+                                        className="group relative flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-white/5 transition-all"
+                                        title={`Import to ${color} Tape`}
+                                    >
+                                        <div 
+                                            className={`w-4 h-4 rounded-full border border-white/10 shadow-lg group-hover:scale-110 group-hover:border-white/30 transition-all ${COLOR_MAP[color]}`}
+                                        />
+                                        <span className="text-[8px] font-mono text-gray-500 group-hover:text-white uppercase">Tape {color}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Bar */}
+                    <div className="flex items-center gap-4 bg-black/90 border border-white/10 rounded-full px-5 py-2 shadowing-2xl backdrop-blur-xl ring-1 ring-white/20 h-14">
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold text-white whitespace-nowrap">{selectedSamplePaths.size} files</span>
+                            <button
+                                onClick={() => resetSelection()}
+                                className="text-[10px] text-gray-400 hover:text-white transition-colors font-bold uppercase tracking-wider"
+                            >
+                                Clear
+                            </button>
+                        </div>
+
+                        <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+                            <button
+                                onClick={() => handleBulkActionWithTarget('slots')}
+                                className="bg-synthux-orange hover:bg-synthux-orange/80 text-black py-2 px-6 rounded-full font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-synthux-orange/20"
+                            >
+                                <Plus size={14} /> Import Selection
+                            </button>
+                            
+                            <button 
+                                onClick={() => setShowActionMenu(!showActionMenu)}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${showActionMenu ? 'bg-synthux-orange border-synthux-orange text-black' : 'bg-black/60 border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`}
+                            >
+                                <ChevronDown size={20} className={`transition-transform duration-300 ${showActionMenu ? 'rotate-180' : ''}`} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
