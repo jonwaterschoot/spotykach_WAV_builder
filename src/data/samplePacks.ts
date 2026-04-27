@@ -65,7 +65,7 @@ export const fetchSampleManifest = async (): Promise<{
     presets: PresetManifestEntry[];
 }> => {
     try {
-        const response = await fetch('/manifest.json');
+        const response = await fetch(resolveAssetPath('/manifest.json'));
         if (!response.ok) throw new Error('Failed to fetch sample manifest');
 
         const manifest: SampleManifest = await response.json();
