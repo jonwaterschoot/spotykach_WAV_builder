@@ -1,0 +1,406 @@
+{
+  "schema": "spotykach-project/1.0",
+  "name": "Hainbachs-Spotykach-Tapes",
+  "tapes": {
+    "Blue": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "6d0e3b41-8d2f-4f50-ba0a-aee09f0544df"
+        },
+        {
+          "id": 2,
+          "fileId": "2daf0e4b-4dce-41f0-9048-ab24dc6196f8"
+        },
+        {
+          "id": 3,
+          "fileId": "2e3f04ab-8e58-4e5d-8bc4-e714012e76c2"
+        },
+        {
+          "id": 4,
+          "fileId": "6ce422a5-e7da-45bd-90fd-c10ea5874438"
+        },
+        {
+          "id": 5,
+          "fileId": "2a5d2f6b-e4e0-451d-aa81-7f0bc352a448"
+        },
+        {
+          "id": 6,
+          "fileId": "1efb2153-2303-471d-9add-a3d8800c17f5"
+        }
+      ],
+      "notes": "# Rhythm is a soul companion\nRhythm as a foundation, drifting between melody, drone and pulse.  "
+    },
+    "Green": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "af87f3c8-6147-45f3-b8d6-e3595fa12299"
+        },
+        {
+          "id": 2,
+          "fileId": "6bcb84bb-79bc-4a1a-8b24-1174b9a086cb"
+        },
+        {
+          "id": 3,
+          "fileId": "ee33cd6a-f8e0-4c65-b059-4cc629ede56a"
+        },
+        {
+          "id": 4,
+          "fileId": "125348ef-bfa9-431c-a2e6-92c24f6da976"
+        },
+        {
+          "id": 5,
+          "fileId": "701cad84-dfb9-4d5a-8835-b26d1d1fe436"
+        },
+        {
+          "id": 6,
+          "fileId": "c58f6aee-e3de-4132-941d-07dd6b81f1c0"
+        }
+      ],
+      "notes": "# Drones can feel everywhere\nDroning soundscapes becoming part of new worlds, take these apart, stretch and snap into new universes.  "
+    },
+    "Pink": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "0353dcd0-2ae0-4476-8dd9-f2b95918b488"
+        },
+        {
+          "id": 2,
+          "fileId": "fa42aee5-89fd-495c-a4d9-b0a453989beb"
+        },
+        {
+          "id": 3,
+          "fileId": "f1ea4d5b-4d8d-431c-acc3-b28ef12edc02"
+        },
+        {
+          "id": 4,
+          "fileId": "e4085f33-2a4a-4855-8014-02d77e762643"
+        },
+        {
+          "id": 5,
+          "fileId": "01b2637e-9733-4721-bdef-8c31bae9f875"
+        },
+        {
+          "id": 6,
+          "fileId": "c433da59-cd0b-49e3-bf3f-e3d187130b67"
+        }
+      ],
+      "notes": "# Melodic 1 - Pianos free the mind\nNo feeling trustier than the tone of a piano, when met with reality the stories emerge.  "
+    },
+    "Red": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "74d1fc43-cabc-4a23-80e5-566509238bb7"
+        },
+        {
+          "id": 2,
+          "fileId": "3232e548-4f5f-4a37-bc3a-73e4fd4f131b"
+        },
+        {
+          "id": 3,
+          "fileId": "3a551901-4386-4cb2-bdfa-5f92a37dfcb2"
+        },
+        {
+          "id": 4,
+          "fileId": "d73b5be6-9f2d-4518-ae6d-4669ddd345a4"
+        },
+        {
+          "id": 5,
+          "fileId": "56576d4a-7559-4dc3-99a5-e079a93a5d23"
+        },
+        {
+          "id": 6,
+          "fileId": "9a609ab6-52d8-4197-bbcf-89306d7eb8ed"
+        }
+      ],
+      "notes": "# Melodic 2 - Pitches are felt in the air\nMelodies become rhythm → rhythms can be stretched into textured worlds or broken into slices of tones.  "
+    },
+    "Turquoise": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "342c64da-d21b-485a-8d92-7fd2d48069ff"
+        },
+        {
+          "id": 2,
+          "fileId": "a6cb3885-d496-4c4d-95b1-61fc26c63569"
+        },
+        {
+          "id": 3,
+          "fileId": "f0cdc398-9178-4a86-8195-a0d36727e8d2"
+        },
+        {
+          "id": 4,
+          "fileId": "d7961bbd-3205-4c94-a107-a3edd350d28c"
+        },
+        {
+          "id": 5,
+          "fileId": "80f273ed-504f-48a2-bd00-baa76e5258c5"
+        },
+        {
+          "id": 6,
+          "fileId": "4fa4716d-bdce-4893-83c3-26864572e77b"
+        }
+      ],
+      "notes": "# Melodic 3 - Melodies free your mind\nCenter your point of focus to a single grain, repeat its structure to find a new level of awareness.  "
+    },
+    "Yellow": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "5e5e3009-96b3-4ea7-b79c-280138d68d0a"
+        },
+        {
+          "id": 2,
+          "fileId": "cbb5267e-c04e-4e93-8394-f7c256d87494"
+        },
+        {
+          "id": 3,
+          "fileId": "56052dbb-51e6-4225-8fa8-e56b1598007b"
+        },
+        {
+          "id": 4,
+          "fileId": "512c7972-4a2a-4f8a-b149-76a57c31bc8c"
+        },
+        {
+          "id": 5,
+          "fileId": "f512f402-5232-4902-bb8d-d6f38ee46d51"
+        },
+        {
+          "id": 6,
+          "fileId": "77873cc9-9f11-42a0-a98b-9609e27a60e6"
+        }
+      ],
+      "notes": "# Lift your hands and voices\nVoices talking to and with synths, counter them with physics of vibrating strings. \n- *\"Relay Pulses\"* appears very quiet because it has 'loud' clicks. → bound to have a pupose with e.g. the envelope trigger.  "
+    }
+  },
+  "files": {
+    "125348ef-bfa9-431c-a2e6-92c24f6da976": {
+      "originalName": "Acousmonium Piano",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Acousmonium-Piano.flac"
+    },
+    "701cad84-dfb9-4d5a-8835-b26d1d1fe436": {
+      "originalName": "Acousmonium Sweeps",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Acousmonium-Sweeps.flac"
+    },
+    "342c64da-d21b-485a-8d92-7fd2d48069ff": {
+      "originalName": "Ambient Lead Multimonica",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Ambient-Lead-Multimonica.flac"
+    },
+    "74d1fc43-cabc-4a23-80e5-566509238bb7": {
+      "originalName": "Boom Bap Ready",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Boom-Bap-Ready.flac"
+    },
+    "5e5e3009-96b3-4ea7-b79c-280138d68d0a": {
+      "originalName": "Cheesecake",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Cheesecake.flac"
+    },
+    "56576d4a-7559-4dc3-99a5-e079a93a5d23": {
+      "originalName": "Collide 4 Scapes",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Collide-4-Scapes.flac"
+    },
+    "d73b5be6-9f2d-4518-ae6d-4669ddd345a4": {
+      "originalName": "Collide 4",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Collide-4.flac"
+    },
+    "e4085f33-2a4a-4855-8014-02d77e762643": {
+      "originalName": "DHM89",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/DHM89.flac"
+    },
+    "ee33cd6a-f8e0-4c65-b059-4cc629ede56a": {
+      "originalName": "Diffuseur",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Diffuseur.flac"
+    },
+    "6d0e3b41-8d2f-4f50-ba0a-aee09f0544df": {
+      "originalName": "Feedback Rhythm",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Feedback-Rhythm.flac"
+    },
+    "cbb5267e-c04e-4e93-8394-f7c256d87494": {
+      "originalName": "Friendly Numbers Station",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Friendly-Numbers-Station.flac"
+    },
+    "f512f402-5232-4902-bb8d-d6f38ee46d51": {
+      "originalName": "Guitaret Flussed",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Guitaret-Flussed.flac"
+    },
+    "77873cc9-9f11-42a0-a98b-9609e27a60e6": {
+      "originalName": "Guitaret Kjaered",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Guitaret-Kjaered.flac"
+    },
+    "2daf0e4b-4dce-41f0-9048-ab24dc6196f8": {
+      "originalName": "Industrial",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Industrial.flac"
+    },
+    "f0cdc398-9178-4a86-8195-a0d36727e8d2": {
+      "originalName": "Kalimba Of Doom",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Kalimba-Of-Doom.flac"
+    },
+    "3232e548-4f5f-4a37-bc3a-73e4fd4f131b": {
+      "originalName": "Magic Box",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Magic-Box.flac"
+    },
+    "2e3f04ab-8e58-4e5d-8bc4-e714012e76c2": {
+      "originalName": "MASSIVE",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/MASSIVE.flac"
+    },
+    "d7961bbd-3205-4c94-a107-a3edd350d28c": {
+      "originalName": "Multimonica Melody",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Multimonica-Melody.flac"
+    },
+    "80f273ed-504f-48a2-bd00-baa76e5258c5": {
+      "originalName": "Multimonica",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Multimonica.flac"
+    },
+    "9a609ab6-52d8-4197-bbcf-89306d7eb8ed": {
+      "originalName": "Multitrack Frippertronic 2",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Multitrack-Frippertronic-2.flac"
+    },
+    "4fa4716d-bdce-4893-83c3-26864572e77b": {
+      "originalName": "Omnichording",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Omnichording.flac"
+    },
+    "6ce422a5-e7da-45bd-90fd-c10ea5874438": {
+      "originalName": "Organic Drums",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Organic-Drums.flac"
+    },
+    "2a5d2f6b-e4e0-451d-aa81-7f0bc352a448": {
+      "originalName": "Photophone Tape",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Photophone-Tape.flac"
+    },
+    "0353dcd0-2ae0-4476-8dd9-f2b95918b488": {
+      "originalName": "Piano + Blippoo",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Piano-Blippoo.flac"
+    },
+    "fa42aee5-89fd-495c-a4d9-b0a453989beb": {
+      "originalName": "Piano Kjaered",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Piano-Kjaered.flac"
+    },
+    "a6cb3885-d496-4c4d-95b1-61fc26c63569": {
+      "originalName": "Radiophonic 1",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Radiophonic-1.flac"
+    },
+    "56052dbb-51e6-4225-8fa8-e56b1598007b": {
+      "originalName": "Relay Pulses",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Relay-Pulses.flac"
+    },
+    "6bcb84bb-79bc-4a1a-8b24-1174b9a086cb": {
+      "originalName": "Roaring Drone",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Roaring-Drone.flac"
+    },
+    "c433da59-cd0b-49e3-bf3f-e3d187130b67": {
+      "originalName": "String Armonica",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/String-Armonica.flac"
+    },
+    "3a551901-4386-4cb2-bdfa-5f92a37dfcb2": {
+      "originalName": "Sweeps Ladis",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Sweeps-Ladis.flac"
+    },
+    "af87f3c8-6147-45f3-b8d6-e3595fa12299": {
+      "originalName": "Tape Feedback",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Tape-Feedback.flac"
+    },
+    "f1ea4d5b-4d8d-431c-acc3-b28ef12edc02": {
+      "originalName": "Tape Flanged Piano",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Tape-Flanged-Piano.flac"
+    },
+    "01b2637e-9733-4721-bdef-8c31bae9f875": {
+      "originalName": "Tape Flanged Rhodes",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Tape-Flanged-Rhodes.flac"
+    },
+    "512c7972-4a2a-4f8a-b149-76a57c31bc8c": {
+      "originalName": "The Wall",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/The-Wall.flac"
+    },
+    "1efb2153-2303-471d-9add-a3d8800c17f5": {
+      "originalName": "Uher Tape Beat",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Uher-Tape-Beat.flac"
+    },
+    "c58f6aee-e3de-4132-941d-07dd6b81f1c0": {
+      "originalName": "Wire Recorder",
+      "origin": "Sample Pack",
+      "samplePackId": "Sample Pack",
+      "samplePath": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/samples/Hainbach/Wire-Recorder.flac"
+    }
+  },
+  "projectNotes": "# Hainbach's Spotykach Tapes\nA collection of 36 sounds that Hainbach gifted to the community.\n\nAvailable as a download pack of 36 files to use as you want, all we ask is that you respect Hainbach and do not resell these as your own.\n\n## About this pack\nThis pack is straight from the cutting room of the past three years of my explorations. For every video I make, I spend hours making sample packs for my https://patreon.com/hainbach, and this pack I curated for Spotykach is a selection from the thousands of sounds there. You will find strange resonances from ancient speakers, pumping nuclear research equipment, esoteric oscillations, acoustic loops, tape squeals, early digital glitter, whimsical melodies, dark drones and much here. Its meant to be a little treasure chest for you to explore and find inspiration in. Happy stumbling!\n\n**Hainbach, Berlin, 19.04.2026**\n\n## Usage Context\n**Free to use in your music, no reselling as part of sample pack or instrument.**\n\n## About these tapes\nThese files are also downloadable as a ready to copy onto the SD card zipped folder.\n\nSorted into 6 themed tapes, by community member jonwtr, you might want to sprinkle them around differently and add your own sounds;  tweak this project and save it locally and then build it onto your SD card.\n\nI've organized them according to some intuitive categories, and wrote some notes to spark some ideas.\nHave fun with these and a special thanks to Hainbach for sharing this with our community.  \n\n--\nIf you didn't catch the reference with these titles, I can but say: ***Snap!***",
+  "projectConfig": {
+    "mid_ch_a": 1,
+    "mid_ch_b": 2,
+    "mid_ps_a": true,
+    "mid_ps_b": true,
+    "pre_load": true
+  }
+}
