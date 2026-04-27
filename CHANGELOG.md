@@ -59,7 +59,12 @@
 
 ### Removed
 - Removed locally hosted audio sample pack files (`public/samples/`) in favor of remote fetching, freeing up repository storage and speeding up build times.
->>>>>>> projectpreload
+## [3.4.1] - 2026-04-14
+
+### Fixed
+- config.txt location was set to root folder instead of SK folder
+- download button worked, but save to SD was only saving to project folder not to the SD card
+- changes applied to all appropriate files where the function is called
 
 ## [3.4.0] - 2026-03-27
 
