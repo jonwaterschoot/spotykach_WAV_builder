@@ -143,6 +143,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
             console.log("Work folder selection cancelled");
         }
     };
+    
+    // Select a DIFFERENT existing workspace directly
+    const handleOpenDifferentWorkspace = async () => {
+        try {
+            const handle = await window.showDirectoryPicker({
+                id: 'spotykach_work',
+                mode: 'readwrite',
+                startIn: 'documents'
+            });
+            // Calling onComplete with null backup and no projectName 
+            // will trigger scan and show project manager in App.tsx
+            onComplete(handle, null, null);
+        } catch (e) {
+            console.log("Workspace selection cancelled");
+        }
+    };
+
 
     // STEP 2: Select Backup Folder
     const handleSelectBackup = async () => {
@@ -195,25 +212,33 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
 
             <div className="flex flex-col gap-4 max-w-sm mx-auto">
                 {restorableHandles && onRestore && (
-                    <button
-                        onClick={onRestore}
-                        className="w-full py-5 bg-gradient-to-r from-emerald-600/60 to-teal-600/60 hover:from-emerald-500/80 hover:to-teal-500/80 rounded-2xl font-bold text-white text-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-emerald-500/20 mb-4"
-                    >
-                        <div className="flex items-center gap-3">
-                            <HardDrive size={24} />
-                            <div className="text-left leading-tight">
-                                <div className="text-xs font-normal opacity-80 uppercase tracking-wider">Resume Session</div>
-                                <div className="truncate max-w-[200px] text-sm">{restorableHandles.work.name}</div>
+                    <div className="flex flex-col items-center mb-4">
+                        <button
+                            onClick={onRestore}
+                            className="w-full py-5 bg-gradient-to-r from-emerald-600/60 to-teal-600/60 hover:from-emerald-500/80 hover:to-teal-500/80 rounded-2xl font-bold text-white text-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-emerald-500/20"
+                        >
+                            <div className="flex items-center gap-3">
+                                <HardDrive size={24} />
+                                <div className="text-left leading-tight">
+                                    <div className="text-xs font-normal opacity-80 uppercase tracking-wider">Resume Session</div>
+                                    <div className="truncate max-w-[200px] text-sm">{restorableHandles.work.name}</div>
+                                </div>
+                                <ArrowRight />
                             </div>
-                            <ArrowRight />
-                        </div>
-                        <div className="px-4 py-1 mt-1 bg-black/20 rounded-lg">
-                            <p className="text-xs text-orange-300 font-medium leading-tight">
-                                Note: Possible conflict with previous versions. <br />
-                                We recommend making manual backups for crucial work.
-                            </p>
-                        </div>
-                    </button>
+                            <div className="px-4 py-1 mt-1 bg-black/20 rounded-lg">
+                                <p className="text-xs text-orange-300 font-medium leading-tight text-center">
+                                    Note: Possible conflict with previous versions. <br />
+                                    We recommend making manual backups for crucial work.
+                                </p>
+                            </div>
+                        </button>
+                        <button 
+                            onClick={handleOpenDifferentWorkspace}
+                            className="text-gray-400 hover:text-white text-[11px] font-bold uppercase tracking-wider py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 mt-3"
+                        >
+                            Or select another existing workspace
+                        </button>
+                    </div>
                 )}
 
                 <button
