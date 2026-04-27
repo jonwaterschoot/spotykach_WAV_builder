@@ -879,6 +879,7 @@ function App() {
 
       // 4. Save blank state
       const emptyState = getInitialState();
+      const { saveProjectToDirectory } = await import('./utils/exportUtils');
       // @ts-ignore
       await saveProjectToDirectory(emptyState, activeWorkHandle, (msg) => setProgressMsg(msg || ''), projectName);
 
@@ -922,6 +923,7 @@ function App() {
       projectRootHandleRef.current = projectDir;
 
       // 4. Save
+      const { saveProjectToDirectory } = await import('./utils/exportUtils');
       // @ts-ignore
       const exportedFiles = await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
 

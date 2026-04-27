@@ -8,6 +8,7 @@
 - **Vite Build Optimization**: Refined the Vite configuration and build chunking strategy to improve loading times and production bundle efficiency.
 
 ### Fixed
+- **Project Creation**: Resolved a `ReferenceError: saveProjectToDirectory is not defined` that prevented creating new fresh projects or cloning projects. This issue was caused by missing dynamic imports in the project management handlers.
 - **Playhead Bounds**: Resolved an issue where the sample playhead in tape views could bleed into the padded margins of the card. The playhead is now strictly contained within the waveform content area.
 
 
