@@ -74,6 +74,8 @@ export const fetchSampleManifest = async (): Promise<{
         const presets: PresetManifestEntry[] = (manifest.presets || []).map(p => ({
             ...p,
             coverImage: p.coverImage ? resolveAssetPath(p.coverImage) : undefined,
+            descriptorPath: resolveAssetPath(p.descriptorPath),
+            sdExportUrl: p.sdExportUrl ? resolveAssetPath(p.sdExportUrl) : undefined,
         }));
 
         return {

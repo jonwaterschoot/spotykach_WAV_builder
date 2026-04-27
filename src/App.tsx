@@ -1167,7 +1167,7 @@ function App() {
   const handleLoadPreset = async (entry: PresetManifestEntry) => {
     try {
       // 1. Fetch the descriptor JSON
-      const url = entry.descriptorPath;
+      const url = resolveAssetPath(entry.descriptorPath);
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Failed to fetch preset descriptor: HTTP ${resp.status}`);
       const json = await resp.json();

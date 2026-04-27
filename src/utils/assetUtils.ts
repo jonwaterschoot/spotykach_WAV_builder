@@ -38,15 +38,20 @@ export const resolveAssetPath = (path: string): string => {
     const internalPaths = [
         '/manifest.json', '/favicon.ico', '/vite.svg', '/assets', 
         '/img', '/vid', '/v2', '/ffmpeg-core', '/ffmpeg-worker', 
-        '/spotykachtapeicon.svg', '/spotytape.svg', '/og-image.png'
+        '/spotykachtapeicon.svg', '/spotytape.svg', '/og-image.png',
+        '/presets'
     ];
     
-    const isInternal = internalPaths.some(p => normalizedPath.startsWith(p));
+    const pathWithoutBase = (appBaseUrl && appBaseUrl !== '/' && normalizedPath.startsWith(appBaseUrl))
+        ? normalizedPath.slice(appBaseUrl.length)
+        : normalizedPath;
+
+    const isInternal = internalPaths.some(p => pathWithoutBase.startsWith(p));
     
     // It's R2 if it's not internal, not the root, and looks like a deep path (e.g. /pack/file)
-    const isR2 = !isInternal && normalizedPath !== '/' && (
-        normalizedPath.startsWith('/samples/') || 
-        normalizedPath.includes('/', 1)
+    const isR2 = !isInternal && pathWithoutBase !== '/' && (
+        pathWithoutBase.startsWith('/samples/') || 
+        pathWithoutBase.includes('/', 1)
     );
 
     if (isR2) {
