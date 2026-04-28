@@ -24,6 +24,15 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
   const [content, setContent] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showOnStart, setShowOnStart] = useState<boolean>(() => {
+    return localStorage.getItem('spotykach_show_news_on_start') !== 'false';
+  });
+
+  const handleToggleShowOnStart = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVal = e.target.checked;
+    setShowOnStart(newVal);
+    localStorage.setItem('spotykach_show_news_on_start', String(newVal));
+  };
 
   useEffect(() => {
     const fetchNews = async () => {
@@ -241,7 +250,24 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
             <div className="w-2 h-2 rounded-full bg-synthux-green animate-pulse" />
             <span>Stay up to date with my development</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className="relative flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={!showOnStart}
+                  onChange={(e) => {
+                    const newVal = !e.target.checked;
+                    setShowOnStart(newVal);
+                    localStorage.setItem('spotykach_show_news_on_start', String(newVal));
+                  }}
+                  className="peer appearance-none w-4 h-4 rounded border border-white/20 bg-white/5 checked:bg-synthux-orange checked:border-synthux-orange transition-all"
+                />
+                <X size={10} className="absolute text-black opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 group-hover:text-white transition-colors">Don't show on start</span>
+            </label>
+
             <a
               href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/CHANGELOG.md"
               target="_blank"

@@ -717,26 +717,14 @@ function App() {
     // Only check for news after the user has left the setup wizard
     if (isWelcomeActive) return;
 
-    const checkNews = async () => {
-      try {
-        const response = await fetch(resolveAssetPath('/news/news-manifest.json'));
-        if (!response.ok) return;
-        const manifest = await response.json();
-        if (manifest.length > 0) {
-          const latestId = manifest[0].id;
-          const lastSeenId = localStorage.getItem('spotykach_last_seen_news_id');
-          if (latestId !== lastSeenId) {
-            setShowNews(true);
-            // Mark as seen immediately when it pops up automatically
-            localStorage.setItem('spotykach_last_seen_news_id', latestId);
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to check news', e);
+    const checkNewsPreference = () => {
+      const showOnStart = localStorage.getItem('spotykach_show_news_on_start') !== 'false';
+      if (showOnStart) {
+        setShowNews(true);
       }
     };
-    checkNews();
-  }, []);
+    checkNewsPreference();
+  }, [isWelcomeActive]);
 
   const checkUnsavedChanges = (action: () => void) => {
     // Determine if the project is effectively empty
