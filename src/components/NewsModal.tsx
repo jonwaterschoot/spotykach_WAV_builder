@@ -28,12 +28,6 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
     return localStorage.getItem('spotykach_show_news_on_start') !== 'false';
   });
 
-  const handleToggleShowOnStart = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVal = e.target.checked;
-    setShowOnStart(newVal);
-    localStorage.setItem('spotykach_show_news_on_start', String(newVal));
-  };
-
   useEffect(() => {
     const fetchNews = async () => {
       try {
