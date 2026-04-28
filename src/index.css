@@ -1,5 +1,6 @@
 @import 'mobile-drag-drop/default.css';
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* mobile-drag-drop polyfill override */
 .dnd-drag-image-translate-override {

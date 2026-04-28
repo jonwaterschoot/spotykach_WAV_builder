@@ -1,6 +1,21 @@
 # Changelog
 
+## [3.6.3] - 2026-04-28
+
+### Added
+- **Premium News System**:
+    - Integrated a dynamic, markdown-powered News Modal to keep users updated on development progress, tutorials, and new sample releases.
+    - Implemented a manifest-driven architecture (`news-manifest.json`) for automatic content delivery and "New" badge alerts.
+    - Enhanced readability with a clean, typography-focused layout (via `@tailwindcss/typography`) and a personal, honest tone.
+    - Added smart UI features including a collapsing header on scroll, "Back to Top" navigation, and featured/pinned update blocks.
+    - Added a dedicated "News" entry point in the main header with unread notification state.
+
+### Improved
+- **Global UI**: Refined modal backdrop treatments and scroll behavior consistency across high-density information views.
+- **Project Setup**: Streamlined the transition from the Setup Wizard to the main application with automatic unread news checking.
+
 ## [3.6.2] - 2026-04-27
+
 
 ### Improved
 - **Playhead Animation**: Enhanced the playhead smoothness in tape views (Single and All Tapes) by implementing a high-frequency `requestAnimationFrame` update loop, matching the visual performance of the main sample editor.

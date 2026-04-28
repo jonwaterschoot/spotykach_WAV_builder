@@ -39,7 +39,7 @@ export const resolveAssetPath = (path: string): string => {
         '/manifest.json', '/favicon.ico', '/vite.svg', '/assets', 
         '/img', '/vid', '/v2', '/ffmpeg-core', '/ffmpeg-worker', 
         '/spotykachtapeicon.svg', '/spotytape.svg', '/og-image.png',
-        '/presets'
+        '/presets', '/news'
     ];
     
     const pathWithoutBase = (appBaseUrl && appBaseUrl !== '/' && normalizedPath.startsWith(appBaseUrl))

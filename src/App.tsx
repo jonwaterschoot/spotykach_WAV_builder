@@ -23,6 +23,7 @@ import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
 import { ProjectSyncModal } from './components/ProjectSyncModal';
 import { fetchSampleManifest, type PresetManifestEntry } from './data/samplePacks';
+import { NewsModal } from './components/NewsModal';
 // dynamic descriptor imports
 
 const WaveformEditor = React.lazy(() => import('./components/WaveformEditor').then(m => ({ default: m.WaveformEditor })));
@@ -35,7 +36,7 @@ const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal'
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package, Copy } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -128,6 +129,7 @@ function App() {
   const [showBrowserChoiceModal, setShowBrowserChoiceModal] = useState(false);
 
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [showNews, setShowNews] = useState(false);
 
   // Export Logic State
   const [exportLogs, setExportLogs] = useState<string[]>([]);
@@ -628,6 +630,10 @@ function App() {
           setIsProjectNotesMinimized(false);
           return;
         }
+        if (showNews) {
+          setShowNews(false);
+          return;
+        }
         if (showInfo) {
           setShowInfo(false);
           return;
@@ -706,6 +712,31 @@ function App() {
       }
     });
   };
+
+  useEffect(() => {
+    // Only check for news after the user has left the setup wizard
+    if (isWelcomeActive) return;
+
+    const checkNews = async () => {
+      try {
+        const response = await fetch(resolveAssetPath('/news/news-manifest.json'));
+        if (!response.ok) return;
+        const manifest = await response.json();
+        if (manifest.length > 0) {
+          const latestId = manifest[0].id;
+          const lastSeenId = localStorage.getItem('spotykach_last_seen_news_id');
+          if (latestId !== lastSeenId) {
+            setShowNews(true);
+            // Mark as seen immediately when it pops up automatically
+            localStorage.setItem('spotykach_last_seen_news_id', latestId);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to check news', e);
+      }
+    };
+    checkNews();
+  }, []);
 
   const checkUnsavedChanges = (action: () => void) => {
     // Determine if the project is effectively empty
@@ -4165,6 +4196,20 @@ function App() {
               {/* MIDDLE / RIGHT — Action buttons grouped */}
               <div className="flex items-center gap-1.5 shrink-0 ml-auto">
 
+                {/* News */}
+                <button
+                  onClick={() => setShowNews(true)}
+                  title="What's New"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider
+                    ${showNews ? 'border-synthux-orange text-white bg-synthux-orange/10 shadow-[0_0_10px_rgba(249,113,71,0.2)]' : 'border-white/10 text-gray-400 hover:text-white hover:bg-white/5'}
+                  `}
+                >
+                  <Newspaper size={14} strokeWidth={2.5} />
+                  <span className="hidden md:inline text-synthux-orange">News</span>
+                </button>
+
+                <div className="h-5 w-px bg-gray-800 mx-0.5" />
+
                 {/* Project Notes — Prominent as requested */}
                 <button
                   onClick={() => setShowProjectNotes(!showProjectNotes)}
@@ -4666,6 +4711,7 @@ function App() {
 
 
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+            {showNews && <NewsModal onClose={() => setShowNews(false)} />}
             {showInfo && <InfoModal onClose={() => setShowInfo(false)} onReset={handleReset} />}
             <SettingsModal
               isOpen={showSettings}

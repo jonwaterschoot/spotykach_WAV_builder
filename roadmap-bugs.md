@@ -4,18 +4,16 @@
 
 ---
 
-escape key -> close modal [DONE]
-
-My library manager:
+## My library manager:
 - default view is first tab Upload
   - upload tab: add a short info block about that this is your local library. Files stored here are copied into the workspace, note that you could also add folders outside the workspace from local drives, curated library allows to build a custom set for yourself that you like to reuse on Spotykach.
 
+## onboarding and news section
 
-Sample playhead on tapes view is going over full card width instead of staying in bounds of the actual sample.
-Playhead is also sluggish animated vs the preview playhead in the sample editor.
+### for newcomers: expand onboarding section
+  - after clicking the start new setup button, the first screen should show a welcome screen where users ccan quickly see what the wizard will do; when creating the first project they can choose to create a blank project or use a preset. (currinetly only one preset: the Hainbach project organized by jonwtr, we'll create another with mixed samples from other packs and leave free spaces open for user customization, Hainbach pack is all 36 slots occupied)
 
-
-
+Create a way that shows newcomers a quick live tutorial (not a video. something interactive that steps through the app and explains the features).
 
 ## Active Roadmap
 
@@ -23,9 +21,13 @@ Playhead is also sluggish animated vs the preview playhead in the sample editor.
 
 ### under consideration
 
+- allow to add image to projects - could be useful for visual ident of projects , and as the cover used when shared as a preset; by already incorporating it in the sample manager we can integrate it upfront.
 
 ---
 - **Project Manager** Draft
+
+- This was the initial plan, but I already have tweaked the menu to some degree to make it more user friendly.
+- Added a workspace changing option in the opening page
 
     - options on top, options bottom bar, ... to be streamlined.
     - I'm thinking about a open project file list like in a more standard menu like 'recent files' in other apps.
@@ -65,22 +67,3 @@ Playhead is also sluggish animated vs the preview playhead in the sample editor.
 
 ## Done / Reviewed
 
--[x] **Example project** Done
-    - Add an example project to the app.
-        - populate with some samples
-        - make use of sample pack, (create new samples)
-        - use tapes as categories, 3 files per tape
-            - use the notes feature to clarify, 
-                - notes per tape to add categories titles and explainer of the used samples.
-                - general notes that describe the content of this project
-        - categories: Textures, Percussion, Bass, ... (6 categories)
-        - what's a good title for this example project?
-
-
-- **Centralized Library Sync (v3.4.0)**: Migrated sync logic and modal to `App.tsx` for a unified experience across the app.
-- **Loop Tool Finalization (v3.4.0)**: Added discard protection, auto-reset state, and a Preview/Edit toggle.
-- **Playback Mutual Exclusion (v3.4.0)**: Prevented overlapping audio by stopping one playback stream when another starts.
-- **SHA-256 Content Hashing (v3.3.0)**: Replaced size-only sync comparison with accurate bit-for-bit hashing.
-- **Persistent Log Tracker (v3.3.1)**: Implemented `logs.txt` persistence and a dedicated Log Viewer modal.
-- **SD Import Presets (v3.3.0)**: Standardized import workflows with selectable presets.
-- **Notification Stacking (v3.3.1)**: Refactored toasts to stack vertically, preventing UI overlap.

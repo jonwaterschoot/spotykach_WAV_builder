@@ -232,12 +232,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                                 </p>
                             </div>
                         </button>
-                        <button 
-                            onClick={handleOpenDifferentWorkspace}
-                            className="text-gray-400 hover:text-white text-[11px] font-bold uppercase tracking-wider py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 mt-3"
-                        >
-                            Or select another existing workspace
-                        </button>
                     </div>
                 )}
 
@@ -247,9 +241,17 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 >
                     Start New Setup <ArrowRight />
                 </button>
+
+                <button 
+                    onClick={handleOpenDifferentWorkspace}
+                    className="text-gray-400 hover:text-white text-sm font-bold uppercase tracking-wider py-3 px-4 bg-black/40 backdrop-blur-sm rounded-xl transition-all border border-white/5 hover:border-white/20"
+                >
+                    {restorableHandles ? "Or select another workspace" : "Load Existing Workspace"}
+                </button>
+
                 <button
                     onClick={onSkip}
-                    className="text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20"
+                    className="text-gray-500/80 hover:text-gray-400 text-[11px] py-1.5 px-3 transition-all hover:underline"
                 >
                     Skip setup (Use Browser Cache)
                 </button>
