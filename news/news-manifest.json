@@ -1,0 +1,39 @@
+[
+  {
+    "id": "362",
+    "title": "Smooth Playheads & UX (v3.6.2)",
+    "date": "2026-04-27",
+    "file": "3.6.2-update.md",
+    "category": "Update"
+  },
+  {
+    "id": "361",
+    "title": "UI Refinements (v3.6.1)",
+    "date": "2026-04-26",
+    "file": "3.6.1-update.md",
+    "category": "Update"
+  },
+  {
+    "id": "360",
+    "title": "Presets & Metadata (v3.6.0)",
+    "date": "2026-04-23",
+    "file": "3.6.0-update.md",
+    "category": "Feature"
+  },
+  {
+    "id": "hainbach",
+    "title": "Hainbach's 'Spotykach Tapes' are here!",
+    "date": "2026-04-28",
+    "file": "hainbach-pack.md",
+    "image": "images/hainbach-pack.jpg",
+    "pinned": true,
+    "category": "Sample Pack & Preset"
+  },
+  {
+    "id": "roadmap",
+    "title": "Active Roadmap Summary",
+    "date": "2026-04-28",
+    "file": "roadmap-summary.md",
+    "category": "News"
+  }
+]
