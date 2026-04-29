@@ -78,7 +78,7 @@ export const useAudioConverter = () => {
         return loadPromiseRef.current;
     };
 
-    const convertWavToFlac = async (wavBlob: Blob, _fileName: string): Promise<Blob> => {
+    const convertWavToFlac = async (wavBlob: Blob): Promise<Blob> => {
         if (!isLoaded) {
             await load();
         }
@@ -115,11 +115,84 @@ export const useAudioConverter = () => {
         }
     };
 
+    const convertAudioToWav = async (inputBlob: Blob): Promise<Blob> => {
+        if (!isLoaded) {
+            await load();
+        }
+
+        const ffmpeg = ffmpegRef.current;
+        setIsConverting(true);
+        setProgress(0);
+
+        try {
+            const inputName = 'input_tmp';
+            const outputName = 'output.raw';
+
+            await ffmpeg.writeFile(inputName, await fetchFile(inputBlob));
+
+            // Extract raw PCM 32-bit float (little-endian), 48kHz, Stereo
+            // We use raw format (-f f32le) to bypass FFmpeg's WAV muxer, which
+            // forces WAVEFORMATEXTENSIBLE and 'fact' chunks that the hardware rejects.
+            await ffmpeg.exec([
+                '-i', inputName,
+                '-f', 'f32le',
+                '-ar', '48000',
+                '-ac', '2',
+                outputName
+            ]);
+
+            const pcmData = await ffmpeg.readFile(outputName) as Uint8Array;
+            const dataSize = pcmData.length;
+            const fileSize = 36 + dataSize;
+
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            // "RIFF"
+            view.setUint8(0, 0x52); view.setUint8(1, 0x49); view.setUint8(2, 0x46); view.setUint8(3, 0x46);
+            // File size
+            view.setUint32(4, fileSize, true);
+            // "WAVE"
+            view.setUint8(8, 0x57); view.setUint8(9, 0x41); view.setUint8(10, 0x56); view.setUint8(11, 0x45);
+            // "fmt "
+            view.setUint8(12, 0x66); view.setUint8(13, 0x6D); view.setUint8(14, 0x74); view.setUint8(15, 0x20);
+            // Subchunk1Size (16 for standard PCM/Float without extensible)
+            view.setUint32(16, 16, true);
+            // AudioFormat (3 for IEEE Float)
+            view.setUint16(20, 3, true);
+            // NumChannels (2)
+            view.setUint16(22, 2, true);
+            // SampleRate (48000)
+            view.setUint32(24, 48000, true);
+            // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+            view.setUint32(28, 48000 * 2 * 4, true);
+            // BlockAlign (NumChannels * BitsPerSample/8)
+            view.setUint16(32, 8, true);
+            // BitsPerSample (32)
+            view.setUint16(34, 32, true);
+            // "data"
+            view.setUint8(36, 0x64); view.setUint8(37, 0x61); view.setUint8(38, 0x74); view.setUint8(39, 0x61);
+            // Subchunk2Size (data size)
+            view.setUint32(40, dataSize, true);
+
+            // Write raw PCM data after the 44-byte header
+            new Uint8Array(buffer).set(pcmData, 44);
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        } catch (error) {
+            console.error('WAV Conversion failed', error);
+            throw error;
+        } finally {
+            setIsConverting(false);
+        }
+    };
+
     return {
         isLoaded,
         progress,
         isConverting,
         convertWavToFlac,
+        convertAudioToWav,
         load
     };
 };

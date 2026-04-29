@@ -57,6 +57,7 @@ import { Rnd } from 'react-rnd';
 import { Dropdown } from './components/Dropdown';
 
 import { useAudioPlayer } from './contexts/AudioPlayerContext';
+import { useAudioConverter } from './utils/useAudioConverter';
 
 // Confirm Action Helper
 // dynamic persistence imports
@@ -92,6 +93,7 @@ function App() {
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
 
   const { stop: stopGlobalPlayer } = useAudioPlayer();
+  const { convertAudioToWav } = useAudioConverter();
 
   // Modals & UI State
   const [showInfo, setShowInfo] = useState(false);
@@ -4234,6 +4236,7 @@ function App() {
                     <span className="hidden sm:inline">Import / Build SD</span>
                   </button>
                 )}
+                <div className="h-5 w-px bg-gray-800 mx-0.5" />
 
                 {/* Save */}
                 <button
@@ -4295,10 +4298,21 @@ function App() {
                         else handleScanProjects();
                       }
                     },
+                    { type: 'divider' },
                     {
                       label: 'Presets',
                       icon: <Package size={14} />,
                       onClick: () => setShowPresetsPanel(true)
+                    },
+                    { type: 'divider' },
+                    {
+                      label: 'Advanced',
+                      type: 'header'
+                    },
+                    {
+                      label: 'Export Portable & Presets',
+                      icon: <Download size={14} />,
+                      onClick: () => setShowExport(true)
                     }
                   ]}
                 />
@@ -4716,27 +4730,26 @@ function App() {
               <Suspense fallback={null}>
                 <ExportModal
                   files={state.files}
-                  tapes={state.tapes}
                   onClose={() => setShowExport(false)}
                   onExportSD={async (opts) => {
                     setShowExport(false); // Close settings modal
                     await handleExportProgress('SD Card Export', async (log) => {
                       const { exportSDStructure } = await import('./utils/exportUtils');
-                      await exportSDStructure(state, opts, log);
+                      await exportSDStructure(state, { ...opts, onConvert: convertAudioToWav }, log);
                     });
                   }}
                   onExportFiles={async (opts) => {
                     setShowExport(false);
                     await handleExportProgress('File Export', async (log: (msg: string | undefined, progress?: number) => void) => {
                       const { exportFilesOnly } = await import('./utils/exportUtils');
-                      await exportFilesOnly(state, opts, log);
+                      await exportFilesOnly(state, { ...opts, onConvert: convertAudioToWav }, log);
                     });
                   }}
-                  onExportProject={async () => {
+                  onExportProject={async (opts) => {
                     setShowExport(false); // Close settings modal
-                    await handleExportProgress('Project Export', async (log) => {
+                    await handleExportProgress(opts.settingsOnly ? 'Preset Export' : 'Project Export', async (log) => {
                       const { exportSaveState } = await import('./utils/exportUtils');
-                      await exportSaveState(state, false, log);
+                      await exportSaveState(state, false, log, opts.settingsOnly);
                     });
                   }}
                 />
@@ -5138,6 +5151,7 @@ function App() {
                           syncDecisions: finalDecisions,
                           includeConfig: options.includeConfig,
                           forceOverwrite: options.forceOverwrite,
+                          onConvert: convertAudioToWav,
                         }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
                       }
 

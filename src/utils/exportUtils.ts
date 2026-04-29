@@ -1,6 +1,7 @@
 import type JSZip from 'jszip';
 import { TAPE_COLORS } from '../types';
 import type { AppState, ProjectConfig } from '../types';
+import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
 
 // ==========================================
 // SHARED HELPERS
@@ -28,6 +29,7 @@ export interface ExportSDOptions {
     syncDecisions?: Record<string, SlotSyncDecision> | Array<{ id: string, decision: SlotSyncDecision } | ConfigSyncData>;
     includeConfig?: boolean;
     forceOverwrite?: boolean;
+    onConvert?: (blob: Blob) => Promise<Blob>;
 }
 
 export const generateConfigText = (config: ProjectConfig): string => {
@@ -435,53 +437,75 @@ LEGAL / LICENSES
 // 1. PROJECT BACKUP (Full State)
 // ==========================================
 
-export const exportSaveState = async (state: AppState, returnZip = false, onProgress?: (msg: string | undefined, progress?: number) => void): Promise<JSZip | void> => {
+export const exportSaveState = async (
+    state: AppState, 
+    returnZip = false, 
+    onProgress?: (msg: string | undefined, progress?: number) => void,
+    settingsOnly = false
+): Promise<JSZip | void> => {
     onProgress?.("Starting project backup...", 0);
     const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
 
-    const serializedFiles: any = {};
-    const blobsFolder = zip.folder("blobs");
+    if (settingsOnly) {
+        onProgress?.("Generating project descriptor...", 10);
+        const { buildDescriptorFromState } = await import('./projectDescriptorUtils');
+        const { descriptor, customBlobs } = buildDescriptorFromState(state, { settingsOnly: true });
 
-    onProgress?.("Serializing file records...", 10);
-    for (const [id, file] of Object.entries(state.files)) {
-        serializedFiles[id] = {
-            ...file,
-            versions: file.versions.map(v => {
-                const blobName = `${v.id}.wav`;
-                if (blobsFolder && v.blob) {
-                    try {
-                        // In some browsers, adding an unreadable blob to jszip can crash or hang later
-                        // So we wrap it in case the user forces an export despite warnings
-                        blobsFolder.file(blobName, v.blob);
-                    } catch (e) {
-                        console.warn(`[Export] Skipping unreadable blob for ${blobName}`);
-                    }
+        zip.file("project-descriptor.json", JSON.stringify(descriptor, null, 2));
+
+        const customAssetsFolder = zip.folder("custom_assets");
+        if (customAssetsFolder) {
+            for (const [blobRef, blob] of Object.entries(customBlobs)) {
+                const filename = blobRef.split('/').pop();
+                if (filename) {
+                    customAssetsFolder.file(filename, blob);
                 }
-
-                return {
-                    ...v,
-                    blob: null,
-                    blobRef: blobName
-                };
-            })
-        };
-    }
-
-    onProgress?.("Saving metadata...", 20);
-    const serializedState = {
-        files: serializedFiles,
-        tapes: state.tapes,
-        projectNotes: state.projectNotes,
-        projectConfig: state.projectConfig, // Include project config
-        metadata: {
-            appName: "Spotykach WAV Builder",
-            version: __APP_VERSION__,
-            exportDate: new Date().toISOString()
+            }
         }
-    };
+        onProgress?.("Saving metadata...", 20);
+    } else {
+        const serializedFiles: any = {};
+        const blobsFolder = zip.folder("blobs");
 
-    zip.file("project.json", JSON.stringify(serializedState, null, 2));
+        onProgress?.("Serializing file records...", 10);
+        for (const [id, file] of Object.entries(state.files)) {
+            serializedFiles[id] = {
+                ...file,
+                versions: file.versions.map(v => {
+                    const blobName = `${v.id}.wav`;
+                    if (blobsFolder && v.blob) {
+                        try {
+                            blobsFolder.file(blobName, v.blob);
+                        } catch (e) {
+                            console.warn(`[Export] Skipping unreadable blob for ${blobName}`);
+                        }
+                    }
+
+                    return {
+                        ...v,
+                        blob: null,
+                        blobRef: blobName
+                    };
+                })
+            };
+        }
+
+        onProgress?.("Saving metadata...", 20);
+        const serializedState = {
+            files: serializedFiles,
+            tapes: state.tapes,
+            projectNotes: state.projectNotes,
+            projectConfig: state.projectConfig, // Include project config
+            metadata: {
+                appName: "Spotykach WAV Builder",
+                version: __APP_VERSION__,
+                exportDate: new Date().toISOString()
+            }
+        };
+
+        zip.file("project.json", JSON.stringify(serializedState, null, 2));
+    }
 
     // Create notes.md if notes exist
     let notesContent = "";
@@ -622,8 +646,20 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         if (version?.blob) {
                             processed++;
                             onProgress?.(`Writing ${color} Tape ${slot.id}...`, 20 + ((processed / Math.max(1, activeSlots)) * 50));
+                            
+                            let blobToWrite = version.blob;
+                            if (options.onConvert && version.blob.type.startsWith('audio/')) {
+                                onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
+                                try {
+                                    blobToWrite = await options.onConvert(version.blob);
+                                } catch (e) {
+                                    console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
+                                    throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted to prevent incompatible files on SD.`);
+                                }
+                            }
+
                             const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
-                            const wrote = await safeWriteBlob(fileHandle, version.blob, options.forceOverwrite);
+                            const wrote = await safeWriteBlob(fileHandle, blobToWrite, options.forceOverwrite);
                             if (wrote) writtenCount++; else skippedCount++;
                         }
                     }
@@ -714,6 +750,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
     if (!skFolder) throw new Error("Failed to create ZIP folder");
 
     zip.file("README.md", generateReadme(state));
+    zip.file("INSTALL_INSTRUCTIONS.txt", sdCardInstructions);
 
     // Config.txt
     if (options.includeConfig !== false && state.projectConfig) {
@@ -734,7 +771,17 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     const file = state.files[slot.fileId];
                     const version = file?.versions.find(v => v.id === file.currentVersionId);
                     if (version?.blob) {
-                        tapeFolder.file(`${slot.id}.WAV`, version.blob);
+                        let blobToWrite = version.blob;
+                        if (options.onConvert && version.blob.type.startsWith('audio/')) {
+                            onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
+                            try {
+                                blobToWrite = await options.onConvert(version.blob);
+                            } catch (e) {
+                                console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
+                                throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted.`);
+                            }
+                        }
+                        tapeFolder.file(`${slot.id}.WAV`, blobToWrite);
                         filesAdded++;
                         onProgress?.(`Adding ${color} Tape ${slot.id}...`, 10 + ((filesAdded / Math.max(1, totalSlots)) * 80));
                     }
@@ -762,7 +809,13 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 // 3. FILES ONLY (Loose)
 // ==========================================
 
-export const exportFilesOnly = async (state: AppState, options: { keepStructure: boolean; fileIds: string[] }, onProgress?: (msg: string | undefined, progress?: number) => void) => {
+export interface ExportFilesOptions {
+    fileIds: string[];
+    keepStructure?: boolean;
+    onConvert?: (blob: Blob) => Promise<Blob>;
+}
+
+export const exportFilesOnly = async (state: AppState, options: ExportFilesOptions, onProgress?: (msg: string | undefined, progress?: number) => void) => {
     onProgress?.("Starting File Export...", 0);
     const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
@@ -811,7 +864,18 @@ export const exportFilesOnly = async (state: AppState, options: { keepStructure:
             // Sanitize extension
             baseName = baseName.replace(/\.wav$/i, '') + '.wav';
 
-            targetFolder.file(baseName, version.blob);
+            let blobToWrite = version.blob;
+            if (options.onConvert && version.blob.type.startsWith('audio/')) {
+                onProgress?.(`Processing ${baseName} for Hardware...`);
+                try {
+                    blobToWrite = await options.onConvert(version.blob);
+                } catch (e) {
+                    console.error(`Failed to convert ${baseName} to WAV`, e);
+                    throw new Error(`Critical: Failed to convert ${baseName} for hardware. Export aborted.`);
+                }
+            }
+
+            targetFolder.file(baseName, blobToWrite);
         }
     }
 

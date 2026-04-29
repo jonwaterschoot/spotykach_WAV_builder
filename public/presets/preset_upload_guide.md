@@ -4,24 +4,24 @@ You can host the preset configuration files (`manifest.json` and the `project-de
 
 Follow these steps to add your preset:
 
-## 1. Export the Settings-Only ZIP
-First, ensure your project uses untouched built-in samples that were imported using the newly updated `SampleBrowser`.
-1. Open the **Project Manager** in the app.
-2. Check the **"Settings-Only ZIP"** option.
-3. Click the **Export (Download)** icon next to your project.
-4. This will download a `.zip` file containing a `project-descriptor.json` file. *(Note: This single file contains all of your slot assignments, project configuration settings, and tape notes!)*
+## 1. Export the Project Preset (Settings-Only)
+First, ensure your project uses untouched built-in samples that were imported using the `SampleBrowser`.
+1. Click the **Export** button in the top right header of the app.
+2. Go to the **Project Preset** tab.
+3. Select **"Settings-Only Preset (JSON)"** to export only the `project-descriptor.json` file. *(Note: This file contains all of your slot assignments, project configuration settings, and tape notes!)*
+4. Click **Export Preset**.
 
 ## 2. Rename and Move the JSON file
-1. Extract the `.zip` file.
-2. Locate the `project-descriptor.json` file inside the extracted folder.
-3. Rename this file to something descriptive, e.g., `hainbach-tapes.json`.
-4. Move this file into your local repository at `public/presets/hainbach-tapes.json`.
+1. Locate the downloaded `project-descriptor.json` file.
+2. Rename this file to something descriptive, e.g., `hainbach-tapes.json`.
+3. Move this file into your local repository at `public/presets/hainbach-tapes.json`.
 
-## 3. (Optional) Upload the SD Backup ZIP to Cloudflare R2
-If you want to offer a fully pre-built SD-card ready ZIP download button in the app:
-1. Export a standard backup ZIP using the **Export > Project Backup** feature.
-2. Upload that `.zip` file to your Cloudflare R2 bucket.
-3. Copy its public URL (e.g., `https://your-r2-domain.com/presets/hainbach-tapes-sd-ready.zip`).
+## 3. (Optional) Upload the Portable SK Folder ZIP to Cloudflare R2
+If you want to offer a fully pre-built, hardware-ready SD card ZIP download in the app:
+1. Open the **Export** menu and go to the **Portable SK Folder** tab.
+2. Click **Download Portable SK Folder (ZIP)**.
+3. Upload that `.zip` file to your Cloudflare R2 bucket.
+4. Copy its public URL (e.g., `https://your-r2-domain.com/presets/hainbach-tapes-sd-ready.zip`).
 
 ## 4. Update the `manifest.json`
 1. Open your local `public/manifest.json` file in your code editor.

@@ -768,7 +768,7 @@ export const LibraryManager = ({
 
                 if (shouldConvert && isUncompressedWav && conversionReady) {
                     setBatchLog(prev => [...prev, `   -> Converting uncompressed WAV: ${file.name} -> FLAC...`]);
-                    finalBlob = await convertWavToFlac(file, file.name);
+                    finalBlob = await convertWavToFlac(file);
                     finalName = finalName.replace(/\.(wav|wave)$/i, '.flac');
                     if (!finalName.toLowerCase().endsWith('.flac')) finalName += '.flac';
                     setBatchLog(prev => [...prev, `   -> Done: ${finalName}`]);

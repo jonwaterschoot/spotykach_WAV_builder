@@ -1,21 +1,19 @@
-import { X, HardDrive, FileAudio, Archive, Download, FolderInput, Info, FileDown } from 'lucide-react';
+import { X, HardDrive, FileAudio, Archive, Download, Info } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { type FileRecord, type TapeColor, TAPE_COLORS } from '../types';
-import { TapeIcon } from './TapeIcon';
+import { type FileRecord } from '../types';
 // dynamic utility imports
 
 interface ExportModalProps {
     files: Record<string, FileRecord>;
-    tapes: Record<TapeColor, import('../types').Tape>;
     onClose: () => void;
     onExportSD: (options: { includeProject: boolean; directWrite: boolean; smartSync?: boolean; skMode: 'clean' | 'overwrite'; includeConfig?: boolean }) => void;
     onExportFiles: (options: { keepStructure: boolean; fileIds: string[] }) => void;
-    onExportProject: (options: { excludeCleanup: boolean }) => void;
+    onExportProject: (options: { settingsOnly: boolean }) => void;
 }
 
-type ExportTab = 'sd' | 'manual' | 'files' | 'project';
+type ExportTab = 'sd' | 'preset' | 'files';
 
-export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, onExportProject }: ExportModalProps) => {
+export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('sd');
 
     useEffect(() => {
@@ -28,60 +26,32 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
 
     // SD Options
     const [sdIncludeProject, setSdIncludeProject] = useState(true);
-    const [sdDirectWrite, setSdDirectWrite] = useState(false);
-    const [sdSmartSync, setSdSmartSync] = useState(true);
-    const [sdSkMode, setSdSkMode] = useState<'clean' | 'overwrite'>('overwrite');
-    const [sdIncludeConfig, setSdIncludeConfig] = useState(true);
-    const hasFileSystemAccess = 'showDirectoryPicker' in window;
-
-    // Manual Options
-    const [manualTape, setManualTape] = useState<TapeColor>('Blue');
-
     // File Options
     const [filesKeepStructure, setFilesKeepStructure] = useState(true);
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set(Object.keys(files)));
 
-    // Project Options
-    const [projectExcludeCleanup, setProjectExcludeCleanup] = useState(false);
-
-    // Helpers
-    const getColorVar = (color: string) => `var(--color-synthux-${color.toLowerCase()})`;
-
-    const handleDownloadSlot = async (fileId: string, slotId: number) => {
-        const file = files[fileId];
-        if (!file) return;
-        const version = file.versions.find(v => v.id === file.currentVersionId);
-        if (version?.blob) {
-            const { downloadBlob } = await import('../utils/exportUtils');
-            downloadBlob(version.blob, `${slotId}.WAV`);
-        }
-    };
-
-    const handleDownloadTapeBatch = async () => {
-        const tape = tapes[manualTape];
-        for (const slot of tape.slots) {
-            if (slot.fileId) {
-                handleDownloadSlot(slot.fileId, slot.id);
-                // Minimal delay to try and help browser not choke on robust file system calls? 
-                // Wait, standard downloadBlob is just an anchor click. Browsers often throttle multiple.
-                await new Promise(r => setTimeout(r, 500));
-            }
-        }
-    };
+    // Preset Options
+    const [presetSettingsOnly, setPresetSettingsOnly] = useState(true);
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
 
                 {/* Header */}
-                <div className="flex justify-between items-center p-6 border-b border-gray-800 bg-black/20 shrink-0">
-                    <h2 className="text-2xl font-bold text-white font-header flex items-center gap-3">
-                        <Download className="text-synthux-action" />
-                        Export
-                    </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white">
-                        <X size={24} />
-                    </button>
+                <div className="p-6 border-b border-gray-800 bg-black/20 shrink-0">
+                    <div className="flex justify-between items-center mb-2">
+                        <h2 className="text-2xl font-bold text-white font-header flex items-center gap-3">
+                            <Download className="text-synthux-action" />
+                            Export
+                        </h2>
+                        <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white">
+                            <X size={24} />
+                        </button>
+                    </div>
+                    <div className="bg-orange-500/10 border border-orange-500/20 px-3 py-2 rounded text-[11px] text-orange-200/80 flex items-center gap-2">
+                        <Info size={14} className="text-orange-400" />
+                        <span>To write directly to an SD card, use the <strong>Import / Build SD</strong> button in the main header.</span>
+                    </div>
                 </div>
 
                 {/* Tabs */}
@@ -91,28 +61,21 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                         className={`flex-1 min-w-[100px] p-4 flex items-center justify-center gap-2 transition-colors ${activeTab === 'sd' ? 'bg-synthux-action/10 text-synthux-action border-b-2 border-synthux-action' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                     >
                         <HardDrive size={18} />
-                        <span className="font-bold text-sm whitespace-nowrap">SD Card</span>
+                        <span className="font-bold text-sm whitespace-nowrap">Portable SK Folder</span>
                     </button>
                     <button
-                        onClick={() => setActiveTab('manual')}
-                        className={`flex-1 min-w-[100px] p-4 flex items-center justify-center gap-2 transition-colors ${activeTab === 'manual' ? 'bg-synthux-action/10 text-synthux-action border-b-2 border-synthux-action' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                        onClick={() => setActiveTab('preset')}
+                        className={`flex-1 min-w-[100px] p-4 flex items-center justify-center gap-2 transition-colors ${activeTab === 'preset' ? 'bg-synthux-action/10 text-synthux-action border-b-2 border-synthux-action' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                     >
-                        <FileDown size={18} />
-                        <span className="font-bold text-sm whitespace-nowrap">Manual (Mobile)</span>
+                        <Archive size={18} />
+                        <span className="font-bold text-sm whitespace-nowrap">Project Preset</span>
                     </button>
                     <button
                         onClick={() => setActiveTab('files')}
                         className={`flex-1 min-w-[100px] p-4 flex items-center justify-center gap-2 transition-colors ${activeTab === 'files' ? 'bg-synthux-action/10 text-synthux-action border-b-2 border-synthux-action' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                     >
                         <FileAudio size={18} />
-                        <span className="font-bold text-sm whitespace-nowrap">Files Only</span>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('project')}
-                        className={`flex-1 min-w-[100px] p-4 flex items-center justify-center gap-2 transition-colors ${activeTab === 'project' ? 'bg-synthux-action/10 text-synthux-action border-b-2 border-synthux-action' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                    >
-                        <Archive size={18} />
-                        <span className="font-bold text-sm whitespace-nowrap">Backup</span>
+                        <span className="font-bold text-sm whitespace-nowrap">Custom Files</span>
                     </button>
                 </div>
 
@@ -121,12 +84,13 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
 
                     {/* SD CARD TAB */}
                     {activeTab === 'sd' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-200 fade-in">
+                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-200 fade-in flex flex-col h-full">
                             <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg flex gap-3">
                                 <Info className="text-blue-400 shrink-0 mt-1" size={20} />
                                 <div className="text-sm text-gray-300">
-                                    <strong className="text-blue-400 block mb-1">Strict Spotykach Structure</strong>
-                                    Files will be renamed to <code className="bg-black/30 px-1 rounded">1.WAV</code>, <code className="bg-black/30 px-1 rounded">2.WAV</code>... based on their slot position.
+                                    <strong className="text-blue-400 block mb-1">Portable SK Folder</strong>
+                                    Downloads a fully formatted ZIP containing the SK folder structure and instructions. 
+                                    Ready to be shared or uploaded to Cloudflare R2 for web deployment.
                                 </div>
                             </div>
 
@@ -139,178 +103,25 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                                         className="w-5 h-5 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700"
                                     />
                                     <div>
-                                        <div className="font-bold text-white">Include Project Bundle</div>
-                                        <div className="text-xs text-gray-400">Saves source files and original names in a backup folder (Recommended)</div>
+                                        <div className="font-bold text-white">Include Project Bundle Backup</div>
+                                        <div className="text-xs text-gray-400">Saves your source files alongside the SK folder just in case</div>
                                     </div>
                                 </label>
-
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 transition-colors ${!hasFileSystemAccess ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black/30 cursor-pointer'}`}>
-                                    <input
-                                        type="checkbox"
-                                        checked={sdDirectWrite}
-                                        disabled={!hasFileSystemAccess}
-                                        onChange={(e) => setSdDirectWrite(e.target.checked)}
-                                        className="w-5 h-5 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700 disabled:opacity-50"
-                                    />
-                                    <div>
-                                        <div className="font-bold text-white">Write Directly to SD Card (Desktop)</div>
-                                        <div className="text-xs text-gray-400">Select the SD drive to export without creating a ZIP</div>
-                                        {!hasFileSystemAccess && (
-                                            <div className="text-xs text-red-400 mt-1 font-bold">
-                                                Requires a Chromium-based browser (Chrome, Edge) on Desktop.
-                                            </div>
-                                        )}
-                                    </div>
-                                </label>
-
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 hover:bg-black/30 cursor-pointer transition-colors leading-none">
-                                        <input
-                                            type="checkbox"
-                                            checked={sdIncludeConfig}
-                                            onChange={(e) => setSdIncludeConfig(e.target.checked)}
-                                            className="w-5 h-5 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700"
-                                        />
-                                        <div>
-                                            <div className="font-bold text-white leading-tight">Sync config.txt</div>
-                                            <div className="text-[10px] text-gray-400 mt-1">Updates device settings with current project configuration</div>
-                                        </div>
-                                    </label>
-                                </div>
-
-                                {sdDirectWrite && (
-                                    <div className="ml-8 p-3 rounded-lg border border-gray-800 bg-black/40 space-y-3">
-                                        <div className="text-xs font-bold text-gray-500 uppercase tracking-widest">Folder Management</div>
-
-                                        <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors group">
-                                            <input
-                                                type="checkbox"
-                                                checked={sdSmartSync}
-                                                onChange={(e) => setSdSmartSync(e.target.checked)}
-                                                className="w-4 h-4 rounded border-gray-600 text-synthux-action focus:ring-synthux-action bg-gray-700"
-                                            />
-                                            <div>
-                                                <div className="text-xs font-bold text-gray-200 group-hover:text-white transition-colors flex items-center gap-2">
-                                                    Smart File Sync <span className="bg-synthux-action text-black text-[9px] px-1 rounded font-black">NEW</span>
-                                                </div>
-                                                <div className="text-[10px] text-gray-500">Only writes files that have changed. Much faster!</div>
-                                            </div>
-                                        </label>
-
-                                        <div className="flex gap-2 pt-1">
-                                            <button
-                                                onClick={() => setSdSkMode('overwrite')}
-                                                className={`flex-1 py-2 px-3 rounded-md text-xs font-bold border transition-all ${sdSkMode === 'overwrite' ? 'bg-synthux-action/20 border-synthux-action text-white' : 'border-gray-800 text-gray-500 hover:border-gray-600'}`}
-                                            >
-                                                Smart Overwrite
-                                            </button>
-                                            <button
-                                                onClick={() => setSdSkMode('clean')}
-                                                className={`flex-1 py-2 px-3 rounded-md text-xs font-bold border transition-all ${sdSkMode === 'clean' ? 'bg-red-500/20 border-red-500 text-white' : 'border-gray-800 text-gray-500 hover:border-gray-600'}`}
-                                            >
-                                                Clean Build (Wipe SK)
-                                            </button>
-                                        </div>
-                                        <div className="text-[10px] text-gray-500 italic px-1">
-                                            {sdSkMode === 'overwrite'
-                                                ? "Keeps existing files on SD that aren't in this project."
-                                                : "Deletes the SK folder on SD before writing. Recommended for fresh builds."
-                                            }
-                                        </div>
-                                    </div>
-                                )}
                             </div>
 
-                            <div className="mt-auto pt-4">
+                            <div className="mt-auto pt-4 border-t border-gray-800">
                                 <button
-                                    onClick={() => onExportSD({ includeProject: sdIncludeProject, directWrite: sdDirectWrite, smartSync: sdSmartSync, skMode: sdSkMode, includeConfig: sdIncludeConfig })}
+                                    onClick={() => onExportSD({ includeProject: sdIncludeProject, directWrite: false, skMode: 'clean', includeConfig: true })}
                                     className="w-full py-3 bg-synthux-yellow hover:bg-yellow-400 text-black font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
                                 >
-                                    {sdDirectWrite ? <FolderInput size={20} /> : <Download size={20} />}
-                                    {sdDirectWrite ? 'Select SD Card & Export' : 'Download SD Structure (ZIP)'}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* MANUAL TAB */}
-                    {activeTab === 'manual' && (
-                        <div className="flex flex-col h-full animate-in slide-in-from-right-4 duration-200 fade-in">
-                            <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-lg flex gap-3 mb-6">
-                                <Info className="text-amber-400 shrink-0 mt-1" size={20} />
-                                <div className="text-sm text-gray-300">
-                                    <strong className="text-amber-400 block mb-1">For Mobile (iOS / Android)</strong>
-                                    Download individual files named correctly (e.g., <code className="bg-black/30 px-1 rounded">1.WAV</code>). You must verify they end up in the correct folder (SK/[Color]) on your SD card.
-                                </div>
-                            </div>
-
-                            {/* Tape Selector */}
-                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                                {TAPE_COLORS.map(color => (
-                                    <button
-                                        key={color}
-                                        onClick={() => setManualTape(color)}
-                                        className={`
-                                            flex items-center gap-2 px-3 py-2 rounded-full border transition-all whitespace-nowrap
-                                            ${manualTape === color
-                                                ? 'bg-white/10 border-white text-white'
-                                                : 'bg-black/20 border-gray-800 text-gray-400 hover:border-gray-600'}
-                                        `}
-                                    >
-                                        <TapeIcon color={getColorVar(color)} className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase">{color}</span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* File List */}
-                            <div className="flex-1 overflow-y-auto border border-gray-800 rounded-lg bg-black/20 p-2 space-y-2">
-                                {tapes[manualTape].slots.filter(s => s.fileId).length === 0 ? (
-                                    <div className="text-center text-gray-500 py-8 italic">No files assigned to this tape</div>
-                                ) : (
-                                    tapes[manualTape].slots.map(slot => {
-                                        if (!slot.fileId) return null;
-                                        const file = files[slot.fileId];
-                                        return (
-                                            <div key={slot.id} className="flex items-center justify-between p-3 bg-gray-800/30 rounded border border-gray-800 hover:bg-gray-800/50 transition-colors">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center text-synthux-yellow font-mono text-sm border border-gray-700">
-                                                        {slot.id}
-                                                    </div>
-                                                    <div className="overflow-hidden">
-                                                        <div className="text-sm font-bold text-gray-200">{slot.id}.WAV</div>
-                                                        <div className="text-xs text-gray-500 truncate max-w-[150px]">{file?.name}</div>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={() => handleDownloadSlot(slot.fileId!, slot.id)}
-                                                    className="p-2 bg-synthux-action hover:bg-emerald-400 text-black rounded-full transition-colors"
-                                                    title="Download"
-                                                >
-                                                    <Download size={16} />
-                                                </button>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-
-                            {/* Batch Action */}
-                            <div className="mt-4 pt-4 border-t border-gray-800">
-                                <button
-                                    onClick={handleDownloadTapeBatch}
-                                    disabled={tapes[manualTape].slots.filter(s => s.fileId).length === 0}
-                                    className="w-full py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
-                                >
                                     <Download size={20} />
-                                    Download All {manualTape} Files ({tapes[manualTape].slots.filter(s => s.fileId).length})
+                                    Download Portable SK Folder (ZIP)
                                 </button>
-                                <div className="text-center mt-2 text-[10px] text-gray-500">
-                                    Your browser may ask permission to download multiple files.
-                                </div>
                             </div>
                         </div>
                     )}
+
+
 
                     {/* FILES TAB */}
                     {activeTab === 'files' && (
@@ -419,38 +230,58 @@ export const ExportModal = ({ files, tapes, onClose, onExportSD, onExportFiles, 
                         </div>
                     )}
 
-                    {/* PROJECT TAB */}
-                    {activeTab === 'project' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-200 fade-in">
-                            <div className="bg-gray-800/50 p-4 rounded-lg">
-                                <p className="text-sm text-gray-300">
-                                    Full backup of the current project state, including all file versions and history.
-                                    Use this to save your work and continue later.
-                                </p>
+                    {/* PRESET TAB */}
+                    {activeTab === 'preset' && (
+                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-200 fade-in flex flex-col h-full">
+                            <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-lg flex gap-3">
+                                <Info className="text-purple-400 shrink-0 mt-1" size={20} />
+                                <div className="text-sm text-gray-300">
+                                    <strong className="text-purple-400 block mb-1">Export Project Preset</strong>
+                                    Create a preset package to share with other users or submit to the official repository.
+                                </div>
                             </div>
 
-                            <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 hover:bg-black/30 cursor-pointer transition-colors opacity-50 cursor-not-allowed">
-                                <input
-                                    type="checkbox"
-                                    checked={projectExcludeCleanup}
-                                    disabled
-                                    onChange={(e) => setProjectExcludeCleanup(e.target.checked)}
-                                    className="w-5 h-5 rounded border-gray-600 text-synthux-yellow focus:ring-synthux-yellow bg-gray-700"
-                                />
-                                <div>
-                                    <div className="font-bold text-white">Exclude History / Cleanup</div>
-                                    <div className="text-xs text-gray-400">Remove undo history and unused files to save space (Coming Soon)</div>
-                                </div>
-                            </label>
+                            <div className="space-y-3">
+                                <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 hover:bg-black/30 cursor-pointer transition-colors">
+                                    <input
+                                        type="radio"
+                                        checked={presetSettingsOnly}
+                                        onChange={() => setPresetSettingsOnly(true)}
+                                        name="presetType"
+                                        className="w-5 h-5 text-synthux-action focus:ring-synthux-action bg-gray-700 border-gray-600"
+                                    />
+                                    <div>
+                                        <div className="font-bold text-white">Settings-Only Preset (JSON)</div>
+                                        <div className="text-xs text-gray-400">Exports just the `project-descriptor.json`. Required for submitting presets that use Cloudflare R2 samples.</div>
+                                    </div>
+                                </label>
 
-                            <div className="mt-auto pt-4">
+                                <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-black/20 hover:bg-black/30 cursor-pointer transition-colors">
+                                    <input
+                                        type="radio"
+                                        checked={!presetSettingsOnly}
+                                        onChange={() => setPresetSettingsOnly(false)}
+                                        name="presetType"
+                                        className="w-5 h-5 text-synthux-action focus:ring-synthux-action bg-gray-700 border-gray-600"
+                                    />
+                                    <div>
+                                        <div className="font-bold text-white">Full Backup Bundle (ZIP)</div>
+                                        <div className="text-xs text-gray-400">Bundles the JSON descriptor AND all audio files. Best for sharing custom samples with friends.</div>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div className="mt-auto pt-4 border-t border-gray-800">
                                 <button
-                                    onClick={() => onExportProject({ excludeCleanup: projectExcludeCleanup })}
+                                    onClick={() => onExportProject({ settingsOnly: presetSettingsOnly })}
                                     className="w-full py-3 bg-synthux-yellow hover:bg-yellow-400 text-black font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
                                 >
-                                    <Archive size={20} />
-                                    Save Project (ZIP)
+                                    <Download size={20} />
+                                    Export Preset
                                 </button>
+                                <div className="text-center mt-3 text-xs text-gray-500">
+                                    See the <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/preset_upload_guide.md" target="_blank" rel="noreferrer" className="text-synthux-action hover:underline">Preset Upload Guide</a> for submission instructions.
+                                </div>
                             </div>
                         </div>
                     )}

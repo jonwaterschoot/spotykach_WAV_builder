@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 interface DropdownItem {
-  label: string;
+  label?: string;
   icon?: React.ReactNode;
-  onClick: () => void;
+  onClick?: () => void;
   destructive?: boolean;
+  type?: 'item' | 'divider' | 'header';
 }
 
 interface DropdownProps {
@@ -58,21 +59,33 @@ export const Dropdown = ({
           <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[url('/img/highrestexture_tapenoisevhs_whitetrans.png')] bg-cover mix-blend-overlay" />
           
           <div className="relative z-10">
-            {items.map((item, index) => (
-              <button
-                key={index}
-                onClick={() => {
-                  item.onClick();
-                  setIsOpen(false);
-                }}
-                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-left transition-all
-                  ${item.destructive ? 'text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:bg-white/5 hover:text-white'}
-                `}
-              >
-                {item.icon && <span className="shrink-0 opacity-70 group-hover:opacity-100">{item.icon}</span>}
-                <span className="flex-1">{item.label}</span>
-              </button>
-            ))}
+            {items.map((item, index) => {
+              if (item.type === 'divider') {
+                return <div key={index} className="h-px bg-white/10 my-1 mx-2" />;
+              }
+              if (item.type === 'header') {
+                return (
+                  <div key={index} className="px-4 py-1.5 text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em] select-none">
+                    {item.label}
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={index}
+                  onClick={() => {
+                    item.onClick?.();
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-left transition-all
+                    ${item.destructive ? 'text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:bg-white/5 hover:text-white'}
+                  `}
+                >
+                  {item.icon && <span className="shrink-0 opacity-70 group-hover:opacity-100">{item.icon}</span>}
+                  <span className="flex-1">{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.7.0] - 2026-04-29
+
+### Added
+- **Portable Export Module**: 
+    - Introduced a dedicated "Portable SK Folder" export that automatically bundles hardware-compatible `SK/` structures and `INSTALL_INSTRUCTIONS.txt`.
+    - Integrated documentation directly into ZIP exports to guide users through SD card preparation.
+- **Project Preset Sharing**: 
+    - Added support for "Settings-Only" JSON presets, enabling lightweight sharing of project configurations that reference cloud-hosted (R2) samples.
+    - Added "Full Backup" ZIP export for bundling local audio assets with project state.
+
+### Improved
+- **Export Workflow UI**:
+    - Refactored `ExportModal` into a modular, tabbed interface for clearer separation between hardware preparation, preset sharing, and raw file downloads.
+    - Moved the "Export" entry point into the "Project" dropdown to reduce header clutter and group related actions.
+    - Added prominent instructional alerts in the export interface to guide users toward the primary "Build SD" hardware workflow.
+- **Navigation Components**: 
+    - Enhanced the `Dropdown` component with support for dividers and category headers.
+- **Project Content**:
+    - Updated official Hainbach preset pack links to resolve formatting issues and ensure hardware compatibility.
+
 ## [3.6.3] - 2026-04-28
 
 ### Added
