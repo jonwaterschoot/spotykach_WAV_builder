@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.7.1] - 2026-05-09
+
+### Added
+- **Support & Community Integration**:
+    - Integrated a dedicated **Buy Me a Coffee** support button in the About modal to support development.
+    - Updated community links to point directly to the **Synthux Academy** community join page.
+
+### Improved
+- **Modal Consolidation**:
+    - Merged the **About** and **Help** modals into a single, unified `AboutHelpModal` with a tabbed interface for better navigation.
+    - Switched the Buy Me a Coffee widget to a high-performance **CSS-only implementation**, resolving security (COEP) and loading issues associated with external scripts.
+    - Optimized the QR code rendering by embedding the logo as a base64 data URI, ensuring 100% offline reliability.
+
+### Fixed
+- **Build Integrity**: Resolved TypeScript compilation errors related to unused hooks in the new modal component.
+
 ## [3.7.0] - 2026-04-29
 
 ### Added

@@ -1,5 +1,19 @@
 [
   {
+    "id": "371",
+    "title": "Unified Modal & Community (v3.7.1)",
+    "date": "2026-05-09",
+    "file": "3.7.1-update.md",
+    "category": "Update"
+  },
+  {
+    "id": "370",
+    "title": "Portable Export & Presets (v3.7.0)",
+    "date": "2026-04-29",
+    "file": "3.7.0-update.md",
+    "category": "Update"
+  },
+  {
     "id": "362",
     "title": "Smooth Playheads & UX (v3.6.2)",
     "date": "2026-04-27",

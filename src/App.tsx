@@ -13,8 +13,7 @@ import { audioEngine } from './lib/audio/audioEngine';
 import type { ImportAnalysis } from './utils/importUtils';
 // dynamic utility imports
 import { ImportModal } from './components/ImportModal';
-import { InfoModal } from './components/InfoModal';
-import { HelpModal } from './components/HelpModal';
+import { AboutHelpModal } from './components/AboutHelpModal';
 // dynamic modal imports
 import { ExportProgressModal } from './components/ExportProgressModal';
 import BrowserChoiceModal from './components/BrowserChoiceModal';
@@ -36,7 +35,7 @@ const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal'
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, Info, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -96,7 +95,8 @@ function App() {
   const { convertAudioToWav } = useAudioConverter();
 
   // Modals & UI State
-  const [showInfo, setShowInfo] = useState(false);
+  const [showAboutHelp, setShowAboutHelp] = useState(false);
+  const [aboutHelpTab, setAboutHelpTab] = useState<'about' | 'help'>('about');
   const [showProjectNotes, setShowProjectNotes] = useState(false);
   const [isProjectNotesMinimized, setIsProjectNotesMinimized] = useState(false);
 
@@ -114,7 +114,7 @@ function App() {
     height: 400
   });
 
-  const [showHelp, setShowHelp] = useState(false);
+
   const [showExport, setShowExport] = useState(false);
   const [showExportProgress, setShowExportProgress] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
@@ -636,12 +636,8 @@ function App() {
           setShowNews(false);
           return;
         }
-        if (showInfo) {
-          setShowInfo(false);
-          return;
-        }
-        if (showHelp) {
-          setShowHelp(false);
+        if (showAboutHelp) {
+          setShowAboutHelp(false);
           return;
         }
         if (showExport) {
@@ -684,7 +680,7 @@ function App() {
   }, [
     confirmAction, projectNameModal, syncModalState, bulkConflictState, importAnalysis,
     missingFilesWarning, showSampleBrowser, showLibraryManager, showProjectNotes,
-    showInfo, showHelp, showExport, isLogModalOpen, showPresetsPanel,
+    showAboutHelp, showExport, isLogModalOpen, showPresetsPanel,
     showConfigModal, showCleanupModal, showSettings, showProjectManager, showLibrarySyncModal
   ]);
 
@@ -4328,14 +4324,9 @@ function App() {
                       onClick: () => setShowSettings(true)
                     },
                     {
-                      label: 'About',
-                      icon: <Info size={14} />,
-                      onClick: () => setShowInfo(true)
-                    },
-                    {
-                      label: 'Help',
+                      label: 'About & Help',
                       icon: <HelpCircle size={14} />,
-                      onClick: () => setShowHelp(true)
+                      onClick: () => { setAboutHelpTab('about'); setShowAboutHelp(true); }
                     }
                   ]}
                 />
@@ -4712,9 +4703,8 @@ function App() {
 
 
 
-            {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+            {showAboutHelp && <AboutHelpModal initialTab={aboutHelpTab} onClose={() => setShowAboutHelp(false)} onReset={handleReset} />}
             {showNews && <NewsModal onClose={() => setShowNews(false)} />}
-            {showInfo && <InfoModal onClose={() => setShowInfo(false)} onReset={handleReset} />}
             <SettingsModal
               isOpen={showSettings}
               onClose={() => setShowSettings(false)}
@@ -4888,7 +4878,7 @@ function App() {
                   }
                 }}
                 isScanning={isProcessing}
-                onOpenHelp={() => setShowHelp(true)}
+                onOpenHelp={() => { setAboutHelpTab('help'); setShowAboutHelp(true); }}
                 deviceDiff={deviceDiff || undefined}
                 workHandle={workHandle}
                 backupHandle={backupHandle}
