@@ -113,7 +113,7 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
                     {featuredItem && (
                       <div
                         onClick={() => setSelectedId(featuredItem.id)}
-                        className={`md:col-span-7 relative group cursor-pointer overflow-hidden rounded-2xl border transition-all duration-300 h-[160px] ${selectedId === featuredItem.id ? 'border-synthux-orange ring-1 ring-synthux-orange' : 'border-white/10 hover:border-white/30'}`}
+                        className={`md:col-span-7 relative group cursor-pointer overflow-hidden rounded-2xl border transition-all duration-300 h-[320px] ${selectedId === featuredItem.id ? 'border-synthux-orange ring-1 ring-synthux-orange' : 'border-white/10 hover:border-white/30'}`}
                       >
                         <div className="w-full h-full relative">
                           {featuredItem.image ? (
@@ -137,7 +137,7 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
                     )}
 
                     {/* News History List */}
-                    <div className="md:col-span-5 flex flex-col h-[160px]">
+                    <div className="md:col-span-5 flex flex-col h-[320px]">
                       <div className="flex items-center justify-between mb-3 px-1">
                         <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Update History</h3>
                         <span className="text-[10px] font-bold text-synthux-yellow/50 bg-synthux-yellow/5 px-2 py-0.5 rounded-full">{historyItems.length} Posts</span>
