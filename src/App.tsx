@@ -961,6 +961,60 @@ function App() {
     }
   };
 
+  const handleImportBackupProject = async (projectName: string) => {
+    if (!workHandle || !backupHandle) {
+      showToast("Both Project Folder and SD Card must be connected.", 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProgressMsg(`Importing "${projectName}" from backup...`);
+
+    try {
+      // 1. Get the backup project directory handle
+      const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+      const backupProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: false });
+      const backupProjectDir = await backupProjectsDir.getDirectoryHandle(projectName, { create: false });
+
+      // 2. Get/create the local projects directory handle
+      const localProjectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const localProjectDir = await localProjectsDir.getDirectoryHandle(projectName, { create: true });
+
+      // 3. Recursive directory copy helper
+      const copyDirRecursive = async (src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle) => {
+        // @ts-ignore
+        for await (const [name, entry] of src.entries()) {
+          if (entry.kind === 'file') {
+            const file = await src.getFileHandle(name).then(h => h.getFile());
+            const dstFile = await dst.getFileHandle(name, { create: true });
+            const writer = await dstFile.createWritable();
+            await writer.write(file);
+            await writer.close();
+          } else if (entry.kind === 'directory') {
+            const srcSub = await src.getDirectoryHandle(name);
+            const dstSub = await dst.getDirectoryHandle(name, { create: true });
+            await copyDirRecursive(srcSub, dstSub);
+          }
+        }
+      };
+
+      // 4. Perform recursive copy
+      await copyDirRecursive(backupProjectDir, localProjectDir);
+
+      showToast(`Project "${projectName}" imported successfully.`, 'success');
+
+      // 5. Rescan projects to update state
+      await scanProjects(workHandle, backupHandle);
+
+    } catch (e: any) {
+      console.error(e);
+      showToast("Failed to import project: " + e.message, 'error');
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
   const handleDeleteProject = async (projectName: string) => {
     setConfirmAction({
       title: "Delete Project",
@@ -4819,7 +4873,10 @@ function App() {
                   checkUnsavedChanges(() => handleLoadProject(name));
                 }}
                 onSaveProject={handleSaveProjectAs}
-                onCreateEmptyProject={handleCreateEmptyProject}
+                onCreateEmptyProject={(name) => {
+                  checkUnsavedChanges(() => handleCreateEmptyProject(name));
+                }}
+                onImportBackupProject={handleImportBackupProject}
                 currentProjectName={currentProjectName}
                 hasUnsavedChanges={hasUnsavedChanges}
                 onCleanupProject={handleCleanupProject}
