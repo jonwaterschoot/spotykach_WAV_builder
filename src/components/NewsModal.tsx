@@ -31,7 +31,7 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        const response = await fetch(resolveAssetPath('/news/news-manifest.json'));
+        const response = await fetch(`${resolveAssetPath('/news/news-manifest.json')}?t=${Date.now()}`);
         const manifest: NewsItem[] = await response.json();
         setNews(manifest);
 
