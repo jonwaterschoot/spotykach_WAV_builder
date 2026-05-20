@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.7.2] - 2026-05-20
+
+### Added
+- **SD Card Backup Restore**:
+    - Integrated automated project importing directly from SD card backups inside the Project Manager, allowing users to restore missing workspace projects with one click.
+- **Embedded WAV Metadata**:
+    - Embedded UUIDs, processing details (`IART`, `ITMP`, `ICMT` tags), and slice points (`cue ` chunks) directly inside exported hardware-compatible WAV files to enable smarter, faster duplicate detection and sync workflows.
+
+### Improved
+- **SD Card Duplicate & Sync Detection**:
+    - Upgraded duplicate detection to first leverage embedded UUID metadata in WAV headers for instant, overhead-free sync checks.
+    - Improved same-content comparison to fall back on robust SHA-256 bit-for-bit content comparison when UUIDs are absent.
+- **News Dashboard UI**:
+    - Expanded news item list and featured news card heights from `160px` to `320px` in the News modal, significantly improving readability and space for updates.
+- **Cache-Busting for News**:
+    - Appended dynamic timestamp queries (`?t=Date.now()`) to news manifest fetch requests to bypass browser caches and force immediate update retrieval.
+
+### Fixed
+- **Visual Duplicate Borders in All Tapes**:
+    - Corrected a bug where duplicate/conflicting files in the All Tapes grid view were not highlighted with an orange border. Aligned the visual styling to match the single tape view.
+
 ## [3.7.1] - 2026-05-09
 
 ### Added

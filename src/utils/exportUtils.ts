@@ -654,8 +654,8 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                     const metadata: import('../types').WavMetadata = {
                                         id: file.id,
                                         processing: version.processing,
-                                        tempo: version.tempo,
-                                        slicePoints: version.slicePoints
+                                        tempo: file.metadata?.tempo,
+                                        slicePoints: file.metadata?.slicePoints
                                     };
                                     blobToWrite = await options.onConvert(version.blob, metadata);
                                 } catch (e) {
