@@ -15,7 +15,7 @@ interface AllViewGridProps {
     onSlotDropInternal: (slotId: number, fileId: string, source: string, isDuplicate: boolean, color: typeof TAPE_COLORS[number], sourceSlotId?: number, sourceSlotColor?: TapeColor) => void;
     onSlotClick: (slotId: number, color: typeof TAPE_COLORS[number]) => void;
     onTapeHeaderClick: (color: typeof TAPE_COLORS[number]) => void;
-    duplicates: Map<string, any[]>;
+    duplicates: Set<string>;
     onDeleteFile: (fileId: string) => void;
     onBulkAssign: (targetSlotId: number, fileIds: string[], targetColor: TapeColor, sourceSlotKeys?: string[]) => void;
     // Selection

@@ -4619,7 +4619,7 @@ function App() {
                           setCurrentTapeColor(color);
                           setViewMode('single');
                         }}
-                        duplicates={duplicatesMap}
+                        duplicates={duplicateFileIds}
                         onDeleteFile={onDeleteFile}
                         onBulkAssign={handleBulkAssign}
                         selectedSlots={selectedSlots}
