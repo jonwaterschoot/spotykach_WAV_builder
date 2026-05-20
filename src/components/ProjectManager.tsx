@@ -22,6 +22,7 @@ interface ProjectManagerProps {
     onChangeWorkFolder?: () => void;
     onChangeBackupFolder?: () => void;
     onSyncProject?: (projectName: string) => void;
+    onImportBackupProject?: (projectName: string) => void;
     onBuildProject?: (projectName: string) => void;
     onImportSK?: () => void;
     onSyncUserLibraryToSD?: () => void;
@@ -93,6 +94,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     onChangeWorkFolder,
     onChangeBackupFolder,
     onSyncProject,
+    onImportBackupProject,
     onBuildProject,
     onImportSK,
     onSyncUserLibraryToSD,
@@ -585,9 +587,12 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                     </div>
                                 ) : !row.local && row.backup ? (
                                     <div className="flex flex-col items-center gap-1">
-                                        {onSyncProject && (
-                                            <button onClick={() => handleSyncWithGuard(row.name)} className="flex items-center gap-1 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-md text-xs transition-colors">
-                                                <ArrowLeftRight size={12} /> <span>Sync from Backup</span>
+                                        {onImportBackupProject && (
+                                            <button 
+                                                onClick={() => onImportBackupProject(row.name)} 
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] uppercase font-bold transition-colors shadow-sm"
+                                            >
+                                                <Download size={12} /> <span>Import Project</span>
                                             </button>
                                         )}
                                         <span className="text-[10px] text-gray-500">Missing Locally</span>

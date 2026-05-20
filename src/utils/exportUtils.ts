@@ -29,7 +29,7 @@ export interface ExportSDOptions {
     syncDecisions?: Record<string, SlotSyncDecision> | Array<{ id: string, decision: SlotSyncDecision } | ConfigSyncData>;
     includeConfig?: boolean;
     forceOverwrite?: boolean;
-    onConvert?: (blob: Blob) => Promise<Blob>;
+    onConvert?: (blob: Blob, metadata?: import('../types').WavMetadata) => Promise<Blob>;
 }
 
 export const generateConfigText = (config: ProjectConfig): string => {
@@ -651,7 +651,13 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             if (options.onConvert && version.blob.type.startsWith('audio/')) {
                                 onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
                                 try {
-                                    blobToWrite = await options.onConvert(version.blob);
+                                    const metadata: import('../types').WavMetadata = {
+                                        id: file.id,
+                                        processing: version.processing,
+                                        tempo: version.tempo,
+                                        slicePoints: version.slicePoints
+                                    };
+                                    blobToWrite = await options.onConvert(version.blob, metadata);
                                 } catch (e) {
                                     console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
                                     throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted to prevent incompatible files on SD.`);
