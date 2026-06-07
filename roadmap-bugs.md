@@ -4,6 +4,28 @@
 
 ---
 
+WAV.builder: Add an option to import new files only into the pool without without touching / changing any files (acts as an “import‑only preset”).
+
+Import workflow: When using the "Import / Build SD" button, make the distinction between Import and Build actions clearer and more visually separated.
+
+Editor: 
+- Stereo splitting: expand with a better preview of both channels and option to audit / preview both.
+  - add an option to automate stereofield.
+  - widen / narrow 
+  - mono the bass
+  - Option to merge / mix files (new tool? Mixer?)
+
+---
+
+
+SD card and workfolder changing location accessibility
+
+Quick fix: add location to where the label "change" is in the project manager modal. ► change to "Change Location"
+
+- next option: under the settings icon, add location settings for SD card and working folder.
+
+---
+
 ## My library manager:
 - default view is first tab Upload
   - upload tab: add a short info block about that this is your local library. Files stored here are copied into the workspace, note that you could also add folders outside the workspace from local drives, curated library allows to build a custom set for yourself that you like to reuse on Spotykach.
