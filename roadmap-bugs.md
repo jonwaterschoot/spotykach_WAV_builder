@@ -3,26 +3,39 @@
 > This file tracks active roadmap ideas, feature requests, and a done/reviewed archive at the bottom.
 
 ---
+## SD import / Build
 
-WAV.builder: Add an option to import new files only into the pool without without touching / changing any files (acts as an “import‑only preset”).
+### SD card and workfolder changing location accessibility
 
-Import workflow: When using the "Import / Build SD" button, make the distinction between Import and Build actions clearer and more visually separated.
+- Quick fix: add location to where the label "change" is in the project manager modal. ► change to "Change Location"
+- next option: under the settings icon, add location settings for SD card and working folder.
 
-Editor: 
-- Stereo splitting: expand with a better preview of both channels and option to audit / preview both.
+### import new files only
+
+Add an option to **import new files only** into the pool without without touching / changing any files (acts as an “import‑only preset”).
+
+### Visual feedback UI Build vs Import
+
+Import workflow: When using the "Import / Build SD" button, make the **distinction between Import and Build actions** clearer and more visually separated.
+
+## Editor: 
+
+### Stereo splitting
+
+expand with a better preview of both channels and option to audit / preview both.
   - add an option to automate stereofield.
   - widen / narrow 
   - mono the bass
-  - Option to merge / mix files (new tool? Mixer?)
+  - (Option to merge / mix files (new tool? Mixer?))
+
+
+## Clean modal:
+
+confirm modal is glitching out of sight
 
 ---
 
 
-SD card and workfolder changing location accessibility
-
-Quick fix: add location to where the label "change" is in the project manager modal. ► change to "Change Location"
-
-- next option: under the settings icon, add location settings for SD card and working folder.
 
 ---
 
@@ -33,12 +46,13 @@ Quick fix: add location to where the label "change" is in the project manager mo
 ## onboarding and news section
 
 ### for newcomers: expand onboarding section
-  - after clicking the start new setup button, the first screen should show a welcome screen where users ccan quickly see what the wizard will do; when creating the first project they can choose to create a blank project or use a preset. (currinetly only one preset: the Hainbach project organized by jonwtr, we'll create another with mixed samples from other packs and leave free spaces open for user customization, Hainbach pack is all 36 slots occupied)
+  - after clicking the start new setup button, the first screen should show a welcome screen where users can quickly see what the wizard will do; when creating the first project they can choose to create a blank project or use a preset. (currinetly only one preset: the Hainbach project organized by jonwtr, we'll create another with mixed samples from other packs and leave free spaces open for user customization, Hainbach pack is all 36 slots occupied)
 
 Create a way that shows newcomers a quick live tutorial (not a video. something interactive that steps through the app and explains the features).
 
-## Active Roadmap
 
+---
+---
 ---
 
 ### under consideration
