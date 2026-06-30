@@ -1,11 +1,12 @@
-import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee } from 'lucide-react';
+import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Copy, Check } from 'lucide-react';
 import { version } from '../../package.json';
 import { useEffect, useState } from 'react';
+import { resolveAssetPath } from '../utils/assetUtils';
 
 interface AboutHelpModalProps {
     onClose: () => void;
     onReset: () => void;
-    initialTab?: 'about' | 'help';
+    initialTab?: 'about' | 'help' | 'contribute';
 }
 
 
@@ -31,8 +32,9 @@ const BuyMeACoffeeWidget = () => {
 };
 
 export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: AboutHelpModalProps) => {
-    const [activeTab, setActiveTab] = useState<'about' | 'help'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'about' | 'help' | 'contribute'>(initialTab);
     const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
+    const [templateCopied, setTemplateCopied] = useState(false);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -76,15 +78,21 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                         <div className="flex bg-gray-800/80 p-1.5 rounded-xl border border-gray-700/50 shadow-inner mr-0 md:mr-6 w-full md:w-auto">
                             <button
                                 onClick={() => setActiveTab('about')}
-                                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${activeTab === 'about' ? 'bg-synthux-blue text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}
+                                className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${activeTab === 'about' ? 'bg-synthux-blue text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}
                             >
                                 About
                             </button>
                             <button
                                 onClick={() => setActiveTab('help')}
-                                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${activeTab === 'help' ? 'bg-synthux-blue text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}
+                                className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${activeTab === 'help' ? 'bg-synthux-blue text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}
                             >
                                 Format Help
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('contribute')}
+                                className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${activeTab === 'contribute' ? 'bg-synthux-blue text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}
+                            >
+                                Sample & Preset Guide
                             </button>
                         </div>
                     </div>
@@ -184,9 +192,6 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                             <BuyMeACoffeeWidget />
                                         </div>
                                         <div className="hidden md:block w-px h-16 bg-gray-700"></div>
-                                        <a href="https://www.buymeacoffee.com/jonwtr" target="_blank" rel="noreferrer" className="bg-white p-3 rounded-2xl shadow-xl hover:scale-105 transition-transform cursor-pointer block">
-                                            <svg width="180" height="180" style={{shapeRendering: 'crispEdges'}}><defs><clipPath id="clipPath-dot-color"><circle cx="26" cy="58" r="2" transform="rotate(0,26,58)"></circle><circle cx="26" cy="70" r="2" transform="rotate(0,26,70)"></circle><circle cx="26" cy="78" r="2" transform="rotate(0,26,78)"></circle><circle cx="26" cy="98" r="2" transform="rotate(0,26,98)"></circle><circle cx="26" cy="102" r="2" transform="rotate(0,26,102)"></circle><circle cx="26" cy="118" r="2" transform="rotate(0,26,118)"></circle><circle cx="30" cy="62" r="2" transform="rotate(0,30,62)"></circle><circle cx="30" cy="66" r="2" transform="rotate(0,30,66)"></circle><circle cx="30" cy="70" r="2" transform="rotate(0,30,70)"></circle><circle cx="30" cy="74" r="2" transform="rotate(0,30,74)"></circle><circle cx="30" cy="78" r="2" transform="rotate(0,30,78)"></circle><circle cx="30" cy="82" r="2" transform="rotate(0,30,82)"></circle><circle cx="30" cy="90" r="2" transform="rotate(0,30,90)"></circle><circle cx="30" cy="94" r="2" transform="rotate(0,30,94)"></circle><circle cx="30" cy="110" r="2" transform="rotate(0,30,110)"></circle><circle cx="30" cy="114" r="2" transform="rotate(0,30,114)"></circle><circle cx="30" cy="118" r="2" transform="rotate(0,30,118)"></circle><circle cx="34" cy="58" r="2" transform="rotate(0,34,58)"></circle><circle cx="34" cy="62" r="2" transform="rotate(0,34,62)"></circle><circle cx="34" cy="74" r="2" transform="rotate(0,34,74)"></circle><circle cx="34" cy="86" r="2" transform="rotate(0,34,86)"></circle><circle cx="34" cy="94" r="2" transform="rotate(0,34,94)"></circle><circle cx="34" cy="102" r="2" transform="rotate(0,34,102)"></circle><circle cx="34" cy="106" r="2" transform="rotate(0,34,106)"></circle><circle cx="34" cy="122" r="2" transform="rotate(0,34,122)"></circle><circle cx="38" cy="58" r="2" transform="rotate(0,38,58)"></circle><circle cx="38" cy="62" r="2" transform="rotate(0,38,62)"></circle><circle cx="38" cy="66" r="2" transform="rotate(0,38,66)"></circle><circle cx="38" cy="74" r="2" transform="rotate(0,38,74)"></circle><circle cx="38" cy="78" r="2" transform="rotate(0,38,78)"></circle><circle cx="38" cy="82" r="2" transform="rotate(0,38,82)"></circle><circle cx="38" cy="90" r="2" transform="rotate(0,38,90)"></circle><circle cx="38" cy="94" r="2" transform="rotate(0,38,94)"></circle><circle cx="38" cy="102" r="2" transform="rotate(0,38,102)"></circle><circle cx="38" cy="110" r="2" transform="rotate(0,38,110)"></circle><circle cx="38" cy="118" r="2" transform="rotate(0,38,118)"></circle><circle cx="42" cy="62" r="2" transform="rotate(0,42,62)"></circle><circle cx="42" cy="70" r="2" transform="rotate(0,42,70)"></circle><circle cx="42" cy="74" r="2" transform="rotate(0,42,74)"></circle><circle cx="42" cy="78" r="2" transform="rotate(0,42,78)"></circle><circle cx="42" cy="82" r="2" transform="rotate(0,42,82)"></circle><circle cx="42" cy="86" r="2" transform="rotate(0,42,86)"></circle><circle cx="42" cy="102" r="2" transform="rotate(0,42,102)"></circle><circle cx="42" cy="114" r="2" transform="rotate(0,42,114)"></circle><circle cx="46" cy="58" r="2" transform="rotate(0,46,58)"></circle><circle cx="46" cy="62" r="2" transform="rotate(0,46,62)"></circle><circle cx="46" cy="66" r="2" transform="rotate(0,46,66)"></circle><circle cx="46" cy="74" r="2" transform="rotate(0,46,74)"></circle><circle cx="46" cy="78" r="2" transform="rotate(0,46,78)"></circle><circle cx="46" cy="86" r="2" transform="rotate(0,46,86)"></circle><circle cx="46" cy="94" r="2" transform="rotate(0,46,94)"></circle><circle cx="46" cy="98" r="2" transform="rotate(0,46,98)"></circle><circle cx="46" cy="106" r="2" transform="rotate(0,46,106)"></circle><circle cx="46" cy="110" r="2" transform="rotate(0,46,110)"></circle><circle cx="46" cy="114" r="2" transform="rotate(0,46,114)"></circle><circle cx="46" cy="118" r="2" transform="rotate(0,46,118)"></circle><circle cx="50" cy="58" r="2" transform="rotate(0,50,58)"></circle><circle cx="50" cy="66" r="2" transform="rotate(0,50,66)"></circle><circle cx="50" cy="74" r="2" transform="rotate(0,50,74)"></circle><circle cx="50" cy="82" r="2" transform="rotate(0,50,82)"></circle><circle cx="50" cy="90" r="2" transform="rotate(0,50,90)"></circle><circle cx="50" cy="98" r="2" transform="rotate(0,50,98)"></circle><circle cx="50" cy="106" r="2" transform="rotate(0,50,106)"></circle><circle cx="50" cy="114" r="2" transform="rotate(0,50,114)"></circle><circle cx="50" cy="122" r="2" transform="rotate(0,50,122)"></circle><circle cx="54" cy="58" r="2" transform="rotate(0,54,58)"></circle><circle cx="54" cy="62" r="2" transform="rotate(0,54,62)"></circle><circle cx="54" cy="78" r="2" transform="rotate(0,54,78)"></circle><circle cx="54" cy="82" r="2" transform="rotate(0,54,82)"></circle><circle cx="54" cy="86" r="2" transform="rotate(0,54,86)"></circle><circle cx="54" cy="94" r="2" transform="rotate(0,54,94)"></circle><circle cx="54" cy="102" r="2" transform="rotate(0,54,102)"></circle><circle cx="54" cy="106" r="2" transform="rotate(0,54,106)"></circle><circle cx="54" cy="110" r="2" transform="rotate(0,54,110)"></circle><circle cx="54" cy="122" r="2" transform="rotate(0,54,122)"></circle><circle cx="58" cy="30" r="2" transform="rotate(0,58,30)"></circle><circle cx="58" cy="38" r="2" transform="rotate(0,58,38)"></circle><circle cx="58" cy="46" r="2" transform="rotate(0,58,46)"></circle><circle cx="58" cy="50" r="2" transform="rotate(0,58,50)"></circle><circle cx="58" cy="54" r="2" transform="rotate(0,58,54)"></circle><circle cx="58" cy="58" r="2" transform="rotate(0,58,58)"></circle><circle cx="58" cy="66" r="2" transform="rotate(0,58,66)"></circle><circle cx="58" cy="74" r="2" transform="rotate(0,58,74)"></circle><circle cx="58" cy="86" r="2" transform="rotate(0,58,86)"></circle><circle cx="58" cy="102" r="2" transform="rotate(0,58,102)"></circle><circle cx="58" cy="110" r="2" transform="rotate(0,58,110)"></circle><circle cx="58" cy="122" r="2" transform="rotate(0,58,122)"></circle><circle cx="58" cy="126" r="2" transform="rotate(0,58,126)"></circle><circle cx="58" cy="130" r="2" transform="rotate(0,58,130)"></circle><circle cx="58" cy="134" r="2" transform="rotate(0,58,134)"></circle><circle cx="58" cy="142" r="2" transform="rotate(0,58,142)"></circle><circle cx="58" cy="146" r="2" transform="rotate(0,58,146)"></circle><circle cx="58" cy="154" r="2" transform="rotate(0,58,154)"></circle><circle cx="62" cy="26" r="2" transform="rotate(0,62,26)"></circle><circle cx="62" cy="30" r="2" transform="rotate(0,62,30)"></circle><circle cx="62" cy="42" r="2" transform="rotate(0,62,42)"></circle><circle cx="62" cy="66" r="2" transform="rotate(0,62,66)"></circle><circle cx="62" cy="82" r="2" transform="rotate(0,62,82)"></circle><circle cx="62" cy="90" r="2" transform="rotate(0,62,90)"></circle><circle cx="62" cy="106" r="2" transform="rotate(0,62,106)"></circle><circle cx="62" cy="114" r="2" transform="rotate(0,62,114)"></circle><circle cx="62" cy="122" r="2" transform="rotate(0,62,122)"></circle><circle cx="62" cy="126" r="2" transform="rotate(0,62,126)"></circle><circle cx="62" cy="130" r="2" transform="rotate(0,62,130)"></circle><circle cx="62" cy="134" r="2" transform="rotate(0,62,134)"></circle><circle cx="62" cy="150" r="2" transform="rotate(0,62,150)"></circle><circle cx="62" cy="154" r="2" transform="rotate(0,62,154)"></circle><circle cx="66" cy="26" r="2" transform="rotate(0,66,26)"></circle><circle cx="66" cy="30" r="2" transform="rotate(0,66,30)"></circle><circle cx="66" cy="34" r="2" transform="rotate(0,66,34)"></circle><circle cx="66" cy="42" r="2" transform="rotate(0,66,42)"></circle><circle cx="66" cy="46" r="2" transform="rotate(0,66,46)"></circle><circle cx="66" cy="50" r="2" transform="rotate(0,66,50)"></circle><circle cx="66" cy="54" r="2" transform="rotate(0,66,54)"></circle><circle cx="66" cy="58" r="2" transform="rotate(0,66,58)"></circle><circle cx="66" cy="62" r="2" transform="rotate(0,66,62)"></circle><circle cx="66" cy="70" r="2" transform="rotate(0,66,70)"></circle><circle cx="66" cy="82" r="2" transform="rotate(0,66,82)"></circle><circle cx="66" cy="86" r="2" transform="rotate(0,66,86)"></circle><circle cx="66" cy="94" r="2" transform="rotate(0,66,94)"></circle><circle cx="66" cy="102" r="2" transform="rotate(0,66,102)"></circle><circle cx="66" cy="110" r="2" transform="rotate(0,66,110)"></circle><circle cx="66" cy="114" r="2" transform="rotate(0,66,114)"></circle><circle cx="66" cy="122" r="2" transform="rotate(0,66,122)"></circle><circle cx="66" cy="134" r="2" transform="rotate(0,66,134)"></circle><circle cx="66" cy="138" r="2" transform="rotate(0,66,138)"></circle><circle cx="66" cy="146" r="2" transform="rotate(0,66,146)"></circle><circle cx="66" cy="154" r="2" transform="rotate(0,66,154)"></circle><circle cx="70" cy="70" r="2" transform="rotate(0,70,70)"></circle><circle cx="70" cy="86" r="2" transform="rotate(0,70,86)"></circle><circle cx="70" cy="90" r="2" transform="rotate(0,70,90)"></circle><circle cx="70" cy="94" r="2" transform="rotate(0,70,94)"></circle><circle cx="70" cy="118" r="2" transform="rotate(0,70,118)"></circle><circle cx="70" cy="122" r="2" transform="rotate(0,70,122)"></circle><circle cx="70" cy="138" r="2" transform="rotate(0,70,138)"></circle><circle cx="70" cy="142" r="2" transform="rotate(0,70,142)"></circle><circle cx="70" cy="150" r="2" transform="rotate(0,70,150)"></circle><circle cx="74" cy="34" r="2" transform="rotate(0,74,34)"></circle><circle cx="74" cy="38" r="2" transform="rotate(0,74,38)"></circle><circle cx="74" cy="42" r="2" transform="rotate(0,74,42)"></circle><circle cx="74" cy="50" r="2" transform="rotate(0,74,50)"></circle><circle cx="74" cy="62" r="2" transform="rotate(0,74,62)"></circle><circle cx="74" cy="70" r="2" transform="rotate(0,74,70)"></circle><circle cx="74" cy="118" r="2" transform="rotate(0,74,118)"></circle><circle cx="74" cy="122" r="2" transform="rotate(0,74,122)"></circle><circle cx="74" cy="126" r="2" transform="rotate(0,74,126)"></circle><circle cx="74" cy="130" r="2" transform="rotate(0,74,130)"></circle><circle cx="74" cy="142" r="2" transform="rotate(0,74,142)"></circle><circle cx="74" cy="150" r="2" transform="rotate(0,74,150)"></circle><circle cx="78" cy="26" r="2" transform="rotate(0,78,26)"></circle><circle cx="78" cy="30" r="2" transform="rotate(0,78,30)"></circle><circle cx="78" cy="42" r="2" transform="rotate(0,78,42)"></circle><circle cx="78" cy="54" r="2" transform="rotate(0,78,54)"></circle><circle cx="78" cy="66" r="2" transform="rotate(0,78,66)"></circle><circle cx="78" cy="114" r="2" transform="rotate(0,78,114)"></circle><circle cx="78" cy="118" r="2" transform="rotate(0,78,118)"></circle><circle cx="78" cy="130" r="2" transform="rotate(0,78,130)"></circle><circle cx="78" cy="138" r="2" transform="rotate(0,78,138)"></circle><circle cx="78" cy="142" r="2" transform="rotate(0,78,142)"></circle><circle cx="78" cy="150" r="2" transform="rotate(0,78,150)"></circle><circle cx="78" cy="154" r="2" transform="rotate(0,78,154)"></circle><circle cx="82" cy="30" r="2" transform="rotate(0,82,30)"></circle><circle cx="82" cy="38" r="2" transform="rotate(0,82,38)"></circle><circle cx="82" cy="50" r="2" transform="rotate(0,82,50)"></circle><circle cx="82" cy="62" r="2" transform="rotate(0,82,62)"></circle><circle cx="82" cy="114" r="2" transform="rotate(0,82,114)"></circle><circle cx="82" cy="118" r="2" transform="rotate(0,82,118)"></circle><circle cx="82" cy="122" r="2" transform="rotate(0,82,122)"></circle><circle cx="82" cy="126" r="2" transform="rotate(0,82,126)"></circle><circle cx="82" cy="130" r="2" transform="rotate(0,82,130)"></circle><circle cx="82" cy="150" r="2" transform="rotate(0,82,150)"></circle><circle cx="86" cy="26" r="2" transform="rotate(0,86,26)"></circle><circle cx="86" cy="34" r="2" transform="rotate(0,86,34)"></circle><circle cx="86" cy="38" r="2" transform="rotate(0,86,38)"></circle><circle cx="86" cy="54" r="2" transform="rotate(0,86,54)"></circle><circle cx="86" cy="58" r="2" transform="rotate(0,86,58)"></circle><circle cx="86" cy="62" r="2" transform="rotate(0,86,62)"></circle><circle cx="86" cy="110" r="2" transform="rotate(0,86,110)"></circle><circle cx="86" cy="114" r="2" transform="rotate(0,86,114)"></circle><circle cx="86" cy="130" r="2" transform="rotate(0,86,130)"></circle><circle cx="86" cy="134" r="2" transform="rotate(0,86,134)"></circle><circle cx="86" cy="138" r="2" transform="rotate(0,86,138)"></circle><circle cx="86" cy="150" r="2" transform="rotate(0,86,150)"></circle><circle cx="90" cy="42" r="2" transform="rotate(0,90,42)"></circle><circle cx="90" cy="50" r="2" transform="rotate(0,90,50)"></circle><circle cx="90" cy="54" r="2" transform="rotate(0,90,54)"></circle><circle cx="90" cy="58" r="2" transform="rotate(0,90,58)"></circle><circle cx="90" cy="66" r="2" transform="rotate(0,90,66)"></circle><circle cx="90" cy="70" r="2" transform="rotate(0,90,70)"></circle><circle cx="90" cy="110" r="2" transform="rotate(0,90,110)"></circle><circle cx="90" cy="114" r="2" transform="rotate(0,90,114)"></circle><circle cx="90" cy="122" r="2" transform="rotate(0,90,122)"></circle><circle cx="90" cy="130" r="2" transform="rotate(0,90,130)"></circle><circle cx="90" cy="138" r="2" transform="rotate(0,90,138)"></circle><circle cx="90" cy="150" r="2" transform="rotate(0,90,150)"></circle><circle cx="94" cy="26" r="2" transform="rotate(0,94,26)"></circle><circle cx="94" cy="30" r="2" transform="rotate(0,94,30)"></circle><circle cx="94" cy="34" r="2" transform="rotate(0,94,34)"></circle><circle cx="94" cy="42" r="2" transform="rotate(0,94,42)"></circle><circle cx="94" cy="54" r="2" transform="rotate(0,94,54)"></circle><circle cx="94" cy="66" r="2" transform="rotate(0,94,66)"></circle><circle cx="94" cy="70" r="2" transform="rotate(0,94,70)"></circle><circle cx="94" cy="110" r="2" transform="rotate(0,94,110)"></circle><circle cx="94" cy="118" r="2" transform="rotate(0,94,118)"></circle><circle cx="94" cy="134" r="2" transform="rotate(0,94,134)"></circle><circle cx="94" cy="142" r="2" transform="rotate(0,94,142)"></circle><circle cx="94" cy="150" r="2" transform="rotate(0,94,150)"></circle><circle cx="98" cy="26" r="2" transform="rotate(0,98,26)"></circle><circle cx="98" cy="30" r="2" transform="rotate(0,98,30)"></circle><circle cx="98" cy="46" r="2" transform="rotate(0,98,46)"></circle><circle cx="98" cy="50" r="2" transform="rotate(0,98,50)"></circle><circle cx="98" cy="54" r="2" transform="rotate(0,98,54)"></circle><circle cx="98" cy="58" r="2" transform="rotate(0,98,58)"></circle><circle cx="98" cy="62" r="2" transform="rotate(0,98,62)"></circle><circle cx="98" cy="66" r="2" transform="rotate(0,98,66)"></circle><circle cx="98" cy="70" r="2" transform="rotate(0,98,70)"></circle><circle cx="98" cy="114" r="2" transform="rotate(0,98,114)"></circle><circle cx="98" cy="126" r="2" transform="rotate(0,98,126)"></circle><circle cx="98" cy="146" r="2" transform="rotate(0,98,146)"></circle><circle cx="98" cy="154" r="2" transform="rotate(0,98,154)"></circle><circle cx="102" cy="34" r="2" transform="rotate(0,102,34)"></circle><circle cx="102" cy="42" r="2" transform="rotate(0,102,42)"></circle><circle cx="102" cy="46" r="2" transform="rotate(0,102,46)"></circle><circle cx="102" cy="58" r="2" transform="rotate(0,102,58)"></circle><circle cx="102" cy="62" r="2" transform="rotate(0,102,62)"></circle><circle cx="102" cy="66" r="2" transform="rotate(0,102,66)"></circle><circle cx="102" cy="70" r="2" transform="rotate(0,102,70)"></circle><circle cx="102" cy="110" r="2" transform="rotate(0,102,110)"></circle><circle cx="102" cy="122" r="2" transform="rotate(0,102,122)"></circle><circle cx="102" cy="130" r="2" transform="rotate(0,102,130)"></circle><circle cx="102" cy="134" r="2" transform="rotate(0,102,134)"></circle><circle cx="102" cy="150" r="2" transform="rotate(0,102,150)"></circle><circle cx="106" cy="30" r="2" transform="rotate(0,106,30)"></circle><circle cx="106" cy="42" r="2" transform="rotate(0,106,42)"></circle><circle cx="106" cy="50" r="2" transform="rotate(0,106,50)"></circle><circle cx="106" cy="54" r="2" transform="rotate(0,106,54)"></circle><circle cx="106" cy="62" r="2" transform="rotate(0,106,62)"></circle><circle cx="106" cy="66" r="2" transform="rotate(0,106,66)"></circle><circle cx="106" cy="114" r="2" transform="rotate(0,106,114)"></circle><circle cx="106" cy="118" r="2" transform="rotate(0,106,118)"></circle><circle cx="106" cy="126" r="2" transform="rotate(0,106,126)"></circle><circle cx="106" cy="150" r="2" transform="rotate(0,106,150)"></circle><circle cx="110" cy="30" r="2" transform="rotate(0,110,30)"></circle><circle cx="110" cy="34" r="2" transform="rotate(0,110,34)"></circle><circle cx="110" cy="42" r="2" transform="rotate(0,110,42)"></circle><circle cx="110" cy="46" r="2" transform="rotate(0,110,46)"></circle><circle cx="110" cy="58" r="2" transform="rotate(0,110,58)"></circle><circle cx="110" cy="62" r="2" transform="rotate(0,110,62)"></circle><circle cx="110" cy="66" r="2" transform="rotate(0,110,66)"></circle><circle cx="110" cy="70" r="2" transform="rotate(0,110,70)"></circle><circle cx="110" cy="74" r="2" transform="rotate(0,110,74)"></circle><circle cx="110" cy="82" r="2" transform="rotate(0,110,82)"></circle><circle cx="110" cy="86" r="2" transform="rotate(0,110,86)"></circle><circle cx="110" cy="94" r="2" transform="rotate(0,110,94)"></circle><circle cx="110" cy="98" r="2" transform="rotate(0,110,98)"></circle><circle cx="110" cy="102" r="2" transform="rotate(0,110,102)"></circle><circle cx="110" cy="106" r="2" transform="rotate(0,110,106)"></circle><circle cx="110" cy="114" r="2" transform="rotate(0,110,114)"></circle><circle cx="110" cy="122" r="2" transform="rotate(0,110,122)"></circle><circle cx="110" cy="130" r="2" transform="rotate(0,110,130)"></circle><circle cx="110" cy="146" r="2" transform="rotate(0,110,146)"></circle><circle cx="110" cy="150" r="2" transform="rotate(0,110,150)"></circle><circle cx="110" cy="154" r="2" transform="rotate(0,110,154)"></circle><circle cx="114" cy="26" r="2" transform="rotate(0,114,26)"></circle><circle cx="114" cy="30" r="2" transform="rotate(0,114,30)"></circle><circle cx="114" cy="38" r="2" transform="rotate(0,114,38)"></circle><circle cx="114" cy="46" r="2" transform="rotate(0,114,46)"></circle><circle cx="114" cy="50" r="2" transform="rotate(0,114,50)"></circle><circle cx="114" cy="58" r="2" transform="rotate(0,114,58)"></circle><circle cx="114" cy="70" r="2" transform="rotate(0,114,70)"></circle><circle cx="114" cy="74" r="2" transform="rotate(0,114,74)"></circle><circle cx="114" cy="78" r="2" transform="rotate(0,114,78)"></circle><circle cx="114" cy="82" r="2" transform="rotate(0,114,82)"></circle><circle cx="114" cy="86" r="2" transform="rotate(0,114,86)"></circle><circle cx="114" cy="90" r="2" transform="rotate(0,114,90)"></circle><circle cx="114" cy="94" r="2" transform="rotate(0,114,94)"></circle><circle cx="114" cy="106" r="2" transform="rotate(0,114,106)"></circle><circle cx="114" cy="114" r="2" transform="rotate(0,114,114)"></circle><circle cx="114" cy="122" r="2" transform="rotate(0,114,122)"></circle><circle cx="114" cy="130" r="2" transform="rotate(0,114,130)"></circle><circle cx="114" cy="134" r="2" transform="rotate(0,114,134)"></circle><circle cx="114" cy="138" r="2" transform="rotate(0,114,138)"></circle><circle cx="114" cy="142" r="2" transform="rotate(0,114,142)"></circle><circle cx="114" cy="154" r="2" transform="rotate(0,114,154)"></circle><circle cx="118" cy="30" r="2" transform="rotate(0,118,30)"></circle><circle cx="118" cy="38" r="2" transform="rotate(0,118,38)"></circle><circle cx="118" cy="46" r="2" transform="rotate(0,118,46)"></circle><circle cx="118" cy="62" r="2" transform="rotate(0,118,62)"></circle><circle cx="118" cy="82" r="2" transform="rotate(0,118,82)"></circle><circle cx="118" cy="94" r="2" transform="rotate(0,118,94)"></circle><circle cx="118" cy="98" r="2" transform="rotate(0,118,98)"></circle><circle cx="118" cy="110" r="2" transform="rotate(0,118,110)"></circle><circle cx="118" cy="114" r="2" transform="rotate(0,118,114)"></circle><circle cx="118" cy="122" r="2" transform="rotate(0,118,122)"></circle><circle cx="118" cy="138" r="2" transform="rotate(0,118,138)"></circle><circle cx="118" cy="142" r="2" transform="rotate(0,118,142)"></circle><circle cx="122" cy="26" r="2" transform="rotate(0,122,26)"></circle><circle cx="122" cy="42" r="2" transform="rotate(0,122,42)"></circle><circle cx="122" cy="46" r="2" transform="rotate(0,122,46)"></circle><circle cx="122" cy="50" r="2" transform="rotate(0,122,50)"></circle><circle cx="122" cy="58" r="2" transform="rotate(0,122,58)"></circle><circle cx="122" cy="66" r="2" transform="rotate(0,122,66)"></circle><circle cx="122" cy="74" r="2" transform="rotate(0,122,74)"></circle><circle cx="122" cy="82" r="2" transform="rotate(0,122,82)"></circle><circle cx="122" cy="86" r="2" transform="rotate(0,122,86)"></circle><circle cx="122" cy="94" r="2" transform="rotate(0,122,94)"></circle><circle cx="122" cy="102" r="2" transform="rotate(0,122,102)"></circle><circle cx="122" cy="106" r="2" transform="rotate(0,122,106)"></circle><circle cx="122" cy="110" r="2" transform="rotate(0,122,110)"></circle><circle cx="122" cy="122" r="2" transform="rotate(0,122,122)"></circle><circle cx="122" cy="126" r="2" transform="rotate(0,122,126)"></circle><circle cx="122" cy="130" r="2" transform="rotate(0,122,130)"></circle><circle cx="122" cy="134" r="2" transform="rotate(0,122,134)"></circle><circle cx="122" cy="138" r="2" transform="rotate(0,122,138)"></circle><circle cx="122" cy="154" r="2" transform="rotate(0,122,154)"></circle><circle cx="126" cy="58" r="2" transform="rotate(0,126,58)"></circle><circle cx="126" cy="62" r="2" transform="rotate(0,126,62)"></circle><circle cx="126" cy="66" r="2" transform="rotate(0,126,66)"></circle><circle cx="126" cy="70" r="2" transform="rotate(0,126,70)"></circle><circle cx="126" cy="74" r="2" transform="rotate(0,126,74)"></circle><circle cx="126" cy="78" r="2" transform="rotate(0,126,78)"></circle><circle cx="126" cy="82" r="2" transform="rotate(0,126,82)"></circle><circle cx="126" cy="90" r="2" transform="rotate(0,126,90)"></circle><circle cx="126" cy="98" r="2" transform="rotate(0,126,98)"></circle><circle cx="126" cy="102" r="2" transform="rotate(0,126,102)"></circle><circle cx="126" cy="106" r="2" transform="rotate(0,126,106)"></circle><circle cx="126" cy="114" r="2" transform="rotate(0,126,114)"></circle><circle cx="126" cy="122" r="2" transform="rotate(0,126,122)"></circle><circle cx="126" cy="138" r="2" transform="rotate(0,126,138)"></circle><circle cx="126" cy="142" r="2" transform="rotate(0,126,142)"></circle><circle cx="126" cy="154" r="2" transform="rotate(0,126,154)"></circle><circle cx="130" cy="58" r="2" transform="rotate(0,130,58)"></circle><circle cx="130" cy="70" r="2" transform="rotate(0,130,70)"></circle><circle cx="130" cy="86" r="2" transform="rotate(0,130,86)"></circle><circle cx="130" cy="90" r="2" transform="rotate(0,130,90)"></circle><circle cx="130" cy="94" r="2" transform="rotate(0,130,94)"></circle><circle cx="130" cy="106" r="2" transform="rotate(0,130,106)"></circle><circle cx="130" cy="110" r="2" transform="rotate(0,130,110)"></circle><circle cx="130" cy="122" r="2" transform="rotate(0,130,122)"></circle><circle cx="130" cy="130" r="2" transform="rotate(0,130,130)"></circle><circle cx="130" cy="138" r="2" transform="rotate(0,130,138)"></circle><circle cx="130" cy="142" r="2" transform="rotate(0,130,142)"></circle><circle cx="130" cy="146" r="2" transform="rotate(0,130,146)"></circle><circle cx="130" cy="150" r="2" transform="rotate(0,130,150)"></circle><circle cx="134" cy="58" r="2" transform="rotate(0,134,58)"></circle><circle cx="134" cy="66" r="2" transform="rotate(0,134,66)"></circle><circle cx="134" cy="74" r="2" transform="rotate(0,134,74)"></circle><circle cx="134" cy="78" r="2" transform="rotate(0,134,78)"></circle><circle cx="134" cy="82" r="2" transform="rotate(0,134,82)"></circle><circle cx="134" cy="94" r="2" transform="rotate(0,134,94)"></circle><circle cx="134" cy="102" r="2" transform="rotate(0,134,102)"></circle><circle cx="134" cy="122" r="2" transform="rotate(0,134,122)"></circle><circle cx="134" cy="138" r="2" transform="rotate(0,134,138)"></circle><circle cx="138" cy="62" r="2" transform="rotate(0,138,62)"></circle><circle cx="138" cy="66" r="2" transform="rotate(0,138,66)"></circle><circle cx="138" cy="70" r="2" transform="rotate(0,138,70)"></circle><circle cx="138" cy="78" r="2" transform="rotate(0,138,78)"></circle><circle cx="138" cy="90" r="2" transform="rotate(0,138,90)"></circle><circle cx="138" cy="94" r="2" transform="rotate(0,138,94)"></circle><circle cx="138" cy="98" r="2" transform="rotate(0,138,98)"></circle><circle cx="138" cy="102" r="2" transform="rotate(0,138,102)"></circle><circle cx="138" cy="114" r="2" transform="rotate(0,138,114)"></circle><circle cx="138" cy="122" r="2" transform="rotate(0,138,122)"></circle><circle cx="138" cy="126" r="2" transform="rotate(0,138,126)"></circle><circle cx="138" cy="130" r="2" transform="rotate(0,138,130)"></circle><circle cx="138" cy="134" r="2" transform="rotate(0,138,134)"></circle><circle cx="138" cy="138" r="2" transform="rotate(0,138,138)"></circle><circle cx="138" cy="142" r="2" transform="rotate(0,138,142)"></circle><circle cx="138" cy="154" r="2" transform="rotate(0,138,154)"></circle><circle cx="142" cy="58" r="2" transform="rotate(0,142,58)"></circle><circle cx="142" cy="70" r="2" transform="rotate(0,142,70)"></circle><circle cx="142" cy="74" r="2" transform="rotate(0,142,74)"></circle><circle cx="142" cy="82" r="2" transform="rotate(0,142,82)"></circle><circle cx="142" cy="86" r="2" transform="rotate(0,142,86)"></circle><circle cx="142" cy="102" r="2" transform="rotate(0,142,102)"></circle><circle cx="142" cy="106" r="2" transform="rotate(0,142,106)"></circle><circle cx="142" cy="110" r="2" transform="rotate(0,142,110)"></circle><circle cx="142" cy="118" r="2" transform="rotate(0,142,118)"></circle><circle cx="142" cy="122" r="2" transform="rotate(0,142,122)"></circle><circle cx="142" cy="130" r="2" transform="rotate(0,142,130)"></circle><circle cx="142" cy="138" r="2" transform="rotate(0,142,138)"></circle><circle cx="142" cy="142" r="2" transform="rotate(0,142,142)"></circle><circle cx="142" cy="146" r="2" transform="rotate(0,142,146)"></circle><circle cx="142" cy="150" r="2" transform="rotate(0,142,150)"></circle><circle cx="146" cy="62" r="2" transform="rotate(0,146,62)"></circle><circle cx="146" cy="78" r="2" transform="rotate(0,146,78)"></circle><circle cx="146" cy="82" r="2" transform="rotate(0,146,82)"></circle><circle cx="146" cy="90" r="2" transform="rotate(0,146,90)"></circle><circle cx="146" cy="94" r="2" transform="rotate(0,146,94)"></circle><circle cx="146" cy="98" r="2" transform="rotate(0,146,98)"></circle><circle cx="146" cy="118" r="2" transform="rotate(0,146,118)"></circle><circle cx="146" cy="122" r="2" transform="rotate(0,146,122)"></circle><circle cx="146" cy="126" r="2" transform="rotate(0,146,126)"></circle><circle cx="146" cy="138" r="2" transform="rotate(0,146,138)"></circle><circle cx="146" cy="142" r="2" transform="rotate(0,146,142)"></circle><circle cx="146" cy="146" r="2" transform="rotate(0,146,146)"></circle><circle cx="146" cy="154" r="2" transform="rotate(0,146,154)"></circle><circle cx="150" cy="58" r="2" transform="rotate(0,150,58)"></circle><circle cx="150" cy="70" r="2" transform="rotate(0,150,70)"></circle><circle cx="150" cy="74" r="2" transform="rotate(0,150,74)"></circle><circle cx="150" cy="78" r="2" transform="rotate(0,150,78)"></circle><circle cx="150" cy="82" r="2" transform="rotate(0,150,82)"></circle><circle cx="150" cy="86" r="2" transform="rotate(0,150,86)"></circle><circle cx="150" cy="90" r="2" transform="rotate(0,150,90)"></circle><circle cx="150" cy="94" r="2" transform="rotate(0,150,94)"></circle><circle cx="150" cy="110" r="2" transform="rotate(0,150,110)"></circle><circle cx="150" cy="122" r="2" transform="rotate(0,150,122)"></circle><circle cx="150" cy="126" r="2" transform="rotate(0,150,126)"></circle><circle cx="150" cy="142" r="2" transform="rotate(0,150,142)"></circle><circle cx="154" cy="66" r="2" transform="rotate(0,154,66)"></circle><circle cx="154" cy="70" r="2" transform="rotate(0,154,70)"></circle><circle cx="154" cy="74" r="2" transform="rotate(0,154,74)"></circle><circle cx="154" cy="82" r="2" transform="rotate(0,154,82)"></circle><circle cx="154" cy="94" r="2" transform="rotate(0,154,94)"></circle><circle cx="154" cy="110" r="2" transform="rotate(0,154,110)"></circle><circle cx="154" cy="122" r="2" transform="rotate(0,154,122)"></circle><circle cx="154" cy="126" r="2" transform="rotate(0,154,126)"></circle><circle cx="154" cy="130" r="2" transform="rotate(0,154,130)"></circle><circle cx="154" cy="138" r="2" transform="rotate(0,154,138)"></circle><circle cx="154" cy="142" r="2" transform="rotate(0,154,142)"></circle><circle cx="154" cy="150" r="2" transform="rotate(0,154,150)"></circle><path clipRule="evenodd" d="M 24 34v 8a 10 10, 0, 0, 0, 10 10h 8a 10 10, 0, 0, 0, 10 -10v -8a 10 10, 0, 0, 0, -10 -10h -8a 10 10, 0, 0, 0, -10 10M 34 28h 8a 6 6, 0, 0, 1, 6 6v 8a 6 6, 0, 0, 1, -6 6h -8a 6 6, 0, 0, 1, -6 -6v -8a 6 6, 0, 0, 1, 6 -6" transform="rotate(0,38,38)"></path><rect x="32" y="32" width="12" height="12" transform="rotate(0,38,38)"></rect><path clipRule="evenodd" d="M 128 34v 8a 10 10, 0, 0, 0, 10 10h 8a 10 10, 0, 0, 0, 10 -10v -8a 10 10, 0, 0, 0, -10 -10h -8a 10 10, 0, 0, 0, -10 10M 138 28h 8a 6 6, 0, 0, 1, 6 6v 8a 6 6, 0, 0, 1, -6 6h -8a 6 6, 0, 0, 1, -6 -6v -8a 6 6, 0, 0, 1, 6 -6" transform="rotate(90,142,38)"></path><rect x="136" y="32" width="12" height="12" transform="rotate(90,142,38)"></rect><path clipRule="evenodd" d="M 24 138v 8a 10 10, 0, 0, 0, 10 10h 8a 10 10, 0, 0, 0, 10 -10v -8a 10 10, 0, 0, 0, -10 -10h -8a 10 10, 0, 0, 0, -10 10M 34 132h 8a 6 6, 0, 0, 1, 6 6v 8a 6 6, 0, 0, 1, -6 6h -8a 6 6, 0, 0, 1, -6 -6v -8a 6 6, 0, 0, 1, 6 -6" transform="rotate(-90,38,142)"></path><rect x="32" y="136" width="12" height="12" transform="rotate(-90,38,142)"></rect></clipPath></defs><rect x="0" y="0" height="180" width="180" clipPath="url('#clipPath-background-color')" fill="#fff"></rect><rect x="24" y="24" height="132" width="132" clipPath="url('#clipPath-dot-color')" fill="#000000"></rect><image href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiByeD0iMjMuMzMzMyIgZmlsbD0iI0ZGREQwMCIvPgo8cGF0aCBkPSJNNzEuODE4OSAyOC42NTg5TDcxLjc2NDEgMjguNjI2Nkw3MS42MzcyIDI4LjU4NzlDNzEuNjg4MyAyOC42MzEgNzEuNzUyMiAyOC42NTYgNzEuODE4OSAyOC42NTg5VjI4LjY1ODlaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik03Mi42MTg1IDM0LjM2OTFMNzIuNTU3MSAzNC4zODY0TDcyLjYxODUgMzQuMzY5MVoiIGZpbGw9IiMwRDBDMjIiLz4KPHBhdGggZD0iTTcxLjg0MyAyOC42NDhDNzEuODM1MiAyOC42NDcgNzEuODI3NiAyOC42NDUyIDcxLjgyMDIgMjguNjQyNkM3MS44MTk3IDI4LjY0NzYgNzEuODE5NyAyOC42NTI3IDcxLjgyMDIgMjguNjU3OEM3MS44Mjg1IDI4LjY1NjcgNzEuODM2NCAyOC42NTMzIDcxLjg0MyAyOC42NDhWMjguNjQ4WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNzEuODE5OCAyOC42NTc1SDcxLjgyODFWMjguNjUyM0w3MS44MTk4IDI4LjY1NzVaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik03Mi41NjkzIDM0LjM1NzRMNzIuNjYxOSAzNC4zMDQ3TDcyLjY5NjMgMzQuMjg1M0w3Mi43Mjc1IDM0LjI1MkM3Mi42Njg4IDM0LjI3NzIgNzIuNjE1MiAzNC4zMTMgNzIuNTY5MyAzNC4zNTc0VjM0LjM1NzRaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik03MS45NzkzIDI4Ljc4MTVMNzEuODg5IDI4LjY5NTVMNzEuODI3NiAyOC42NjIxQzcxLjg2MDYgMjguNzIwMyA3MS45MTUxIDI4Ljc2MzIgNzEuOTc5MyAyOC43ODE1VjI4Ljc4MTVaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik00OS4yNTEzIDg0LjE5OTJDNDkuMTc5MSA4NC4yMzA0IDQ5LjExNTkgODQuMjc5MiA0OS4wNjc0IDg0LjM0MTJMNDkuMTI0NCA4NC4zMDQ2QzQ5LjE2MzEgODQuMjY5MSA0OS4yMTc5IDg0LjIyNzIgNDkuMjUxMyA4NC4xOTkyWiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNjIuNDQ5NiA4MS42MDE1QzYyLjQ0OTYgODEuNTE5OCA2Mi40MDk4IDgxLjUzNDggNjIuNDE5NSA4MS44MjUyQzYyLjQxOTUgODEuODAxNSA2Mi40MjkyIDgxLjc3NzggNjIuNDMzNSA4MS43NTUzQzYyLjQzODggODEuNzAzNiA2Mi40NDMxIDgxLjY1MzEgNjIuNDQ5NiA4MS42MDE1WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNjEuMDc5OSA4NC4xOTkyQzYxLjAwNzcgODQuMjMwNCA2MC45NDQ1IDg0LjI3OTIgNjAuODk2IDg0LjM0MTJMNjAuOTUzIDg0LjMwNDZDNjAuOTkxNyA4NC4yNjkxIDYxLjA0NjYgODQuMjI3MiA2MS4wNzk5IDg0LjE5OTJaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik0zOS45NTY4IDg0LjgxNjlDMzkuOTAyIDg0Ljc2OTIgMzkuODM0OSA4NC43Mzc5IDM5Ljc2MzIgODQuNzI2NkMzOS44MjEzIDg0Ljc1NDUgMzkuODc5MyA4NC43ODI1IDM5LjkxOCA4NC44MDRMMzkuOTU2OCA4NC44MTY5WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNMzcuODY1NCA4Mi44MTMyQzM3Ljg1NjggODIuNzI4NSAzNy44MzA5IDgyLjY0NjQgMzcuNzg5MSA4Mi41NzIzQzM3LjgxODcgODIuNjQ5NSAzNy44NDM0IDgyLjcyODUgMzcuODYzMyA4Mi44MDg5TDM3Ljg2NTQgODIuODEzMloiIGZpbGw9IiMwRDBDMjIiLz4KPHBhdGggZD0iTTI3LjI5MzUgMzQuMTk1M0wyNy4zNDMgMzQuMjQxNkwyNy4zNzUzIDM0LjI2MUMyNy4zNTA0IDM0LjIzNjMgMjcuMzIzIDM0LjIxNDIgMjcuMjkzNSAzNC4xOTUzVjM0LjE5NTNaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik03MS40NDQ0IDI4LjU5NjRMNzEuMzg5NiAyOC41NjQxTDcxLjI2MjcgMjguNTI1NEM3MS4zMTM4IDI4LjU2ODUgNzEuMzc3NyAyOC41OTM1IDcxLjQ0NDQgMjguNTk2NFYyOC41OTY0WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNzIuMjQzOSAzNC4zMDY2TDcyLjE4MjYgMzQuMzIzOEw3Mi4yNDM5IDM0LjMwNjZaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik03MS40Njg1IDI4LjU4NTVDNzEuNDYwNyAyOC41ODQ1IDcxLjQ1MzEgMjguNTgyNyA3MS40NDU3IDI4LjU4MDFDNzEuNDQ1MiAyOC41ODUxIDcxLjQ0NTIgMjguNTkwMiA3MS40NDU3IDI4LjU5NTNDNzEuNDU0IDI4LjU5NDIgNzEuNDYxOSAyOC41OTA4IDcxLjQ2ODUgMjguNTg1NVYyOC41ODU1WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNzEuNDQ1MyAyOC41OTVINzEuNDUzNVYyOC41ODk4TDcxLjQ0NTMgMjguNTk1WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNzIuMTk0OCAzNC4yOTQ4TDcyLjI4NzMgMzQuMjQyMUw3Mi4zMjE3IDM0LjIyMjhMNzIuMzUyOSAzNC4xODk1QzcyLjI5NDMgMzQuMjE0NyA3Mi4yNDA3IDM0LjI1MDQgNzIuMTk0OCAzNC4yOTQ4VjM0LjI5NDhaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik03MS42MDQ4IDI4LjcxOUw3MS41MTQ0IDI4LjYzMjlMNzEuNDUzMSAyOC41OTk2QzcxLjQ4NjEgMjguNjU3NyA3MS41NDA1IDI4LjcwMDYgNzEuNjA0OCAyOC43MTlWMjguNzE5WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNNDguODc2OCA4NC4xMzY3QzQ4LjgwNDYgODQuMTY3OSA0OC43NDE0IDg0LjIxNjcgNDguNjkyOSA4NC4yNzg3TDQ4Ljc0OTkgODQuMjQyMUM0OC43ODg2IDg0LjIwNjYgNDguODQzNCA4NC4xNjQ3IDQ4Ljg3NjggODQuMTM2N1oiIGZpbGw9IiMwRDBDMjIiLz4KPHBhdGggZD0iTTYyLjA3NTEgODEuNTM5QzYyLjA3NTEgODEuNDU3MyA2Mi4wMzUzIDgxLjQ3MjMgNjIuMDQ1IDgxLjc2MjdDNjIuMDQ1IDgxLjczOSA2Mi4wNTQ3IDgxLjcxNTMgNjIuMDU5IDgxLjY5MjhDNjIuMDY0MyA4MS42NDExIDYyLjA2ODYgODEuNTkwNiA2Mi4wNzUxIDgxLjUzOVoiIGZpbGw9IiMwRDBDMjIiLz4KPHBhdGggZD0iTTYwLjcwNTQgODQuMTM2N0M2MC42MzMyIDg0LjE2NzkgNjAuNTcgODQuMjE2NyA2MC41MjE1IDg0LjI3ODdMNjAuNTc4NSA4NC4yNDIxQzYwLjYxNzIgODQuMjA2NiA2MC42NzIgODQuMTY0NyA2MC43MDU0IDg0LjEzNjdaIiBmaWxsPSIjMEQwQzIyIi8+CjxwYXRoIGQ9Ik0zOS41ODIyIDg0Ljc1NDRDMzkuNTI3NSA4NC43MDY3IDM5LjQ2MDQgODQuNjc1NCAzOS4zODg3IDg0LjY2NDFDMzkuNDQ2NyA4NC42OTIgMzkuNTA0OCA4NC43MiAzOS41NDM1IDg0Ljc0MTVMMzkuNTgyMiA4NC43NTQ0WiIgZmlsbD0iIzBEMEMyMiIvPgo8cGF0aCBkPSJNMzcuNDkwOSA4Mi43NTA3QzM3LjQ4MjMgODIuNjY2IDM3LjQ1NjMgODIuNTgzOSAzNy40MTQ2IDgyLjUwOThDMzcuNDQ0MiA4Mi41ODcgMzcuNDY4OSA4Mi42NjYgMzcuNDg4OCA4Mi43NDY0TDM3LjQ5MDkgODIuNzUwN1oiIGZpbGw9IiMwRDBDMjIiLz4KPHBhdGggZD0iTTUxLjUzOTMgNDYuOTI3QzQ4LjY2OCA0OC4xNTYxIDQ1LjQwOTUgNDkuNTQ5OSA0MS4xODY0IDQ5LjU0OTlDMzkuNDE5OCA0OS41NDYzIDM3LjY2MTcgNDkuMzA0IDM1Ljk2IDQ4LjgyOTNMMzguODgwOCA3OC44MTY5QzM4Ljk4NDEgODAuMDcwMyAzOS41NTUxIDgxLjIzOSA0MC40ODAzIDgyLjA5MDlDNDEuNDA1NSA4Mi45NDI4IDQyLjYxNzMgODMuNDE1NiA0My44NzQ5IDgzLjQxNTRDNDMuODc0OSA4My40MTU0IDQ4LjAxNjMgODMuNjMwNCA0OS4zOTgyIDgzLjYzMDRDNTAuODg1NSA4My42MzA0IDU1LjM0NTIgODMuNDE1NCA1NS4zNDUyIDgzLjQxNTRDNTYuNjAyNiA4My40MTUzIDU3LjgxNDEgODIuOTQyNCA1OC43MzkxIDgyLjA5MDVDNTkuNjY0MSA4MS4yMzg3IDYwLjIzNDkgODAuMDcwMiA2MC4zMzgzIDc4LjgxNjlMNjMuNDY2NiA0NS42Nzk1QzYyLjA2ODYgNDUuMjAyIDYwLjY1NzcgNDQuODg0OCA1OS4wNjcxIDQ0Ljg4NDhDNTYuMzE2MyA0NC44ODM3IDU0LjA5OTkgNDUuODMxMSA1MS41MzkzIDQ2LjkyN1oiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0yNi45MTg5IDM0LjEzMjhMMjYuOTY4NCAzNC4xNzkxTDI3LjAwMDcgMzQuMTk4NEMyNi45NzU4IDM0LjE3MzcgMjYuOTQ4NCAzNC4xNTE3IDI2LjkxODkgMzQuMTMyOFYzNC4xMzI4WiIgZmlsbD0iIzBEMEMyMiIvPgoKPHBhdGggZD0iTTc2Ljk3MjkgMzEuMzY1Nkw3Ni41MzMxIDI5LjE0N0M3Ni4xMzg0IDI3LjE1NjQgNzUuMjQyNiAyNS4yNzU1IDczLjE5OTQgMjQuNTU2MUM3Mi41NDQ0IDI0LjMyNiA3MS44MDEzIDI0LjIyNyA3MS4yOTkxIDIzLjc1MDZDNzAuNzk2OSAyMy4yNzQyIDcwLjY0ODUgMjIuNTM0MyA3MC41MzI0IDIxLjg0ODJDNzAuMzE3MyAyMC41ODg5IDcwLjExNTEgMTkuMzI4NiA2OS44OTQ2IDE4LjA3MTRDNjkuNzA0MyAxNi45OTA2IDY5LjU1MzcgMTUuNzc2NSA2OS4wNTggMTQuNzg1QzY4LjQxMjcgMTMuNDUzNiA2Ny4wNzM5IDEyLjY3NTEgNjUuNzQyNSAxMi4xNTk5QzY1LjA2MDMgMTEuOTA1MyA2NC4zNjQxIDExLjY4OTggNjMuNjU3MyAxMS41MTQ3QzYwLjMzMTEgMTAuNjM3MiA1Ni44MzM5IDEwLjMxNDUgNTMuNDExOSAxMC4xMzA3QzQ5LjMwNDcgOS45MDQwMSA0NS4xODY0IDkuOTcyMyA0MS4wODg5IDEwLjMzNUMzOC4wMzkxIDEwLjYxMjQgMzQuODI2OCAxMC45NDggMzEuOTI4NiAxMi4wMDI5QzMwLjg2OTQgMTIuMzg5IDI5Ljc3NzggMTIuODUyNSAyOC45NzIzIDEzLjY3MDlDMjcuOTg0MSAxNC42NzY0IDI3LjY2MTQgMTYuMjMxNCAyOC4zODMgMTcuNDg1M0MyOC44OTYgMTguMzc1OCAyOS43NjQ5IDE5LjAwNDkgMzAuNjg2NSAxOS40MjExQzMxLjg4NyAxOS45NTczIDMzLjE0MDcgMjAuMzY1MyAzNC40MjY4IDIwLjYzODRDMzguMDA3OSAyMS40Mjk5IDQxLjcxNjkgMjEuNzQwNyA0NS4zNzU1IDIxLjg3M0M0OS40MzA0IDIyLjAzNjYgNTMuNDkxOSAyMS45MDQgNTcuNTI3NSAyMS40NzYyQzU4LjUyNTUgMjEuMzY2NSA1OS41MjE3IDIxLjIzNDkgNjAuNTE2MSAyMS4wODE1QzYxLjY4NzIgMjAuOTAxOSA2Mi40Mzg5IDE5LjM3MDUgNjIuMDkzNyAxOC4zMDM3QzYxLjY4MDcgMTcuMDI4MyA2MC41NzA5IDE2LjUzMzYgNTkuMzE1OSAxNi43MjYxQzU5LjEzMDkgMTYuNzU1MSA1OC45NDcgMTYuNzgyIDU4Ljc2MjEgMTYuODA4OUw1OC42Mjg3IDE2LjgyODNDNTguMjAzNiAxNi44ODIgNTcuNzc4NCAxNi45MzIyIDU3LjM1MzMgMTYuOTc4OEM1Ni40NzUxIDE3LjA3MzUgNTUuNTk0NyAxNy4xNTA5IDU0LjcxMjEgMTcuMjExMUM1Mi43MzU1IDE3LjM0ODggNTAuNzUzNiAxNy40MTIyIDQ4Ljc3MjcgMTcuNDE1NEM0Ni44MjYyIDE3LjQxNTQgNDQuODc4NiAxNy4zNjA2IDQyLjkzNjUgMTcuMjMyNkM0Mi4wNTAzIDE3LjE3NDUgNDEuMTY2MyAxNy4xMDA3IDQwLjI4NDUgMTcuMDExMUMzOS44ODM0IDE2Ljk2OTEgMzkuNDgzMyAxNi45MjUgMzkuMDgzMyAxNi44NzU2TDM4LjcwMjYgMTYuODI3MkwzOC42MTk4IDE2LjgxNTRMMzguMjI1MSAxNi43NTg0QzM3LjQxODYgMTYuNjM2OCAzNi42MTIgMTYuNDk3IDM1LjgxNDEgMTYuMzI4MkMzNS43MzM1IDE2LjMxMDMgMzUuNjYxNSAxNi4yNjU1IDM1LjYwOTkgMTYuMjAxMkMzNS41NTgzIDE2LjEzNjkgMzUuNTMwMSAxNi4wNTY5IDM1LjUzMDEgMTUuOTc0NEMzNS41MzAxIDE1Ljg5MTkgMzUuNTU4MyAxNS44MTE5IDM1LjYwOTkgMTUuNzQ3NkMzNS42NjE1IDE1LjY4MzIgMzUuNzMzNSAxNS42Mzg0IDM1LjgxNDEgMTUuNjIwNkgzNS44MjkxQzM2LjUyMDYgMTUuNDczMyAzNy4yMTc1IDE1LjM0NzQgMzcuOTE2NSAxNS4yMzc3QzM4LjE0OTUgMTUuMjAxMiAzOC4zODMyIDE1LjE2NTMgMzguNjE3NiAxNS4xMzAySDM4LjYyNDFDMzkuMDYxOCAxNS4xMDEyIDM5LjUwMTYgMTUuMDIyNyAzOS45MzcyIDE0Ljk3MUM0My43MjY1IDE0LjU3NjkgNDcuNTM4NCAxNC40NDI1IDUxLjM0NjEgMTQuNTY4OEM1My4xOTQ3IDE0LjYyMjYgNTUuMDQyMyAxNC43MzEyIDU2Ljg4MjMgMTQuOTE4M0M1Ny4yNzggMTQuOTU5MiA1Ny42NzE2IDE1LjAwMjIgNTguMDY1MiAxNS4wNTA2QzU4LjIxNTggMTUuMDY4OSA1OC4zNjc0IDE1LjA5MDQgNTguNTE5IDE1LjEwODdMNTguODI0NSAxNS4xNTI4QzU5LjcxNDkgMTUuMjg1NCA2MC42MDA3IDE1LjQ0NjQgNjEuNDgxOCAxNS42MzU2QzYyLjc4NzMgMTUuOTE5NSA2NC40NjM5IDE2LjAxMiA2NS4wNDQ2IDE3LjQ0MjNDNjUuMjI5NSAxNy44OTYxIDY1LjMxMzQgMTguNDAwNSA2NS40MTU2IDE4Ljg3NjlMNjUuNTQ1NyAxOS40ODQ1QzY1LjU0OTEgMTkuNDk1NCA2NS41NTE2IDE5LjUwNjUgNjUuNTUzMiAxOS41MTc4QzY1Ljg2MDggMjAuOTUxNyA2Ni4xNjg3IDIyLjM4NTYgNjYuNDc3IDIzLjgxOTVDNjYuNDk5NiAyMy45MjU0IDY2LjUwMDEgMjQuMDM0OCA2Ni40Nzg2IDI0LjE0MUM2Ni40NTcgMjQuMjQ3MSA2Ni40MTM4IDI0LjM0NzcgNjYuMzUxNiAyNC40MzYzQzY2LjI4OTUgMjQuNTI1IDY2LjIwOTcgMjQuNiA2Ni4xMTczIDI0LjY1NjVDNjYuMDI0OSAyNC43MTMgNjUuOTIxOCAyNC43NDk4IDY1LjgxNDYgMjQuNzY0N0g2NS44MDZMNjUuNjE3OCAyNC43OTA1TDY1LjQzMTcgMjQuODE1M0M2NC44NDI0IDI0Ljg5MiA2NC4yNTI0IDI0Ljk2MzcgNjMuNjYxNiAyNS4wMzA0QzYyLjQ5OCAyNS4xNjMgNjEuMzMyNiAyNS4yNzc3IDYwLjE2NTUgMjUuMzc0NUM1Ny44NDYyIDI1LjU2NzMgNTUuNTIyMiAyNS42OTM5IDUzLjE5MzYgMjUuNzU0MUM1Mi4wMDcxIDI1Ljc4NTYgNTAuODIwOSAyNS44MDAzIDQ5LjYzNTEgMjUuNzk4MkM0NC45MTUyIDI1Ljc5NDUgNDAuMTk5MyAyNS41MjAxIDM1LjUxMDggMjQuOTc2NkMzNS4wMDMyIDI0LjkxNjQgMzQuNDk1NiAyNC44NTE4IDMzLjk4OCAyNC43ODYyQzM0LjM4MTYgMjQuODM2OCAzMy43MDIgMjQuNzQ3NSAzMy41NjQzIDI0LjcyODJDMzMuMjQxNyAyNC42ODMgMzIuOTE5MSAyNC42MzYgMzIuNTk2NSAyNC41ODczQzMxLjUxMzUgMjQuNDI0OSAzMC40MzcgMjQuMjI0OSAyOS4zNTYzIDI0LjA0OTZDMjguMDQ5NyAyMy44MzQ1IDI2LjggMjMuOTQyIDI1LjYxODIgMjQuNTg3M0MyNC42NDggMjUuMTE4MiAyMy44NjI4IDI1LjkzMjIgMjMuMzY3MyAyNi45MjA5QzIyLjg1NzYgMjcuOTc0OCAyMi43MDYgMjkuMTIyMyAyMi40NzggMzAuMjU0N0MyMi4yNSAzMS4zODcxIDIxLjg5NTEgMzIuNjA1NSAyMi4wMjk1IDMzLjc2OEMyMi4zMTg4IDM2LjI3NjkgMjQuMDcyOCAzOC4zMTU5IDI2LjU5NTcgMzguNzcxOUMyOC45NjkxIDM5LjIwMiAzMS4zNTU0IDM5LjU1MDQgMzMuNzQ4MiAzOS44NDczQzQzLjE0NzYgNDAuOTk4NCA1Mi42NDM0IDQxLjEzNjIgNjIuMDcyMiA0MC4yNTgxQzYyLjg0IDQwLjE4NjQgNjMuNjA2OCA0MC4xMDgyIDY0LjM3MjQgNDAuMDIzNkM2NC42MTE2IDM5Ljk5NzMgNjQuODUzNiA0MC4wMjQ5IDY1LjA4MDcgNDAuMTA0M0M2NS4zMDc5IDQwLjE4MzYgNjUuNTE0NCA0MC4zMTI4IDY1LjY4NTEgNDAuNDgyM0M2NS44NTU4IDQwLjY1MTggNjUuOTg2NSA0MC44NTc0IDY2LjA2NzUgNDEuMDgzOUM2Ni4xNDg1IDQxLjMxMDQgNjYuMTc3OSA0MS41NTIyIDY2LjE1MzMgNDEuNzkxNkw2NS45MTQ2IDQ0LjExMjNDNjUuNDMzNSA0OC44MDE4IDY0Ljk1MjUgNTMuNDkwOSA2NC40NzE0IDU4LjE3OTZDNjMuOTY5NSA2My4xMDM2IDYzLjQ2NDUgNjguMDI3MSA2Mi45NTYxIDcyLjk1MDNDNjIuODEyOCA3NC4zMzY5IDYyLjY2OTQgNzUuNzIzIDYyLjUyNiA3Ny4xMDg5QzYyLjM4ODMgNzguNDczNiA2Mi4zNjkgNzkuODgxMyA2Mi4xMDk4IDgxLjIyOThDNjEuNzAxMiA4My4zNTA1IDYwLjI2NTUgODQuNjUyOCA1OC4xNzA2IDg1LjEyOTJDNTYuMjUxNCA4NS41NjYgNTQuMjkwOCA4NS43OTUzIDUyLjMyMjYgODUuODEzMkM1MC4xNDA2IDg1LjgyNSA0Ny45NTk3IDg1LjcyODIgNDUuNzc3NyA4NS43NDAxQzQzLjQ0ODMgODUuNzUzIDQwLjU5NTMgODUuNTM3OSAzOC43OTcyIDgzLjgwNDNDMzcuMjE3NSA4Mi4yODE2IDM2Ljk5OTIgNzkuODk3NCAzNi43ODQxIDc3LjgzNTlDMzYuNDk3MyA3NS4xMDY1IDM2LjIxMyA3Mi4zNzc1IDM1LjkzMTMgNjkuNjQ4OEwzNC4zNTA0IDU0LjQ3NkwzMy4zMjc3IDQ0LjY1ODZDMzMuMzEwNSA0NC40OTYyIDMzLjI5MzMgNDQuMzM2IDMzLjI3NzIgNDQuMTcyNUMzMy4xNTQ2IDQzLjAwMTQgMzIuMzI1NSA0MS44NTUgMzEuMDE4OCA0MS45MTQyQzI5LjkwMDQgNDEuOTYzNyAyOC42MjkzIDQyLjkxNDMgMjguNzYwNSA0NC4xNzI1TDI5LjUxODcgNTEuNDUwOUwzMS4wODY2IDY2LjUwNjVDMzEuNTMzMiA3MC43ODMgMzEuOTc4OCA3NS4wNjAyIDMyLjQyMzMgNzkuMzM4MkMzMi41MDkzIDgwLjE1NzcgMzIuNTkgODAuOTc5MyAzMi42ODAzIDgxLjc5ODdDMzMuMTcxOCA4Ni4yNzY3IDM2LjU5MTYgODguNjg5OSA0MC44MjY1IDg5LjM2OTVDNDMuMjk5OSA4OS43Njc0IDQ1LjgzMzYgODkuODQ5MiA0OC4zNDM2IDg5Ljg5QzUxLjU2MTIgODkuOTQxNyA1NC44MTEgOTAuMDY1MyA1Ny45NzYgODkuNDgyNUM2Mi42NjU4IDg4LjYyMjEgNjYuMTg0NSA4NS40OTA2IDY2LjY4NjcgODAuNjMzQzY2LjgzMDEgNzkuMjMwNyA2Ni45NzM1IDc3LjgyOCA2Ny4xMTY5IDc2LjQyNDlDNjcuNTkzNiA3MS43ODQ5IDY4LjA2OTcgNjcuMTQ0NiA2OC41NDUgNjIuNTAzOEw3MC4xIDQ3LjM0MDdMNzAuODEzIDQwLjM5MTRDNzAuODQ4NiA0MC4wNDY4IDcwLjk5NDEgMzkuNzIyOCA3MS4yMjggMzkuNDY3NEM3MS40NjIgMzkuMjExOSA3MS43NzIgMzkuMDM4NiA3Mi4xMTIxIDM4Ljk3M0M3My40NTMyIDM4LjcxMTYgNzQuNzM1IDM4LjI2NTMgNzUuNjg4OSAzNy4yNDQ4Qzc3LjIwNzQgMzUuNjE5OCA3Ny41MDk2IDMzLjUwMTMgNzYuOTcyOSAzMS4zNjU2Wk0yNi41MjY5IDMyLjg2NDdDMjYuNTQ3MyAzMi44NTUgMjYuNTA5NyAzMy4wMzAzIDI2LjQ5MzUgMzMuMTEyQzI2LjQ5MDMgMzIuOTg4MyAyNi40OTY4IDMyLjg3ODYgMjYuNTI2OSAzMi44NjQ3Wk0yNi42NTcgMzMuODcxMkMyNi42Njc4IDMzLjg2MzcgMjYuNyAzMy45MDY3IDI2LjczMzQgMzMuOTU4M0MyNi42ODI4IDMzLjkxMSAyNi42NTA2IDMzLjg3NTUgMjYuNjU1OSAzMy44NzEySDI2LjY1N1pNMjYuNzg1IDM0LjA0MDFDMjYuODMxMiAzNC4xMTg2IDI2Ljg1NiAzNC4xNjgxIDI2Ljc4NSAzNC4wNDAxVjM0LjA0MDFaTTI3LjA0MiAzNC4yNDg3SDI3LjA0ODRDMjcuMDQ4NCAzNC4yNTYyIDI3LjA2MDMgMzQuMjYzOCAyNy4wNjQ2IDM0LjI3MTNDMjcuMDU3NSAzNC4yNjMgMjcuMDQ5NSAzNC4yNTU0IDI3LjA0MDkgMzQuMjQ4N0gyNy4wNDJaTTcyLjA0OTggMzMuOTM2OEM3MS41NjggMzQuMzk1IDcwLjg0MjEgMzQuNjA3OSA3MC4xMjQ4IDM0LjcxNDRDNjIuMDgwOCAzNS45MDgxIDUzLjkxOTUgMzYuNTEyNCA0NS43ODczIDM2LjI0NTdDMzkuOTY3MyAzNi4wNDY4IDM0LjIwODUgMzUuNDAwNSAyOC40NDY1IDM0LjU4NjRDMjcuODgxOSAzNC41MDY4IDI3LjI3IDM0LjQwMzYgMjYuODgxOCAzMy45ODc0QzI2LjE1MDUgMzMuMjAyMyAyNi41MDk3IDMxLjYyMTUgMjYuNyAzMC42NzNDMjYuODc0MiAyOS44MDQxIDI3LjIwNzYgMjguNjQ1OSAyOC4yNDExIDI4LjUyMjJDMjkuODU0MiAyOC4zMzI5IDMxLjcyNzUgMjkuMDEzNiAzMy4zMjM0IDI5LjI1NTZDMzUuMjQ0OCAyOS41NDg4IDM3LjE3MzQgMjkuNzgzNiAzOS4xMDkxIDI5Ljk2QzQ3LjM3MDMgMzAuNzEyOCA1NS43NzAzIDMwLjU5NTYgNjMuOTk1IDI5LjQ5NDRDNjUuNDk0MSAyOS4yOTI5IDY2Ljk4NzggMjkuMDU4OCA2OC40NzYyIDI4Ljc5MjFDNjkuODAyMiAyOC41NTQ1IDcxLjI3MjIgMjguMTA4MiA3Mi4wNzM0IDI5LjQ4MTRDNzIuNjIyOSAzMC40MTcxIDcyLjY5NjEgMzEuNjY4OCA3Mi42MTExIDMyLjcyNTlDNzIuNTg0OSAzMy4xODY1IDcyLjM4MzcgMzMuNjE5NyA3Mi4wNDg3IDMzLjkzNjhINzIuMDQ5OFoiIGZpbGw9IiMwRDBDMjIiLz4KCjwvc3ZnPg==" x="80" y="80" width="20px" height="20px"></image></svg>
-                                        </a>
                                     </div>
                                 </div>
                             </div>
@@ -498,51 +503,300 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 </div>
                             )}
                         </div>
+                    </div>
+                    )}
 
-                        {/* 4. Mobile Export (New) */}
-                        <div className="border border-gray-700 rounded-lg overflow-hidden">
-                            <SectionHeader id="mobile" title="Mobile & Tablet Export" icon={Monitor} />
+                    {activeTab === 'contribute' && (
+                        <div className="p-6 md:p-8 space-y-8 font-body max-w-3xl mx-auto text-gray-300">
+                            {/* Concepts Header */}
+                            <div className="space-y-3">
+                                <h3 className="text-xl font-bold text-white flex items-center gap-2 font-header">
+                                    <BookOpen size={20} className="text-synthux-blue" />
+                                    Preset & Sample Pack Submission Guide
+                                </h3>
+                                <p className="leading-relaxed text-sm">
+                                    Before preparing your contribution, it's important to understand how Spotykach distinguishes between a <strong>Sample Pack</strong> and a <strong>Project Preset</strong>:
+                                </p>
+                            </div>
 
-                            {expandedSection === 'mobile' && (
-                                <div className="p-6 bg-black/20 text-gray-300 space-y-6 font-body">
-                                    <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-lg flex gap-3">
-                                        <AlertTriangle className="text-amber-500 shrink-0" />
-                                        <div className="text-sm">
-                                            <strong className="text-amber-500 block mb-1">Android & iOS Limitations</strong>
-                                            <p className="mb-2">
-                                                Mobile operating systems strictly restrict apps from writing directly to SD cards or system folders.
-                                                The "Direct Write" feature is mainly for Desktop browsers (Chrome/Edge).
+                            {/* Concepts Table */}
+                            <div className="overflow-x-auto border border-gray-800 rounded-xl bg-black/20">
+                                <table className="w-full text-xs text-left border-collapse">
+                                    <thead>
+                                        <tr className="border-b border-gray-800 bg-white/5 uppercase font-header tracking-wider text-gray-400 text-[10px]">
+                                            <th className="px-4 py-3">Feature</th>
+                                            <th className="px-4 py-3">📦 Sample Packs</th>
+                                            <th className="px-4 py-3">🎛️ Project Presets (Layouts)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-800 font-body">
+                                        <tr>
+                                            <td className="px-4 py-3 font-semibold text-white">What it is</td>
+                                            <td className="px-4 py-3">A library of curated audio files available in the <strong>Sample Browser</strong>.</td>
+                                            <td className="px-4 py-3">A saved project configuration where all slots have been mapped to specific samples.</td>
+                                        </tr>
+                                        <tr className="bg-white/5">
+                                            <td className="px-4 py-3 font-semibold text-white">Slot Limit</td>
+                                            <td className="px-4 py-3"><strong className="text-synthux-blue">Unlimited</strong>. A pack can contain 50, 100, or more files; users choose what to load.</td>
+                                            <td className="px-4 py-3"><strong className="text-synthux-orange">Maximum of 36 slots</strong> (6 tapes × 6 slots) corresponding to the hardware.</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="px-4 py-3 font-semibold text-white">How it loads</td>
+                                            <td className="px-4 py-3">Users browse individual samples and manually assign them to any tape slot.</td>
+                                            <td className="px-4 py-3">Loads samples into pre-assigned slots automatically, along with custom tape notes.</td>
+                                        </tr>
+                                        <tr className="bg-white/5">
+                                            <td className="px-4 py-3 font-semibold text-white">Sharing Method</td>
+                                            <td className="px-4 py-3">Handled by maintainers updating the catalog in the web app database.</td>
+                                            <td className="px-4 py-3">Can be exported/imported as a settings-only JSON or shared as a full ZIP archive.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Visual Showcase */}
+                            <div className="space-y-6 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">📷</span> Visual Showcase: Sample Browser & Project Presets
+                                </h4>
+                                
+                                <div className="flex flex-col gap-6">
+                                    {/* 1. Sample Browser */}
+                                    <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
+                                        <div className="space-y-1">
+                                            <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-synthux-blue"></span>
+                                                Sample Pack Browser
+                                            </h5>
+                                            <p className="text-xs text-gray-400 leading-relaxed">
+                                                Browse and preview cataloged packs (like Hainbach, Jonwtr, or Horror) or local/uploaded samples. Open via the slot (+) or sidebar folder icon.
                                             </p>
+                                        </div>
+                                        <div className="flex flex-col gap-4">
+                                            <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black/40">
+                                                <img 
+                                                    src={resolveAssetPath('/img/docs/samplebrowser_sidebar.jpg')} 
+                                                    alt="Sample Browser Sidebar" 
+                                                    className="w-full h-auto object-contain max-h-96 mx-auto"
+                                                />
+                                            </div>
+                                            <div className="rounded-lg overflow-hidden border border-gray-800 bg-black/40 flex items-center bg-black/50">
+                                                <video 
+                                                    src={resolveAssetPath('/vid/docs/samplepackbrowser.mp4')} 
+                                                    controls 
+                                                    className="w-full h-auto max-h-96 object-contain mx-auto"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <h4 className="text-white font-bold mb-2">How to Export on Mobile</h4>
-                                        <ol className="list-decimal list-inside space-y-3 text-sm">
-                                            <li>
-                                                <strong>Option A: Download ZIP</strong>
-                                                <p className="ml-5 text-gray-400 mt-1">
-                                                    Use "Download SD Structure (ZIP)". Save it to your "Files", then unzip it and move the contents to your SD card manually.
-                                                </p>
-                                            </li>
-                                            <li>
-                                                <strong>Option B: Manual File Export</strong>
-                                                <p className="ml-5 text-gray-400 mt-1">
-                                                    Use the <strong>"Manual (Mobile)"</strong> tab in the Export menu.
-                                                </p>
-                                                <ul className="list-disc list-inside ml-5 mt-1 space-y-1 text-gray-400">
-                                                    <li>Select a Tape (Color).</li>
-                                                    <li>Download each file individually (e.g., <code className="bg-gray-800 px-1 rounded">1.WAV</code>).</li>
-                                                    <li>Move these files to the corresponding folder (e.g., <code className="bg-gray-800 px-1 rounded">SK/B</code>) on your card.</li>
-                                                </ul>
-                                            </li>
-                                        </ol>
+                                    {/* 2. Preset Manager */}
+                                    <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
+                                        <div className="space-y-1">
+                                            <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-synthux-orange"></span>
+                                                Preset Manager
+                                            </h5>
+                                            <p className="text-xs text-gray-400 leading-relaxed">
+                                                Load pre-mapped community configurations to instantly fill all 36 slots, apply custom names, and load any written tape notes.
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-col gap-4">
+                                            <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black/40">
+                                                <img 
+                                                    src={resolveAssetPath('/img/docs/presets_menu.png')} 
+                                                    alt="Presets Menu" 
+                                                    className="w-full h-auto object-contain max-h-96 mx-auto"
+                                                />
+                                            </div>
+                                            <div className="rounded-lg overflow-hidden border border-gray-800 bg-black/40 flex items-center bg-black/50">
+                                                <video 
+                                                    src={resolveAssetPath('/vid/docs/presetsbrowser_1.mp4')} 
+                                                    controls 
+                                                    className="w-full h-auto max-h-96 object-contain mx-auto"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                            </div>
 
-                    </div>
+                            {/* Share Box */}
+                            <div className="bg-synthux-blue/10 border border-synthux-blue/30 p-4 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <strong className="text-synthux-blue block mb-1 text-sm">Need to share this guide?</strong>
+                                    <p className="text-xs text-gray-400">
+                                        Send a direct link to the GitHub guide for anyone wishing to contribute their custom samples or presets.
+                                    </p>
+                                </div>
+                                <a 
+                                    href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/docs/presets-samples/README.md" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-synthux-blue text-white rounded-lg hover:bg-synthux-blue/80 transition-colors text-xs font-bold uppercase tracking-wider no-underline"
+                                >
+                                    GitHub Submission Guide <ExternalLink size={12} />
+                                </a>
+                            </div>
+
+                            {/* Developer Resources Box */}
+                            <div className="bg-synthux-pink/10 border border-synthux-pink/30 p-5 rounded-lg space-y-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="text-synthux-pink mt-0.5">🛠️</div>
+                                    <div className="space-y-1">
+                                        <strong className="text-synthux-pink block text-sm">App Maintainer & Developer Resources</strong>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            Looking to deploy custom presets directly into the web application, execute normalization scripts, or inspect the metadata schemas? The full technical backend guides are stored on GitHub:
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 font-mono text-[10px] uppercase tracking-wider font-bold">
+                                    <a 
+                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/preset_upload_guide.md" 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
+                                    >
+                                        Preset Dev Guide <ExternalLink size={10} />
+                                    </a>
+                                    <a 
+                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/scripts/normalize-audio.md" 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
+                                    >
+                                        Audio Scripts <ExternalLink size={10} />
+                                    </a>
+                                    <a 
+                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
+                                    >
+                                        JSON Schema Spec <ExternalLink size={10} />
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Artists Guidelines */}
+                            <div className="space-y-4 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">🎨</span> 1. For External Artists (Contributing a Sample Pack)
+                                </h4>
+                                <p className="text-sm leading-relaxed">
+                                    Guest artists contributing their first sample pack to Spotykach <strong>do not need to own a device or know how to use the web app!</strong>
+                                </p>
+                                <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
+                                    <h5 className="font-bold text-white flex items-center gap-2">
+                                        <AlertTriangle size={14} className="text-synthux-orange" />
+                                        Audio & Hardware Guidelines:
+                                    </h5>
+                                    <ul className="list-disc list-inside space-y-2 text-gray-300">
+                                        <li><strong>Duration Limit:</strong> Strictly <strong>42 seconds per sample</strong> is used by the hardware. You can submit longer files (the editor allows users to crop/select sections), but the hardware only plays the first 42 seconds by default.</li>
+                                        <li><strong>Decks & Slots:</strong> A complete project preset maps to 36 slots (6 color decks × 6 slots). However, your submitted <strong>sample pack is unlimited</strong> and can contain more than 36 files.</li>
+                                        <li><strong>Format:</strong> High-quality 24-bit <code>.wav</code> or <code>.flac</code>. App maintainers normalize them to -1dB, convert to FLAC for streaming, and sanitize filenames.</li>
+                                        <li><strong>Organization:</strong> Group files into subfolders if you want them categorized (e.g. Drums, FX, Melodies) in the browser.</li>
+                                        <li><strong>Cover Image:</strong> A landscape image (approx. 3:2, 4:3, or 16:9, e.g. min 1200x800px) that will display in the hero banner.</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Users Guidelines */}
+                            <div className="space-y-4 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">🎛️</span> 2. For Spotykach Users (Contributing a Preset)
+                                </h4>
+                                <p className="text-sm leading-relaxed">
+                                    If you own a Spotykach and want to share your custom tape configuration, mappings, and notes:
+                                </p>
+                                <div className="space-y-2 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
+                                    <ol className="list-decimal list-inside space-y-2 text-gray-300">
+                                        <li>Open the Export menu and select <strong>Settings-Only Preset (JSON)</strong> to download your project configuration.</li>
+                                        <li>If you use custom samples not in the default library, package those sample files too.</li>
+                                        <li>Attach the exported <code>.json</code> file along with the preset metadata (Name, short description, optional cover image).</li>
+                                        <li>Optionally, export the <strong>Portable SK Folder (ZIP)</strong> to share a ready-to-copy SD Card backup with the community.</li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                            {/* Submission Template */}
+                            <div className="space-y-4 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">📋</span> 3. Submission Checklist & Template
+                                </h4>
+                                <p className="text-sm">
+                                    Copy and fill in this template when sending in your submission:
+                                </p>
+                                <div className="relative group">
+                                    <pre className="bg-gray-900/80 p-4 rounded-lg border border-gray-800 text-[10px] font-mono text-gray-400 overflow-x-auto whitespace-pre select-all pr-24">
+{`# Submission Template
+
+## 👤 Artist & Pack Info
+* Artist Name: [Your Moniker]
+* Sample Pack Name: [e.g., Tape Loops]
+* Short Description: [1-2 sentences for app card]
+* Full Bio / Pack Description: [Detailed gear/vibe description]
+
+## 🔗 Links (Socials & Bio)
+* Website/Socials: [Links]
+
+## 📄 Licensing
+* License: [e.g., CC-BY 4.0 / Free to use, no resale]
+
+## 📁 Sample Organization
+* Categories: [Yes/No] (e.g. Drums, Synths)
+
+## 🖼️ Cover Art
+* [ ] Included landscape cover image (e.g. min 1200x800px)
+
+## 🎛️ Preset Details (Optional)
+* [ ] Exported settings-only .json preset file attached`}
+                                    </pre>
+                                    <button
+                                        onClick={() => {
+                                            const text = `# Submission Template
+
+## 👤 Artist & Pack Info
+* Artist Name: [Your Moniker]
+* Sample Pack Name: [e.g., Tape Loops]
+* Short Description: [1-2 sentences for app card]
+* Full Bio / Pack Description: [Detailed gear/vibe description]
+
+## 🔗 Links (Socials & Bio)
+* Website/Socials: [Links]
+
+## 📄 Licensing
+* License: [e.g., CC-BY 4.0 / Free to use, no resale]
+
+## 📁 Sample Organization
+* Categories: [Yes/No] (e.g. Drums, Synths)
+
+## 🖼️ Cover Art
+* [ ] Included landscape cover image (e.g. min 1200x800px)
+
+## 🎛️ Preset Details (Optional)
+* [ ] Exported settings-only .json preset file attached`;
+                                            navigator.clipboard.writeText(text);
+                                            setTemplateCopied(true);
+                                            setTimeout(() => setTemplateCopied(false), 2000);
+                                        }}
+                                        className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 text-[10px] font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-md cursor-pointer"
+                                    >
+                                        {templateCopied ? (
+                                            <>
+                                                <Check size={12} className="text-synthux-green" />
+                                                <span className="text-synthux-green">Copied!</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Copy size={12} />
+                                                <span>Copy</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>

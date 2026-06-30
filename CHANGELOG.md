@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.7.3] - 2026-06-30
+
+### Added
+- **Developer Resource Linking in App**:
+    - Embedded a quick-access "App Maintainer & Developer Resources" directory inside the Help modal, linking presets upload guides, scripts documentation, and JSON schema specs together.
+- **Copy-to-Clipboard Functionality**:
+    - Integrated a monospace checklist submission template equipped with a visual "Copy" action button and success micro-animations.
+
+### Improved
+- **Documentation Restructuring**:
+    - Centralized user/artist instructions by renaming and organizing `docs/submittingpresets/` into `/docs/presets-samples/`.
+    - Consolidated developer-oriented, normalization, manifest generation, and zipping scripts under `public/presets/preset_upload_guide.md`.
+- **Media Guides in App**:
+    - Embedded screenshot and video walkthrough guides inside the "Sample & Preset Guide" Help modal, stacking them vertically with ratio constraints to prevent UI cropping.
+
 ## [3.7.2] - 2026-05-20
 
 ### Added

@@ -2,6 +2,20 @@
 
 > This file tracks active roadmap ideas, feature requests, and a done/reviewed archive at the bottom.
 
+
+## WAV editor
+- clean history column is on the right, clean button is at the exact location where X close window button normally sits. 
+  - move clean buttons to bottom of this column? Make the modal have a full width of the editor upper zone that make the x button able to sit on the top right? Or do we do this to guide the user to be mindfull of saving / moving their edits.
+
+## Projects and sample packs guide
+- link the guide in the info section, embed it in an html format inside the web page? in some kind of modal?
+- perhaps most fitting in the current help info section with a new section / tab
+
+## Spotykach update to implement
+- adding midi functions
+- it now allows .wav as well as the former strict all caps .WAV
+
+
 ---
 ## SD import / Build
 
