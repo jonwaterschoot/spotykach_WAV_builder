@@ -108,6 +108,17 @@ Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV
 - **Simplified export-only tool**: Stripped-down version — open a file, convert, download. No project management.
 - **Mobile Optimization**: Improved layout for tablets/phones *(not a priority)*.
 
+## Documentation & Guides
+
+Whether you are a musician contributing a sample pack, a user sharing a project layout, or a developer/maintainer working on the app, check out the relevant guides below:
+
+*   **For Musicians & Preset Creators**:
+    *   [Sample & Preset Submission Guide](docs/presets-samples/README.md) – How to package, name, and license samples and presets before submitting them.
+*   **For Developers & Maintainers**:
+    *   [Preset Upload Guide](public/presets/preset_upload_guide.md) – Step-by-step instructions on integrating presets into `manifest.json`.
+    *   [Preset JSON Schema Specification](public/presets/README.md) – Detail structure and field specifications for project preset descriptor JSONs.
+    *   [Audio Processing & Normalization Scripts](scripts/normalize-audio.md) – Documentation for running scripts to normalize, FLAC-compress, and tag audio files.
+
 ## Contributing
 
 We welcome contributions!
