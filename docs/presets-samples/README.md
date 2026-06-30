@@ -2,6 +2,12 @@
 
 A comprehensive guide for **External Artists**, **Spotykach Users**, and **App Maintainers** on how to prepare, package, and submit sample packs and project presets to the **Synthux Spotykach WAV Builder**.
 
+> [!NOTE]
+> This is a guide for **guest artists** contributing sample packs and **users** wishing to share presets.
+> If you are an **app developer or maintainer** looking to write manifest JSON descriptors, deploy assets to Cloudflare R2, or run Python audio normalization scripts, please refer to the technical developer guides:
+> * [Preset Upload & Integration Guide](../../public/presets/README.md)
+> * [Audio Normalization & Compression Scripts](../../scripts/normalize-audio.md)
+
 ---
 
 ## Quick Navigation
