@@ -280,7 +280,7 @@ export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExpor
                                     Export Preset
                                 </button>
                                 <div className="text-center mt-3 text-xs text-gray-500">
-                                    See the <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/preset_upload_guide.md" target="_blank" rel="noreferrer" className="text-synthux-action hover:underline">Preset Upload Guide</a> for submission instructions.
+                                    See the <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" target="_blank" rel="noreferrer" className="text-synthux-action hover:underline">Preset Upload Guide</a> for submission instructions.
                                 </div>
                             </div>
                         </div>

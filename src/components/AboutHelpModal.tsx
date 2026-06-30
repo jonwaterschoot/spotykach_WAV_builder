@@ -652,7 +652,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 font-mono text-[10px] uppercase tracking-wider font-bold">
                                     <a 
-                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/preset_upload_guide.md" 
+                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" 
                                         target="_blank" 
                                         rel="noreferrer"
                                         className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"

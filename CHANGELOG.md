@@ -11,7 +11,7 @@
 ### Improved
 - **Documentation Restructuring**:
     - Centralized user/artist instructions by renaming and organizing `docs/submittingpresets/` into `/docs/presets-samples/`.
-    - Consolidated developer-oriented, normalization, manifest generation, and zipping scripts under `public/presets/preset_upload_guide.md`.
+    - Consolidated developer-oriented, normalization, manifest generation, and zipping scripts under `public/presets/README.md`.
 - **Media Guides in App**:
     - Embedded screenshot and video walkthrough guides inside the "Sample & Preset Guide" Help modal, stacking them vertically with ratio constraints to prevent UI cropping.
 

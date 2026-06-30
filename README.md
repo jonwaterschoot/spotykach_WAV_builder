@@ -115,8 +115,7 @@ Whether you are a musician contributing a sample pack, a user sharing a project 
 *   **For Musicians & Preset Creators**:
     *   [Sample & Preset Submission Guide](docs/presets-samples/README.md) – How to package, name, and license samples and presets before submitting them.
 *   **For Developers & Maintainers**:
-    *   [Preset Upload Guide](public/presets/preset_upload_guide.md) – Step-by-step instructions on integrating presets into `manifest.json`.
-    *   [Preset JSON Schema Specification](public/presets/README.md) – Detail structure and field specifications for project preset descriptor JSONs.
+    *   [Preset Upload & Integration Guide](public/presets/README.md) – Developer instructions on integrating presets, JSON schema specs, and deploying sample packs.
     *   [Audio Processing & Normalization Scripts](scripts/normalize-audio.md) – Documentation for running scripts to normalize, FLAC-compress, and tag audio files.
 
 ## Contributing
