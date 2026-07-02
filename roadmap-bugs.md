@@ -3,6 +3,42 @@
 > This file tracks active roadmap ideas, feature requests, and a done/reviewed archive at the bottom.
 
 
+## UX overhaul guiding to three main app functions
+
+As per a discussion w/ Roey and Fabio:
+
+We discussed how the app could be streamlined to have a clearer approach to using and loading sample packs. 
+
+Currently, we are evaluating two paths forward for this UX overhaul:
+1. **Adjust the current app:** Mold the existing UI elements to adhere to this new workflow.
+2. **Build a completely new app:** Remake everything from the ground up based on the existing app's core functions.
+
+*(For detailed wireflows, see [UX_Overhaul.md](file:///c:/Users/jonwa/Documents/GitHub/spotykach_WAV_builder/UX_Overhaul.md))*
+
+To accomplish this streamlining, we want a new layout/access available at all times via the top bar, catered to 4 distinct user roles:
+
+**1. The Hardware Configurator (Hardware Settings)**
+- In the future this might include the option to upgrade firmware and choose other options (alt firmwares, perhaps). 
+- For now, it is the simple making of the config.txt file with the instructions of where to place it on the SD card. 
+- Option to save config to a project, which takes you to the main app (requires workspace setup).
+
+**2. The Audio Editor (Single File Tweaking)**
+- Edit single files directly (trim, normalize, etc.) without needing to engage the full slot manager.
+
+**3. The Power User (Audio Editor + Slot Management)**
+- The main app that requires the workspace setup for full 6x6 grid mapping and project management.
+
+**4. The Casual Browser (Sample Packs Browser)**
+- Directly accessible without needing a workspace setup; also serves as the guide to build sample packs.
+- Allows browsing, listening, and downloading without needing to load the full project workspace. A direct access for users outside the current editor and project manager modals.
+- A dedicated section to search, filter, and preview sample packs, and add them to a personal library or current project.
+- Each artist / Sample Pack can be either preloaded into the app or downloaded as a zip file to manually copy onto an SD card.
+
+
+
+
+---
+
 ## WAV editor
 - clean history column is on the right, clean button is at the exact location where X close window button normally sits. 
   - move clean buttons to bottom of this column? Make the modal have a full width of the editor upper zone that make the x button able to sit on the top right? Or do we do this to guide the user to be mindfull of saving / moving their edits.
