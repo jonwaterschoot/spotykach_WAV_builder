@@ -328,30 +328,44 @@ migration — not continuous mirroring on every build.
 So history depth multiplies **disk × memory × IDB** simultaneously. The `CleanupModal` (766 lines)
 exists to dig out from under this after the fact.
 
-### 9.2 The Photoshop model — the right call
+### 9.2 v4 decision: original + current, nothing else
 
-Keep destructive bouncing (it *is* the correct approach for real audio processing), but bound it:
+**Persisted history is exactly two versions per file:** the original (`versions[0]`) and the current
+(`currentVersionId`). Everything in between is dropped on save.
 
-- **Session history: N steps** (configurable, default ~20–40), held in memory only.
-- **On save: collapse.** Persist only the current version, plus the original if the user has asked
-  to keep it. Reopening a project gives you the file as saved, with no history — exactly the
-  Photoshop behaviour.
-- **Cleanup stops being a rescue operation** and becomes a rarely-needed tool, since the mess no
-  longer accumulates by default. Per UX_Overhaul.md, it also moves out of the editor sidebar into
-  its own surface.
+- Keep destructive bouncing — it *is* the right approach for real audio processing.
+- The editor may keep deeper undo **in session memory**; none of it is persisted.
+- On save, collapse `versions[]` to `[original, current]` (a no-op when they're the same record).
+  Reopening a project gives you the file as saved, with no history.
+- **Cleanup stops being a rescue operation.** The mess no longer accumulates by default, so
+  `CleanupModal` becomes a rarely-needed tool rather than damage control. Per UX_Overhaul.md it also
+  moves out of the editor sidebar into its own surface.
 
-### 9.3 The Lightroom direction (longer term)
+This is simpler than an N-step limit and removes the "how many steps?" setting entirely. The safety
+story is "you can always get back to the original", which is what users actually want from this.
 
-The LR model needs the pipeline to be re-derivable, which destructive bouncing isn't — but the app
-is already halfway there: `AudioVersion.processing[]` records *which* operations were applied
-(`'normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced'`, [types.ts:20](src/types.ts#L20)).
-It records the operation **tags but not their parameters**.
+### 9.3 Why a sidecar model isn't a small step
 
-If the editor also stored the parameters (trim points, gain in dB, fade lengths, crossfade), any
-version could be re-derived from `original + op-list` — unlimited history at near-zero storage. Not
-a v4 goal, but it argues for capturing parameters into `processing[]` *now*, while touching this
-code, so the option stays open. Caveats: re-derivation costs CPU on load, and slicing fans out to
-multiple files rather than producing a single derived blob.
+Worth recording so it doesn't get mistaken for a quick win later. `AudioVersion.processing[]` is a
+**flat set of tags on a whole version** — `'normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' |
+'cut' | 'sliced'` ([types.ts:20](src/types.ts#L20)). It carries no parameters, no time ranges, and
+no ordering. `processing: ['normalized', 'cut']` cannot reconstruct anything: it doesn't say by how
+much, where, or in which order.
 
-**Recommended split:** always keep `original` + `current` on disk; keep the N intermediate steps in
-session memory only; start recording op parameters opportunistically.
+A real sidecar/non-destructive model needs an **ordered op log**, where each entry carries at
+minimum:
+
+- `type` — the operation
+- `params` — gain in dB, fade curve and length, EQ bands, crossfade, limiter threshold…
+- `range` — `{ start, end }` in seconds, since edits apply to *parts* of a file and stack on
+  different regions
+- `order` / `timestamp` — so overlapping edits on different regions resolve deterministically
+
+That's a different data model, not an extension of the current one. Two existing details show the
+shape it would take: `WavMetadata.slicePoints: number[]` ([types.ts:51](src/types.ts#L51)) is
+already parameter-level data, and slicing fans out to *multiple* files rather than producing one
+derived blob — so the log isn't a pure linear chain either.
+
+**Not a v4 goal.** If op parameters get captured opportunistically while the editor is being touched
+in Phase 6, that's a free head start — but it should not shape v4's design, and the two-version rule
+above stands regardless.
