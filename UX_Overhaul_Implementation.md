@@ -1,4 +1,11 @@
-# UX Overhaul — Implementation Outline
+# v4 "Pervak" — Implementation Outline
+
+> **Codename:** Pervak (первак) — the first run off a still, the strong opening fraction.
+> Fitting for a release whose premise is separating one muddled thing into clean tiers.
+> Branch: `v4-pervak`.
+>
+> Version lineage, for context: **v1** = browser-cache only, **v2/v3** = the current workspace +
+> projects model, **v4** = the tiered split described here.
 
 Companion to [UX_Overhaul.md](UX_Overhaul.md). That document defines *what* the personas need.
 This one maps it onto the **code that exists today**: what blocks it, what can be recycled as-is,
@@ -209,18 +216,23 @@ Split `handleLoadPreset` into `hydratePreset` + `adoptAsProject` + `writeToSD`. 
 `PresetsPanel`, calling `exportSDStructure({ directWrite: true })` with a just-picked handle.
 *Deliverable: cold start → curated project on the SD card, no work folder, no project ever created.*
 
-**Phase 4 — Config mode (Persona 2)**
+**Phase 4 — Backup & safety rework** (see §8 — prerequisite for the tier split, not a follow-up)
+Rename `backupHandle` → `sdHandle`. Make SD-as-project-mirror opt-in. Default `_sk_backups` off.
+Replace continuous mirroring with targeted durability (atomic writes + explicit user-placed backups).
+*Deliverable: the SD card is a build target again, and builds stop copying 36 WAVs each time.*
+
+**Phase 5 — Config mode (Persona 2)**
 `ConfigMode` over a bare SD handle with `config.txt` import/export. Decide device-scoped vs.
 project-scoped defaults.
 *Deliverable: MIDI setup without entering the studio.*
 
-**Phase 5 — Editor mode + Studio extraction (Persona 3, largest)**
+**Phase 6 — Editor mode + Studio extraction (Persona 3, largest)**
 Decouple `WaveformEditor` from the on-disk project for single-file editing, with "save as new
 project" as the upgrade path. In parallel, extract `App.tsx` state into `ProjectSession`. Fold the
 backup/cleanup rework from UX_Overhaul.md §"Other UX thoughts" in here — cleanup becomes its own
 surface rather than an editor sidebar.
 
-**Ordering note:** Phases 1–3 deliver the separation the overhaul is actually about. Phase 5 is where
+**Ordering note:** Phases 1–3 deliver the separation the overhaul is actually about. Phase 6 is where
 the 5656-line file finally gets broken up — deliberately *last*, so the risky refactor happens after
 the new structure has proven itself, not before.
 
@@ -239,3 +251,107 @@ the new structure has proven itself, not before.
    it as maybe unnecessary per project.
 5. **Tier upgrade prompts.** When a Tier-1 user selects 36 files, do we offer "make this a project"
    inline, or keep the tiers strictly separate?
+
+---
+
+## 8. Backup & durability rework
+
+### 8.1 Three different things are called "backup"
+
+This is the root of the confusion, and the reason the flow feels heavy.
+
+| # | What it is | Where | Cost |
+|---|---|---|---|
+| 1 | **`backupHandle` — which is just the SD card** | 49 refs in `App.tsx`; the UI that creates it says "Connect SD Card" ([SetupWizard.tsx:394](src/components/SetupWizard.tsx#L394)) | Pure naming confusion. The card is a *build target*, not a backup. |
+| 2 | **Projects mirrored onto the SD card** | [`scanProjects(local, backup)`](src/App.tsx#L1836) scans both, merges by name, tags `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` ([types.ts:111-113](src/types.ts#L111-L113)) | `ProjectSyncModal` (497) + `projectSyncUtils` (404) + `LibrarySyncModal` (501) + `calculateSyncDiff`/`applySyncDiff` all exist to service this duality. |
+| 3 | **`_sk_backups/` snapshots** | [App.tsx:296-337](src/App.tsx#L296-L337) — recursive copy of the whole SK folder into `Projects/<name>/_sk_backups/<timestamp>/`, rotating at 5 | Up to 36 WAVs copied *per build*, five deep. This is the "makes the process take longer" complaint, literally. |
+
+### 8.2 What stays basic (always available, no configuration)
+
+- Copy a **preset project to the SD card** (Tier 2)
+- **Create or open a project from a preset**
+- **Open an existing project**
+
+Nothing in that list requires a mirror, a diff, or a snapshot.
+
+### 8.3 Target model
+
+- **#1 → rename.** `backupHandle` → `sdHandle` throughout. Mechanical, no behaviour change, removes
+  the app's own claim that the card is a backup.
+- **#3 → default off**, opt-in per build. Already gated by `options.backupSKToProject`, so this is
+  nearly free and returns the build time immediately.
+- **#2 → explicit opt-in.** "Also keep a copy of projects on the SD card" becomes a setting, default
+  off. With it off, `scanProjects` collapses to one source and the `status`/`.local`/`.backup`
+  machinery largely evaporates.
+- **Backup location is the user's choice.** A backup is an explicit action to a folder they pick —
+  not an implicit consequence of having connected an SD card.
+
+**Why this is a prerequisite, not a follow-up:** Tier 2 has no work folder at all. A user going
+preset → SD card has nothing to mirror against, so the diff concept is *undefined* in that mode.
+The "SD == backup mirror" assumption has to go before the tiers can exist.
+
+**Migration:** existing users have real projects on their cards. Keep the *read* path — "found N
+projects on this card, import them?" — and drop only the automatic bidirectional mirror.
+
+### 8.4 Addressing the actual data-loss risks
+
+The mirroring exists to prevent losing work. It's an expensive and indirect answer. The two real
+risks have targeted fixes:
+
+**Interrupted writes.** `createWritable()` truncates the target the moment it opens, so an
+interrupted or crashed write leaves a zero-length or partial file — the original is already gone.
+Keeping five SK snapshots doesn't help, because the file being destroyed is in `Assets/`, not `SK/`.
+*Fix:* write to a temp name, then swap on successful close. This is the single highest-value
+durability change and it's local to [`safeWriteBlob`](src/utils/exportUtils.ts#L93).
+
+> Related, worth fixing while in there: `safeWriteBlob` skips the write when the existing file's
+> **size** matches the new blob's ([exportUtils.ts:98](src/utils/exportUtils.ts#L98)). Two different
+> WAVs of identical byte length are silently treated as identical. Harmless for `Assets/<versionId>.wav`
+> (unique id per version, never rewritten with different content), potentially wrong for SD sync.
+
+**A bad app update.** *Fix:* version the `project.json` schema and take a one-time snapshot on
+migration — not continuous mirroring on every build.
+
+---
+
+## 9. Version history: bounded, session-scoped
+
+### 9.1 How it works now
+
+- Every edit appends to `FileRecord.versions[]` and becomes the new `currentVersionId`
+  ([App.tsx:1983](src/App.tsx#L1983)). **Unbounded.**
+- On save, every version's blob is written as its own `Assets/<versionId>.wav`
+  ([exportUtils.ts:1108-1130](src/utils/exportUtils.ts#L1108-L1130)).
+- All version blobs stay resident in `state.files[].versions[].blob`, and the whole `AppState` is
+  autosaved to IndexedDB ([persistence.ts:36](src/utils/persistence.ts#L36)).
+
+So history depth multiplies **disk × memory × IDB** simultaneously. The `CleanupModal` (766 lines)
+exists to dig out from under this after the fact.
+
+### 9.2 The Photoshop model — the right call
+
+Keep destructive bouncing (it *is* the correct approach for real audio processing), but bound it:
+
+- **Session history: N steps** (configurable, default ~20–40), held in memory only.
+- **On save: collapse.** Persist only the current version, plus the original if the user has asked
+  to keep it. Reopening a project gives you the file as saved, with no history — exactly the
+  Photoshop behaviour.
+- **Cleanup stops being a rescue operation** and becomes a rarely-needed tool, since the mess no
+  longer accumulates by default. Per UX_Overhaul.md, it also moves out of the editor sidebar into
+  its own surface.
+
+### 9.3 The Lightroom direction (longer term)
+
+The LR model needs the pipeline to be re-derivable, which destructive bouncing isn't — but the app
+is already halfway there: `AudioVersion.processing[]` records *which* operations were applied
+(`'normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced'`, [types.ts:20](src/types.ts#L20)).
+It records the operation **tags but not their parameters**.
+
+If the editor also stored the parameters (trim points, gain in dB, fade lengths, crossfade), any
+version could be re-derived from `original + op-list` — unlimited history at near-zero storage. Not
+a v4 goal, but it argues for capturing parameters into `processing[]` *now*, while touching this
+code, so the option stays open. Caveats: re-derivation costs CPU on load, and slicing fans out to
+multiple files rather than producing a single derived blob.
+
+**Recommended split:** always keep `original` + `current` on disk; keep the N intermediate steps in
+session memory only; start recording op parameters opportunistically.
