@@ -59,7 +59,7 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 | [style_guide_colors.md](style_guide_colors.md) | 🔵 | Tape colours and the app palette. |
 | [debugging/README.md](debugging/README.md) | 🔵 | What `DragDebug.tsx` was for and how to re-mount it. The component was removed from `App.tsx` deliberately and kept here beside its notes. |
 | [debugging/crossfade_technique.md](debugging/crossfade_technique.md) | 🔵 | Crossfade approach notes. |
-| [deployment_guidelines.md](deployment_guidelines.md) | 🟡 | **Half true.** The asset-path resolution section still describes `assetUtils.ts` accurately. The rest documents `scripts/build-versioned-pages.mjs`, **which no longer exists** — `scripts/` holds only `generate-manifest.mjs`, `normalize.py` and `collect-release-samples.ps1`. Fix the second half or archive the file; tracked as v4 Phase 7, step 7. See Appendix F.4 of [../V4_PERVAK.md](../V4_PERVAK.md), which also has the current Pages deployment story. |
+| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | Builds, Pages publishing (root + `next/`), **storage namespacing**, and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in so the deployment story survives that file being archived. |
 
 ## Not in git
 

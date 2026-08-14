@@ -1,5 +1,75 @@
 # Changelog
 
+## [4.0.0 "Pervak"] - Unreleased
+
+The app was one door: a setup wizard demanding a work folder, an SD card and a project name
+before you could see anything. It is now five, and four of them need no setup at all.
+
+*Named for первак — the first run off a still, the strong opening fraction. Fitting for a
+release whose premise is separating one muddled thing into clean tiers.*
+
+### Added
+- **A hub with five doors**, each linkable (`#/browse`, `#/presets`, `#/config`, `#/editor`,
+  `#/studio`) and each loading only what it needs. Permission follows intent: nothing asks for
+  a folder until the moment of an actual write.
+- **Browse** — the sample packs, previewable, with a selection pool, and two downloads off it:
+  SD-ready 6×6, or all the files under their original names. No permission prompt anywhere in
+  that path. Your own library appears too, read-only, when it isn't empty.
+- **Preset → SD** — cold start to a curated project on the card: pick a preset, pick the card,
+  done. No work folder, no project created. Browsers without a directory picker get a ZIP
+  instead of a dead end.
+- **Config** — MIDI and device setup against a bare card, with no project and no studio. Two
+  settings the app never had (`slc_mn_a` / `slc_mn_b`, polyphony in Slice mode per deck) are
+  now first-class, and **settings this build doesn't recognise survive a round-trip** instead
+  of being silently stripped — shown in a "Kept from the file" section rather than hidden.
+- **Editor** — edit one file with no project at all, download it, or save it as a new project.
+  It also opens over Browse, from a pool row or straight from a sample row.
+- **Import into a project** from the Browse pool, and **Save as project** out of the editor —
+  both pick the folder at that moment and neither disturbs anything that already exists.
+- **Workspace backup** — one explicit act, to a folder you pick each time, showing exactly what
+  it contains and what it weighs before writing anything.
+- **Auto-save**, which genuinely did not exist before: the function was there and nothing ever
+  called it. A crash or a closed tab no longer costs the open project.
+- News moved onto the hub, beneath the doors, instead of a modal covering the app on start.
+
+### Changed
+- **The SD card is a build target, not a backup.** A build used to write three copies of the
+  same audio; with defaults it now writes `SK/` and nothing else. The other two are opt-ins in
+  Settings, off by default.
+- **The Project Manager is a list of projects**, not a two-column mirror with a sync column
+  down the middle. Building to the card and importing a project found on one both stay; the
+  push-mirror, its badges and its modals are gone.
+- **Settings is where options live** — locations, auto-save, backup, history and cleanup, in
+  three tabs, instead of scattered across the Project Manager header and a build dialog.
+- **History is exactly two versions per file**: the original and the current one. Everything
+  between is dropped on save. Cleanup stops being a rescue operation and becomes housekeeping.
+- Cleanup moved out of the editor's version sidebar — a project-wide destructive action does
+  not belong in one file's history panel.
+
+### Fixed
+- **Interrupted writes can no longer destroy the file they were replacing.** Writes go to a
+  temp name and are swapped in only after the stream closes cleanly.
+- **Two files of identical byte length are no longer assumed identical.** SD writes now compare
+  content; the cheap size check is kept only where the filename determines the content.
+- **Hydrated preset audio could skip conversion entirely** — a bucket answering
+  `application/octet-stream` produced blobs that failed every `audio/` check downstream, which
+  would have written FLAC bytes into a file called `1.WAV`.
+- **Bulk actions only ever worked for built-in packs**, logging "coming soon" for the library
+  and project sources.
+- **The preview bar's locate button did nothing outside a mounted folder.**
+- Bulk imports never marked anything as added; only single-file imports did.
+- Cards using the older bare `Projects/` layout listed projects whose import button threw.
+- The preset panel's progress bar had markup and state but nothing ever wrote to it.
+
+### Internal
+- Storage keys and database names are namespaced per build, so a preview deploy can never
+  reach the real app's data — or the live directory handles pointing at a real disk.
+- `App.tsx`'s session state moved out into `session/ProjectSession.tsx`; the project-free modes
+  are separate modules that never import `App.tsx` at all.
+- 1002 lines of dead code removed in the first pass; `SyncOptionsModal` and `ProjectSyncModal`
+  followed as their reasons for existing went away.
+- The five `config.txt` defaults were spelled out in six places and are now defined once.
+
 ## [3.7.3] - 2026-06-30
 
 ### Added
