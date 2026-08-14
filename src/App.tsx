@@ -7,7 +7,7 @@ import { SlotGrid } from './components/SlotGrid';
 import { AllViewGrid } from './components/AllViewGrid';
 import { FileBrowser } from './components/FileBrowser';
 import type { AppState, TapeColor, FileRecord, AudioVersion, ExportOptions } from './types';
-import { TAPE_COLORS } from './types';
+import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from './types';
 import { getInitialState } from './utils/initialState';
 import { audioEngine } from './lib/audio/audioEngine';
 import type { ImportAnalysis } from './utils/importUtils';
@@ -5392,7 +5392,7 @@ function App({ onExitToHub }: AppProps) {
         <ConfigModal
           isOpen={showConfigModal}
           onClose={() => setShowConfigModal(false)}
-          config={state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false, pre_load: true }}
+          config={state.projectConfig || { ...DEFAULT_PROJECT_CONFIG }}
           onChange={(config) => {
             setState(prev => ({ ...prev, projectConfig: config }));
             setHasUnsavedChanges(true);

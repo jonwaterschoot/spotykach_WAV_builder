@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Save, Play, Trash2, FolderOpen, Plus, Check, ExternalLink, Info } from 'lucide-react';
+import { Save, Play, Trash2, FolderOpen, Plus, Check, ExternalLink, Info, Scissors } from 'lucide-react';
 import { configWithoutUnknown } from '../utils/configFile';
+import { DEFAULT_PROJECT_CONFIG } from '../types';
 import type { ProjectConfig, ProjectSummary } from '../types';
 
 /**
@@ -25,12 +26,12 @@ const FACTORY_PRESETS: Preset[] = [
     {
         id: 'factory-1',
         name: 'A+B Play (Deck A:1, Deck B:2)',
-        config: { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: true, mid_ps_b: true, pre_load: true }
+        config: { ...DEFAULT_PROJECT_CONFIG, mid_ps_a: true, mid_ps_b: true }
     },
     {
         id: 'factory-2',
         name: 'A+B No Play (Deck A:1, Deck B:2)',
-        config: { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false, pre_load: true }
+        config: { ...DEFAULT_PROJECT_CONFIG }
     }
 ];
 
@@ -251,6 +252,39 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                             <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${config.mid_ps_b ? 'right-1' : 'left-1'}`} />
                         </div>
                     </button>
+                </div>
+            </div>
+
+            {/* Slice mode — the setting is stated as the file states it: on means
+                polyphony is *disabled*, so the toggle can't disagree with the manual. */}
+            <div className="space-y-4">
+                <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-2">Slice Mode</h3>
+                <div className="grid grid-cols-1 gap-3">
+                    {([
+                        { key: 'slc_mn_a', label: 'Deck A — disable polyphony' },
+                        { key: 'slc_mn_b', label: 'Deck B — disable polyphony' },
+                    ] as const).map(({ key, label }) => (
+                        <button
+                            key={key}
+                            onClick={() => onChange({ ...config, [key]: !config[key] })}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${config[key] ? 'bg-synthux-yellow/5 border-synthux-yellow/30 text-white' : 'bg-black/20 border-gray-800 text-gray-500 hover:border-gray-700'}`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-lg ${config[key] ? 'bg-synthux-yellow/20 text-synthux-yellow' : 'bg-gray-800 text-gray-600'}`}>
+                                    <Scissors size={16} />
+                                </div>
+                                <div className="text-left">
+                                    <div className="text-xs font-bold">{label}</div>
+                                    <div className="text-[10px] opacity-60">
+                                        {config[key] ? 'One slice at a time' : 'Slices can overlap'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className={`w-8 h-5 rounded-full relative transition-colors ${config[key] ? 'bg-synthux-yellow' : 'bg-gray-800'}`}>
+                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${config[key] ? 'right-1' : 'left-1'}`} />
+                            </div>
+                        </button>
+                    ))}
                 </div>
             </div>
 

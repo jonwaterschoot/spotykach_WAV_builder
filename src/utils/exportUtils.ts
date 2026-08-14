@@ -1,5 +1,5 @@
 import type JSZip from 'jszip';
-import { TAPE_COLORS } from '../types';
+import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from '../types';
 import type { AppState, ProjectConfig } from '../types';
 import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
 
@@ -42,7 +42,9 @@ export interface ExportSDOptions {
  * *unknown* pair on the way in — matched case-insensitively by prefix, because the
  * format pads every key to 8 characters.
  */
-export const KNOWN_CONFIG_KEYS = ['MID_CH_A', 'MID_CH_B', 'MID_PS_A', 'MID_PS_B', 'PRE_LOAD'] as const;
+export const KNOWN_CONFIG_KEYS = [
+    'MID_CH_A', 'MID_CH_B', 'MID_PS_A', 'MID_PS_B', 'PRE_LOAD', 'SLC_MN_A', 'SLC_MN_B',
+] as const;
 
 const isKnownConfigKey = (key: string): boolean =>
     KNOWN_CONFIG_KEYS.some(known => key.trim().toUpperCase().startsWith(known));
@@ -58,12 +60,14 @@ export const generateConfigText = (config: ProjectConfig): string => {
         lines.push(valStr);
         lines.push(''); // Empty line separator
     };
-    // Use defaults if missing (for older projects)
-    appendSetting('mid_ch_a', config?.mid_ch_a ?? 1);
-    appendSetting('mid_ch_b', config?.mid_ch_b ?? 2);
-    appendSetting('mid_ps_a', config?.mid_ps_a ?? false);
-    appendSetting('mid_ps_b', config?.mid_ps_b ?? false);
-    appendSetting('pre_load', config?.pre_load ?? true);
+    // Use defaults if missing (for older projects). Order follows the manual's table.
+    appendSetting('mid_ch_a', config?.mid_ch_a ?? DEFAULT_PROJECT_CONFIG.mid_ch_a);
+    appendSetting('mid_ch_b', config?.mid_ch_b ?? DEFAULT_PROJECT_CONFIG.mid_ch_b);
+    appendSetting('mid_ps_a', config?.mid_ps_a ?? DEFAULT_PROJECT_CONFIG.mid_ps_a);
+    appendSetting('mid_ps_b', config?.mid_ps_b ?? DEFAULT_PROJECT_CONFIG.mid_ps_b);
+    appendSetting('pre_load', config?.pre_load ?? DEFAULT_PROJECT_CONFIG.pre_load);
+    appendSetting('slc_mn_a', config?.slc_mn_a ?? DEFAULT_PROJECT_CONFIG.slc_mn_a);
+    appendSetting('slc_mn_b', config?.slc_mn_b ?? DEFAULT_PROJECT_CONFIG.slc_mn_b);
     // Pairs a previous read didn't recognise, written back verbatim after the known
     // ones. A key that has since *become* known is dropped rather than emitted
     // twice — the field above is the current truth for it.
@@ -1112,11 +1116,7 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                                 tapes: json.tapes || {},
                                 projectNotes: json.projectNotes,
                                 projectConfig: {
-                                    mid_ch_a: 1,
-                                    mid_ch_b: 2,
-                                    mid_ps_a: false,
-                                    mid_ps_b: false,
-                                    pre_load: true,
+                                    ...DEFAULT_PROJECT_CONFIG,
                                     ...(json.projectConfig || {})
                                 }
                             } : undefined,
@@ -1357,11 +1357,7 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
 
             // Ensure projectConfig is complete with defaults for backward compatibility
             state.projectConfig = {
-                mid_ch_a: 1,
-                mid_ch_b: 2,
-                mid_ps_a: false,
-                mid_ps_b: false,
-                pre_load: true,
+                ...DEFAULT_PROJECT_CONFIG,
                 ...(state.projectConfig || {})
             } as ProjectConfig;
         }
@@ -1539,13 +1535,7 @@ export const renameProject = async (rootHandle: FileSystemDirectoryHandle, oldNa
 
 export const parseConfigText = (text: string): ProjectConfig | null => {
     try {
-        const config: ProjectConfig = {
-            mid_ch_a: 1,
-            mid_ch_b: 2,
-            mid_ps_a: false,
-            mid_ps_b: false,
-            pre_load: true
-        };
+        const config: ProjectConfig = { ...DEFAULT_PROJECT_CONFIG };
         // Strictly positional: blank lines drop out and what remains is walked as
         // key/value pairs. An unknown key is still a *pair*, so it consumes two
         // lines like any other — skipping it silently would shift everything after
@@ -1563,6 +1553,8 @@ export const parseConfigText = (text: string): ProjectConfig | null => {
             else if (key.startsWith('MID_PS_A')) config.mid_ps_a = val === '1';
             else if (key.startsWith('MID_PS_B')) config.mid_ps_b = val === '1';
             else if (key.startsWith('PRE_LOAD')) config.pre_load = val === '1';
+            else if (key.startsWith('SLC_MN_A')) config.slc_mn_a = val === '1';
+            else if (key.startsWith('SLC_MN_B')) config.slc_mn_b = val === '1';
             else unknown.push({ key: rawKey, value: val });
         }
         // Left absent when there are none, so existing projects serialize and

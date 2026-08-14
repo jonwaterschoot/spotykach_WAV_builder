@@ -496,13 +496,29 @@ existing file.
   happens, atomically (Phase 4).
 - **Unknown key/value pairs now survive a round-trip** (step 4, and the one real code change here).
   `ProjectConfig` gained `unknown?: Array<{key, value}>`; `parseConfigText` collects every pair it
-  doesn't recognise, `generateConfigText` writes them back verbatim after the five it knows. The
+  doesn't recognise, `generateConfigText` writes them back verbatim after the ones it knows. The
   field is left *absent* when there are none, so existing projects serialize byte-identically and
   `calculateSyncDiff`'s config comparison ([importUtils.ts:550](src/utils/importUtils.ts#L550)) is
   unaffected. A key that has since *become* known is dropped from `unknown` rather than emitted
-  twice. Verified by running the two functions over a firmware-shaped file: known keys read, unknown
-  keys kept, second pass identical, output stable, pair structure intact (21 lines, 7 separators),
-  legacy output unchanged, now-known key dropped.
+  twice. Verified by bundling the two functions and running them over firmware-shaped files: known
+  keys read, unknown kept and written after the known ones, second pass identical, output stable,
+  pair structure intact, a five-key file gaining the two new settings at their defaults, and a
+  pre-change config object still writing valid pairs.
+- **The field set grew during the phase, which is the premise confirmed.** The manual documents two
+  settings the app never had: `slc_mn_a` / `slc_mn_b`, *disable polyphony in Slice mode* per deck
+  (`0`/`1`, default `0`). They're now first-class fields with their own section in `ConfigForm`,
+  labelled the way the file states them — the toggle means "polyphony disabled", so the UI can't
+  disagree with the manual. Absent from an older card's file they read as off, and they're written
+  on the way out, so a card built by the previous firmware gains them at their documented defaults.
+  Adding them cost one line in the type, two in each of the parser and generator, and one UI block —
+  which is what the round-trip work was for. Any user who had already read a card with a newer
+  firmware's `slc_mn_*` would have had them preserved as unknown pairs and now gets them promoted to
+  real controls, since a now-known key is dropped from `unknown` rather than written twice.
+- **`DEFAULT_PROJECT_CONFIG` is now the one definition.** The five defaults were spelled out in six
+  places — `initialState`, two backward-compatibility fills in `exportUtils`, the parser's starting
+  point, the factory presets, Config mode. Adding two fields would have meant editing all six and
+  finding out at runtime if one was missed, so they all spread a single const in
+  [types.ts](src/types.ts) instead. The next firmware setting is one line there.
 - **The unrecognised pairs are shown, not hidden.** A "Kept from the file" section lists them
   read-only. Silently carrying settings the user can't see would be its own kind of surprise, and it
   makes "this app is older than your firmware" legible.
@@ -576,6 +592,22 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 > ✅ **Done** — `ProjectConfig.unknown`, absent when empty so nothing else changes shape. See the
 > Outcome. **Still open for the hardware developer:** does the device tolerate an unknown key/value
 > pair? The app now preserves them either way; writing the *project title* as one waits on that answer.
+>
+> **The documented field set**, from the manual — `config.txt` at the root of the `SK` folder. All of
+> it is implemented as of Phase 5; keep this table in step when the firmware adds a row.
+>
+> | Setting | Key | Values | Default |
+> |---|---|---|---|
+> | Deck A MIDI channel | `mid_ch_a` | 1–16 | 1 |
+> | Deck B MIDI channel | `mid_ch_b` | 1–16 | 2 |
+> | Start/Stop deck A from MIDI | `mid_ps_a` | 0 / 1 | 0 |
+> | Start/Stop deck B from MIDI | `mid_ps_b` | 0 / 1 | 0 |
+> | Enable/disable pre-loading | `pre_load` | 0 / 1 | 1 |
+> | Disable polyphony in Slice mode, deck A | `slc_mn_a` | 0 / 1 | 0 |
+> | Disable polyphony in Slice mode, deck B | `slc_mn_b` | 0 / 1 | 0 |
+>
+> The app's own default for `mid_ps_a`/`mid_ps_b` matches the manual (`0`), and
+> `DEFAULT_PROJECT_CONFIG` ([types.ts](src/types.ts)) is the one place that says so.
 
 ---
 

@@ -1,3 +1,4 @@
+import { DEFAULT_PROJECT_CONFIG } from '../types';
 import type { ProjectConfig } from '../types';
 
 /**
@@ -10,14 +11,8 @@ import type { ProjectConfig } from '../types';
  * and Studio's `ConfigModal` uses the same one rather than keeping a second copy.
  */
 
-/** What an unconfigured device is assumed to be running. */
-export const defaultProjectConfig = (): ProjectConfig => ({
-    mid_ch_a: 1,
-    mid_ch_b: 2,
-    mid_ps_a: false,
-    mid_ps_b: false,
-    pre_load: true,
-});
+/** What an unconfigured device is assumed to be running — a fresh copy, safe to edit. */
+export const defaultProjectConfig = (): ProjectConfig => ({ ...DEFAULT_PROJECT_CONFIG });
 
 /** Where a card's `config.txt` was found. `SK/` is where this app writes it. */
 export type ConfigLocation = 'sk' | 'root';
