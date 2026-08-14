@@ -24,7 +24,7 @@ const TAPE_DOT_COLORS: Record<string, string> = {
 interface ProjectSyncModalProps {
     projectName: string;
     localState: AppState;
-    backupHandle: FileSystemDirectoryHandle;
+    sdHandle: FileSystemDirectoryHandle;
     onApply: (newState: AppState) => Promise<void>;
     onClose: () => void;
     onChangeSDCard?: () => void;
@@ -35,7 +35,7 @@ type Phase = 'loading' | 'review' | 'applying' | 'done';
 export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
     projectName,
     localState,
-    backupHandle,
+    sdHandle,
     onApply,
     onClose,
     onChangeSDCard
@@ -59,7 +59,7 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
         const run = async () => {
             try {
                 const { loadBackupProjectState, compareProjectStates } = await import('../utils/projectSyncUtils');
-                const bs = await loadBackupProjectState(backupHandle, projectName);
+                const bs = await loadBackupProjectState(sdHandle, projectName);
                 setBackupState(bs);
                 const { slots, notes } = compareProjectStates(localState, bs);
                 setEntries(slots);
@@ -137,9 +137,9 @@ export const ProjectSyncModal: React.FC<ProjectSyncModalProps> = ({
                             <p className="text-gray-400 text-sm flex items-center gap-2 mt-0.5">
                                 <RiSdCardMiniLine size={14} className="text-orange-400" />
                                 <span>Syncing with SD Card Backup</span>
-                                {backupHandle && (
+                                {sdHandle && (
                                     <span className="text-[10px] bg-orange-500/10 px-1.5 py-0.5 rounded text-orange-300 font-mono">
-                                        {backupHandle.name}
+                                        {sdHandle.name}
                                     </span>
                                 )}
                                 {onChangeSDCard && (

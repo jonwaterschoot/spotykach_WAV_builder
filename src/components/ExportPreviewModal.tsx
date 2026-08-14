@@ -9,6 +9,7 @@ import {
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import { SlotGrid6x6, type SlotEntry, type SlotActionBadge, TAPE_LETTER } from './SlotGrid6x6';
 import type { SKPrimaryDecision, ExportOptions } from '../types';
+import { getDurabilityPrefs } from '../utils/durabilityPrefs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -269,6 +270,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const [isCustomOverride, setIsCustomOverride] = useState(false);
     const [showConflictSummary, setShowConflictSummary] = useState(false);
     const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
+    // Per-build opt-in, seeded from the saved preference (off by default).
+    // Not persisted back — ticking it here is a decision about this build only.
+    const [skSnapshot, setSkSnapshot] = useState(() => getDurabilityPrefs().skSnapshots);
     const [highlightedSlot, setHighlightedSlot] = useState<string | null>(null);
     const [hoveredSlotKey, setHoveredSlotKey] = useState<string | null>(null);
     const [showFuture, setShowFuture] = useState(false);
@@ -494,7 +498,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             // Legacy fields App.tsx still reads
             includeConfig: true,
             forceOverwrite: true,
-            backupSKToProject: false,
+            skSnapshot,
         } as any, importDecisions);
         setIsApplying(false);
     };
@@ -1376,6 +1380,30 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         <span className="text-2xl font-black text-red-500 transition-colors">{deleteCount}</span>
                                     </div>
                                 )}
+
+                                <button
+                                    type="button"
+                                    onClick={() => setSkSnapshot(v => !v)}
+                                    className={`p-5 rounded-2xl border flex items-center justify-between gap-4 text-left transition-all ${skSnapshot
+                                        ? 'bg-white/[0.03] border-amber-500/30'
+                                        : 'bg-transparent border-white/5 hover:border-white/10'
+                                        }`}
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className={`p-2.5 rounded-xl transition-colors ${skSnapshot ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-gray-600'}`}>
+                                            <Shield size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-white text-[13px] font-bold">Snapshot card to project</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider font-medium">
+                                                {skSnapshot ? 'Copies the whole SK folder — slower' : 'Off — builds write only SK/'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className={`w-11 h-6 rounded-full p-0.5 shrink-0 transition-colors ${skSnapshot ? 'bg-amber-500' : 'bg-white/10'}`}>
+                                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${skSnapshot ? 'translate-x-5' : 'translate-x-0'}`} />
+                                    </div>
+                                </button>
                             </div>
 
                         <div className="flex flex-col gap-4">

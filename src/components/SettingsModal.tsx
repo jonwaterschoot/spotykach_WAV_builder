@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, RefreshCw, AlertTriangle, X, Save, Trash2 } from 'lucide-react';
+import { Settings, RefreshCw, AlertTriangle, X, Save, Trash2, Shield } from 'lucide-react';
 import type { VisualFilters } from '../types';
+import { getDurabilityPrefs, setDurabilityPref, type DurabilityPrefs } from '../utils/durabilityPrefs';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -60,6 +61,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             return saved ? JSON.parse(saved) : { '1': {}, '2': {}, '3': {} };
         } catch (e) { return { '1': {}, '2': {}, '3': {} }; }
     });
+    const [durability, setDurability] = useState<DurabilityPrefs>(() => getDurabilityPrefs());
+    const toggleDurability = (key: keyof DurabilityPrefs) => {
+        setDurability(prev => {
+            const next = { ...prev, [key]: !prev[key] };
+            setDurabilityPref(key, next[key]);
+            return next;
+        });
+    };
+
     const dragOffset = useRef({ x: 0, y: 0 });
     const animationFrameRef = useRef<number | null>(null);
     const specialModeRef = useRef<number | null>(null);
@@ -647,6 +657,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Backup & durability */}
+                    <div className="space-y-3 pt-4 border-t border-white/10">
+                        <h3 className="text-[10px] font-bold text-teal-400/80 uppercase tracking-widest flex items-center gap-2">
+                            <Shield size={12} /> Backup &amp; Durability
+                        </h3>
+                        <p className="text-[9px] text-gray-600 leading-tight">
+                            The SD card is a build target, not a backup. Both copies below are off by
+                            default — a build writes only <span className="font-mono text-gray-500">SK/</span>.
+                        </p>
+
+                        {([
+                            {
+                                key: 'skSnapshots' as const,
+                                title: 'Snapshot card to project',
+                                detail: 'After each build, copy the card’s SK folder into _sk_backups/ (keeps 5). Duplicates up to 36 WAVs per build.',
+                            },
+                            {
+                                key: 'mirrorProjectsToSD' as const,
+                                title: 'Keep project copies on SD',
+                                detail: 'Mirror project.json and Assets/ onto the card next to the build. Reading existing copies off a card always works, with or without this.',
+                            },
+                        ]).map(({ key, title, detail }) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => toggleDurability(key)}
+                                className={`w-full p-3 rounded-lg border text-left flex items-start gap-3 transition-colors ${durability[key]
+                                    ? 'bg-teal-500/10 border-teal-500/30'
+                                    : 'bg-white/[0.02] border-white/5 hover:border-white/15'
+                                    }`}
+                            >
+                                <div className={`mt-0.5 w-8 h-[18px] rounded-full p-0.5 shrink-0 transition-colors ${durability[key] ? 'bg-teal-500' : 'bg-white/10'}`}>
+                                    <div className={`w-[14px] h-[14px] rounded-full bg-white transition-transform ${durability[key] ? 'translate-x-[14px]' : 'translate-x-0'}`} />
+                                </div>
+                                <div>
+                                    <p className={`text-[11px] font-bold ${durability[key] ? 'text-teal-300' : 'text-gray-400'}`}>{title}</p>
+                                    <p className="text-[9px] text-gray-600 mt-0.5 leading-tight">{detail}</p>
+                                </div>
+                            </button>
+                        ))}
                     </div>
 
                     {/* Danger Zone */}

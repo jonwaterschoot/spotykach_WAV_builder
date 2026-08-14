@@ -18,9 +18,9 @@ interface ProjectManagerProps {
     onRenameProject?: (oldName: string, newName: string, renameBackup?: boolean) => void;
     onDuplicateProject?: (sourceName: string, newName: string) => void;
     workHandle?: FileSystemDirectoryHandle | null;
-    backupHandle?: FileSystemDirectoryHandle | null;
+    sdHandle?: FileSystemDirectoryHandle | null;
     onChangeWorkFolder?: () => void;
-    onChangeBackupFolder?: () => void;
+    onChangeSDFolder?: () => void;
     onSyncProject?: (projectName: string) => void;
     onImportBackupProject?: (projectName: string) => void;
     onBuildProject?: (projectName: string) => void;
@@ -90,9 +90,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     onRenameProject,
     onDuplicateProject,
     workHandle,
-    backupHandle,
+    sdHandle,
     onChangeWorkFolder,
-    onChangeBackupFolder,
+    onChangeSDFolder,
     onSyncProject,
     onImportBackupProject,
     onBuildProject,
@@ -309,7 +309,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                 </header>
 
                 {/* SUB HEADER - SD CARD STATUS */}
-                {backupHandle && (
+                {sdHandle && (
                     <div className="flex flex-col border-b border-white/5 bg-[#111] shrink-0">
 
                         {/* Clickable row — whole row toggles expand */}
@@ -399,15 +399,15 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     <div className="flex-1 p-4 flex items-center gap-2">
                         <RiSdCardMiniLine size={16} className="text-orange-400" />
                         <span className="text-white">SD Card / Backup</span>
-                        {backupHandle ? (
-                            <span className="text-[10px] bg-orange-500/10 px-1.5 py-0.5 rounded text-orange-300 normal-case">{backupHandle.name}</span>
+                        {sdHandle ? (
+                            <span className="text-[10px] bg-orange-500/10 px-1.5 py-0.5 rounded text-orange-300 normal-case">{sdHandle.name}</span>
                         ) : (
                             <span className="text-[10px] text-gray-600 italic normal-case">Not Connected</span>
                         )}
-                        {onChangeBackupFolder && <button onClick={onChangeBackupFolder} className="ml-auto text-xs text-orange-400 hover:underline normal-case">{backupHandle ? 'Change' : 'Connect'}</button>}
+                        {onChangeSDFolder && <button onClick={onChangeSDFolder} className="ml-auto text-xs text-orange-400 hover:underline normal-case">{sdHandle ? 'Change' : 'Connect'}</button>}
 
                         {/* Sync User Library Button */}
-                        {onSyncUserLibraryToSD && backupHandle && (
+                        {onSyncUserLibraryToSD && sdHandle && (
                             <button
                                 onClick={onSyncUserLibraryToSD}
                                 className="ml-4 mr-2 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 rounded text-[10px] uppercase font-bold transition-colors"

@@ -20,7 +20,7 @@
 | 1 | ✅ | Mode scaffold | Four doors on a landing screen |
 | 2 | ✅ | Browse mode | Linkable sample library + selection pool, zero setup |
 | 3 | ✅ | Preset → SD | Cold start → curated project on the card |
-| 4 | ☐ | Backup & safety rework | SD card is a build target again |
+| 4 | ✅ | Backup & safety rework | SD card is a build target again |
 | 5 | ☐ | Config mode | MIDI setup without the studio |
 | 6 | ☐ | Editor mode + Studio extraction | `App.tsx` finally broken up |
 
@@ -373,7 +373,77 @@ of `handleLoadPreset`.
 
 ---
 
-### Phase 4 — Backup & safety rework ☐
+### Phase 4 — Backup & safety rework ✅
+
+**Outcome.** New `utils/durabilityPrefs.ts`; `SyncOptionsModal.tsx` deleted (148 lines, zero
+references). `tsc -b && vite build` clean; no new eslint errors on any changed file, and
+`exportUtils.ts` went from 58 to 54.
+
+- **A build with defaults now writes `SK/` and nothing else.** It used to write three copies of the
+  same audio. The other two are off unless asked for.
+- **Two of the three "backups" were never gated at all** — Appendix D.3 said #3 was "already gated by
+  `options.backupSKToProject`", and that was wrong three ways: the flag was declared in
+  `ExportSDOptions` but **read nowhere**; `createSKBackup` ran unconditionally on every hardware sync;
+  and the only UI that set it, `SyncOptionsModal` (default *on*), was never imported by anything.
+  `ExportPreviewModal` passed `false` and even that was ignored. So this phase built the gates rather
+  than flipping defaults. D.3 has been corrected below.
+- **A third uncontrolled copy the appendix didn't count.** `exportSDStructure`'s "Source Backup" step
+  copied `project.json` **and all of `Assets/`** onto the card on every direct write, gated only on
+  `workHandle && projectName`. That is D.1 #2, and it is where most of the extra time went. It is now
+  `options.mirrorProjectToSD`, off by default.
+- **The two opt-ins live in `durabilityPrefs.ts`**, `spotykach_sk_snapshots` and
+  `spotykach_sd_project_mirror`, both default `false`, both surfaced in `SettingsModal` under
+  "Backup & Durability". An absent key reads as the default rather than as `false`, so the meaning
+  doesn't change if a default ever does. The SK snapshot additionally gets a **per-build** toggle in
+  the build confirmation, seeded from the preference and deliberately *not* written back — ticking it
+  for one build is not a change of policy. `ExportOptions.backupSKToProject` → `skSnapshot`.
+
+**`safeWriteBlob` is the real durability change, and its signature moved.** It now takes
+`(dirHandle, fileName, blob, compare)` instead of `(fileHandle, blob, force)` — a swap needs a sibling
+to swap with, so it needs the parent directory. All six call sites had it in scope.
+
+- **Atomic.** Bytes go to `<name>.wbtmp` and are swapped onto the target with `FileSystemFileHandle
+  .move()` only after the stream closes cleanly. An interrupted write can no longer destroy the file
+  it was replacing. `move()` is feature-detected; engines without it fall back to today's in-place
+  write, which costs nothing since they have no `showDirectoryPicker` either.
+- **The size-equality bug is fixed, but not by always byte-comparing.** The fourth argument is now an
+  explicit `WriteCompare`: `'content'` byte-compares when sizes match (the default, and the only safe
+  choice for SD writes), `'size'` keeps the cheap check where the *filename determines the content*,
+  `'always'` never skips. `Assets/<versionId>.wav` uses `'size'` — the id is minted per version and
+  never rewritten with different bytes, so byte-comparing every asset on every project save would
+  have been a straight regression for no correctness gain. SD tape writes use `'content'`.
+- **Stray `.wbtmp` files are inert and self-healing.** Only a hard crash leaves one; `scanSKStructure`
+  matches `/^(\d+)\.WAV$/i` and `getOrphanedAssets` matches `.wav`, so neither sees them, and the next
+  write of that same file reuses the temp name.
+
+**The migration read path needed one fix to actually work.** `scanForProjects` reads *both*
+`WAV_Builder/Projects/` and a bare `Projects/` at the card root, but `handleImportBackupProject` only
+ever looked in `WAV_Builder/`. Cards with the older layout listed projects whose import button threw
+`NotFoundError`. It now tries both, and copies through `safeWriteBlob` instead of raw `createWritable`.
+Nothing else was needed: turning the mirror off doesn't touch scanning, so SD-only projects still
+appear in `ProjectManager` with their import button.
+
+**`backupHandle` → `sdHandle`** across `App.tsx` and four components (95 occurrences with its
+derivatives — `handleSetBackupFolder`, `onChangeBackupFolder`, `backupDir`, `backupProjects`).
+**The IDB key stays `'backup'`**: `storageUtils` now speaks `'work' | 'sd'` and maps `'sd' → 'backup'`
+in one place, because renaming the stored key would silently orphan every existing user's saved card
+handle. The `status: 'synced'|'local'|'backup'|'modified'` vocabulary and the `use_backup`/
+`delete_backup` sync decisions were left alone — that is the mirror machinery of D.3 #2, a separate
+concern from the handle, and renaming it would have buried this diff.
+
+Deliberately not built:
+
+- **The `SyncDashboard`-derived import compare view** (the D.3 design reference). The existing
+  `ProjectManager` import button already covers "found N projects on this card, import them?", which
+  is what step 5 asked for. A per-slot compare view is worth building when SD import gets real use.
+- **`status`/`.local`/`.backup` collapsing.** D.3 predicts the machinery "evaporates" once the mirror
+  is off. It doesn't, yet — with the mirror off the card simply stops *gaining* copies; existing cards
+  still carry projects that must be scanned and merged. The collapse belongs with the `ProjectSession`
+  extraction in Phase 6.
+
+**Not verified in a browser.** The build and types are clean and the reasoning above is from reading
+the code, but nothing here was exercised against a real SD card — in particular the `move()` swap on
+removable media and the per-build toggle. Worth one hardware pass before this ships.
 
 **Read first:** Appendix D in full.
 
@@ -652,6 +722,7 @@ adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
 | `WaveformEditor` | **Refactor in Phase 6** | Decouple `EditorSlot` + history sidebar from on-disk project. |
 | `SetupWizard` | **Demote** | Keep the 5 explainer slides (good, reusable as in-context help). No longer the mandatory gate — Studio onboarding only. |
 | `WelcomeScreen`, `SamplePackModal`, `SyncDashboard` | ✅ **Deleted** | Phase 0, commit `07d088a`. |
+| `SyncOptionsModal` | ✅ **Deleted** | Phase 4. Unreferenced, and its only content was a default-*on* version of the switch Phase 4 turns off. |
 
 ---
 
@@ -720,10 +791,17 @@ Nothing there needs a mirror, a diff, or a snapshot.
 ### D.3 Target model
 
 - **#1 → rename.** `backupHandle` → `sdHandle`. Mechanical; removes the app's own claim that the
-  card is a backup.
-- **#3 → default off**, opt-in per build. Already gated by `options.backupSKToProject`.
-- **#2 → explicit opt-in.** "Also keep a copy of projects on the SD card", default off. With it off,
-  `scanProjects` collapses to one source and the `status`/`.local`/`.backup` machinery evaporates.
+  card is a backup. ✅ Phase 4 — the IDB key stays `'backup'`, mapped in `storageUtils`.
+- **#3 → default off**, opt-in per build. ~~Already gated by `options.backupSKToProject`.~~
+  **Correction (Phase 4): it was gated by nothing.** `backupSKToProject` was declared in
+  `ExportSDOptions` and read nowhere; `createSKBackup` ran on every hardware sync regardless; the one
+  UI that set it was never mounted. ✅ Now `ExportOptions.skSnapshot` + `durabilityPrefs`.
+- **#2 → explicit opt-in.** "Also keep a copy of projects on the SD card", default off.
+  ✅ Phase 4 as `ExportSDOptions.mirrorProjectToSD`. **Also ungated before this** — it was
+  `exportSDStructure`'s "Source Backup" step, conditional only on having a work folder and a project
+  name. The prediction that `scanProjects` then "collapses to one source and the
+  `status`/`.local`/`.backup` machinery evaporates" **did not hold**: cards that already carry
+  projects still have to be scanned and merged, so the machinery stays until Phase 6.
 - **Backup location is the user's choice** — an explicit action to a folder they pick, not an
   implicit consequence of having connected an SD card.
 
@@ -754,11 +832,16 @@ interrupted or crashed write leaves a zero-length or partial file — the origin
 Five SK snapshots don't help, because the file being destroyed is in `Assets/`, not `SK/`.
 *Fix:* write to a temp name, swap on successful close. Highest-value durability change in the
 codebase, and it's local to [`safeWriteBlob`](src/utils/exportUtils.ts#L93).
+✅ **Phase 4** — `.wbtmp` + `FileSystemFileHandle.move()`, feature-detected.
 
 > Worth fixing while in there: `safeWriteBlob` skips the write when the existing file's **size**
 > matches the new blob's ([exportUtils.ts:98](src/utils/exportUtils.ts#L98)). Two different WAVs of
 > identical byte length are silently treated as identical. Harmless for `Assets/<versionId>.wav`
 > (unique id per version, never rewritten with different content), potentially wrong for SD sync.
+>
+> ✅ **Phase 4**, and the parenthetical is why it isn't just "always byte-compare": the fourth
+> argument is now an explicit `WriteCompare`. SD writes use `'content'`; `Assets/` keeps `'size'`,
+> since re-reading every asset on every save would cost real time for no correctness gain.
 
 **A bad app update.** *Fix:* version the `project.json` schema and snapshot once on migration — not
 continuous mirroring on every build.
@@ -862,7 +945,8 @@ Root and `/next/` are **the same origin**, so both builds read and write the sam
   ([storageUtils.ts:2](src/utils/storageUtils.ts#L2))
 - localStorage: `spotykach_state`, `spotykach_current_project`, `spotykach_user_library`,
   `spotykach_visual_filters`, `spotykach_config_presets`, `spotykach_custom_presets`,
-  `spotykach_show_news_on_start`, `spotykach_emptySlotPreferredBrowser`
+  `spotykach_emptySlotPreferredBrowser`, and from Phase 4 `spotykach_sk_snapshots` +
+  `spotykach_sd_project_mirror`. (`spotykach_show_news_on_start` was deleted in Phase 2.)
 
 Since v4 deliberately changes persistence, a preview build could clobber real project state with live
 filesystem handles attached. **Namespace the DB names and key prefix before any Pages deploy.** A

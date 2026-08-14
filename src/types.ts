@@ -140,5 +140,10 @@ export interface ExportOptions {
     configDecision: SKPrimaryDecision;
     includeConfig: boolean;
     forceOverwrite: boolean;
-    backupSKToProject: boolean;
+    /**
+     * Per-build opt-in: snapshot the card's SK folder into the project folder
+     * (`_sk_backups/<timestamp>/`). Seeded from the saved durability preference,
+     * which defaults off. Replaces `backupSKToProject`, which nothing ever read.
+     */
+    skSnapshot: boolean;
 }

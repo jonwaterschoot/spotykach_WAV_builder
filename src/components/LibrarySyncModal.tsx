@@ -7,7 +7,7 @@ interface LibrarySyncModalProps {
     isOpen: boolean;
     onClose: () => void;
     userLibrary: UserLibrary;
-    backupHandle: FileSystemDirectoryHandle | null;
+    sdHandle: FileSystemDirectoryHandle | null;
     onSetBackupFolder: () => void;
     onOpenProjectManager: () => void;
     onDownloadZip: () => void;
@@ -30,7 +30,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
     isOpen,
     onClose,
     userLibrary,
-    backupHandle,
+    sdHandle,
     onSetBackupFolder,
     onOpenProjectManager,
     onDownloadZip,
@@ -53,10 +53,10 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
 
 
     const compareLibrary = useCallback(async () => {
-        if (!backupHandle) return;
+        if (!sdHandle) return;
         setPhase('loading');
         try {
-            const backupLibDir = await backupHandle.getDirectoryHandle('User_Library', { create: true });
+            const backupLibDir = await sdHandle.getDirectoryHandle('User_Library', { create: true });
             const backupFiles = new Map<string, { name: string; size: number; lastModified: number }>();
 
             // @ts-ignore
@@ -123,7 +123,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
             setError(e.message || "Failed to compare library versions.");
             setPhase('review');
         }
-    }, [userLibrary, backupHandle]);
+    }, [userLibrary, sdHandle]);
 
     useEffect(() => {
         if (isOpen) {
@@ -132,7 +132,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
             setSyncProgress('');
             setError(null);
 
-            if (backupHandle) {
+            if (sdHandle) {
                 compareLibrary();
             } else {
                 setPhase('review');
@@ -147,10 +147,10 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, backupHandle, compareLibrary, onClose]);
+    }, [isOpen, sdHandle, compareLibrary, onClose]);
 
     const handleSync = async () => {
-        if (!backupHandle) return;
+        if (!sdHandle) return;
         setPhase('syncing');
         setError(null);
         try {
@@ -171,12 +171,12 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
 
             if (toPush.length > 0) {
                 const { saveUserLibraryToDirectory } = await import('../utils/exportUtils');
-                await saveUserLibraryToDirectory(pushLibrary, backupHandle, undefined, (msg) => setSyncProgress(msg));
+                await saveUserLibraryToDirectory(pushLibrary, sdHandle, undefined, (msg) => setSyncProgress(msg));
             }
 
             // Handle removals on SD
             if (toDeleteRemote.length > 0) {
-                const backupLibDir = await backupHandle.getDirectoryHandle('User_Library', { create: false });
+                const backupLibDir = await sdHandle.getDirectoryHandle('User_Library', { create: false });
                 for (const entry of toDeleteRemote) {
                     try {
                         await backupLibDir.removeEntry(entry.name);
@@ -246,7 +246,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
                     </button>
                 </div>
 
-                {!backupHandle ? (
+                {!sdHandle ? (
                     /* Fallback: No Backup Folder */
                     <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6 bg-black/20">
                         <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center text-red-400 border border-red-500/20">

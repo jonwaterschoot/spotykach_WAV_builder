@@ -146,8 +146,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             const text = generateConfigText(config);
             const blob = new Blob([text], { type: 'text/plain' });
             const skHandle = await targetHandle.getDirectoryHandle('SK', { create: true });
-            const configHandle = await skHandle.getFileHandle('config.txt', { create: true });
-            await safeWriteBlob(configHandle, blob, true); // Force overwrite
+            await safeWriteBlob(skHandle, 'config.txt', blob, 'always'); // Force overwrite
             setSaveStatus(sdHandle ? "Saved to Hardware SD card!" : "Saved to SD (Work Folder)!");
         } catch (e) {
             console.error("Failed to save to SD", e);

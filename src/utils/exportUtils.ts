@@ -17,7 +17,12 @@ export type SlotSyncDecision = 'export' | 'skip' | 'delete' | 'keep_local' | 'us
 
 export interface ExportSDOptions {
     skMode: 'overwrite' | 'clean';
-    backupSKToProject?: boolean;
+    /**
+     * Copy the project source (project.json + Assets) onto the card alongside the
+     * build. Off unless explicitly enabled — the card is a build target, not a
+     * backup. Replaces `backupSKToProject`, which was declared here but never read.
+     */
+    mirrorProjectToSD?: boolean;
     workHandle?: FileSystemDirectoryHandle | null;
     projectName?: string;
     includeProject?: boolean;
@@ -88,38 +93,114 @@ export const downloadBlob = (blob: Blob, name: string) => {
     URL.revokeObjectURL(url);
 };
 
-// Helper: Safely write a blob to a file handle. Checks size to skip redundant writes,
-// and buffers File objects into memory to prevent NotReadableError due to file locks.
-export const safeWriteBlob = async (fileHandle: FileSystemFileHandle, blob: Blob, force: boolean = false) => {
-    let shouldWrite = true;
-    if (!force) {
+// Suffix for the scratch file an atomic write goes through. Stays in the same
+// directory as the target, because a swap can only happen within one directory.
+const TEMP_WRITE_SUFFIX = '.wbtmp';
+
+// `move()` renames/replaces within a directory. It ships in Chromium but is not
+// in the DOM lib, hence the local shape.
+type MovableFileHandle = FileSystemFileHandle & { move(newName: string): Promise<void> };
+
+// Feature-detected once so unsupported engines fall back to writing in place.
+const supportsHandleMove = (): boolean =>
+    typeof (globalThis as { FileSystemFileHandle?: { prototype?: { move?: unknown } } })
+        .FileSystemFileHandle?.prototype?.move === 'function';
+
+// Byte-compare two blobs of equal size in chunks, so we never hold two full
+// copies in memory. Used to decide whether a write can be skipped.
+const blobsAreIdentical = async (a: Blob, b: Blob): Promise<boolean> => {
+    if (a.size !== b.size) return false;
+    const CHUNK = 1024 * 1024;
+    for (let offset = 0; offset < a.size; offset += CHUNK) {
+        const end = Math.min(offset + CHUNK, a.size);
+        const [aBuf, bBuf] = await Promise.all([
+            a.slice(offset, end).arrayBuffer(),
+            b.slice(offset, end).arrayBuffer(),
+        ]);
+        const aBytes = new Uint8Array(aBuf);
+        const bBytes = new Uint8Array(bBuf);
+        for (let i = 0; i < aBytes.length; i++) {
+            if (aBytes[i] !== bBytes[i]) return false;
+        }
+    }
+    return true;
+};
+
+/**
+ * How to decide whether an existing file already holds what we're about to write.
+ *
+ * - `content` — byte-compare when the sizes match. Correct everywhere, and the
+ *   only safe choice for SD writes: two different WAVs of equal length are not
+ *   the same file, which the old size-only check assumed.
+ * - `size` — skip when the sizes match, without reading. Valid *only* where the
+ *   filename already determines the content, e.g. `Assets/<versionId>.wav`, whose
+ *   id is minted per version and never rewritten with different bytes. Avoids
+ *   re-reading every asset on every project save.
+ * - `always` — never skip.
+ */
+export type WriteCompare = 'content' | 'size' | 'always';
+
+// Helper: Safely write a blob into a directory under `fileName`.
+//
+// The write is **atomic**: the bytes land in a temp file that is swapped onto the
+// target name once it has closed cleanly. `createWritable()` on the target would
+// expose a truncated or partial file if the write were interrupted — and the
+// original is gone by then, which no amount of snapshotting recovers.
+//
+// Takes the parent directory rather than a file handle because a swap needs a
+// sibling to swap with. File objects are buffered into memory first to prevent
+// NotReadableError from OS-level file locks.
+export const safeWriteBlob = async (
+    dirHandle: FileSystemDirectoryHandle,
+    fileName: string,
+    blob: Blob,
+    compare: WriteCompare = 'content'
+): Promise<boolean> => {
+    if (compare !== 'always') {
         try {
-            const existingFile = await fileHandle.getFile();
-            if (existingFile.size === blob.size) {
-                shouldWrite = false;
-            }
-        } catch (e) {
-            // Doesn't exist, proceed
+            const existingFile = await (await dirHandle.getFileHandle(fileName)).getFile();
+            const same = compare === 'size'
+                ? existingFile.size === blob.size
+                : await blobsAreIdentical(existingFile, blob);
+            if (same) return false; // Skipped
+        } catch {
+            // Doesn't exist or is unreadable — write it.
         }
     }
 
-    if (shouldWrite) {
-        let dataToWrite: Blob | ArrayBuffer = blob;
-        if (blob instanceof File) {
-            try {
-                dataToWrite = await blob.arrayBuffer();
-            } catch (e: any) {
-                console.error(`[SafeWrite] NotReadableError for ${fileHandle.name}. Ref:`, blob);
-                throw new Error(`File "${fileHandle.name}" is unreadable. It may have been moved, deleted, or locked by another app.`);
-            }
+    let dataToWrite: Blob | ArrayBuffer = blob;
+    if (blob instanceof File) {
+        try {
+            dataToWrite = await blob.arrayBuffer();
+        } catch {
+            console.error(`[SafeWrite] NotReadableError for ${fileName}. Ref:`, blob);
+            throw new Error(`File "${fileName}" is unreadable. It may have been moved, deleted, or locked by another app.`);
         }
-        // @ts-ignore
-        const w = await fileHandle.createWritable();
+    }
+
+    if (!supportsHandleMove()) {
+        // No swap available: in-place write, i.e. the old behaviour.
+        const target = await dirHandle.getFileHandle(fileName, { create: true });
+        const w = await target.createWritable();
         await w.write(dataToWrite);
         await w.close();
-        return true; // Wrote
+        return true;
     }
-    return false; // Skipped
+
+    const tempName = `${fileName}${TEMP_WRITE_SUFFIX}`;
+    try {
+        const tempHandle = await dirHandle.getFileHandle(tempName, { create: true }) as MovableFileHandle;
+        const w = await tempHandle.createWritable();
+        await w.write(dataToWrite);
+        await w.close();
+        // Only now does the target change. move() replaces an existing destination.
+        await tempHandle.move(fileName);
+        return true; // Wrote
+    } catch (e) {
+        // Leave the original intact and take the scratch file with us.
+        try { await dirHandle.removeEntry(tempName); } catch { /* already gone */ }
+        throw e;
+    }
 };
 
 // Generic recursive copy/sync (Additive)
@@ -161,8 +242,7 @@ export const syncDirectory = async (
                 }
 
                 if (shouldCopy) {
-                    const targetFileHandle = await targetDir.getFileHandle(name, { create: true });
-                    await safeWriteBlob(targetFileHandle, sourceFile);
+                    await safeWriteBlob(targetDir, name, sourceFile);
                 }
 
             } else if (entry.kind === 'directory') {
@@ -198,8 +278,7 @@ export const saveUserLibraryToDirectory = async (
 
             if (version?.blob) {
                 try {
-                    const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
-                    await safeWriteBlob(fileHandle, version.blob);
+                    await safeWriteBlob(userLibDir, file.name, version.blob);
                 } catch (e) {
                     console.warn(`Failed to write library file: ${file.name}`, e);
                 }
@@ -598,8 +677,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 if (finalConfig) {
                     onProgress?.("Writing config.txt...", 18);
                     const configText = generateConfigText(finalConfig);
-                    const configHandle = await skHandle.getFileHandle('config.txt', { create: true });
-                    await safeWriteBlob(configHandle, new Blob([configText], { type: 'text/plain' }), options.forceOverwrite);
+                    await safeWriteBlob(skHandle, 'config.txt', new Blob([configText], { type: 'text/plain' }), options.forceOverwrite ? 'always' : 'content');
                 }
             }
 
@@ -664,8 +742,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                 }
                             }
 
-                            const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
-                            const wrote = await safeWriteBlob(fileHandle, blobToWrite, options.forceOverwrite);
+                            const wrote = await safeWriteBlob(tapeHandle, fileName, blobToWrite, options.forceOverwrite ? 'always' : 'content');
                             if (wrote) writtenCount++; else skippedCount++;
                         }
                     }
@@ -702,9 +779,9 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             await identityWritable.write(JSON.stringify(projectIdentity, null, 2));
             await identityWritable.close();
 
-            // 5. Source Backup
-            if (options.workHandle && options.projectName) {
-                onProgress?.("Backing up Project Source...", 85);
+            // 5. Project source mirror — opt-in only (locked decision 6).
+            if (options.mirrorProjectToSD && options.workHandle && options.projectName) {
+                onProgress?.("Mirroring Project Source to card...", 85);
                 try {
                     const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
                     const wbProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: true });
@@ -714,10 +791,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
                     // Copy project.json
                     const sJson = await sourceProjectDir.getFileHandle('project.json');
-                    const tJson = await targetProjectDir.getFileHandle('project.json', { create: true });
-                    const sw = await tJson.createWritable();
-                    await sw.write(await sJson.getFile());
-                    await sw.close();
+                    await safeWriteBlob(targetProjectDir, 'project.json', await sJson.getFile());
 
                     // Copy Assets
                     try {
@@ -727,15 +801,12 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         for await (const [name, entry] of sAssets.entries()) {
                             if (entry.kind === 'file') {
                                 const sf = await sAssets.getFileHandle(name);
-                                const tf = await tAssets.getFileHandle(name, { create: true });
-                                const tw = await tf.createWritable();
-                                await tw.write(await sf.getFile());
-                                await tw.close();
+                                await safeWriteBlob(tAssets, name, await sf.getFile());
                             }
                         }
                     } catch (e) { }
                 } catch (e) {
-                    console.warn("Backup failed", e);
+                    console.warn("Project source mirror failed", e);
                 }
             }
 
@@ -1194,8 +1265,9 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
             for (const asset of assetsPending) {
                 try {
                     // console.log(`[Save] Writing asset ${asset.id} (${asset.blob.size} bytes)`);
-                    const fileHandle = await assetsHandle.getFileHandle(asset.id, { create: true });
-                    await safeWriteBlob(fileHandle, asset.blob);
+                    // 'size': the filename is a per-version uuid, so an existing file of
+                    // the same size *is* this version. Saves re-reading every asset.
+                    await safeWriteBlob(assetsHandle, asset.id, asset.blob, 'size');
                 } catch (e: any) {
                     console.error(`[Save] Failed to write asset ${asset.id}`, e);
                     if (e.name === 'NotReadableError') {

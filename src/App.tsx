@@ -61,6 +61,7 @@ import { useAudioConverter } from './utils/useAudioConverter';
 // Confirm Action Helper
 // dynamic persistence imports
 import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
+import { getDurabilityPrefs } from './utils/durabilityPrefs';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
 import { useEscapeLayer } from './shell/escapeStack';
@@ -251,7 +252,7 @@ function App({ onExitToHub }: AppProps) {
 
   // Workflow / Settings State
   const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [sdHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -418,7 +419,7 @@ function App({ onExitToHub }: AppProps) {
         await w.close();
       }
 
-      await scanProjects(workHandle, backupHandle);
+      await scanProjects(workHandle, sdHandle);
       showToast(`"${projectName}" imported from zip`, 'success');
       
       // 2. Automatically load the imported project
@@ -730,7 +731,7 @@ function App({ onExitToHub }: AppProps) {
   // ==========================================
 
   const handleScanProjects = async () => {
-    await scanProjects(workHandle, backupHandle);
+    await scanProjects(workHandle, sdHandle);
     setShowProjectManager(true);
   };
 
@@ -781,14 +782,14 @@ function App({ onExitToHub }: AppProps) {
         const missingRefsUnique = Array.from(new Set(missingAssets.map(m => m.blobRef)));
 
         const resolveBackupProjectDir = async (): Promise<FileSystemDirectoryHandle | null> => {
-          if (!backupHandle) return null;
+          if (!sdHandle) return null;
           try {
-            const wbHandle = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+            const wbHandle = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
             const projects = await wbHandle.getDirectoryHandle('Projects', { create: false });
             return await projects.getDirectoryHandle(projectName, { create: false });
           } catch {
             try {
-              const projects = await backupHandle.getDirectoryHandle('Projects', { create: false });
+              const projects = await sdHandle.getDirectoryHandle('Projects', { create: false });
               return await projects.getDirectoryHandle(projectName, { create: false });
             } catch {
               return null;
@@ -797,7 +798,7 @@ function App({ onExitToHub }: AppProps) {
         };
 
         let recoverableRefs = new Set<string>();
-        if (backupHandle) {
+        if (sdHandle) {
           try {
             const backupProjectDir = await resolveBackupProjectDir();
             if (backupProjectDir) {
@@ -947,7 +948,7 @@ function App({ onExitToHub }: AppProps) {
   };
 
   const handleImportBackupProject = async (projectName: string) => {
-    if (!workHandle || !backupHandle) {
+    if (!workHandle || !sdHandle) {
       showToast("Both Project Folder and SD Card must be connected.", 'error');
       return;
     }
@@ -956,25 +957,32 @@ function App({ onExitToHub }: AppProps) {
     setProgressMsg(`Importing "${projectName}" from backup...`);
 
     try {
-      // 1. Get the backup project directory handle
-      const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
-      const backupProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: false });
-      const backupProjectDir = await backupProjectsDir.getDirectoryHandle(projectName, { create: false });
+      // 1. Locate the project on the card. scanForProjects reads both the standard
+      //    WAV_Builder/Projects/ layout and a bare Projects/ at the card root, so
+      //    the import has to accept either or it throws on cards it just listed.
+      const sourceProjectDir = await (async () => {
+        try {
+          const wavBuilderDir = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
+          const dir = await wavBuilderDir.getDirectoryHandle('Projects', { create: false });
+          return await dir.getDirectoryHandle(projectName, { create: false });
+        } catch {
+          const dir = await sdHandle.getDirectoryHandle('Projects', { create: false });
+          return await dir.getDirectoryHandle(projectName, { create: false });
+        }
+      })();
 
       // 2. Get/create the local projects directory handle
       const localProjectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
       const localProjectDir = await localProjectsDir.getDirectoryHandle(projectName, { create: true });
 
       // 3. Recursive directory copy helper
+      const { safeWriteBlob } = await import('./utils/exportUtils');
       const copyDirRecursive = async (src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle) => {
         // @ts-ignore
         for await (const [name, entry] of src.entries()) {
           if (entry.kind === 'file') {
             const file = await src.getFileHandle(name).then(h => h.getFile());
-            const dstFile = await dst.getFileHandle(name, { create: true });
-            const writer = await dstFile.createWritable();
-            await writer.write(file);
-            await writer.close();
+            await safeWriteBlob(dst, name, file);
           } else if (entry.kind === 'directory') {
             const srcSub = await src.getDirectoryHandle(name);
             const dstSub = await dst.getDirectoryHandle(name, { create: true });
@@ -984,12 +992,12 @@ function App({ onExitToHub }: AppProps) {
       };
 
       // 4. Perform recursive copy
-      await copyDirRecursive(backupProjectDir, localProjectDir);
+      await copyDirRecursive(sourceProjectDir, localProjectDir);
 
       showToast(`Project "${projectName}" imported successfully.`, 'success');
 
       // 5. Rescan projects to update state
-      await scanProjects(workHandle, backupHandle);
+      await scanProjects(workHandle, sdHandle);
 
     } catch (e: any) {
       console.error(e);
@@ -1024,7 +1032,7 @@ function App({ onExitToHub }: AppProps) {
             setHasUnsavedChanges(false);
           }
 
-          await scanProjects(workHandle, backupHandle);
+          await scanProjects(workHandle, sdHandle);
         } catch (e: any) {
           console.error(e);
           showToast("Delete Failed: " + e.message, 'error');
@@ -1133,11 +1141,11 @@ function App({ onExitToHub }: AppProps) {
       // @ts-ignore
       await renameProject(workHandle, oldName, newName);
 
-      if (renameBackup && backupHandle) {
+      if (renameBackup && sdHandle) {
         try {
           setProgressMsg("Renaming Backup...");
           // @ts-ignore
-          await renameProject(backupHandle, oldName, newName);
+          await renameProject(sdHandle, oldName, newName);
           showToast(`Renamed Local & Backup to "${newName}"`, 'success');
         } catch (e) {
           console.error("Backup rename failed", e);
@@ -1160,7 +1168,7 @@ function App({ onExitToHub }: AppProps) {
   };
 
   const handleSKRefresh = async () => {
-    if (!backupHandle || !syncModalState) return;
+    if (!sdHandle || !syncModalState) return;
 
     setIsProcessing(true);
     setProgressMsg('Scanning SK folder on SD...');
@@ -1174,7 +1182,7 @@ function App({ onExitToHub }: AppProps) {
         projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
       }
 
-      const structureMap = await scanSKStructure(backupHandle);
+      const structureMap = await scanSKStructure(sdHandle);
       const diff = await calculateSyncDiff(projectState, structureMap);
 
       setSyncModalState(prev => prev ? { ...prev, diff } : null);
@@ -1240,7 +1248,7 @@ function App({ onExitToHub }: AppProps) {
       setProgressMsg(`Saving "${finalName}"…`);
       const { saveProjectToDirectory } = await import('./utils/exportUtils');
       await saveProjectToDirectory(newState, workHandle, (msg) => setProgressMsg(msg || ''), finalName);
-      await scanProjects(workHandle, backupHandle);
+      await scanProjects(workHandle, sdHandle);
     }
 
     isSystemUpdate.current = true;
@@ -1286,7 +1294,7 @@ function App({ onExitToHub }: AppProps) {
 
       await writeToSD(
         presetState,
-        { projectName: name, destinationHandle: backupHandle ?? undefined },
+        { projectName: name, destinationHandle: sdHandle ?? undefined },
         (msg, pct) => {
           const scaled = 55 + ((pct ?? 0) * 0.45);
           onProgress(msg || 'Writing to card…', scaled);
@@ -1363,7 +1371,7 @@ function App({ onExitToHub }: AppProps) {
     const checkHandles = async () => {
       try {
         const savedWork = await getDirectoryHandle('work');
-        const savedBackup = await getDirectoryHandle('backup');
+        const savedBackup = await getDirectoryHandle('sd');
 
         if (savedWork) {
           setRestorableHandles({ work: savedWork, backup: savedBackup });
@@ -1842,7 +1850,7 @@ function App({ onExitToHub }: AppProps) {
     });
   };
 
-  const handleSetBackupFolder = async () => {
+  const handleSetSDFolder = async () => {
     try {
       // @ts-ignore
       const handle = await window.showDirectoryPicker({
@@ -1852,7 +1860,7 @@ function App({ onExitToHub }: AppProps) {
       if (!handle) return;
 
       setBackupHandle(handle);
-      saveDirectoryHandle('backup', handle).catch(console.error);
+      saveDirectoryHandle('sd', handle).catch(console.error);
       showToast(`Backup Folder Set: ${handle.name}`, 'success');
     } catch (e: any) {
       if (e.name !== 'AbortError') {
@@ -1862,14 +1870,14 @@ function App({ onExitToHub }: AppProps) {
   };
 
 
-  const scanProjects = async (localDir: FileSystemDirectoryHandle | null, backupDir: FileSystemDirectoryHandle | null) => {
+  const scanProjects = async (localDir: FileSystemDirectoryHandle | null, sdDir: FileSystemDirectoryHandle | null) => {
     // Lazy load utils
     // Lazy load utils
     const { scanForProjects, getActiveSKProject } = await import('./utils/exportUtils');
     const { scanDeviceChanges } = await import('./utils/importUtils');
 
     let localProjects: import('./types').ProjectSummary[] = [];
-    let backupProjects: import('./types').ProjectSummary[] = [];
+    let sdProjects: import('./types').ProjectSummary[] = [];
     let activeSK: string | null = null;
     let diff: import('./utils/importUtils').DeviceDiff | null = null;
 
@@ -1880,15 +1888,15 @@ function App({ onExitToHub }: AppProps) {
       } catch (e) { console.error("Local Scan Error", e); }
     }
 
-    if (backupDir) {
+    if (sdDir) {
       try {
-        console.log(`[scanProjects] Scanning Backup: ${backupDir.name}`);
-        backupProjects = await scanForProjects(backupDir);
-        activeSK = await getActiveSKProject(backupDir); // Get active project from SD
+        console.log(`[scanProjects] Scanning Backup: ${sdDir.name}`);
+        sdProjects = await scanForProjects(sdDir);
+        activeSK = await getActiveSKProject(sdDir); // Get active project from SD
 
         // Scan for Device Changes (SK Folder)
         try {
-          const skHandle = await backupDir.getDirectoryHandle('SK');
+          const skHandle = await sdDir.getDirectoryHandle('SK');
           diff = await scanDeviceChanges(skHandle);
           if (diff) {
             console.log("[DeviceDiff] Hardware state loaded:", diff);
@@ -1898,7 +1906,7 @@ function App({ onExitToHub }: AppProps) {
       } catch (e) { console.error("Backup Scan Error", e); }
     }
 
-    console.log(`[scanProjects] Local: ${localProjects.length}, Backup: ${backupProjects.length}, ActiveSK: ${activeSK}`);
+    console.log(`[scanProjects] Local: ${localProjects.length}, Backup: ${sdProjects.length}, ActiveSK: ${activeSK}`);
     setActiveSKProject(activeSK); // Update state
     setDeviceDiff(diff); // Update diff state
 
@@ -1909,7 +1917,7 @@ function App({ onExitToHub }: AppProps) {
       projectMap.set(p.name, { ...p, local: p });
     });
 
-    backupProjects.forEach(p => {
+    sdProjects.forEach(p => {
       const existing = projectMap.get(p.name);
       if (existing) {
         projectMap.set(p.name, { ...existing, backup: p });
@@ -1949,15 +1957,15 @@ function App({ onExitToHub }: AppProps) {
   const handleSmartScan = async (newWorkHandle?: FileSystemDirectoryHandle) => {
     // Use passed handle or fall back to state (state might be stale during setup)
     const effectiveWork = newWorkHandle || workHandle;
-    await scanProjects(effectiveWork, backupHandle);
+    await scanProjects(effectiveWork, sdHandle);
   };
 
   // Effect to rescan when handles change
   useEffect(() => {
-    if (workHandle || backupHandle) {
-      scanProjects(workHandle, backupHandle);
+    if (workHandle || sdHandle) {
+      scanProjects(workHandle, sdHandle);
     }
-  }, [workHandle, backupHandle]);
+  }, [workHandle, sdHandle]);
 
 
 
@@ -2464,7 +2472,7 @@ function App({ onExitToHub }: AppProps) {
   };
 
   const handleRecoverProjectAssetFromSD = async (asset: MissingAsset) => {
-    if (!workHandle || !backupHandle || !currentProjectName) return;
+    if (!workHandle || !sdHandle || !currentProjectName) return;
 
     try {
       const projectsHandle = await workHandle.getDirectoryHandle('Projects', { create: true });
@@ -2474,12 +2482,12 @@ function App({ onExitToHub }: AppProps) {
       // Resolve backup dir again (cleanest approach for standalone function)
       let backupProjectDir: FileSystemDirectoryHandle | null = null;
       try {
-        const wb = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+        const wb = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
         const ps = await wb.getDirectoryHandle('Projects', { create: false });
         backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
       } catch {
         try {
-          const ps = await backupHandle.getDirectoryHandle('Projects', { create: false });
+          const ps = await sdHandle.getDirectoryHandle('Projects', { create: false });
           backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
         } catch { /* ignore */ }
       }
@@ -2512,7 +2520,7 @@ function App({ onExitToHub }: AppProps) {
   };
 
   const handleRecoverAllMissingAssetsFromSD = async () => {
-    if (!missingFilesWarning || !workHandle || !backupHandle || !currentProjectName) return;
+    if (!missingFilesWarning || !workHandle || !sdHandle || !currentProjectName) return;
 
     setIsProcessing(true);
     setProgressMsg("Restoring files from SD backup...");
@@ -2521,12 +2529,12 @@ function App({ onExitToHub }: AppProps) {
     try {
       let backupProjectDir: FileSystemDirectoryHandle | null = null;
       try {
-        const wb = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+        const wb = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
         const ps = await wb.getDirectoryHandle('Projects', { create: false });
         backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
       } catch {
         try {
-          const ps = await backupHandle.getDirectoryHandle('Projects', { create: false });
+          const ps = await sdHandle.getDirectoryHandle('Projects', { create: false });
           backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
         } catch { /* ignore */ }
       }
@@ -4166,12 +4174,12 @@ function App({ onExitToHub }: AppProps) {
     showToast('Empty slot browser preference reset', 'success');
   };
   const handleOpenSyncModal = async (mode: 'push' | 'import' = 'push') => {
-    if (!backupHandle) return;
+    if (!sdHandle) return;
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
     try {
       const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-      const structureMap = await scanSKStructure(backupHandle);
+      const structureMap = await scanSKStructure(sdHandle);
       const diff = await calculateSyncDiff(state, structureMap);
       setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: mode });
     } catch (e: any) {
@@ -4196,7 +4204,7 @@ function App({ onExitToHub }: AppProps) {
 
             // Save handles
             saveDirectoryHandle('work', work);
-            if (backup) saveDirectoryHandle('backup', backup);
+            if (backup) saveDirectoryHandle('sd', backup);
 
             // Auto-scan projects
             await handleSmartScan(work);
@@ -4325,7 +4333,7 @@ function App({ onExitToHub }: AppProps) {
                 <div className="h-5 w-px bg-gray-800 mx-0.5" />
 
                 {/* Combined SD Action — only when SD connected */}
-                {backupHandle && (
+                {sdHandle && (
                   <button
                     onClick={() => handleOpenSyncModal('push')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
@@ -4911,7 +4919,7 @@ function App({ onExitToHub }: AppProps) {
                 presets={presets}
                 onLoadPreset={handleLoadPreset}
                 onWriteToSD={handleWritePresetToSD}
-                writeHint={backupHandle
+                writeHint={sdHandle
                   ? 'Writes SK/ to the connected card · The open project is untouched'
                   : 'Asks for your card, then writes SK/ · The open project is untouched'}
               />
@@ -4934,7 +4942,7 @@ function App({ onExitToHub }: AppProps) {
                 hasUnsavedChanges={hasUnsavedChanges}
                 onCleanupProject={handleCleanupProject}
                 onDeleteProject={handleDeleteProject}
-                onDeleteBackupProject={backupHandle ? async (name) => {
+                onDeleteBackupProject={sdHandle ? async (name) => {
                   setConfirmAction({
                     title: 'Delete SD Backup?',
                     message: (
@@ -4949,12 +4957,12 @@ function App({ onExitToHub }: AppProps) {
                       try {
                         setIsProcessing(true);
                         setProgressMsg(`Deleting SD backup: ${name}...`);
-                        const projectsDir = await backupHandle!
+                        const projectsDir = await sdHandle!
                           .getDirectoryHandle('WAV_Builder', { create: false })
                           .then(d => d.getDirectoryHandle('Projects', { create: false }));
                         await projectsDir.removeEntry(name, { recursive: true });
                         showToast(`SD backup "${name}" deleted`, 'success');
-                        await scanProjects(workHandle, backupHandle);
+                        await scanProjects(workHandle, sdHandle);
                       } catch (e: any) {
                         showToast('Delete failed: ' + e.message, 'error');
                       } finally {
@@ -4971,7 +4979,7 @@ function App({ onExitToHub }: AppProps) {
                   setIsProcessing(true);
                   try {
                     const startTime = Date.now();
-                    await scanProjects(workHandle, backupHandle);
+                    await scanProjects(workHandle, sdHandle);
 
                     // Ensure spinner shows for at least 500ms
                     const elapsed = Date.now() - startTime;
@@ -4991,14 +4999,14 @@ function App({ onExitToHub }: AppProps) {
                 onOpenHelp={() => { setAboutHelpTab('help'); setShowAboutHelp(true); }}
                 deviceDiff={deviceDiff || undefined}
                 workHandle={workHandle}
-                backupHandle={backupHandle}
+                sdHandle={sdHandle}
                 onChangeWorkFolder={handleSetWorkFolder}
-                onChangeBackupFolder={handleSetBackupFolder}
+                onChangeSDFolder={handleSetSDFolder}
                 onSyncProject={(projectName) => setSyncProjectTarget(projectName)}
                 onImportZip={handleImportZip}
                 onExportZip={handleExportZip}
                 onBuildProject={async (projectName) => {
-                  if (!workHandle || !backupHandle) {
+                  if (!workHandle || !sdHandle) {
                     showToast("Both Project Folder and SD Card must be connected.", 'error');
                     return;
                   }
@@ -5015,7 +5023,7 @@ function App({ onExitToHub }: AppProps) {
 
                     // 2. Scan SD Structure
                     setProgressMsg('Scanning SD Card...');
-                    const structureMap = await scanSKStructure(backupHandle);
+                    const structureMap = await scanSKStructure(sdHandle);
 
                     // 3. Calculate Diff
                     setProgressMsg('Calculating Differences...');
@@ -5032,7 +5040,7 @@ function App({ onExitToHub }: AppProps) {
                   }
                 }}
                 onImportSK={async () => {
-                  if (!backupHandle) {
+                  if (!sdHandle) {
                     showToast("SD card not connected.", 'error');
                     return;
                   }
@@ -5040,7 +5048,7 @@ function App({ onExitToHub }: AppProps) {
                   setProgressMsg('Scanning SK folder on SD...');
                   try {
                     const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-                    const structureMap = await scanSKStructure(backupHandle);
+                    const structureMap = await scanSKStructure(sdHandle);
                     const diff = await calculateSyncDiff(state, structureMap);
                     setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                   } catch (e: any) {
@@ -5056,15 +5064,15 @@ function App({ onExitToHub }: AppProps) {
               />
             </Suspense>
 
-            {syncProjectTarget && workHandle && backupHandle && (
+            {syncProjectTarget && workHandle && sdHandle && (
               <ProjectSyncModal
                 projectName={syncProjectTarget}
                 localState={state}
-                backupHandle={backupHandle}
-                onChangeSDCard={handleSetBackupFolder}
+                sdHandle={sdHandle}
+                onChangeSDCard={handleSetSDFolder}
                 onClose={() => setSyncProjectTarget(null)}
                 onApply={async (newState) => {
-                  if (!workHandle || !backupHandle || !syncProjectTarget) return;
+                  if (!workHandle || !sdHandle || !syncProjectTarget) return;
                   setIsProcessing(true);
                   setProgressMsg('Saving sync changes locally...');
                   try {
@@ -5088,7 +5096,7 @@ function App({ onExitToHub }: AppProps) {
 
                     // Backup: SD/WAV_Builder/ → Projects/{name}/
                     setProgressMsg('Saving sync changes to SD backup...');
-                    const wavBuilderHandle = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
+                    const wavBuilderHandle = await sdHandle.getDirectoryHandle('WAV_Builder', { create: true });
                     await saveProjectToDirectory(stampedState, wavBuilderHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
 
                     // If this is the active project, update in-memory state without
@@ -5101,7 +5109,7 @@ function App({ onExitToHub }: AppProps) {
 
                     showToast(`${syncProjectTarget} synced successfully`, 'success');
                     setSyncProjectTarget(null);
-                    await scanProjects(workHandle, backupHandle);
+                    await scanProjects(workHandle, sdHandle);
                   } catch (e: any) {
                     console.error(e);
                     showToast('Sync failed: ' + e.message, 'error');
@@ -5119,7 +5127,7 @@ function App({ onExitToHub }: AppProps) {
                 projectName={syncModalState?.projectName || ''}
                 diff={syncModalState.diff}
                 defaultMode={syncModalState.defaultMode ?? 'push'}
-                onChangeSDCard={handleSetBackupFolder}
+                onChangeSDCard={handleSetSDFolder}
                 onRefresh={handleSKRefresh}
                 isRefreshing={isProcessing}
                 onClose={() => setSyncModalState(null)}
@@ -5235,7 +5243,7 @@ function App({ onExitToHub }: AppProps) {
                       // ─── PHASE B: EXPORT / BUILD (Write to SD) ───
                       const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
                       if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
-                        if (!backupHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
+                        if (!sdHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
                         
                         const { exportSDStructure } = await import('./utils/exportUtils');
                         await exportSDStructure(newState, { // Use newState which includes pooled files
@@ -5244,8 +5252,8 @@ function App({ onExitToHub }: AppProps) {
                           smartSync: options.skMode === 'overwrite',
                           skMode: options.skMode,
                           userLibrary: userLibrary,
-                          backupSKToProject: options.backupSKToProject,
-                          destinationHandle: backupHandle,
+                          mirrorProjectToSD: getDurabilityPrefs().mirrorProjectsToSD,
+                          destinationHandle: sdHandle,
                           workHandle: workHandle,
                           projectName: projectName,
                           syncDecisions: finalDecisions,
@@ -5256,10 +5264,10 @@ function App({ onExitToHub }: AppProps) {
                       }
 
                       showToast("Hardware Sync Complete", "success");
-                      scanProjects(workHandle, backupHandle);
-                      // ── Background SK Backup (non-blocking) ──
-                      if (workHandle && backupHandle && projectName) {
-                        createSKBackup(projectName, workHandle, backupHandle)
+                      scanProjects(workHandle, sdHandle);
+                      // ── Background SK snapshot (non-blocking, opt-in per build) ──
+                      if (options.skSnapshot && workHandle && sdHandle && projectName) {
+                        createSKBackup(projectName, workHandle, sdHandle)
                           .then(() => {
                             if (currentProjectName === projectName) {
                               scanSKBackups(projectName, workHandle!);
@@ -5679,8 +5687,8 @@ function App({ onExitToHub }: AppProps) {
           isOpen={showLibrarySyncModal}
           onClose={() => setShowLibrarySyncModal(false)}
           userLibrary={userLibrary}
-          backupHandle={backupHandle}
-          onSetBackupFolder={handleSetBackupFolder}
+          sdHandle={sdHandle}
+          onSetBackupFolder={handleSetSDFolder}
           onOpenProjectManager={() => {
             setShowLibrarySyncModal(false);
             setShowLibraryManager(false);

@@ -8,7 +8,7 @@ const OVERLAYS = [
 ];
 
 interface SetupWizardProps {
-    onComplete: (workHandle: FileSystemDirectoryHandle, backupHandle: FileSystemDirectoryHandle | null, projectName: string | null) => void;
+    onComplete: (workHandle: FileSystemDirectoryHandle, sdHandle: FileSystemDirectoryHandle | null, projectName: string | null) => void;
     onSkip: () => void;
     restorableHandles?: { work: FileSystemDirectoryHandle; backup: FileSystemDirectoryHandle | null } | null;
     onRestore?: () => void;
@@ -116,7 +116,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
         };
     }, []);
     const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
-    const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
+    const [sdHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
     const [projectName, setProjectName] = useState('');
 
     // STEP 1: Select Work Folder
@@ -193,7 +193,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
     // FINAL: Finish
     const handleFinish = (name: string | null) => {
         if (workHandle) {
-            onComplete(workHandle, backupHandle, name);
+            onComplete(workHandle, sdHandle, name);
         }
     };
 
