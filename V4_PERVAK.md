@@ -19,7 +19,7 @@
 | 0 | ✅ | Cleanup | 1002 lines of dead code removed |
 | 1 | ✅ | Mode scaffold | Four doors on a landing screen |
 | 2 | ✅ | Browse mode | Linkable sample library + selection pool, zero setup |
-| 3 | ☐ | Preset → SD | Cold start → curated project on the card |
+| 3 | ✅ | Preset → SD | Cold start → curated project on the card |
 | 4 | ☐ | Backup & safety rework | SD card is a build target again |
 | 5 | ☐ | Config mode | MIDI setup without the studio |
 | 6 | ☐ | Editor mode + Studio extraction | `App.tsx` finally broken up |
@@ -277,7 +277,64 @@ before download". Both cross into project ownership or the editor.
 
 ---
 
-### Phase 3 — Preset → SD ☐  *(the headline flow)*
+### Phase 3 — Preset → SD ✅  *(the headline flow)*
+
+**Outcome.** `#/presets` is its own mode. New `utils/presetLoader.ts`, `modes/PresetsMode.tsx`;
+`PresetsPanel` gained the same `mode: 'standalone' | 'project'` split `SampleBrowser` took in Phase 2.
+`tsc -b && vite build` clean, eslint clean on every new/changed file. Entry bundle 10.6 kB;
+`PresetsMode` is a 2.8 kB lazy chunk and `PresetsPanel` 9.6 kB.
+
+- **`handleLoadPreset` split into three, and only Studio does all three.** `hydratePreset(entry)`
+  and `writeToSD(state, options)` are shared and live in
+  [presetLoader.ts](src/utils/presetLoader.ts); `adoptPresetAsProject(state, name)` — dedupe the
+  name, write the project folder, take it over as current — stayed in `App.tsx`, because every line
+  of it is Tier-3 by definition. Tier 2 calls the first and the third and never touches `App.tsx`.
+- **`hydratePreset` returns `{ state, name }`, not a bare `AppState`.** The descriptor's own `name`
+  is what a project made from the preset gets called, and nothing else on the way out carries it —
+  `AppState` has no name field. The alternative was falling back to the manifest's `entry.name`,
+  which is usually but not always the same string.
+- **It does *not* end in `buildDetachedState`**, contrary to the reuse note below. A preset
+  descriptor carries **explicit slot assignments** — that's most of what a preset *is* — and
+  `buildDetachedState` autospreads in list order, so routing through it would discard the author's
+  layout. What the note was actually after still holds: `hydrateDescriptor` already returns exactly
+  the same detached `AppState`, so one payload shape still feeds one exporter, and Phase 2's pool and
+  Phase 3's presets hand `exportSDStructure` the identical thing.
+- **Conversion goes through `audioEngine`, not ffmpeg — but unlike Phase 2 it is genuinely needed.**
+  A pooled sample was decoded on the way in; a hydrated preset blob is whatever R2 served, normally
+  FLAC. `writeToSD` passes `onConvert: toHardwareWav`, so `exportSDStructure` converts each file as
+  it writes it — one decode resident at a time rather than 36 — and the tier still pulls no
+  ffmpeg-wasm. Studio's own export keeps `convertAudioToWav`, because its files can be anything.
+- **Bug found on the way: hydrated blobs could have skipped conversion entirely.**
+  `hydrateDescriptor` typed its blobs from the response's `content-type` header, unconditionally. A
+  bucket answering `application/octet-stream` produces a blob that fails every
+  `type.startsWith('audio/')` check downstream — including `exportSDStructure`'s `onConvert` gate,
+  which would then have written FLAC bytes into a file called `1.WAV`. The header is now trusted only
+  when it names an audio type, otherwise the extension decides
+  ([projectDescriptorUtils.ts:132](src/utils/projectDescriptorUtils.ts#L132)). This was latent on
+  Studio's ffmpeg path too.
+- **A ZIP fallback where there's no picker.** `exportSDStructure`'s direct write needs
+  `showDirectoryPicker`, which Firefox and Safari don't have. `PresetsMode` checks once and flips the
+  button to "Build SD ZIP" — same hydrate, same tree, `directWrite: false` — instead of leaving the
+  headline flow at a dead end on two of three engines.
+- **`includeConfig` left at its default**, which writes `config.txt` only when the hydrated state
+  actually carries a `projectConfig`. A preset that expresses no device settings leaves what's on the
+  card alone. Same conclusion as Phase 2, reached without needing the explicit `false`.
+- **The panel's progress bar now moves.** It already had the markup and a `loadProgress` state that
+  nothing ever wrote to — `onLoadPreset` had no progress channel. Both runners now take one, scaled
+  55/45 between fetching the audio and writing it.
+- **Studio got the same button.** "To SD card" sits beside "Load into App" and writes to the
+  connected `backupHandle` when there is one, asking for a card when there isn't. It leaves `state`
+  and `isProcessing` alone, so writing a preset to the card doesn't disturb the open project.
+
+Deliberately not built:
+
+- **No "adopt this as a project" in standalone.** That's the tier boundary — it needs a work folder,
+  a name and the global IDB slot. The hub's Studio door is one click away.
+- **No preview/audition in Tier 2.** A preset is 36 files; auditioning them is what Browse is for.
+  Revisit if presets grow past a handful and choosing between them gets hard.
+
+**Storage untouched, same as Browse.** `#/presets` reads the manifest and writes only to the card the
+user picks. Locked decision 9 still gates any Pages deploy — Studio shares the origin. Appendix F.3.
 
 **Read first:** Appendix B (Tier 2 row) — both halves already exist.
 

@@ -62,6 +62,7 @@ import { useAudioConverter } from './utils/useAudioConverter';
 // dynamic persistence imports
 import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
+import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
 import { useEscapeLayer } from './shell/escapeStack';
 
 const sanitizeFilename = (name: string) => {
@@ -1218,51 +1219,95 @@ function App({ onExitToHub }: AppProps) {
       });
   }, []);
 
-  // Handle loading a preset into the app
-  const handleLoadPreset = async (entry: PresetManifestEntry) => {
-    try {
-      // 1. Fetch the descriptor JSON
-      const url = resolveAssetPath(entry.descriptorPath);
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Failed to fetch preset descriptor: HTTP ${resp.status}`);
-      const json = await resp.json();
-      const { parseProjectDescriptor, hydrateDescriptor } = await import('./utils/projectDescriptorUtils');
-      const descriptor = parseProjectDescriptor(json);
+  // Preset handling is three separable things, and only Studio does all three:
+  // `hydratePreset` (shared, in utils/presetLoader) fetches the descriptor and its
+  // audio; `adoptPresetAsProject` below writes it to the work folder and takes it
+  // over as the current project; `writeToSD` (shared) puts it on the card. Tier 2
+  // at `#/presets` calls the first and the third and never touches this file.
+  // See V4_PERVAK.md, Phase 3.
 
-      // 2. Hydrate (fetch blobs from R2)
-      const newState = await hydrateDescriptor(descriptor, undefined, (msg, pct) => {
+  /** Tier 3: make the hydrated state the live project, on disk and on screen. */
+  const adoptPresetAsProject = async (newState: AppState, baseName: string) => {
+    // Deduplicate against the projects already in the work folder
+    let finalName = baseName;
+    let counter = 1;
+    while (foundProjects.some(p => p.name === finalName)) {
+      finalName = `${baseName}_${counter++}`;
+    }
+
+    if (workHandle) {
+      setIsProcessing(true);
+      setProgressMsg(`Saving "${finalName}"…`);
+      const { saveProjectToDirectory } = await import('./utils/exportUtils');
+      await saveProjectToDirectory(newState, workHandle, (msg) => setProgressMsg(msg || ''), finalName);
+      await scanProjects(workHandle, backupHandle);
+    }
+
+    isSystemUpdate.current = true;
+    setState(newState);
+    setCurrentProjectName(finalName);
+    setHasUnsavedChanges(false);
+    setShowPresetsPanel(false);
+
+    const missing = missingAssetCount(newState);
+    showToast(
+      `Preset "${finalName}" loaded${missing ? ' (some samples missing — check internet connection)' : ' successfully'}`,
+      missing ? 'warning' : 'success'
+    );
+  };
+
+  const handleLoadPreset = async (entry: PresetManifestEntry, onProgress: PresetProgress) => {
+    try {
+      const { state: newState, name } = await hydratePreset(entry, (msg, pct) => {
+        onProgress(msg, pct);
         setProgressMsg(`${msg} (${Math.round(pct)}%)`);
       });
-
-      // 3. Deduplicate project name
-      let baseName = descriptor.name || entry.name || 'Preset';
-      let finalName = baseName;
-      let counter = 1;
-      while (foundProjects.some(p => p.name === finalName)) {
-        finalName = `${baseName}_${counter++}`;
-      }
-
-      // 4. Save as a new local project (if workHandle available)
-      if (workHandle) {
-        setIsProcessing(true);
-        setProgressMsg(`Saving "${finalName}"…`);
-        const { saveProjectToDirectory } = await import('./utils/exportUtils');
-        await saveProjectToDirectory(newState, workHandle, (msg) => setProgressMsg(msg || ''), finalName);
-        await scanProjects(workHandle, backupHandle);
-      }
-
-      // 5. Load into UI
-      isSystemUpdate.current = true;
-      setState(newState);
-      setCurrentProjectName(finalName);
-      setHasUnsavedChanges(false);
-      setShowPresetsPanel(false);
-      showToast(`Preset "${finalName}" loaded${newState.loadIssues?.missingAssets?.length ? ' (some samples missing — check internet connection)' : ' successfully'}`, newState.loadIssues?.missingAssets?.length ? 'warning' : 'success');
+      await adoptPresetAsProject(newState, name);
     } catch (e: any) {
       console.error('[handleLoadPreset]', e);
       throw e; // Let PresetsPanel surface the error inline
     } finally {
       setIsProcessing(false);
+      setProgressMsg('');
+    }
+  };
+
+  /**
+   * Studio's card write. Same two calls Tier 2 makes, but aimed at the card that's
+   * already connected — no second picker when the SD handle is in hand. The current
+   * project is left alone: nothing here touches `state`.
+   */
+  const handleWritePresetToSD = async (entry: PresetManifestEntry, onProgress: PresetProgress) => {
+    try {
+      const { state: presetState, name } = await hydratePreset(entry, (msg, pct) => {
+        onProgress(msg, pct * 0.55);
+        setProgressMsg(`${msg} (${Math.round(pct)}%)`);
+      });
+
+      await writeToSD(
+        presetState,
+        { projectName: name, destinationHandle: backupHandle ?? undefined },
+        (msg, pct) => {
+          const scaled = 55 + ((pct ?? 0) * 0.45);
+          onProgress(msg || 'Writing to card…', scaled);
+          if (msg) setProgressMsg(msg);
+        }
+      );
+
+      const missing = missingAssetCount(presetState);
+      showToast(
+        `"${name}" written to the SD card${missing ? ` — ${missing} sample(s) missing` : ''}`,
+        missing ? 'warning' : 'success'
+      );
+      if (missing > 0) {
+        return `${missing} sample${missing === 1 ? '' : 's'} could not be downloaded — ${missing === 1 ? 'that slot is' : 'those slots are'} empty.`;
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') console.error('[handleWritePresetToSD]', e);
+      throw e;
+    } finally {
+      // Deliberately not touching `isProcessing`: the card write is the preset
+      // panel's own business and shouldn't drop Studio's blocking overlay over it.
       setProgressMsg('');
     }
   };
@@ -4865,6 +4910,10 @@ function App({ onExitToHub }: AppProps) {
                 onClose={() => setShowPresetsPanel(false)}
                 presets={presets}
                 onLoadPreset={handleLoadPreset}
+                onWriteToSD={handleWritePresetToSD}
+                writeHint={backupHandle
+                  ? 'Writes SK/ to the connected card · The open project is untouched'
+                  : 'Asks for your card, then writes SK/ · The open project is untouched'}
               />
             </Suspense>
 

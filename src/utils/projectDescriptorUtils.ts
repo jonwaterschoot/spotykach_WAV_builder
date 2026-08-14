@@ -129,7 +129,15 @@ export const hydrateDescriptor = async (
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const buffer = await response.arrayBuffer();
-                const mime = response.headers.get('content-type') || guessMimeFromPath(entry.samplePath);
+                // Trust the header only when it actually names an audio type. A bucket
+                // that answers `application/octet-stream` would otherwise produce a blob
+                // that every `type.startsWith('audio/')` check downstream skips — most
+                // importantly `exportSDStructure`'s `onConvert`, which would then write
+                // FLAC bytes into a file called `1.WAV`.
+                const contentType = response.headers.get('content-type');
+                const mime = contentType?.startsWith('audio/')
+                    ? contentType
+                    : guessMimeFromPath(entry.samplePath);
                 blob = new Blob([buffer], { type: mime });
             } catch (e: any) {
                 console.warn(`[hydrateDescriptor] Failed to fetch "${entry.samplePath}":`, e.message);

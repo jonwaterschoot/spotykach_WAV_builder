@@ -41,7 +41,7 @@ const DOORS: Door[] = [
     accentText: 'text-synthux-orange',
     accentBorder: 'hover:border-synthux-orange/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(245,139,68,0.45)]',
-    ready: false,
+    ready: true,
   },
   {
     mode: 'config',
