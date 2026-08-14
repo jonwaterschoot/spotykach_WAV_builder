@@ -2,6 +2,10 @@
 
 This document outlines the high-level wireflows, user journeys, and potential UX directions for the Spotykach app. The goal is to figure out the optimal user experience by sketching out how different types of users interact with the app.
 
+> **This is the intent document — the *why*.** Personas, journeys and open UX thinking live here.
+> The implementation plan built from it is [V4_PERVAK.md](V4_PERVAK.md) — phase checklist, decisions
+> already locked, and the codebase analysis behind them. Start there for any build work.
+
 ## Design Direction
 We have two main paths to consider for achieving the best UX:
 1. **Iterative Molding:** Mold and adapt the existing UI elements to adhere to these new workflows.
@@ -13,13 +17,13 @@ We have two main paths to consider for achieving the best UX:
 
 To ensure the app caters to its diverse audience, we need to design wireflows for several distinct user journeys:
 
-1. **The Casual Browser** - Focuses on finding, previewing, and downloading samples without touching a project.
+1. **The Sample Browser** - Focuses on finding, previewing, and downloading samples without touching a project.
 2. **The Hardware Configurator** - Focuses on quickly adjusting MIDI channels and device settings.
 3. **The Audio Editor** - Focuses on dropping in a single file to tweak (trim, normalize) without getting bogged down by the 6x6 grid.
 4. **The Power User** - Focuses on the full Project and Slot Manager, loading 36-file Sample Packs, and managing projects (creating, reloading, altering).
 
 
-### 1. The Casual Browser (Sample Browsing & Custom Downloading)
+### 1. The Sample Browser (Sample Browsing & Custom Downloading)
 - **Goal 1:** Browsing **individual samples**
   -Quickly find and download specific samples without needing to build a full project or interface with the 6x6 grid.
   - **Workflow:** 
