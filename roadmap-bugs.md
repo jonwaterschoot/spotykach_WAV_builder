@@ -32,6 +32,12 @@ The rest of the v4 close-out — settings, backup, the browser's pen icon, the t
 **Phase 7** in that document.
 
 ---
+Quick note to be placed in correct place:
+
+Tested the saving of the backup. Folder looked good, there's a txt file describing the content. → we should also include a guide on how te reinstate or setup on a new computer. Import workplace / restore ...
+
+Do we propose backups every now and then with an optional opt-out of the reminder?
+---
 
 ## Editor
 
