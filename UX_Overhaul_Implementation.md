@@ -196,9 +196,14 @@ src/
 
 Each phase is independently shippable and leaves the app working.
 
-**Phase 0 — Cleanup (low risk, do first)**
-Delete `WelcomeScreen`, `SamplePackModal`, `SyncDashboard` (~940 dead lines). Confirm the build is
-clean. This shrinks the surface everything else has to move through.
+**Phase 0 — Cleanup (low risk, do first)** ✅ *done*
+Deleted `WelcomeScreen` (60), `SamplePackModal` (514), `SyncDashboard` (428) — 1002 lines, zero
+references between them. Notes on why each was safe:
+- `WelcomeScreen` — no onboarding content; the explainer slides live in
+  [SetupWizard.tsx:26-100](src/components/SetupWizard.tsx#L26-L100), which is kept.
+- `SamplePackModal` — superseded ancestor of `SampleBrowser`, and already non-functional: it read
+  `SAMPLE_PACKS`, now a permanently empty array ([samplePacks.ts:92](src/data/samplePacks.ts#L92)).
+- `SyncDashboard` — genuinely good design, salvaged as a reference in §8.3 rather than kept in tree.
 
 **Phase 1 — Mode scaffold**
 Add `AppMode` + hash routing + `HubScreen`. `studio` renders exactly today's shell, wizard included.
@@ -292,6 +297,20 @@ The "SD == backup mirror" assumption has to go before the tiers can exist.
 
 **Migration:** existing users have real projects on their cards. Keep the *read* path — "found N
 projects on this card, import them?" — and drop only the automatic bidirectional mirror.
+
+> **Design reference for the SD-import compare view.** The deleted `SyncDashboard.tsx` (removed in
+> Phase 0) is the best interaction model in the repo's history for App ↔ SD comparison, better than
+> the current `ProjectSyncModal` + `SyncComparisonTable` path: per-slot rows with local and remote
+> side by side, an inline preview player on *both* sides, staged `PUSH`/`PULL`/`DELETE` actions with
+> a pending count, and a single commit button. Start from it rather than from scratch:
+>
+> ```bash
+> git show 72c2893:src/components/SyncDashboard.tsx
+> ```
+>
+> Note it was written against the full bidirectional `SyncDiff` model. Under §8.3 the SD becomes a
+> build target, so the compare view is needed for **import only** — the `PUSH` column and the
+> "move overwritten files to Pool" footer option largely fall away.
 
 ### 8.4 Addressing the actual data-loss risks
 
