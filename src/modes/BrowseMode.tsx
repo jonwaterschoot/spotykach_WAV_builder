@@ -187,7 +187,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
     origin?: string,
     license?: string,
     sourcePath?: string,
-  ) => {
+  ): Promise<string> => {
     const isObjectUrl = url.startsWith('blob:');
     try {
       const response = await fetch(url, { mode: 'cors' });
@@ -195,8 +195,11 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       const blob = await response.blob();
       const { buffer, blob: processedBlob } = await audioEngine.loadAndProcessAudio(blob);
 
+      // Minted up front rather than inside the updater, so the caller can hand this
+      // entry straight to the editor — that is what the browser row's pen does.
+      const id = newId();
       setPool(prev => [...prev, {
-        id: newId(),
+        id,
         name,
         fileName: fileNameFromSource(url, name),
         blob: processedBlob,
@@ -207,6 +210,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         sourcePath,
       }]);
       setIsPoolOpen(true);
+      return id;
     } catch (e) {
       console.error(`Could not add ${name} to the pool`, e);
       throw e;
@@ -230,6 +234,26 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   }, [addToPool]);
 
   const removeFromPool = (id: string) => setPool(prev => prev.filter(item => item.id !== id));
+
+  /**
+   * The pen on a browser row — Phase 7, step 5, open item G.
+   *
+   * The editor already opened over Browse, but only from a pool row: trimming one
+   * sample meant first building a selection, which is a concept the user hadn't
+   * asked for. The pen pools the file *and* opens the editor on it in one step, so
+   * an applied edit lands somewhere that already has endings — both downloads and
+   * "import into a project" keep working, with no second set of exits to maintain.
+   */
+  const editFromBrowser = useCallback(async (
+    url: string,
+    name: string,
+    origin?: string,
+    license?: string,
+    sourcePath?: string,
+  ) => {
+    const id = await addToPool(url, name, origin, license, sourcePath);
+    setEditingId(id);
+  }, [addToPool]);
 
   /**
    * Single-file edit before download — open question 5's fourth exit.
@@ -459,7 +483,10 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               isOpen
               mode="standalone"
               onClose={onExitToHub}
-              onImport={addToPool}
+              // `addToPool` returns the new entry's id (the pen below needs it); the
+              // browser only cares that the import resolved.
+              onImport={async (...args) => { await addToPool(...args); }}
+              onEditSample={editFromBrowser}
               addedPaths={pooledPaths}
               userLibrary={userLibrary}
               onRemoteBulkImport={(samples, _target, origin, license) => addManyToPool(samples, origin, license)}

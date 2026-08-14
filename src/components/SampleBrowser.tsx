@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Settings, Crosshair, ChevronDown, Layers } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, Layers } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { SamplePack } from '../data/samplePacks';
 import { resolveAssetPath } from '../utils/assetUtils';
@@ -39,7 +39,30 @@ interface SampleBrowserProps {
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
     onRemoteBulkImport?: (samples: { url: string, name: string, path?: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
+    /**
+     * Edit one sample straight from the row — Phase 7, step 5.
+     *
+     * Same signature as `onImport`, because it *is* an import: the host pools the
+     * file and opens the editor on the pooled entry. Trimming one sample used to
+     * mean building a selection first, which is a concept the user never asked for.
+     * Optional, so the Studio browser (a different host, with a project behind it)
+     * simply doesn't pass it yet.
+     */
+    onEditSample?: (url: string, name: string, origin?: string, license?: string, sourcePath?: string) => Promise<void>;
     forceStop?: boolean;
+}
+
+/**
+ * The shape a row actually needs. The rest of this file still passes samples around
+ * as `any` — they come from four differently-shaped sources — but new code doesn't
+ * have to inherit that.
+ */
+interface BrowsableSample {
+    path: string;
+    name: string;
+    /** True for a file the browser holds in memory rather than fetches by path. */
+    _isVirtual?: boolean;
+    _blob?: Blob;
 }
 
 // OS Folder Handle Type
@@ -65,6 +88,7 @@ export const SampleBrowser = ({
     onImportToPool,
     onImportToTape,
     onRemoteBulkImport,
+    onEditSample,
     forceStop
 }: SampleBrowserProps) => {
 
@@ -161,6 +185,7 @@ export const SampleBrowser = ({
     const [userLibraryTagFilter, setUserLibraryTagFilter] = useState('');
     const [selectedUserLibraryTags, setSelectedUserLibraryTags] = useState<string[]>([]);
     const [importingSample, setImportingSample] = useState<string | null>(null);
+    const [editingSample, setEditingSample] = useState<string | null>(null);
     const [addedSamples, setAddedSamples] = useState<Set<string>>(new Set());
     /** Handed to LocalFolderBrowser, which owns locating inside a mounted folder. */
     const [locateTarget, setLocateTarget] = useState<string | null>(null);
@@ -625,6 +650,30 @@ export const SampleBrowser = ({
         }
     };
 
+    /** Pool this one file and hand it straight to the editor. */
+    const handleEdit = async (sample: BrowsableSample) => {
+        if (!onEditSample) return;
+        setEditingSample(sample.path);
+        try {
+            let url = resolveAssetPath(sample.path);
+            if (sample._isVirtual && sample._blob) {
+                url = URL.createObjectURL(sample._blob);
+            }
+            await onEditSample(
+                url,
+                sample.name,
+                selectedPack?.name || 'Local Folder',
+                selectedPack?.license,
+                sample.path
+            );
+            setAddedSamples(prev => new Set(prev).add(sample.path));
+        } catch (error) {
+            console.error("Edit failed", error);
+        } finally {
+            setEditingSample(null);
+        }
+    };
+
     const handleBulkImport = async (files: { file: File, path: string }[]) => {
         for (const { file, path } of files) {
             const sample = {
@@ -1075,6 +1124,19 @@ export const SampleBrowser = ({
                                                                                 </div>
                                                                             )}
                                                                         </div>
+
+                                                                        {onEditSample && (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); handleEdit(sample); }}
+                                                                                disabled={editingSample === sample.path}
+                                                                                className="p-1.5 text-gray-500 hover:text-synthux-yellow hover:bg-synthux-yellow/10 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all disabled:opacity-70"
+                                                                                title="Trim or edit this file, then download it"
+                                                                            >
+                                                                                {editingSample === sample.path
+                                                                                    ? <Loader size={14} className="animate-spin" />
+                                                                                    : <Pencil size={14} />}
+                                                                            </button>
+                                                                        )}
 
                                                                         {isUserLibrarySelected && onOpenLibraryManager && (
                                                                             <button
