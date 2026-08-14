@@ -14,7 +14,14 @@ const NO_PROJECTS: ProjectSummary[] = [];
 interface SampleBrowserProps {
     isOpen: boolean;
     onClose: () => void;
-    onImport: (url: string, name: string, origin?: string, license?: string) => Promise<void>;
+    onImport: (url: string, name: string, origin?: string, license?: string, sourcePath?: string) => Promise<void>;
+    /**
+     * Paths the *caller* considers already taken, unioned with the browser's own
+     * record of what it imported this session. Browse mode derives it from the live
+     * selection pool, so the mark survives switching packs and clears again when an
+     * entry is removed from the pool.
+     */
+    addedPaths?: Set<string>;
     /**
      * `project` is the Studio browser: library management, project sources, and
      * "send to slot/tape" targets. `standalone` is Browse mode (#/browse) — no
@@ -31,7 +38,7 @@ interface SampleBrowserProps {
     selectionMode?: 'global' | 'slot-selection';
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
-    onRemoteBulkImport?: (samples: { url: string, name: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
+    onRemoteBulkImport?: (samples: { url: string, name: string, path?: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
     forceStop?: boolean;
 }
 
@@ -46,6 +53,7 @@ export const SampleBrowser = ({
     isOpen,
     onClose,
     onImport,
+    addedPaths,
     mode = 'project',
     userLibrary = EMPTY_LIBRARY,
     projects = NO_PROJECTS,
@@ -151,8 +159,9 @@ export const SampleBrowser = ({
     // Track added samples globally based on the project's current files
     const allAddedPaths = useMemo(() => {
         const paths = new Set<string>(addedSamples);
+        addedPaths?.forEach(path => paths.add(path));
         const addedNames = new Set<string>();
-        
+
         if (currentFiles) {
             Object.values(currentFiles).forEach(file => {
                 if (file.sourceSamplePath) {
@@ -163,7 +172,7 @@ export const SampleBrowser = ({
             });
         }
         return { paths, addedNames };
-    }, [currentFiles, addedSamples]);
+    }, [currentFiles, addedSamples, addedPaths]);
 
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';
@@ -237,11 +246,18 @@ export const SampleBrowser = ({
             if (s._isVirtual && s._blob) {
                 url = URL.createObjectURL(s._blob);
             }
-            return { url, name: s.name };
-        }).filter((s): s is { url: string, name: string } => s !== null);
+            return { url, name: s.name, path: s.path };
+        }).filter((s): s is { url: string, name: string, path: string } => s !== null);
 
         if (samplesToImport.length > 0) {
             await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
+            // The single-file path marks these; the bulk path used not to, so a bulk
+            // selection came back unmarked the moment you switched packs.
+            setAddedSamples(prev => {
+                const next = new Set(prev);
+                samplesToImport.forEach(s => next.add(s.path));
+                return next;
+            });
             setSelectedSamplePaths(new Set());
         }
     };
@@ -535,7 +551,8 @@ export const SampleBrowser = ({
                 url,
                 sample.name,
                 selectedPack?.name || 'Local Folder',
-                selectedPack?.license
+                selectedPack?.license,
+                sample.path
             );
             setAddedSamples(prev => new Set(prev).add(sample.path));
         } catch (error) {
@@ -905,7 +922,7 @@ export const SampleBrowser = ({
                                         playingFileId={playingSample || undefined}
                                         isPreviewPlaying={isPreviewPlaying}
                                         importingFileId={importingSample || undefined}
-                                        addedFileIds={addedSamples}
+                                        addedFileIds={allAddedPaths.paths}
                                         mode="add"
                                         bulkActionLabel={selectionMode === 'slot-selection' ? 'Add to Slot' : 'Copy to Pool'}
                                         onBulkImport={handleBulkImport}

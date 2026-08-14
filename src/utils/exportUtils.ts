@@ -819,6 +819,12 @@ export interface ExportFilesOptions {
     fileIds: string[];
     keepStructure?: boolean;
     onConvert?: (blob: Blob) => Promise<Blob>;
+    /**
+     * Replaces the default project README. A loose export isn't a project build —
+     * Browse mode ships instructions for organising the files by hand instead of a
+     * listing of a 6×6 grid the user never assembled.
+     */
+    readme?: string;
 }
 
 export const exportFilesOnly = async (state: AppState, options: ExportFilesOptions, onProgress?: (msg: string | undefined, progress?: number) => void) => {
@@ -828,7 +834,7 @@ export const exportFilesOnly = async (state: AppState, options: ExportFilesOptio
 
     // Add README
     onProgress?.("Adding Information...", 5);
-    zip.file("README.md", generateReadme(state)); // Don't mention project bundle in this context
+    zip.file("README.md", options.readme ?? generateReadme(state)); // Don't mention project bundle in this context
 
     // Helper to find location
     const findFileLocation = (fileId: string): string | null => {

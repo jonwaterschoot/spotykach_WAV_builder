@@ -167,9 +167,20 @@ lazy chunk, `HubNews` 3.3 kB.
   `hydratePreset` should return this same value**, so step 1 there is mostly done.
 - **The pool decodes on the way in.** `addToPool` fetches, runs `audioEngine.loadAndProcessAudio`,
   and keeps the resulting blob in component state. Object URLs the browser minted are revoked after
-  the fetch.
-- **Downloads:** `exportFilesOnly` (`keepStructure`) and `exportSDStructure` (ZIP), plus
-  `exportSingleFile` per pool row. Progress runs through the existing `ExportProgressModal`.
+  the fetch. Rows carry a thin tape-coloured bar so the 6×6 grouping reads without counting.
+- **"Added" marks come from the pool, not from a one-way set.** `SampleBrowser` gained an optional
+  `addedPaths` prop that Browse derives from the live pool, so a mark survives switching packs and
+  clears again when the entry is removed. The sample's `path` now rides along on both import
+  callbacks to make that possible. *(Bug found in review: the bulk path never marked anything at all
+  — only the single-file path did. Fixed for Studio too.)*
+- **Two downloads that do different things:**
+  - **SD card 6×6** — `exportSDStructure` ZIP. First 36, renamed to slots, `SK/` ready to copy.
+  - **The files** — `exportFilesOnly`, *all* of them, **original filenames**, no 36 ceiling, with a
+    checkbox for tape-folder grouping (`keepStructure`) and a purpose-written README. The default
+    `generateReadme` describes a built 6×6 card, which is exactly what this export isn't, so
+    `ExportFilesOptions` gained a `readme?: string` override.
+  - `exportSingleFile` per pool row, unchanged.
+  Progress runs through the existing `ExportProgressModal`.
 - **News moved to the hub inline** and the auto-open path, `hasCheckedNewsThisSession` and
   `spotykach_show_news_on_start` are gone. `NewsModal` survives only as the Studio header button; the
   fetch and the markdown rendering were pulled into `newsFeed.ts` + `NewsArticle.tsx` so the two
@@ -234,6 +245,16 @@ before download". Both cross into project ownership or the editor.
 **Settled going in:** open questions 1, 3 and 5 — no calls left to make in this phase.
 
 **Notes.**
+> **Bulk download & scraping — no new exposure, and Cloudflare is the wrong layer to worry at.**
+> Raised when Browse made pooling a whole pack one click. Nothing changed: `public/manifest.json`
+> already lists every sample URL in plain text, the packs are published as free downloads, and
+> `PresetsPanel` / the pack page already offer whole-ZIP links. Anyone wanting the lot would `curl`
+> the manifest, not drive the UI. Cloudflare in front of R2 gives rate limiting and bot management if
+> the rules are switched on, which caps abusive volume — it cannot make public URLs unscrapeable, and
+> hotlink protection would break the app's own `mode: 'cors'` fetches. Treat it as a **licensing**
+> question (the pack `license` string travels with every export and into the loose README) rather
+> than a technical one. Only revisit if egress cost actually shows up.
+>
 > **Filename case needs no work.** SD writes are uppercase `${slot.id}.WAV`
 > ([exportUtils.ts:629](src/utils/exportUtils.ts#L629), [790](src/utils/exportUtils.ts#L790),
 > [922](src/utils/exportUtils.ts#L922)); single-file downloads are lowercase `.wav`

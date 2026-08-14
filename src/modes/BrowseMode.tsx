@@ -1,13 +1,16 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronLeft, Download, GripVertical, HardDrive, Layers, Loader, Package, Trash2, X,
+  Check, ChevronLeft, Download, FileStack, GripVertical, HardDrive, Layers, Loader, Trash2, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
-import { buildDetachedState, slotLabelForIndex, GRID_CAPACITY, type DetachedSample } from '../utils/detachedState';
+import {
+  buildDetachedState, slotLabelForIndex, tapeForIndex, GRID_CAPACITY, type DetachedSample,
+} from '../utils/detachedState';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { loadUserLibraryFromDB } from '../utils/persistence';
 import { ExportProgressModal } from '../components/ExportProgressModal';
-import type { UserLibrary } from '../types';
+import { COLOR_MAP, TAPE_COLORS } from '../types';
+import type { AppState, UserLibrary } from '../types';
 
 const SampleBrowser = React.lazy(() =>
   import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser }))
@@ -16,6 +19,8 @@ const SampleBrowser = React.lazy(() =>
 /** A pooled sample: decoded, resident in memory, belonging to no project. */
 interface PoolItem extends DetachedSample {
   id: string;
+  /** The browser's own key for this sample, so the pool can mark it as taken. */
+  sourcePath?: string;
 }
 
 const newId = () =>
@@ -26,6 +31,76 @@ const newId = () =>
 const formatDuration = (seconds: number) => {
   if (!seconds || !isFinite(seconds)) return '--';
   return `${seconds.toFixed(1)}s`;
+};
+
+const stripExtension = (name: string) => name.replace(/\.[^/.]+$/, '');
+
+/** The file's own name at the source, so a loose export hands back what the user recognises. */
+const fileNameFromSource = (url: string, fallback: string) => {
+  if (url.startsWith('blob:')) return fallback;
+  try {
+    const last = url.split(/[?#]/)[0].split('/').pop();
+    return last ? decodeURIComponent(last) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+/**
+ * The README that ships with the loose download.
+ *
+ * `generateReadme` describes a built 6×6 card, which is exactly what this export
+ * isn't — so it would tell the reader their files are somewhere they aren't.
+ */
+const buildLooseReadme = (items: PoolItem[], sortedIntoTapes: boolean): string => {
+  const date = new Date().toISOString().split('T')[0];
+  const credits = items
+    .map(item => `- ${stripExtension(item.fileName || item.name)}.wav${item.origin ? `  —  ${item.origin}` : ''}`)
+    .join('\n');
+
+  const licenses = Array.from(new Set(items.map(i => i.license).filter(Boolean)));
+
+  return `# Spotykach — loose file export
+
+Date: ${date}
+Files: ${items.length}
+
+## What these are
+
+Every file here is already in the format the Spotykach firmware reads:
+**48 kHz · stereo · 32-bit float WAV**. You do not need to convert anything.
+
+Names are the originals, so you can still tell what is what.
+
+## What they are not
+
+They are **not** organised for the hardware. The device reads a fixed structure
+with fixed names:
+
+\`\`\`
+SK/
+  B/   1.WAV … 6.WAV      Blue tape
+  G/   1.WAV … 6.WAV      Green tape
+  P/   1.WAV … 6.WAV      Pink tape
+  R/   1.WAV … 6.WAV      Red tape
+  T/   1.WAV … 6.WAV      Turquoise tape
+  Y/   1.WAV … 6.WAV      Yellow tape
+\`\`\`
+
+To use these on the device: create that structure on the card, copy in the files
+you want, and rename each one to its slot number. Recent firmware accepts both
+\`.WAV\` and \`.wav\`.
+
+${sortedIntoTapes
+      ? 'This ZIP is already grouped into tape folders (B/G/P/R/T/Y, plus POOL for\nanything past the 36 slots) — the names inside them still need changing to\n1.WAV … 6.WAV.'
+      : 'This ZIP is a flat list — no tape folders. Tick "Sort into tape folders" in\nBrowse if you would rather have the grouping done for you.'}
+
+Want none of this by hand? Use **Download SD card 6×6** in Browse, which builds
+the whole \`SK/\` folder ready to copy, or open Studio for a full project.
+
+## Files
+${credits}
+${licenses.length > 0 ? `\n## Usage context\n${licenses.map(l => `- ${l}`).join('\n')}\n` : ''}`;
 };
 
 interface BrowseModeProps {
@@ -47,6 +122,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [sortLooseIntoTapes, setSortLooseIntoTapes] = useState(false);
 
   const [exportLogs, setExportLogs] = useState<string[]>([]);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
@@ -88,7 +164,13 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
    * for a blob it already holds. Either way we fetch, decode to the 48 kHz WAV the
    * hardware wants, and keep the result in memory.
    */
-  const addToPool = useCallback(async (url: string, name: string, origin?: string, license?: string) => {
+  const addToPool = useCallback(async (
+    url: string,
+    name: string,
+    origin?: string,
+    license?: string,
+    sourcePath?: string,
+  ) => {
     const isObjectUrl = url.startsWith('blob:');
     try {
       const response = await fetch(url, { mode: 'cors' });
@@ -99,11 +181,13 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
       setPool(prev => [...prev, {
         id: newId(),
         name,
+        fileName: fileNameFromSource(url, name),
         blob: processedBlob,
         duration: buffer.duration,
         origin,
         license,
         sourceSamplePath: isObjectUrl ? undefined : url,
+        sourcePath,
       }]);
       setIsPoolOpen(true);
     } catch (e) {
@@ -114,10 +198,14 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
     }
   }, []);
 
-  const addManyToPool = useCallback(async (samples: { url: string, name: string }[], origin?: string, license?: string) => {
+  const addManyToPool = useCallback(async (
+    samples: { url: string, name: string, path?: string }[],
+    origin?: string,
+    license?: string,
+  ) => {
     for (const sample of samples) {
       try {
-        await addToPool(sample.url, sample.name, origin, license);
+        await addToPool(sample.url, sample.name, origin, license, sample.path);
       } catch {
         // One bad sample shouldn't abandon the rest of the selection.
       }
@@ -132,7 +220,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
     await exportSingleFile({
       versions: [{ id: item.id, blob: item.blob }],
       currentVersionId: item.id,
-      name: item.name,
+      name: stripExtension(item.fileName || item.name),
     });
   };
 
@@ -146,16 +234,23 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
     });
   };
 
+  /**
+   * What the browser should show as already taken. Derived from the pool rather
+   * than from a one-way "I imported this" set, so the mark survives switching packs
+   * and disappears again when the entry is removed here.
+   */
+  const pooledPaths = useMemo(
+    () => new Set(pool.map(item => item.sourcePath).filter((p): p is string => !!p)),
+    [pool]
+  );
+
   // ──────────────────────────────────────────────────────────────────────────
   // Downloads — both are `buildDetachedState` plus an existing exporter
   // ──────────────────────────────────────────────────────────────────────────
 
   const runExport = async (
     label: string,
-    run: (
-      state: ReturnType<typeof buildDetachedState>,
-      onProgress: (msg: string | undefined, progress?: number) => void
-    ) => Promise<void>
+    run: (state: AppState, onProgress: (msg: string | undefined, progress?: number) => void) => Promise<void>
   ) => {
     if (poolRef.current.length === 0 || isExporting) return;
 
@@ -193,14 +288,29 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
    * ffmpeg-wasm over it would re-encode identical bytes and make a tier whose whole
    * premise is "no setup" pull ~30 MB of wasm first.
    */
-  const downloadLooseFiles = () => runExport('Building SK-ready files…', async (state, onProgress) => {
+
+  /** Everything in the pool, original names, no 36-slot ceiling. */
+  const downloadLooseFiles = () => runExport('Building loose files…', async (state, onProgress) => {
     const { exportFilesOnly } = await import('../utils/exportUtils');
-    await exportFilesOnly(state, {
-      fileIds: Object.keys(state.files),
-      keepStructure: true,
+    // The grid renames files to their slot; a loose export shouldn't. `originalName`
+    // carries the source filename, and exportFilesOnly appends the extension itself.
+    const named: AppState = {
+      ...state,
+      files: Object.fromEntries(
+        Object.entries(state.files).map(([id, file]) => [
+          id,
+          { ...file, name: stripExtension(file.originalName || file.name) },
+        ])
+      ),
+    };
+    await exportFilesOnly(named, {
+      fileIds: Object.keys(named.files),
+      keepStructure: sortLooseIntoTapes,
+      readme: buildLooseReadme(poolRef.current, sortLooseIntoTapes),
     }, onProgress);
   });
 
+  /** The first 36, laid out and renamed exactly as the firmware reads them. */
   const downloadSDStructure = () => runExport('Building SD card structure…', async (state, onProgress) => {
     const { exportSDStructure } = await import('../utils/exportUtils');
     await exportSDStructure(state, {
@@ -267,13 +377,14 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
               mode="standalone"
               onClose={onExitToHub}
               onImport={addToPool}
+              addedPaths={pooledPaths}
               userLibrary={userLibrary}
               onRemoteBulkImport={(samples, _target, origin, license) => addManyToPool(samples, origin, license)}
               onImportToPool={async (files) => {
-                for (const { file } of files) {
+                for (const { file, path } of files) {
                   const url = URL.createObjectURL(file);
                   try {
-                    await addToPool(url, file.name, 'Local Folder');
+                    await addToPool(url, file.name, 'Local Folder', undefined, path);
                   } catch {
                     // addToPool logs and revokes; keep going through the batch.
                   }
@@ -322,6 +433,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
                 <ul className="space-y-1">
                   {pool.map((item, index) => {
                     const slot = slotLabelForIndex(index);
+                    const tape = tapeForIndex(index);
                     return (
                       <li
                         key={item.id}
@@ -335,12 +447,18 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
                           setDragIndex(null);
                           setDropIndex(null);
                         }}
-                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-md border transition-colors cursor-grab active:cursor-grabbing ${
+                        className={`group relative flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md border overflow-hidden
+                          transition-colors cursor-grab active:cursor-grabbing ${
                           dropIndex === index && dragIndex !== null && dragIndex !== index
                             ? 'border-synthux-green bg-synthux-green/10'
                             : 'border-white/5 bg-black/20 hover:bg-white/5'
                         } ${dragIndex === index ? 'opacity-40' : ''}`}
                       >
+                        {/* Tape colour, so the grouping reads at a glance without counting rows. */}
+                        <span
+                          aria-hidden
+                          className={`absolute left-0 top-0 bottom-0 w-1 ${tape ? COLOR_MAP[tape] : 'bg-gray-700'}`}
+                        />
                         <GripVertical size={13} className="shrink-0 text-gray-600 group-hover:text-gray-400" />
                         <span className={`shrink-0 w-8 text-center px-1 py-0.5 rounded text-[9px] font-mono font-bold ${
                           slot ? 'bg-white/10 text-gray-300' : 'bg-black/50 text-gray-600'
@@ -375,26 +493,6 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
             </div>
 
             <div className="shrink-0 p-3 border-t border-white/10 space-y-2">
-              {overflowCount > 0 && (
-                <p className="text-[10px] text-synthux-yellow/80 leading-relaxed">
-                  {overflowCount} file{overflowCount === 1 ? '' : 's'} past the 36 slots — they'll land in
-                  the loose-files ZIP, but not on the SD structure.
-                </p>
-              )}
-
-              <button
-                onClick={downloadLooseFiles}
-                disabled={pool.length === 0 || isExporting}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-blue/40 bg-synthux-blue/10
-                  text-synthux-blue text-left transition-all hover:bg-synthux-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Package size={16} className="shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-bold">Download SK-ready files</span>
-                  <span className="block text-[10px] opacity-70">ZIP, grouped by tape, hardware WAV</span>
-                </span>
-              </button>
-
               <button
                 onClick={downloadSDStructure}
                 disabled={pool.length === 0 || isExporting}
@@ -404,9 +502,52 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
                 <HardDrive size={16} className="shrink-0" />
                 <span className="min-w-0">
                   <span className="block text-xs font-bold">Download SD card 6×6</span>
-                  <span className="block text-[10px] opacity-70">ZIP with the full SK/ folder, ready to copy</span>
+                  <span className="block text-[10px] opacity-70">
+                    Full <span className="font-mono">SK/</span> folder, renamed to slots — copy and play
+                  </span>
                 </span>
               </button>
+
+              {overflowCount > 0 && (
+                <p className="text-[10px] text-synthux-yellow/80 leading-relaxed pl-1">
+                  The card build takes the first 36 — {overflowCount} more {overflowCount === 1 ? 'is' : 'are'} in
+                  the loose download below.
+                </p>
+              )}
+
+              <button
+                onClick={downloadLooseFiles}
+                disabled={pool.length === 0 || isExporting}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-blue/40 bg-synthux-blue/10
+                  text-synthux-blue text-left transition-all hover:bg-synthux-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <FileStack size={16} className="shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold">Download the files</span>
+                  <span className="block text-[10px] opacity-70">
+                    All {pool.length || ''} of them, original names, SK-ready WAV
+                  </span>
+                </span>
+              </button>
+
+              <label className="flex items-center gap-2 pl-1 cursor-pointer group select-none">
+                <span className={`w-3.5 h-3.5 shrink-0 rounded-[3px] border flex items-center justify-center transition-colors ${
+                  sortLooseIntoTapes
+                    ? 'bg-synthux-blue border-synthux-blue'
+                    : 'bg-black/40 border-gray-700 group-hover:border-gray-500'
+                }`}>
+                  {sortLooseIntoTapes && <Check size={9} className="text-black stroke-[4]" />}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={sortLooseIntoTapes}
+                  onChange={(e) => setSortLooseIntoTapes(e.target.checked)}
+                  className="sr-only"
+                />
+                <span className="text-[10px] text-gray-500 group-hover:text-gray-300 transition-colors">
+                  Sort into tape folders ({TAPE_COLORS.map(c => c.charAt(0)).join('/')})
+                </span>
+              </label>
 
               <p className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed pt-1">
                 <Download size={11} className="shrink-0 mt-0.5" />

@@ -1,5 +1,5 @@
 import { TAPE_COLORS } from '../types';
-import type { AppState, AudioVersion, FileRecord } from '../types';
+import type { AppState, AudioVersion, FileRecord, TapeColor } from '../types';
 import { getInitialState } from './initialState';
 
 /**
@@ -12,7 +12,14 @@ import { getInitialState } from './initialState';
 export interface DetachedSample {
     /** Reused as the FileRecord id when supplied, so callers can keep stable keys. */
     id?: string;
+    /** Display name. Becomes the uppercase slot name on the grid. */
     name: string;
+    /**
+     * The file's own name at its source, extension and all. Kept on `originalName`
+     * so a loose export can hand back what the user recognises rather than a
+     * slot-shaped rename. Falls back to `name`.
+     */
+    fileName?: string;
     blob: Blob;
     duration?: number;
     origin?: string;
@@ -25,10 +32,16 @@ const SLOTS_PER_TAPE = 6;
 /** 6 tapes × 6 slots. Samples past this land in the pool, unassigned. */
 export const GRID_CAPACITY = TAPE_COLORS.length * SLOTS_PER_TAPE;
 
+/** Which tape a pool position lands on, or `null` once the grid is full. */
+export const tapeForIndex = (index: number): TapeColor | null => {
+    if (index < 0 || index >= GRID_CAPACITY) return null;
+    return TAPE_COLORS[Math.floor(index / SLOTS_PER_TAPE)];
+};
+
 /** `0 → "B1"`, `6 → "G1"`, … `null` once the grid is full. */
 export const slotLabelForIndex = (index: number): string | null => {
-    if (index < 0 || index >= GRID_CAPACITY) return null;
-    const color = TAPE_COLORS[Math.floor(index / SLOTS_PER_TAPE)];
+    const color = tapeForIndex(index);
+    if (!color) return null;
     return `${color.charAt(0).toUpperCase()}${(index % SLOTS_PER_TAPE) + 1}`;
 };
 
@@ -79,7 +92,7 @@ export const buildDetachedState = (samples: DetachedSample[]): AppState => {
         const record: FileRecord = {
             id: fileId,
             name: toSlotName(sample.name) || `SAMPLE-${index + 1}`,
-            originalName: sample.name,
+            originalName: sample.fileName || sample.name,
             versions: [version],
             currentVersionId: versionId,
             isParked: index >= GRID_CAPACITY,
