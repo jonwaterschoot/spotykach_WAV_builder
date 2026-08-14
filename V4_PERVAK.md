@@ -17,12 +17,16 @@
 | Phase | | What | Deliverable |
 |---|---|---|---|
 | 0 | ✅ | Cleanup | 1002 lines of dead code removed |
-| 1 | ✅ | Mode scaffold | Four doors on a landing screen |
+| 1 | ✅ | Mode scaffold | Doors on a landing screen (four then, five now) |
 | 2 | ✅ | Browse mode | Linkable sample library + selection pool, zero setup |
 | 3 | ✅ | Preset → SD | Cold start → curated project on the card |
 | 4 | ✅ | Backup & safety rework | SD card is a build target again |
 | 5 | ✅ | Config mode | MIDI setup without the studio |
-| 6 | ☐ | Editor mode + Studio extraction | `App.tsx` finally broken up |
+| 6 | ✅ | Editor mode + Studio extraction | Edit one file with no project; the session leaves `App.tsx` |
+
+**All six phases are in.** What is left before v4 ships is locked decision 9 (storage-key namespacing,
+Appendix F.3), one browser pass over the paths marked unverified in Phases 4–6, and the two open
+questions below — neither of which blocks a release.
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
 `importUtils`, `projectDescriptorUtils`, `lib/audio`) is already mode-agnostic, and every major panel
@@ -611,7 +615,18 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 
 ---
 
-### Phase 6 — Editor mode + Studio extraction ☐  *(Persona 3, largest)*
+### Phase 6 — Editor mode + Studio extraction ✅  *(Persona 3, largest)*
+
+**Outcome.** `#/editor` is its own mode and the hub has five doors. New
+`modes/EditorMode.tsx`, `session/ProjectSession.tsx`, `utils/versionHistory.ts`, `utils/newProject.ts`,
+`shell/useToasts.ts`, `shell/ProjectCreatedModal.tsx`. `tsc -b && vite build` clean; eslint clean on
+every new file and no new error in the changed ones. Entry bundle 11.7 kB; `EditorMode` is a 9.0 kB
+lazy chunk that pulls the existing `WaveformEditor` chunk, `BrowseMode` 16.8 kB. All six steps landed.
+
+**Not verified in a browser.** Same standing caveat as Phases 4 and 5 — types, build and lint are
+clean and the pure functions were reasoned through, but no path here was exercised against real
+hardware or a real folder picker. The three worth a pass together: editor-mode "Save as project",
+Browse "Import into a project", and the first Studio save after this change (the collapse).
 
 **Read first:** Appendix E, then Appendix C §state separation.
 
@@ -634,8 +649,66 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
      only exit, plus a button to carry the edited file into a project.
 
 **Notes.**
+> **`WaveformEditor` was already 90% decoupled.** Every project-shaped prop bar one was optional
+> and already guarded at its use site — `onDeleteVersion`, `onAssignVersion`, `onMoveVersionToPool`,
+> `onSaveUnique`, `onRenameFile`, `tapeColor`. Only `onSaveAsCopy` was required, and only two things
+> actually *spoke* the grid's vocabulary: the commit button's label and its toast. Those moved behind
+> a `commitLabels` prop rather than a `standalone` boolean — a flag would have put the mode's wording
+> inside the component, which is what Phase 5 had to undo for `ConfigModal`. A `transportActions` slot
+> lets a host add its own exits to the transport bar. Net: ~40 lines changed in a 4722-line file.
 >
+> **The editor opens over Browse, not by routing to `#/editor`.** Switching mode would unmount
+> `BrowseMode` and take the rest of the pool with it. As an overlay the pool survives, and applied
+> edits go straight back into the pooled item through an `onEdited` callback rather than a "keep
+> this?" button — so both downloads pick the edit up and closing the editor can never drop work. Same
+> component, two hosts.
 >
+> **The two-version rule lives in `saveProjectToDirectory`,** the single choke point all seven save
+> paths funnel through. `collapseVersionHistory` is pure and returns its argument unchanged when
+> there is nothing to drop, so an already-collapsed project allocates nothing. The live state is then
+> collapsed to match with `setState(prev => collapseVersionHistory(prev))` — applied to `prev` rather
+> than to the returned state, so an edit made *during* the save isn't rolled back. In editor mode the
+> collapse happens on every applied edit instead: there is no save boundary to defer to, and it makes
+> the sidebar read as "Original / Edited", which is the safety story E.2 exists to tell.
+>
+> ⚠️ **`saveStateToDB` has no callers.** [persistence.ts:36](src/utils/persistence.ts#L36) is
+> exported and never invoked from anywhere in `src/`. The `app-state` IDB slot is *read* on mount and
+> never written, which means **Appendix E.1's "the whole `AppState` is autosaved to IndexedDB" is
+> stale**, and locked decision 5 has been guarding a slot nothing writes. This doesn't change the
+> decision — a future autosave would want the guarantee — but it does mean the memory half of E.1's
+> "disk × memory × IDB" was really only disk × memory. Worth deciding deliberately: either wire the
+> autosave up (now cheap, since the two-version rule caps what it would store) or delete the function.
+>
+> **`ProjectSession` took the session, not the shell.** Appendix C.3's list — state, handles, dirty
+> tracking, project handlers — splits cleanly in three parts, and only two of them belong together.
+> The hook owns the project state, both directory handles, the project name, dirty tracking, and the
+> five effects that maintain them (the localStorage identity, the `workHandle` ref, the dirty watcher,
+> the initial IDB load, the stored-handle lookup). `isSystemUpdate.current = true`, poked bare at
+> seven call sites, became `markSystemUpdate()`. What stayed in `App.tsx` is the ~60 pieces of view
+> state and the handlers over them: which modal is open, which tape is showing, where the notes window
+> was dragged to. Moving those would relabel the file rather than separate anything, and App went
+> 5718 → 5675 lines, which is the honest measure of that. **The guarantee C.3 wanted already held
+> without any of this** — the project-free modes are separate modules that never import `App.tsx`,
+> and Studio is lazy-loaded only for `#/studio`. The extraction is for legibility; the isolation was
+> structural from Phase 1.
+>
+> **Cleanup's new home is Project ▸ Advanced.** It was already reachable from Settings and the Project
+> Manager; the editor sidebar was a third entry, and the wrong one — a project-wide destructive action
+> inside one file's history panel. The `onCleanupProject` prop left `WaveformEditor` entirely. The
+> modal's explainer now says saving already collapses history, so what is left for it is the leftovers
+> the rule can't reach: orphaned disk assets, unwanted files, old SD backups.
+>
+> **Both upgrade paths are one function.** `createProjectFromState` in
+> [newProject.ts](src/utils/newProject.ts) is what Browse's "Import into a project" and Editor's "Save
+> as project" both call: pick the folder *now* (Appendix C.2), write `Projects/<name>/`, store the
+> work handle so Studio can find it. It writes the stored handle and `spotykach_current_project` —
+> the only durable state either mode touches — and never the `app-state` slot. `ProjectCreatedModal`
+> then *offers* Studio rather than jumping there, since Studio wants a permission back.
+>
+> **"Temporary project in browser cache, save later" was not built.** Question 5 floated it as the
+> variant for a Browse user with no folder set up. It would need its own IDB slot to stay inside
+> locked decision 5 — and the pool is already React state that survives the folder picker without any
+> handoff, so the mid-flow pick the variant existed to avoid turned out not to need avoiding.
 
 ---
 
@@ -715,6 +788,10 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
    **"Import into project" and "single-file edit" move to Phase 6** — the first needs a work folder
    mid-flow (and its "temp project in cache" variant would need its own IDB slot to stay inside locked
    decision 5), the second needs `WaveformEditor` decoupled from the on-disk project.
+
+   ✅ **All four exits are in** as of Phase 6. The "temp project in cache" variant was dropped rather
+   than built: the pool is React state that survives the folder picker untouched, so the mid-flow
+   pick it existed to avoid turned out not to need avoiding.
 
 6. **Preset & pack authoring — who makes them, and where?** *(new, from the answer to 2)* Presets
    should be simple enough that external artists can build one and users can turn their own samples
@@ -845,7 +922,9 @@ adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
   `Rnd` window from its outermost element inward, so a `mode` prop couldn't have done it.
 - **`WaveformEditor`** (4722) is the hard one. Props are already file-shaped (`slot`, `versions`,
   `activeVersionId`, `onSave`), so single-file mode is viable — but `EditorSlot`, the version sidebar
-  and the cleanup panel assume a project on disk. Phase 6.
+  and the cleanup panel assume a project on disk. ✅ Phase 6 — and it turned out not to be the hard
+  one: the sidebar was already fully guarded, the cleanup panel left the component altogether, and
+  ~40 lines of change did it. The estimate was wrong in the useful direction.
 
 ### Verdict table
 
@@ -858,7 +937,7 @@ adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
 | `ConfigModal` | ✅ **Split** | Phase 5. Fields + presets → `ConfigForm` (shared); card I/O → `utils/configFile.ts`. The modal is now just Studio's container around them. |
 | `ProjectManager`, `SlotGrid*`, `TapeSelector`, `FileBrowser`, `AllViewGrid` | **Recycle in Studio** | Unchanged, just no longer the only shell. |
 | `LibraryManager` | **Recycle, promote** | Largely project-independent already. |
-| `WaveformEditor` | **Refactor in Phase 6** | Decouple `EditorSlot` + history sidebar from on-disk project. |
+| `WaveformEditor` | ✅ **Loosen props** | Phase 6. `onSaveAsCopy` optional, `onCleanupProject` gone, grid wording behind `commitLabels`, host exits via `transportActions`. Consumed by `modes/EditorMode.tsx`. |
 | `SetupWizard` | **Demote** | Keep the 5 explainer slides (good, reusable as in-context help). No longer the mandatory gate — Studio onboarding only. |
 | `WelcomeScreen`, `SamplePackModal`, `SyncDashboard` | ✅ **Deleted** | Phase 0, commit `07d088a`. |
 | `SyncOptionsModal` | ✅ **Deleted** | Phase 4. Unreferenced, and its only content was a default-*on* version of the switch Phase 4 turns off. |
@@ -873,7 +952,7 @@ adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
 type AppMode = 'hub' | 'browse' | 'presets' | 'config' | 'editor' | 'studio';
 ```
 
-- `hub` — landing screen. Four doors, no permission prompts, no project.
+- `hub` — landing screen. Five doors as of Phase 6, no permission prompts, no project.
 - Each mode owns its shell. Only `studio` mounts the TapeSelector + grid.
 - Mode ↔ URL hash, so `#/browse` and `#/presets` are shareable.
 
@@ -899,11 +978,17 @@ This is the single change that makes Tiers 1–2 possible: **permission follows 
 
 ```
 src/
-  shell/        AppShell.tsx, ModeRouter.tsx, useAppMode.ts, HubScreen.tsx, escapeStack.ts
-  modes/        BrowseMode.tsx, PresetsMode.tsx, ConfigMode.tsx, EditorMode.tsx, StudioMode.tsx
-  session/      ProjectSession.tsx   (the extracted App.tsx state + handlers)
+  shell/        AppShell.tsx, ModeRouter.tsx, useAppMode.ts, HubScreen.tsx, HubNews.tsx,
+                escapeStack.ts, useToasts.ts, ProjectCreatedModal.tsx
+  modes/        BrowseMode.tsx, PresetsMode.tsx, ConfigMode.tsx, EditorMode.tsx
+  session/      ProjectSession.tsx   (the project state, handles and dirty tracking)
   components/   (unchanged — now consumed by modes)
 ```
+
+As built. Two departures from the sketch, both in Phase 6: **there is no `StudioMode.tsx`** — Studio
+*is* `App.tsx`, lazily imported by the router, and wrapping it in a one-line file would buy nothing;
+and `ProjectSession` holds the session's *state*, not its handlers, which stayed in the shell. See
+the Phase 6 notes.
 
 ---
 
@@ -991,15 +1076,20 @@ continuous mirroring on every build.
 
 ### E.1 How it works now
 
+*(How it worked before Phase 6. E.2 is now implemented — see the Phase 6 notes.)*
+
 - Every edit appends to `FileRecord.versions[]` and becomes the new `currentVersionId`
-  ([App.tsx:1983](src/App.tsx#L1983)). **Unbounded.**
+  (`handleSaveFile` in App.tsx). **Unbounded.**
 - On save, every version's blob is written as its own `Assets/<versionId>.wav`
   ([exportUtils.ts:1108-1130](src/utils/exportUtils.ts#L1108-L1130)).
-- All version blobs stay resident in `state.files[].versions[].blob`, and the whole `AppState` is
-  autosaved to IndexedDB ([persistence.ts:36](src/utils/persistence.ts#L36)).
+- All version blobs stay resident in `state.files[].versions[].blob`.
+- ~~and the whole `AppState` is autosaved to IndexedDB~~ — **this was never true.**
+  `saveStateToDB` ([persistence.ts:36](src/utils/persistence.ts#L36)) has no callers anywhere in
+  `src/`; the `app-state` slot is read on mount and never written. Found in Phase 6.
 
-History depth multiplies **disk × memory × IDB** simultaneously. `CleanupModal` (766 lines) exists to
-dig out from under this after the fact.
+History depth therefore multiplies **disk × memory** — not IDB. `CleanupModal` (766 lines) existed to
+dig out from under this after the fact; since Phase 6 the mess no longer accumulates, and what it is
+for is the leftovers the rule can't reach.
 
 ### E.2 v4 decision: original + current, nothing else
 
@@ -1037,6 +1127,13 @@ linear chain either.
 
 **Not a v4 goal.** Capturing op parameters opportunistically during Phase 6 is a free head start, but
 it must not shape v4's design, and E.2 stands regardless.
+
+*Phase 6 did not take that head start.* Nothing in the editor's tools was changed to record its
+parameters — the phase was already the largest, and E.3's point stands that a half-captured op log is
+no closer to a real one. `AudioVersion.processing[]` is still a flat tag set. The obvious place to
+start when someone does want this is the `meta` object built in each of `WaveformEditor`'s ~14 apply
+handlers, which already carries `slicePoints` and `tempo` and is the one thing every operation
+touches.
 
 ---
 
