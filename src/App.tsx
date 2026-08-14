@@ -60,11 +60,12 @@ import { useAudioConverter } from './utils/useAudioConverter';
 
 // Confirm Action Helper
 // dynamic persistence imports
-import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
+import { saveDirectoryHandle } from './utils/storageUtils';
 import { getDurabilityPrefs } from './utils/durabilityPrefs';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
 import { collapseVersionHistory } from './utils/versionHistory';
+import { useProjectSession } from './session/ProjectSession';
 import { useEscapeLayer } from './shell/escapeStack';
 
 const sanitizeFilename = (name: string) => {
@@ -94,8 +95,21 @@ function App({ onExitToHub }: AppProps) {
   // ==========================================
   // STATE DEFINITIONS
   // ==========================================
-  const [state, setState] = useState<AppState>(getInitialState());
-  const [restorableHandles, setRestorableHandles] = useState<{ work: FileSystemDirectoryHandle, backup: FileSystemDirectoryHandle | null } | null>(null);
+  // The project itself — state, handles, name, dirty tracking — lives in the
+  // session hook. Everything else in this file is the studio shell around it.
+  // V4_PERVAK.md, Appendix C.3.
+  const {
+    state, setState,
+    workHandle, setWorkHandle,
+    sdHandle, setSdHandle: setBackupHandle,
+    projectRootHandleRef,
+    restorableHandles,
+    currentProjectName, setCurrentProjectName,
+    hasUnsavedChanges, setHasUnsavedChanges,
+    isEditorDirty, setIsEditorDirty,
+    markSystemUpdate,
+  } = useProjectSession();
+
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
@@ -187,19 +201,9 @@ function App({ onExitToHub }: AppProps) {
   const [showLibrarySyncModal, setShowLibrarySyncModal] = useState(false);
   const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
-  const [isEditorDirty, setIsEditorDirty] = useState(false);
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
-  const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(() => localStorage.getItem('spotykach_current_project') || undefined);
   const [skBackups, setSkBackups] = useState<{ timestamp: string; sizeBytes: number }[]>([]);
   const SK_BACKUP_LIMIT = 5;
-
-  useEffect(() => {
-    if (currentProjectName) {
-      localStorage.setItem('spotykach_current_project', currentProjectName);
-    } else {
-      localStorage.removeItem('spotykach_current_project');
-    }
-  }, [currentProjectName]);
 
   const [allViewNoteStates, setAllViewNoteStates] = useState<Record<TapeColor, 'collapsed' | 'preview' | 'expanded'>>({
     Blue: 'collapsed', Green: 'collapsed', Pink: 'collapsed', Red: 'collapsed', Turquoise: 'collapsed', Yellow: 'collapsed'
@@ -252,8 +256,6 @@ function App({ onExitToHub }: AppProps) {
   };
 
   // Workflow / Settings State
-  const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [sdHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -488,16 +490,6 @@ function App({ onExitToHub }: AppProps) {
   // Computed Mode for UI/Logic compatibility
   // const workflowMode: 'LOCAL' | 'BROWSER' = workHandle ? 'LOCAL' : 'BROWSER';
 
-  // Ref for the Root Handle (SD or Folder) - Merged into workHandle state but we might keep ref for non-reactive access if needed?
-  // Actually, let's keep it sync'd or just use state. State is fine for high level.
-  // BUT many utils depend on ref.current for async ops without staleness.
-  const projectRootHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
-
-  // Sync ref with state
-  useEffect(() => {
-    projectRootHandleRef.current = workHandle;
-  }, [workHandle]);
-
   // Bulk Conflict State
   const [bulkConflictState, setBulkConflictState] = useState<{
     targetSlotId: number;
@@ -587,14 +579,6 @@ function App({ onExitToHub }: AppProps) {
   const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
   const isSlotSampleImportInFlightRef = useRef(false);
 
-  // Handle Reset
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const isFirstRender = useRef(true);
-  const isSystemUpdate = useRef(false);
-
-  useEffect(() => {
-    logger.setWorkHandle(workHandle);
-  }, [workHandle]);
 
   // Escape closes the topmost studio panel. This is one layer of the shell's escape
   // stack (see shell/escapeStack.ts) — returning false lets anything below it try.
@@ -756,7 +740,7 @@ function App({ onExitToHub }: AppProps) {
 
       // Merge with current running state specifics if needed? 
       // No, replace state.
-      isSystemUpdate.current = true;
+      markSystemUpdate();
       setState(loadedState);
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false); // Clean state after load
@@ -1204,21 +1188,7 @@ function App({ onExitToHub }: AppProps) {
   // EFFECTS
   // ==========================================
 
-  // Track Unsaved Changes
-  // Track Unsaved Changes
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-
-    if (isSystemUpdate.current) {
-      isSystemUpdate.current = false;
-      return;
-    }
-
-    setHasUnsavedChanges(true);
-  }, [state]);
+  // Dirty tracking moved into useProjectSession — see session/ProjectSession.tsx.
 
   // Load manifest (packs + presets) on mount
   useEffect(() => {
@@ -1255,7 +1225,7 @@ function App({ onExitToHub }: AppProps) {
       await scanProjects(workHandle, sdHandle);
     }
 
-    isSystemUpdate.current = true;
+    markSystemUpdate();
     setState(newState);
     setCurrentProjectName(finalName);
     setHasUnsavedChanges(false);
@@ -1324,30 +1294,9 @@ function App({ onExitToHub }: AppProps) {
     }
   };
 
-  // Initial Load
+  // The project state's own initial load moved into useProjectSession. The user
+  // library is a separate IDB store with a separate lifetime, so it stays here.
   useEffect(() => {
-    import('./utils/persistence').then(({ loadStateFromDB }) => {
-      loadStateFromDB().then(saved => {
-      if (saved) {
-        isSystemUpdate.current = true;
-        setState(saved);
-      } else {
-        // Fallback to localStorage if IDB is empty? 
-        const savedLS = localStorage.getItem('spotykach_state');
-        if (savedLS) {
-          try {
-            const parsed = JSON.parse(savedLS);
-            if (parsed.files && parsed.tapes) {
-              isSystemUpdate.current = true;
-              setState(parsed);
-            }
-          } catch (e) { console.error(e); }
-        }
-      }
-    });
-  });
-
-  // Load User Library
     import('./utils/persistence').then(({ loadUserLibraryFromDB }) => {
       loadUserLibraryFromDB().then(saved => {
         if (saved) {
@@ -1370,21 +1319,8 @@ function App({ onExitToHub }: AppProps) {
     });
   }, []);
 
-  // Check for persistent handles on mount
-  useEffect(() => {
-    const checkHandles = async () => {
-      try {
-        const savedWork = await getDirectoryHandle('work');
-        const savedBackup = await getDirectoryHandle('sd');
-
-        if (savedWork) {
-          setRestorableHandles({ work: savedWork, backup: savedBackup });
-        }
-      } catch (e) { console.error("Error loading handles", e); }
-    };
-    checkHandles();
-  }, []);
-
+  // Looking for stored handles on mount moved into useProjectSession; asking for
+  // their permission back stays here, because it needs a user gesture and a toast.
   const handleRestoreSession = async () => {
     if (!restorableHandles) return;
 
@@ -1676,7 +1612,7 @@ function App({ onExitToHub }: AppProps) {
       if (changed) {
         // Use functional update to avoid capturing stale state, 
         // though we are careful with nextFiles here.
-        isSystemUpdate.current = true; // Prevent "Unsaved Changes" toast for background hashing
+        markSystemUpdate(); // Prevent "Unsaved Changes" toast for background hashing
         setState(prev => ({ ...prev, files: { ...prev.files, ...nextFiles } }));
       }
     };
@@ -2348,7 +2284,7 @@ function App({ onExitToHub }: AppProps) {
       });
 
       if (resolvedCount > 0) {
-        isSystemUpdate.current = true;
+        markSystemUpdate();
         setState(prev => ({
           ...prev,
           files: nextFiles
@@ -5123,7 +5059,7 @@ function App({ onExitToHub }: AppProps) {
                     // If this is the active project, update in-memory state without
                     // triggering the hasUnsavedChanges watcher.
                     if (currentProjectName === syncProjectTarget) {
-                      isSystemUpdate.current = true;
+                      markSystemUpdate();
                       setState(stampedState);
                       setHasUnsavedChanges(false);
                     }
@@ -5257,7 +5193,7 @@ function App({ onExitToHub }: AppProps) {
                         // Commit state change early so export reflects the new slots if needed
                         // Though exportSDStructure uses projectState (shallow clone of current state), 
                         // we'll update it here to be sure.
-                        isSystemUpdate.current = true;
+                        markSystemUpdate();
                         setState(newState);
                       }
 
@@ -5652,7 +5588,7 @@ function App({ onExitToHub }: AppProps) {
               }]
             });
             const file = await handle.getFile();
-            isSystemUpdate.current = true;
+            markSystemUpdate();
             setState((prev: AppState) => {
               const next = { ...prev, files: { ...prev.files } };
               const fileRecord = next.files[asset.fileId];
