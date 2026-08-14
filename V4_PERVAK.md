@@ -21,7 +21,7 @@
 | 2 | ✅ | Browse mode | Linkable sample library + selection pool, zero setup |
 | 3 | ✅ | Preset → SD | Cold start → curated project on the card |
 | 4 | ✅ | Backup & safety rework | SD card is a build target again |
-| 5 | ☐ | Config mode | MIDI setup without the studio |
+| 5 | ✅ | Config mode | MIDI setup without the studio |
 | 6 | ☐ | Editor mode + Studio extraction | `App.tsx` finally broken up |
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
@@ -470,7 +470,71 @@ existing file.
 
 ---
 
-### Phase 5 — Config mode ☐  *(Persona 2)*
+### Phase 5 — Config mode ✅  *(Persona 2)*
+
+**Outcome.** `#/config` is its own mode. New `utils/configFile.ts`, `components/ConfigForm.tsx`,
+`modes/ConfigMode.tsx`; `ConfigModal` became a Studio-shaped container around the shared form.
+`tsc -b && vite build` clean, eslint clean on every new/changed file. Entry bundle 10.9 kB;
+`ConfigMode` is a 6.3 kB lazy chunk and `ConfigForm` a 14.6 kB chunk shared with `ConfigModal`
+(itself down to 4.2 kB from 14.4 kB).
+
+- **`ConfigModal` was split rather than made conditional.** Phases 2 and 3 loosened a component's
+  props with `mode: 'standalone' | 'project'`; that doesn't work here, because the Studio surface is
+  an `Rnd` draggable window *from its outermost element inward* — a standalone view can't be the same
+  component with a flag. So the fields and the presets moved to `ConfigForm`, which both tiers render,
+  and each container keeps its own chrome and its own I/O buttons. The field set is expected to grow;
+  one copy of it was the point.
+- **The card I/O moved out of the component into [`configFile.ts`](src/utils/configFile.ts)** —
+  `readConfigFromCard`, `writeConfigToCard`, `downloadConfig`, `readConfigFromFile`, `pickCard`,
+  `ensureWritable`. `generateConfigText`/`parseConfigText` stayed where they were; what was missing
+  was never the parsing but everything around it, since the only existing route to the card was
+  `exportSDStructure`, which needs an `AppState`. A device setting is not a project.
+- **Reading follows `scanSKStructure`'s existing order:** `SK/config.txt` first, then a bare
+  `config.txt` at the root. The fallback matters for a user who picks the `SK` folder itself rather
+  than the card root, which is otherwise a silent "no config found". Writing is always `SK/config.txt`
+  and goes through `safeWriteBlob(..., 'always')`, so the overwrite the button promises is what
+  happens, atomically (Phase 4).
+- **Unknown key/value pairs now survive a round-trip** (step 4, and the one real code change here).
+  `ProjectConfig` gained `unknown?: Array<{key, value}>`; `parseConfigText` collects every pair it
+  doesn't recognise, `generateConfigText` writes them back verbatim after the five it knows. The
+  field is left *absent* when there are none, so existing projects serialize byte-identically and
+  `calculateSyncDiff`'s config comparison ([importUtils.ts:550](src/utils/importUtils.ts#L550)) is
+  unaffected. A key that has since *become* known is dropped from `unknown` rather than emitted
+  twice. Verified by running the two functions over a firmware-shaped file: known keys read, unknown
+  keys kept, second pass identical, output stable, pair structure intact (21 lines, 7 separators),
+  legacy output unchanged, now-known key dropped.
+- **The unrecognised pairs are shown, not hidden.** A "Kept from the file" section lists them
+  read-only. Silently carrying settings the user can't see would be its own kind of surprise, and it
+  makes "this app is older than your firmware" legible.
+- **Presets and unknown pairs are kept apart.** Saving a preset strips `unknown`; applying one keeps
+  the current `unknown`. A preset is the choices a user expressed; unknown pairs belong to whichever
+  file they were read from, and carrying them onto a different card would inject settings that card
+  never had.
+- **No picker, no dead end** — same conclusion as Phase 3. Firefox and Safari get the whole surface
+  through "Open config.txt" (a file input) and "Download config.txt", which is also the answer for
+  "no workspace at all" (step 3). The download is the primary action there; on Chromium it sits
+  beside the card buttons.
+- **Studio gained "Read from card"** when an SD handle is connected — the other direction of the same
+  helper, and the mechanism behind open question 4's sub-point that *the card is the device's truth*.
+
+Deliberately not built:
+
+- **The project title is not written into `config.txt`.** The notes below settle *how* it would be
+  written (an 8-char key/value pair, never a comment) but not *whether* the device tolerates an
+  unknown pair — that's still a question for the hardware developer. The round-trip work above is the
+  mechanism it would need, so this is one `appendSetting` call once the answer comes back.
+- **Config mode never touches stored handles.** It picks the card each visit rather than restoring
+  the saved one from `SpotykachDB`, exactly as Tier 2 does. Restoring would mean a permission prompt
+  on entry for a mode that might only want the download.
+
+**Storage untouched, same as Browse and Presets.** The mode holds its `ProjectConfig` in component
+state for the length of the visit and writes only to the card the user picks; `spotykach_config_presets`
+is the one localStorage key it touches, and it already existed. Locked decision 9 still gates any Pages
+deploy. Appendix F.3.
+
+**Not verified in a browser.** Types, build and lint are clean, and the round-trip functions were
+executed directly (above) — but the card paths, the read/write permission upgrade and the file input
+were not exercised against real hardware. Same standing caveat as Phase 4; worth one pass together.
 
 **Read first:** Appendix B (cross-tier section).
 
@@ -508,6 +572,10 @@ existing file.
 > ([exportUtils.ts:35](src/utils/exportUtils.ts#L35)). Since the field set is expected to grow, a
 > `config.txt` written by newer firmware would come back stripped. Carry unrecognised pairs through
 > untouched before this phase ships.
+>
+> ✅ **Done** — `ProjectConfig.unknown`, absent when empty so nothing else changes shape. See the
+> Outcome. **Still open for the hardware developer:** does the device tolerate an unknown key/value
+> pair? The app now preserves them either way; writing the *project title* as one waits on that answer.
 
 ---
 
@@ -703,7 +771,8 @@ adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
 
 - **`ConfigModal`** (461) takes `config`, `projects`, `currentProjectName`, `workHandle`, `sdHandle`,
   and reads/writes `config.txt` through two pure functions on `ProjectConfig`. Standalone config mode
-  is nearly free.
+  is nearly free. ✅ Phase 5 — and it was, once the fields came out into `ConfigForm`; the modal is an
+  `Rnd` window from its outermost element inward, so a `mode` prop couldn't have done it.
 - **`WaveformEditor`** (4722) is the hard one. Props are already file-shaped (`slot`, `versions`,
   `activeVersionId`, `onSave`), so single-file mode is viable — but `EditorSlot`, the version sidebar
   and the cleanup panel assume a project on disk. Phase 6.
@@ -716,7 +785,7 @@ adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
 | `samplePacks.ts`, `assetUtils` | **Recycle as-is** | None. |
 | `SampleBrowser` | **Recycle, loosen props** | Optional project props + `mode: 'standalone' \| 'project'`. |
 | `PresetsPanel` | **Recycle, extend** | Add "Write to SD card". Promote from modal to view. |
-| `ConfigModal` | **Refactor** | Accept null project; `config.txt` I/O against a bare SD handle. |
+| `ConfigModal` | ✅ **Split** | Phase 5. Fields + presets → `ConfigForm` (shared); card I/O → `utils/configFile.ts`. The modal is now just Studio's container around them. |
 | `ProjectManager`, `SlotGrid*`, `TapeSelector`, `FileBrowser`, `AllViewGrid` | **Recycle in Studio** | Unchanged, just no longer the only shell. |
 | `LibraryManager` | **Recycle, promote** | Largely project-independent already. |
 | `WaveformEditor` | **Refactor in Phase 6** | Decouple `EditorSlot` + history sidebar from on-disk project. |

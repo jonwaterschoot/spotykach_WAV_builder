@@ -73,12 +73,25 @@ export interface Tape {
     notes?: string;
 }
 
+/** One raw `config.txt` key/value pair this build has no field for. */
+export interface UnknownConfigSetting {
+    key: string;
+    value: string;
+}
+
 export interface ProjectConfig {
     mid_ch_a: number; // 1-16
     mid_ch_b: number; // 1-16
     mid_ps_a: boolean; // Start/stop deck A from MIDI
     mid_ps_b: boolean; // Start/stop deck B from MIDI
     pre_load: boolean; // Enable/disable pre-loading
+    /**
+     * Pairs read from a `config.txt` that this build doesn't recognise — newer
+     * firmware settings, most likely. Carried through untouched and written back
+     * after the known keys, so a round-trip through the app can't silently strip
+     * settings it was never taught about. Absent when there were none.
+     */
+    unknown?: UnknownConfigSetting[];
 }
 
 // Normalized State

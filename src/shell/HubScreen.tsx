@@ -52,7 +52,7 @@ const DOORS: Door[] = [
     accentText: 'text-synthux-blue',
     accentBorder: 'hover:border-synthux-blue/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(71,113,249,0.45)]',
-    ready: false,
+    ready: true,
   },
   {
     mode: 'studio',

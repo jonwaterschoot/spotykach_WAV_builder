@@ -8,6 +8,7 @@ import type { AppMode } from './useAppMode';
 const StudioMode = React.lazy(() => import('../App'));
 const BrowseMode = React.lazy(() => import('../modes/BrowseMode'));
 const PresetsMode = React.lazy(() => import('../modes/PresetsMode'));
+const ConfigMode = React.lazy(() => import('../modes/ConfigMode'));
 
 const ModeLoading: React.FC = () => (
   <div className="h-screen w-full flex items-center justify-center bg-synthux-main text-gray-500">
@@ -41,8 +42,16 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
     );
   }
 
-  // `config` (Phase 5) and `editor` (Phase 6) fall through to Studio until their
-  // mode lands. Each phase replaces one line here.
+  if (mode === 'config') {
+    return (
+      <Suspense fallback={<ModeLoading />}>
+        <ConfigMode onExitToHub={() => setMode('hub')} />
+      </Suspense>
+    );
+  }
+
+  // `editor` (Phase 6) falls through to Studio until its mode lands — one line
+  // here for the phase that replaces it.
   return (
     <Suspense fallback={<ModeLoading />}>
       <StudioMode onExitToHub={() => setMode('hub')} />

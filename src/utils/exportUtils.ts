@@ -37,6 +37,16 @@ export interface ExportSDOptions {
     onConvert?: (blob: Blob, metadata?: import('../types').WavMetadata) => Promise<Blob>;
 }
 
+/**
+ * The keys this build understands. Also the filter that decides what counts as an
+ * *unknown* pair on the way in — matched case-insensitively by prefix, because the
+ * format pads every key to 8 characters.
+ */
+export const KNOWN_CONFIG_KEYS = ['MID_CH_A', 'MID_CH_B', 'MID_PS_A', 'MID_PS_B', 'PRE_LOAD'] as const;
+
+const isKnownConfigKey = (key: string): boolean =>
+    KNOWN_CONFIG_KEYS.some(known => key.trim().toUpperCase().startsWith(known));
+
 export const generateConfigText = (config: ProjectConfig): string => {
     const lines: string[] = [];
     const appendSetting = (key: string, value: any) => {
@@ -54,6 +64,13 @@ export const generateConfigText = (config: ProjectConfig): string => {
     appendSetting('mid_ps_a', config?.mid_ps_a ?? false);
     appendSetting('mid_ps_b', config?.mid_ps_b ?? false);
     appendSetting('pre_load', config?.pre_load ?? true);
+    // Pairs a previous read didn't recognise, written back verbatim after the known
+    // ones. A key that has since *become* known is dropped rather than emitted
+    // twice — the field above is the current truth for it.
+    for (const setting of config?.unknown ?? []) {
+        if (!setting?.key || isKnownConfigKey(setting.key)) continue;
+        appendSetting(setting.key.trim(), setting.value);
+    }
     return lines.join('\n');
 };
 
@@ -1529,6 +1546,11 @@ export const parseConfigText = (text: string): ProjectConfig | null => {
             mid_ps_b: false,
             pre_load: true
         };
+        // Strictly positional: blank lines drop out and what remains is walked as
+        // key/value pairs. An unknown key is still a *pair*, so it consumes two
+        // lines like any other — skipping it silently would shift everything after
+        // it. That is also why it can be carried through rather than dropped.
+        const unknown: import('../types').UnknownConfigSetting[] = [];
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
         for (let i = 0; i < lines.length; i += 2) {
             const rawKey = lines[i];
@@ -1541,7 +1563,11 @@ export const parseConfigText = (text: string): ProjectConfig | null => {
             else if (key.startsWith('MID_PS_A')) config.mid_ps_a = val === '1';
             else if (key.startsWith('MID_PS_B')) config.mid_ps_b = val === '1';
             else if (key.startsWith('PRE_LOAD')) config.pre_load = val === '1';
+            else unknown.push({ key: rawKey, value: val });
         }
+        // Left absent when there are none, so existing projects serialize and
+        // compare exactly as they did before.
+        if (unknown.length > 0) config.unknown = unknown;
         return config;
     } catch (e) {
         console.warn("Failed to parse config.txt", e);
