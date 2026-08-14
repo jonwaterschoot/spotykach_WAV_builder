@@ -18,7 +18,7 @@
 |---|---|---|---|
 | 0 | ✅ | Cleanup | 1002 lines of dead code removed |
 | 1 | ✅ | Mode scaffold | Four doors on a landing screen |
-| 2 | ☐ | Browse mode | Linkable sample library + selection pool, zero setup |
+| 2 | ✅ | Browse mode | Linkable sample library + selection pool, zero setup |
 | 3 | ☐ | Preset → SD | Cold start → curated project on the card |
 | 4 | ☐ | Backup & safety rework | SD card is a build target again |
 | 5 | ☐ | Config mode | MIDI setup without the studio |
@@ -149,7 +149,51 @@ moment to introduce one.
 
 ---
 
-### Phase 2 — Browse mode ☐  *(Persona 1)*
+### Phase 2 — Browse mode ✅  *(Persona 1)*
+
+**Outcome.** `#/browse` is its own mode. New `modes/BrowseMode.tsx`, `utils/detachedState.ts`,
+`utils/newsFeed.ts`, `components/NewsArticle.tsx`, `shell/HubNews.tsx`. `tsc -b && vite build` clean,
+eslint clean on every new/changed file. Entry bundle unchanged at 10.3 kB; `BrowseMode` is a 10.7 kB
+lazy chunk, `HubNews` 3.3 kB.
+
+- **`SampleBrowser` took a `mode: 'standalone' | 'project'` prop**, and the old
+  `mode: 'global' | 'slot-selection'` was renamed `selectionMode` — two orthogonal things had one
+  name. `userLibrary` / `projects` / `workHandle` / `onOpenLibraryManager` are all optional now, and
+  standalone hides what needs a project: the Projects source, every "send to slot/tape" target, and
+  the three Library Manager entry points.
+- **`buildDetachedState(samples) → AppState`** ([detachedState.ts](src/utils/detachedState.ts)) is
+  pure and synchronous — no IDB, no handles, autospread in list order, overflow past 36 parked. It
+  also exports `slotLabelForIndex` and `GRID_CAPACITY`, which the pool UI reads. **Phase 3's
+  `hydratePreset` should return this same value**, so step 1 there is mostly done.
+- **The pool decodes on the way in.** `addToPool` fetches, runs `audioEngine.loadAndProcessAudio`,
+  and keeps the resulting blob in component state. Object URLs the browser minted are revoked after
+  the fetch.
+- **Downloads:** `exportFilesOnly` (`keepStructure`) and `exportSDStructure` (ZIP), plus
+  `exportSingleFile` per pool row. Progress runs through the existing `ExportProgressModal`.
+- **News moved to the hub inline** and the auto-open path, `hasCheckedNewsThisSession` and
+  `spotykach_show_news_on_start` are gone. `NewsModal` survives only as the Studio header button; the
+  fetch and the markdown rendering were pulled into `newsFeed.ts` + `NewsArticle.tsx` so the two
+  surfaces can't drift.
+
+Two judgement calls that deviate from the brief, both deliberate:
+
+- **No `onConvert` on either export**, contrary to step 5. Every pooled blob has already been through
+  `audioEngine.loadAndProcessAudio`, and [`encodeWAV`](src/lib/audio/wavEncoder.ts) emits *exactly*
+  what `convertAudioToWav` does — 48 kHz, stereo, 32-bit IEEE float, plain 16-byte `fmt `, no `fact`.
+  Passing the hook would re-encode identical bytes and make the zero-setup tier pull ~30 MB of
+  ffmpeg-wasm first. Studio still passes it, because Studio's files can be anything.
+- **`includeConfig: false` on the SD ZIP.** A browse visitor has expressed no device settings, so the
+  ZIP would carry `getInitialState()`'s defaults and silently overwrite the `config.txt` on their
+  card. Config is Phase 5's job.
+
+**Local folders stayed in standalone.** Mounting one calls `showDirectoryPicker({ mode: 'read' })`,
+which reads against locked decision 3 — but it fires only on an explicit click, which is what
+"permission follows intent" means, and Appendix B lists `LocalFolderBrowser` as a Tier-1 asset. The
+"Done when" still holds: packs, preview, pool and both downloads need no prompt at all.
+
+**One Studio-side fix rode along.** `handleBulkActionWithTarget` re-found the pack in `SAMPLE_PACKS`,
+so bulk actions only ever worked for built-in packs and logged *"coming soon"* for the library and
+project sources. It now reads the already-resolved `selectedPack`, so those bulk-import too.
 
 **Read first:** Appendix B (Tier 1 row).
 
@@ -226,9 +270,11 @@ differs from what the app builds; and once presets can be user-authored (open qu
 presets won't have one at all, so ZIP-first would only sometimes apply. Revisit only if hydration
 measurably drags.
 
-**Reuse note.** `hydratePreset(entry) → AppState` should return the same detached `AppState` that
-Phase 2's `buildDetachedState` produces, and hand it to the same `exportSDStructure` call. If Phase 2
-landed, most of step 1 is already done.
+**Reuse note.** Phase 2 landed
+[`buildDetachedState(samples) → AppState`](src/utils/detachedState.ts) — pure, synchronous, no IDB,
+autospread across the 6×6 grid. `hydratePreset(entry)` should end in a call to it and hand the result
+to the same `exportSDStructure`, so step 1 is mostly a matter of pulling the fetch-and-decode half out
+of `handleLoadPreset`.
 
 **Notes.**
 >

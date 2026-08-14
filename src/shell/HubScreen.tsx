@@ -1,7 +1,11 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Library, HardDrive, Sliders, FolderOpen, ArrowRight } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
+
+// The news section pulls in the markdown renderer. Lazy so the hub's own bundle
+// stays small — nothing above the fold waits on it.
+const HubNews = React.lazy(() => import('./HubNews'));
 
 interface Door {
   mode: AppMode;
@@ -26,7 +30,7 @@ const DOORS: Door[] = [
     accentText: 'text-synthux-green',
     accentBorder: 'hover:border-synthux-green/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(35,224,115,0.45)]',
-    ready: false,
+    ready: true,
   },
   {
     mode: 'presets',
@@ -128,6 +132,10 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
           Nothing here touches your drive. Studio asks for a folder when you enter it; the other modes
           ask only at the moment they write.
         </p>
+
+        <Suspense fallback={null}>
+          <HubNews />
+        </Suspense>
       </div>
     </div>
   );

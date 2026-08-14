@@ -8,17 +8,27 @@ import { TAPE_COLORS, COLOR_MAP } from '../types';
 // dynamic utility imports
 import { LocalFolderBrowser } from './LocalFolderBrowser';
 
+const EMPTY_LIBRARY: UserLibrary = { files: {}, metadata: {} };
+const NO_PROJECTS: ProjectSummary[] = [];
+
 interface SampleBrowserProps {
     isOpen: boolean;
     onClose: () => void;
     onImport: (url: string, name: string, origin?: string, license?: string) => Promise<void>;
-    userLibrary: UserLibrary;
-    projects: ProjectSummary[];
-    onOpenLibraryManager: (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => void;
+    /**
+     * `project` is the Studio browser: library management, project sources, and
+     * "send to slot/tape" targets. `standalone` is Browse mode (#/browse) — no
+     * project exists, so every project-bound action is hidden and the only exit
+     * is the caller's selection pool.
+     */
+    mode?: 'standalone' | 'project';
+    userLibrary?: UserLibrary;
+    projects?: ProjectSummary[];
+    onOpenLibraryManager?: (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => void;
     currentProjectName?: string;
     currentFiles?: Record<string, FileRecord>;
-    workHandle: FileSystemDirectoryHandle | null;
-    mode?: 'global' | 'slot-selection'; // Context for future extensions
+    workHandle?: FileSystemDirectoryHandle | null;
+    selectionMode?: 'global' | 'slot-selection';
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
     onRemoteBulkImport?: (samples: { url: string, name: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
@@ -36,18 +46,25 @@ export const SampleBrowser = ({
     isOpen,
     onClose,
     onImport,
-    userLibrary,
-    projects,
+    mode = 'project',
+    userLibrary = EMPTY_LIBRARY,
+    projects = NO_PROJECTS,
     onOpenLibraryManager,
     currentProjectName,
     currentFiles,
-    workHandle,
-    mode = 'global',
+    workHandle = null,
+    selectionMode = 'global',
     onImportToPool,
     onImportToTape,
     onRemoteBulkImport,
     forceStop
 }: SampleBrowserProps) => {
+
+    const isStandalone = mode === 'standalone';
+    // Locked decision: the library is IDB-resident and needs no work folder, so it
+    // rides along in standalone — but read-only, and only when there's something in it.
+    const hasUserLibrary = Object.keys(userLibrary.files).length > 0;
+    const showUserLibrary = !isStandalone || hasUserLibrary;
 
     // Core Selection State
     const [selectedPackId, setSelectedPackId] = useState<string>(SAMPLE_PACKS[0]?.id || 'my-library');
@@ -204,33 +221,28 @@ export const SampleBrowser = ({
 
     const handleBulkActionWithTarget = async (target: 'pool' | 'slots' | TapeColor) => {
         setShowActionMenu(false);
-        if (selectedSamplePaths.size === 0) return;
+        if (selectedSamplePaths.size === 0 || !onRemoteBulkImport) return;
 
-        const allPacks = [...SAMPLE_PACKS, ...remotePacks];
-        const pack = allPacks.find(p => p.id === selectedPackId);
-        
-        if (pack && onRemoteBulkImport) {
-            const allSamples = pack.samples || [];
-            const samplesToImport = Array.from(selectedSamplePaths).map(path => {
-                const s = allSamples.find(sample => sample.path === path);
-                if (s) {
-                    let url = resolveAssetPath(s.path);
-                    if ((s as any)._isVirtual && (s as any)._blob) {
-                        url = URL.createObjectURL((s as any)._blob);
-                    }
-                    return { url, name: s.name };
-                }
-                return null;
-            }).filter((s): s is { url: string, name: string } => s !== null);
+        // Read from the resolved pack rather than re-finding it in the built-in list,
+        // so the library, project sources and mounted folders bulk-import too — they
+        // carry their blobs on `_blob` and only need an object URL.
+        const pack = selectedPack;
+        if (!pack) return;
 
-            if (samplesToImport.length > 0) {
-                await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
-                setSelectedSamplePaths(new Set());
+        const allSamples: any[] = pack.samples || [];
+        const samplesToImport = Array.from(selectedSamplePaths).map(path => {
+            const s = allSamples.find(sample => sample.path === path);
+            if (!s) return null;
+            let url = resolveAssetPath(s.path);
+            if (s._isVirtual && s._blob) {
+                url = URL.createObjectURL(s._blob);
             }
-        } else if (isUserLibrarySelected || isProjectSamplesSelected) {
-            // Local project files bulk assignment
-            // This is a future enhancement, but we could call onBulkAssign here if needed
-            console.info("Bulk actions for local library coming soon!");
+            return { url, name: s.name };
+        }).filter((s): s is { url: string, name: string } => s !== null);
+
+        if (samplesToImport.length > 0) {
+            await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
+            setSelectedSamplePaths(new Set());
         }
     };
 
@@ -393,7 +405,7 @@ export const SampleBrowser = ({
     const allPacks = [...SAMPLE_PACKS, ...remotePacks];
     let selectedPack: any = allPacks.find(p => p.id === selectedPackId);
 
-    if (isUserLibrarySelected) {
+    if (isUserLibrarySelected && showUserLibrary) {
         selectedPack = {
             id: 'my-library',
             name: 'Curated Library',
@@ -557,13 +569,15 @@ export const SampleBrowser = ({
                     <FolderOpen className="text-synthux-orange" /> Sample Browser
                 </h2>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => onOpenLibraryManager('settings')}
-                        className="p-1.5 hover:bg-white/10 rounded-md text-gray-500 hover:text-synthux-orange transition-all"
-                        title="Browser Settings"
-                    >
-                        <Settings size={20} />
-                    </button>
+                    {onOpenLibraryManager && (
+                        <button
+                            onClick={() => onOpenLibraryManager('settings')}
+                            className="p-1.5 hover:bg-white/10 rounded-md text-gray-500 hover:text-synthux-orange transition-all"
+                            title="Browser Settings"
+                        >
+                            <Settings size={20} />
+                        </button>
+                    )}
                     <button onClick={onClose} className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors">
                         <X size={20} />
                     </button>
@@ -576,16 +590,19 @@ export const SampleBrowser = ({
                     <div className="flex-1 p-4 flex flex-col gap-1 overflow-y-auto">
 
                         {/* MY LIBRARY */}
+                        {showUserLibrary && (
                         <div className="mb-4">
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center justify-between px-1 mb-2">
                                 Curated Library
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); onOpenLibraryManager(); }}
-                                    className="p-1 hover:bg-gray-700 rounded text-synthux-orange"
-                                    title="Open Library Manager"
-                                >
-                                    <Edit2 size={12} />
-                                </button>
+                                {onOpenLibraryManager && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenLibraryManager(); }}
+                                        className="p-1 hover:bg-gray-700 rounded text-synthux-orange"
+                                        title="Open Library Manager"
+                                    >
+                                        <Edit2 size={12} />
+                                    </button>
+                                )}
                             </h3>
                             <button
                                 onClick={() => { setSelectedPackId('my-library'); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
@@ -626,8 +643,10 @@ export const SampleBrowser = ({
                                 </div>
                             )}
                         </div>
+                        )}
 
-                        {/* PROJECT SAMPLES */}
+                        {/* PROJECT SAMPLES — a project source needs a work folder, so Studio only. */}
+                        {!isStandalone && (
                         <div className="mb-4">
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase px-1 mb-2">Projects</h3>
                             <button
@@ -660,6 +679,7 @@ export const SampleBrowser = ({
                                 </div>
                             )}
                         </div>
+                        )}
 
                         {/* LOCAL FOLDERS */}
                         <div className="mb-4">
@@ -887,9 +907,9 @@ export const SampleBrowser = ({
                                         importingFileId={importingSample || undefined}
                                         addedFileIds={addedSamples}
                                         mode="add"
-                                        bulkActionLabel={mode === 'slot-selection' ? 'Add to Slot' : 'Copy to Pool'}
+                                        bulkActionLabel={selectionMode === 'slot-selection' ? 'Add to Slot' : 'Copy to Pool'}
                                         onBulkImport={handleBulkImport}
-                                        availableTapeColors={TAPE_COLORS}
+                                        availableTapeColors={isStandalone ? [] : TAPE_COLORS}
                                         onImportToPool={onImportToPool || (async (files) => {
                                             for (const { file, path } of files) {
                                                 await handleImport({ path, name: file.name, _isVirtual: true, _blob: file });
@@ -969,7 +989,7 @@ export const SampleBrowser = ({
                                                                             )}
                                                                         </div>
 
-                                                                        {isUserLibrarySelected && (
+                                                                        {isUserLibrarySelected && onOpenLibraryManager && (
                                                                             <button
                                                                                 onClick={(e) => { e.stopPropagation(); onOpenLibraryManager('manage', sample.path); }}
                                                                                 className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded opacity-0 group-hover:opacity-100 transition-all"
@@ -994,11 +1014,11 @@ export const SampleBrowser = ({
                                                                                     </>
                                                                                 ) : isAdded ? (
                                                                                     <>
-                                                                                        <Check size={14} /> Added (Add Again)
+                                                                                        <Check size={14} /> {isStandalone ? 'Pooled (Add Again)' : 'Added (Add Again)'}
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
-                                                                                        <Download size={14} /> {mode === 'slot-selection' ? 'Assign' : 'Add'}
+                                                                                        <Download size={14} /> {selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? 'Pool' : 'Add'}
                                                                                     </>
                                                                                 )}
                                                                             </button>
@@ -1112,8 +1132,8 @@ export const SampleBrowser = ({
             {/* Bulk Action Sticky Bar — matches LocalFolderBrowser pattern */}
             {selectedSamplePaths.size > 0 && (
                 <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-4 duration-300">
-                    {/* Submenu dropdown */}
-                    {showActionMenu && (
+                    {/* Submenu dropdown — every target below is a project target, so standalone has none. */}
+                    {showActionMenu && !isStandalone && (
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-[#1a1a1a] border border-gray-700/50 rounded-xl shadow-2xl py-2 min-w-[280px] animate-in fade-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
                             <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] border-b border-white/5 mb-1">Import Target</div>
                             
@@ -1172,18 +1192,20 @@ export const SampleBrowser = ({
 
                         <div className="flex items-center gap-2 border-l border-white/10 pl-4">
                             <button
-                                onClick={() => handleBulkActionWithTarget('slots')}
+                                onClick={() => handleBulkActionWithTarget(isStandalone ? 'pool' : 'slots')}
                                 className="bg-synthux-orange hover:bg-synthux-orange/80 text-black py-2 px-6 rounded-full font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-synthux-orange/20"
                             >
-                                <Plus size={14} /> Import Selection
+                                <Plus size={14} /> {isStandalone ? 'Add to Selection' : 'Import Selection'}
                             </button>
-                            
-                            <button 
-                                onClick={() => setShowActionMenu(!showActionMenu)}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${showActionMenu ? 'bg-synthux-orange border-synthux-orange text-black' : 'bg-black/60 border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`}
-                            >
-                                <ChevronDown size={20} className={`transition-transform duration-300 ${showActionMenu ? 'rotate-180' : ''}`} />
-                            </button>
+
+                            {!isStandalone && (
+                                <button
+                                    onClick={() => setShowActionMenu(!showActionMenu)}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${showActionMenu ? 'bg-synthux-orange border-synthux-orange text-black' : 'bg-black/60 border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`}
+                                >
+                                    <ChevronDown size={20} className={`transition-transform duration-300 ${showActionMenu ? 'rotate-180' : ''}`} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

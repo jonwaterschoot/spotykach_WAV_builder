@@ -81,10 +81,6 @@ const getNotePreview = (notes?: string) => {
     .trim();
 };
 
-// The news modal auto-opens once per page load. Studio unmounts when the user
-// leaves for another mode, so without this it would re-open on every entry.
-let hasCheckedNewsThisSession = false;
-
 interface AppProps {
   /** Provided by the shell; absent when Studio is mounted on its own. */
   onExitToHub?: () => void;
@@ -711,19 +707,6 @@ function App({ onExitToHub }: AppProps) {
       }
     });
   };
-
-  useEffect(() => {
-    // Only check for news after the user has left the setup wizard, and only once
-    // per page load — entering Studio a second time shouldn't reopen it.
-    if (isWelcomeActive) return;
-    if (hasCheckedNewsThisSession) return;
-    hasCheckedNewsThisSession = true;
-
-    const showOnStart = localStorage.getItem('spotykach_show_news_on_start') !== 'false';
-    if (showOnStart) {
-      setShowNews(true);
-    }
-  }, [isWelcomeActive]);
 
   const checkUnsavedChanges = (action: () => void) => {
     // Determine if the project is effectively empty
@@ -5286,7 +5269,8 @@ function App({ onExitToHub }: AppProps) {
                   projects={foundProjects}
                   currentFiles={state.files}
                   workHandle={workHandle}
-                  mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
+                  mode="project"
+                  selectionMode={targetSlotForUpload !== null ? "slot-selection" : "global"}
                   onOpenLibraryManager={handleOpenLibraryManager}
                   currentProjectName={currentProjectName}
                   onImportToPool={(files) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), 'pool')}
