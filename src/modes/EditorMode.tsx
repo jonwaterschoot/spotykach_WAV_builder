@@ -7,8 +7,9 @@ import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
 import { ProjectNameModal } from '../components/modals/ProjectNameModal';
-import { saveDirectoryHandle } from '../utils/storageUtils';
+import { createProjectFromState } from '../utils/newProject';
 import type { AppState, AudioVersion, FileRecord, WavMetadata } from '../types';
 import type { CommitLabels } from '../components/WaveformEditor';
 
@@ -22,14 +23,6 @@ const newId = () =>
     : Math.random().toString(36).substring(2, 15);
 
 const stripExtension = (name: string) => name.replace(/\.[^/.]+$/, '');
-
-/** Matches App.tsx's project-name rule, so a project made here loads there. */
-const sanitizeFilename = (name: string) =>
-  name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.\-_]/g, '');
-
-/** Firefox and Safari have no File System Access API — the download exit still works. */
-const canPickFolder = (): boolean =>
-  typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
 /**
  * The transport button's wording without a project.
@@ -94,6 +87,8 @@ interface LooseFileEditorProps {
   onEdited?: (edited: { blob: Blob; duration: number; name: string }) => void;
   /** Shown under the editor's title, e.g. which pack the sample came from. */
   subtitle?: string;
+  /** Offered after "Save as project". Absent when the shell gave no route there. */
+  onEnterStudio?: () => void;
 }
 
 /**
@@ -106,12 +101,13 @@ interface LooseFileEditorProps {
  * boundary to defer to, and it means the sidebar reads as "original / current", which
  * is exactly the safety story the rule is there to tell.
  */
-export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle }) => {
+export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterStudio }) => {
   const [record, setRecord] = useState<FileRecord>(() => recordFromLooseFile(file));
   const [isDirty, setIsDirty] = useState(false);
   const [hasEdited, setHasEdited] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [createdProject, setCreatedProject] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const { toasts, showToast, removeToast } = useToasts();
@@ -202,26 +198,6 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
    * from disk like any other.
    */
   const saveAsProject = useCallback(async (rawName: string) => {
-    const projectName = sanitizeFilename(rawName);
-    if (!projectName) {
-      showToast('That name has no usable characters', 'error');
-      return;
-    }
-
-    if (!canPickFolder()) {
-      showToast('This browser cannot open a folder — download the file instead.', 'error');
-      return;
-    }
-
-    let workHandle: FileSystemDirectoryHandle;
-    try {
-      // Same picker id Studio's wizard uses for the work folder, so it opens where
-      // the user last kept their projects.
-      workHandle = await window.showDirectoryPicker({ id: 'spotykach_work', mode: 'readwrite' });
-    } catch {
-      return; // Dismissed the picker — a normal outcome, not an error.
-    }
-
     setBusy('Creating project…');
     try {
       const state: AppState = getInitialState();
@@ -229,16 +205,11 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
       state.files[saved.id] = saved;
       state.tapes.Blue.slots[0].fileId = saved.id;
 
-      const { saveProjectToDirectory } = await import('../utils/exportUtils');
-      await saveProjectToDirectory(state, workHandle, msg => setBusy(msg || null), projectName);
-
-      await saveDirectoryHandle('work', workHandle).catch(() => {
-        // A stored handle is a convenience; the project on disk is the real result.
-      });
-      localStorage.setItem('spotykach_current_project', projectName);
+      const created = await createProjectFromState(state, rawName, msg => setBusy(msg || null));
+      if (!created) return; // Picker dismissed.
 
       setHasEdited(false);
-      showToast(`Saved as project "${projectName}" — open Studio to continue`, 'success');
+      setCreatedProject(created.projectName);
     } catch (e) {
       console.error(e);
       showToast(e instanceof Error ? e.message : 'Could not create the project', 'error');
@@ -319,6 +290,12 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
         confirmLabel="Choose folder & create"
       />
 
+      <ProjectCreatedModal
+        projectName={createdProject}
+        onDismiss={() => setCreatedProject(null)}
+        onEnterStudio={onEnterStudio}
+      />
+
       <ConfirmModal
         isOpen={confirmDiscard}
         onClose={() => setConfirmDiscard(false)}
@@ -344,6 +321,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
 
 interface EditorModeProps {
   onExitToHub: () => void;
+  onEnterStudio?: () => void;
 }
 
 /**
@@ -353,7 +331,7 @@ interface EditorModeProps {
  * gives back no write access, so the mode can do its whole job without a prompt. The
  * only prompt in it is the folder picker behind "Save as project".
  */
-export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub }) => {
+export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterStudio }) => {
   const [file, setFile] = useState<LooseFile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -390,6 +368,7 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub }) => {
         file={file}
         subtitle={`Editing ${file.name} — nothing is written to your drive until you download or save a project.`}
         onClose={() => setFile(null)}
+        onEnterStudio={onEnterStudio}
       />
     );
   }

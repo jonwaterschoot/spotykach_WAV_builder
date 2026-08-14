@@ -30,7 +30,7 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
   if (mode === 'browse') {
     return (
       <Suspense fallback={<ModeLoading />}>
-        <BrowseMode onExitToHub={() => setMode('hub')} />
+        <BrowseMode onExitToHub={() => setMode('hub')} onEnterStudio={() => setMode('studio')} />
       </Suspense>
     );
   }
@@ -54,7 +54,7 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
   if (mode === 'editor') {
     return (
       <Suspense fallback={<ModeLoading />}>
-        <EditorMode onExitToHub={() => setMode('hub')} />
+        <EditorMode onExitToHub={() => setMode('hub')} onEnterStudio={() => setMode('studio')} />
       </Suspense>
     );
   }

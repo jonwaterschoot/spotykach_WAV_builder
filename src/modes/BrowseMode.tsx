@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Check, ChevronLeft, Download, FileStack, GripVertical, HardDrive, Layers, Loader,
-  Trash2, X,
+  AudioWaveform, Check, ChevronLeft, Download, FileStack, FolderPlus, GripVertical, HardDrive,
+  Layers, Loader, Trash2, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
@@ -10,6 +10,9 @@ import {
 import { useEscapeLayer } from '../shell/escapeStack';
 import { loadUserLibraryFromDB } from '../utils/persistence';
 import { ExportProgressModal } from '../components/ExportProgressModal';
+import { ProjectNameModal } from '../components/modals/ProjectNameModal';
+import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
+import { canPickFolder } from '../utils/newProject';
 import { COLOR_MAP, TAPE_COLORS } from '../types';
 import type { AppState, UserLibrary } from '../types';
 
@@ -112,6 +115,8 @@ ${licenses.length > 0 ? `\n## Usage context\n${licenses.map(l => `- ${l}`).join(
 
 interface BrowseModeProps {
   onExitToHub: () => void;
+  /** Offered after the pool becomes a project. Absent when the shell gave no route. */
+  onEnterStudio?: () => void;
 }
 
 /**
@@ -123,7 +128,7 @@ interface BrowseModeProps {
  * here writes IndexedDB's app-state slot (locked decision 5) — the pool lives and
  * dies with the mode.
  */
-export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
+export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStudio }) => {
   const [pool, setPool] = useState<PoolItem[]>([]);
   const [isPoolOpen, setIsPoolOpen] = useState(false);
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
@@ -131,6 +136,8 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [sortLooseIntoTapes, setSortLooseIntoTapes] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [createdProject, setCreatedProject] = useState<string | null>(null);
 
   const [exportLogs, setExportLogs] = useState<string[]>([]);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
@@ -351,6 +358,53 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
       includeConfig: false,
     }, onProgress);
   });
+
+  /**
+   * The third exit — open question 5's "import into project".
+   *
+   * It reuses the same `buildDetachedState(pool)` the two downloads use, so the
+   * project gets exactly the layout the "Download SD card 6×6" preview showed. The
+   * work folder is chosen here, mid-flow: the pool is React state in this component,
+   * so it survives the picker without any handoff, and nothing was asked of the user
+   * until they asked for a project.
+   *
+   * The "temporary project in browser cache, save later" variant from the answer is
+   * deliberately not built — it would need its own IDB slot to stay inside locked
+   * decision 5, and this path makes it unnecessary.
+   */
+  const importIntoProject = async (rawName: string) => {
+    if (poolRef.current.length === 0) return;
+
+    setShowExportProgress(true);
+    setIsExporting(true);
+    setIsExportComplete(false);
+    setExportError(null);
+    setExportProgress(null);
+    setExportLogs(['Creating project…']);
+
+    try {
+      const { createProjectFromState } = await import('../utils/newProject');
+      const created = await createProjectFromState(
+        buildDetachedState(poolRef.current),
+        rawName,
+        msg => { if (msg) setExportLogs(prev => (prev[prev.length - 1] === msg ? prev : [...prev, msg])); },
+      );
+
+      if (!created) {
+        setShowExportProgress(false); // Picker dismissed — nothing happened.
+        return;
+      }
+      setExportProgress(100);
+      setShowExportProgress(false);
+      setCreatedProject(created.projectName);
+    } catch (e) {
+      console.error(e);
+      setExportError(e instanceof Error ? e.message : 'Could not create the project.');
+    } finally {
+      setIsExporting(false);
+      setIsExportComplete(true);
+    }
+  };
 
   const overflowCount = Math.max(0, pool.length - GRID_CAPACITY);
   const poolSummary = useMemo(() => {
@@ -587,9 +641,28 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
 
               <p className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed pt-1">
                 <Download size={11} className="shrink-0 mt-0.5" />
-                Both go to your browser's downloads folder. Want to write to the card directly, or keep a
-                project? That's Studio.
+                Both go to your browser's downloads folder — no permission, nothing written to your drive.
               </p>
+
+              {canPickFolder() && (
+                <>
+                  <div className="h-px bg-white/10 my-1" />
+                  <button
+                    onClick={() => setNameModalOpen(true)}
+                    disabled={pool.length === 0 || isExporting}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-yellow/40 bg-synthux-yellow/10
+                      text-synthux-yellow text-left transition-all hover:bg-synthux-yellow/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <FolderPlus size={16} className="shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold">Import into a project</span>
+                      <span className="block text-[10px] opacity-70">
+                        Keeps the layout, on a folder you pick — then carry on in Studio
+                      </span>
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
           </aside>
         )}
@@ -626,6 +699,22 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
         isComplete={isExportComplete}
         error={exportError}
         progress={exportProgress !== null ? exportProgress : undefined}
+      />
+
+      <ProjectNameModal
+        isOpen={nameModalOpen}
+        onClose={() => setNameModalOpen(false)}
+        onConfirm={importIntoProject}
+        title="Import into a project"
+        initialValue="New Project"
+        placeholder="Project name…"
+        confirmLabel="Choose folder & create"
+      />
+
+      <ProjectCreatedModal
+        projectName={createdProject}
+        onDismiss={() => setCreatedProject(null)}
+        onEnterStudio={onEnterStudio}
       />
     </div>
   );
