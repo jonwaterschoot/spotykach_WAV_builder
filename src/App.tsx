@@ -31,6 +31,7 @@ const LibraryManager = React.lazy(() => import('./components/LibraryManager').th
 const SampleBrowser = React.lazy(() => import('./components/SampleBrowser').then(m => ({ default: m.SampleBrowser })));
 const ExportModal = React.lazy(() => import('./components/ExportModal').then(m => ({ default: m.ExportModal })));
 const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal').then(m => ({ default: m.LibrarySyncModal })));
+const WorkspaceBackupModal = React.lazy(() => import('./components/WorkspaceBackupModal').then(m => ({ default: m.WorkspaceBackupModal })));
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
@@ -257,6 +258,7 @@ function App({ onExitToHub }: AppProps) {
   // Workflow / Settings State
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showWorkspaceBackup, setShowWorkspaceBackup] = useState(false);
 
   // Sync Logic State
   const [syncModalState, setSyncModalState] = useState<{
@@ -4778,7 +4780,23 @@ function App({ onExitToHub }: AppProps) {
               visualFilters={visualFilters}
               onUpdateVisualFilters={setVisualFilters}
               onSaveVisualSettings={handleSaveVisualSettings}
+              workHandle={workHandle}
+              sdHandle={sdHandle}
+              onChangeWorkFolder={handleSetWorkFolder}
+              onChangeSDFolder={handleSetSDFolder}
+              onOpenWorkspaceBackup={() => { setShowSettings(false); setShowWorkspaceBackup(true); }}
             />
+            {showWorkspaceBackup && (
+              <Suspense fallback={null}>
+                <WorkspaceBackupModal
+                  isOpen={showWorkspaceBackup}
+                  onClose={() => setShowWorkspaceBackup(false)}
+                  workHandle={workHandle}
+                  sdHandle={sdHandle}
+                  userLibrary={userLibrary}
+                />
+              </Suspense>
+            )}
             {showExport && (
               <Suspense fallback={null}>
                 <ExportModal

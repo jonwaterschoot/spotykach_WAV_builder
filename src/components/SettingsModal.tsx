@@ -1,10 +1,23 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, RefreshCw, AlertTriangle, X, Save, Trash2, Shield } from 'lucide-react';
+import { Settings, RefreshCw, AlertTriangle, X, Save, Trash2, Shield, FolderOpen, History } from 'lucide-react';
+import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { VisualFilters } from '../types';
 import { getDurabilityPrefs, setDurabilityPref, type DurabilityPrefs } from '../utils/durabilityPrefs';
 import { appStorage } from '../utils/storageNamespace';
 
+/**
+ * Settings — Phase 7, step 1.
+ *
+ * The app had no single place that answered "what does this tool do with my files,
+ * and when": locations lived in the Project Manager header, durability in a build
+ * dialog, cleanup in three places. They live here now.
+ *
+ * That took the section count past six, which is where the brief said to give it
+ * tabs rather than a seventh scroll — the same call `AboutHelpModal` already made.
+ * Three tabs, split by what the user came to change: their **files**, the **look**
+ * of the app, and the **system** underneath it.
+ */
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -15,7 +28,22 @@ interface SettingsModalProps {
     onSaveVisualSettings: () => void;
     currentProjectName?: string;
     onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
+    // ── Locations, moved out of the Project Manager header ────────────────────
+    workHandle?: FileSystemDirectoryHandle | null;
+    sdHandle?: FileSystemDirectoryHandle | null;
+    onChangeWorkFolder?: () => void;
+    onChangeSDFolder?: () => void;
+    /** Opens the workspace backup surface — the one explicit act of step 4. */
+    onOpenWorkspaceBackup?: () => void;
 }
+
+type SettingsTab = 'files' | 'look' | 'system';
+
+const TABS: Array<{ id: SettingsTab; label: string }> = [
+    { id: 'files', label: 'Files' },
+    { id: 'look', label: 'Look' },
+    { id: 'system', label: 'System' },
+];
 
 const TEXTURES = [
     'highrestexture_tapenoisevhs_whitetrans.png',
@@ -42,10 +70,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onUpdateVisualFilters,
     onSaveVisualSettings,
     currentProjectName,
-    onCleanupProject
+    onCleanupProject,
+    workHandle,
+    sdHandle,
+    onChangeWorkFolder,
+    onChangeSDFolder,
+    onOpenWorkspaceBackup,
 }) => {
     const [pos, setPos] = useState({ x: -1, y: 64 }); // -1 uses default right:16
     const [isDragging, setIsDragging] = useState(false);
+    const [activeTab, setActiveTab] = useState<SettingsTab>('files');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -104,7 +138,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             window.removeEventListener('resize', syncPosition);
             window.removeEventListener('scroll', syncPosition, true);
         };
-    }, [isOpen, pos, activeSpecialMode]); // Trigger on modal move or special mode changes
+    }, [isOpen, pos, activeSpecialMode, activeTab]); // Trigger on modal move, special mode, or tab switch
 
     useEffect(() => {
         return () => {
@@ -392,7 +426,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return (
         <div className="fixed inset-0 z-[60] bg-black/5 pointer-events-auto" onClick={onClose}>
             <div
-                className="settings-modal-card fixed z-[61] bg-[#121212]/95 w-[320px] rounded-xl border border-white/10 flex flex-col shadow-2xl backdrop-blur-md max-h-[calc(100vh-80px)]"
+                className="settings-modal-card fixed z-[61] bg-[#121212]/95 w-[360px] rounded-xl border border-white/10 flex flex-col shadow-2xl backdrop-blur-md max-h-[calc(100vh-80px)]"
                 style={{
                     top: `${pos.y}px`,
                     left: pos.x !== -1 ? `${pos.x}px` : undefined,
@@ -413,7 +447,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                 </header>
 
+                {/* TABS — the section list passed six once locations, auto-save, backup and
+                    cleanup moved in here, which is the point at which the brief said to stop
+                    stacking and start splitting. */}
+                <div className="flex border-b border-white/10 bg-[#161616] shrink-0">
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${activeTab === tab.id
+                                ? 'text-white border-b-2 border-indigo-500 bg-white/[0.03]'
+                                : 'text-gray-600 hover:text-gray-300 border-b-2 border-transparent'
+                                }`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="p-4 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-white/10">
+                    {activeTab === 'look' && (<>
                     {/* Presets */}
                     <div className="space-y-3">
                         <div className="flex justify-between items-center">
@@ -497,7 +550,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {/* Master Reset Button (Portalled to avoid filters) */}
                     <div ref={resetBtnPlaceholderRef} className="h-[42px] w-full" />
-                    {isOpen && document.getElementById('unfiltered-portal-root') && createPortal(
+                    {isOpen && activeTab === 'look' && document.getElementById('unfiltered-portal-root') && createPortal(
                         <button
                             onClick={handleResetFilters}
                             className="fixed py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 rounded-lg flex items-center justify-center gap-2 transition-all text-xs font-bold uppercase tracking-widest group shadow-lg z-[10001]"
@@ -660,10 +713,127 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     </div>
 
-                    {/* Backup & durability */}
+                    </>)}
+
+                    {activeTab === 'files' && (<>
+                    {/* Locations — moved here from the Project Manager header, where
+                        roadmap-bugs has been asking for them since v3. The inline "Change"
+                        there stays; a setting is a second entry, not a replacement. */}
+                    <div className="space-y-3">
+                        <h3 className="text-[10px] font-bold text-indigo-400/80 uppercase tracking-widest flex items-center gap-2">
+                            <FolderOpen size={12} /> Locations
+                        </h3>
+                        {([
+                            {
+                                label: 'Workspace folder',
+                                detail: 'Where your projects and their assets live.',
+                                handle: workHandle,
+                                onChange: onChangeWorkFolder,
+                                empty: 'Not connected',
+                            },
+                            {
+                                label: 'SD card',
+                                detail: 'The build target. Nothing is written to it unless you build.',
+                                handle: sdHandle,
+                                onChange: onChangeSDFolder,
+                                empty: 'Not connected',
+                            },
+                        ]).map(({ label, detail, handle, onChange, empty }) => (
+                            <div key={label} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-bold text-gray-300">{label}</p>
+                                    {onChange && (
+                                        <button
+                                            onClick={onChange}
+                                            className="text-[10px] text-indigo-400 hover:underline shrink-0"
+                                        >
+                                            {handle ? 'Change' : 'Choose'}
+                                        </button>
+                                    )}
+                                </div>
+                                <p className={`text-[10px] mt-0.5 font-mono truncate ${handle ? 'text-white' : 'text-gray-600 italic'}`}>
+                                    {handle ? handle.name : empty}
+                                </p>
+                                <p className="text-[9px] text-gray-600 mt-1 leading-tight">{detail}</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Auto-save */}
                     <div className="space-y-3 pt-4 border-t border-white/10">
                         <h3 className="text-[10px] font-bold text-teal-400/80 uppercase tracking-widest flex items-center gap-2">
-                            <Shield size={12} /> Backup &amp; Durability
+                            <Save size={12} /> Auto-save
+                        </h3>
+                        <button
+                            type="button"
+                            onClick={() => toggleDurability('autoSave')}
+                            className={`w-full p-3 rounded-lg border text-left flex items-start gap-3 transition-colors ${durability.autoSave
+                                ? 'bg-teal-500/10 border-teal-500/30'
+                                : 'bg-white/[0.02] border-white/5 hover:border-white/15'
+                                }`}
+                        >
+                            <div className={`mt-0.5 w-8 h-[18px] rounded-full p-0.5 shrink-0 transition-colors ${durability.autoSave ? 'bg-teal-500' : 'bg-white/10'}`}>
+                                <div className={`w-[14px] h-[14px] rounded-full bg-white transition-transform ${durability.autoSave ? 'translate-x-[14px]' : 'translate-x-0'}`} />
+                            </div>
+                            <div>
+                                <p className={`text-[11px] font-bold ${durability.autoSave ? 'text-teal-300' : 'text-gray-400'}`}>
+                                    Keep a recovery copy in this browser
+                                </p>
+                                <p className="text-[9px] text-gray-600 mt-0.5 leading-tight">
+                                    So a closed tab or a crash doesn’t lose the open project. It does <em>not</em> write
+                                    to your workspace folder — saving still does that. Turning this off deletes the copy.
+                                </p>
+                            </div>
+                        </button>
+                    </div>
+
+                    {/* Workspace backup */}
+                    <div className="space-y-3 pt-4 border-t border-white/10">
+                        <h3 className="text-[10px] font-bold text-teal-400/80 uppercase tracking-widest flex items-center gap-2">
+                            <Shield size={12} /> Workspace backup
+                        </h3>
+                        <p className="text-[9px] text-gray-600 leading-tight">
+                            One copy of everything — projects, their assets and your sample library — into a
+                            folder you pick at the moment you back up. No remembered location, nothing written
+                            until you choose one.
+                        </p>
+                        {onOpenWorkspaceBackup && (
+                            <button
+                                onClick={onOpenWorkspaceBackup}
+                                className="w-full py-2.5 bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 rounded-lg flex items-center justify-center gap-2 transition-colors text-xs font-bold"
+                            >
+                                <Shield size={13} /> Back up now…
+                            </button>
+                        )}
+                    </div>
+
+                    {/* History & cleanup */}
+                    <div className="space-y-3 pt-4 border-t border-white/10">
+                        <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                            <History size={12} /> History &amp; cleanup
+                        </h3>
+                        <p className="text-[9px] text-gray-600 leading-tight">
+                            A saved project keeps exactly two versions of each file: the original and the current
+                            one. Everything between is dropped on save, so history no longer piles up. Cleanup is
+                            for what that rule can’t reach — assets on disk nothing points at any more, unused
+                            files, old SD snapshots.
+                        </p>
+                        {currentProjectName && onCleanupProject ? (
+                            <button
+                                onClick={() => { onCleanupProject(); onClose(); }}
+                                className="w-full py-2.5 bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-gray-300 rounded-lg flex items-center justify-center gap-2 transition-colors text-xs font-bold"
+                            >
+                                <Trash2 size={13} /> Clean up “{currentProjectName}”…
+                            </button>
+                        ) : (
+                            <p className="text-[9px] text-gray-700 italic">Open a project to clean it up.</p>
+                        )}
+                    </div>
+
+                    {/* Copies onto the SD card */}
+                    <div className="space-y-3 pt-4 border-t border-white/10">
+                        <h3 className="text-[10px] font-bold text-orange-400/80 uppercase tracking-widest flex items-center gap-2">
+                            <RiSdCardMiniLine size={12} /> Copies onto the SD card
                         </h3>
                         <p className="text-[9px] text-gray-600 leading-tight">
                             The SD card is a build target, not a backup. Both copies below are off by
@@ -701,9 +871,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </button>
                         ))}
                     </div>
+                    </>)}
 
+                    {activeTab === 'system' && (<>
                     {/* Danger Zone */}
-                    <div className="space-y-3 pt-4 border-t border-white/10">
+                    <div className="space-y-3">
                         <h3 className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest flex items-center gap-2">
                             <Settings size={12} /> Browser Preferences
                         </h3>
@@ -722,24 +894,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <Trash2 size={16} />
                                 Danger Zone
                             </h3>
-                            
-                            {currentProjectName && onCleanupProject && (
-                        <div className="p-4 bg-red-900/10 border border-red-900/30 rounded-xl flex items-center justify-between">
-                            <div>
-                                <h4 className="font-bold text-red-400">Clean Up Active Project</h4>
-                                <p className="text-sm text-gray-500 mt-1">Remove unused history versions and unused files to save space.</p>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    onCleanupProject();
-                                    onClose();
-                                }}
-                                className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-300 font-bold rounded-lg flex items-center gap-2 transition-colors border border-red-500/20"
-                            >
-                                Clean Up...
-                            </button>
-                        </div>
-                            )}
+                            {/* Cleanup used to sit here too. It is a housekeeping action, not a
+                                destructive one — since the two-version rule it only ever removes
+                                leftovers — so it lives under Files ▸ History & cleanup now. */}
 
                             <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-500/10 rounded-lg mb-4">
                                 <h3 className="text-[10px] font-bold text-red-500/70 uppercase tracking-widest flex items-center gap-2">
@@ -757,6 +914,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
                         </div>
                     </div>
+                    </>)}
                 </div>
             </div>
         </div>

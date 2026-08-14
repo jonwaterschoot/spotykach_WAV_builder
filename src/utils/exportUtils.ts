@@ -1065,14 +1065,15 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                 if (name === '__MACOSX') continue;
                 console.log(`[scanForProjects] Checking entry: ${name}, kind: ${handle.kind}`);
                 if (handle.kind === 'directory') {
+                    const dirHandle = handle as FileSystemDirectoryHandle;
                     let hasMeta = false;
                     let fileCount = 0;
                     try {
                         let projectFileHandle: FileSystemFileHandle;
                         try {
-                            projectFileHandle = await handle.getFileHandle('project-descriptor.json', { create: false });
+                            projectFileHandle = await dirHandle.getFileHandle('project-descriptor.json', { create: false });
                         } catch (e) {
-                            projectFileHandle = await handle.getFileHandle('project.json', { create: false });
+                            projectFileHandle = await dirHandle.getFileHandle('project.json', { create: false });
                         }
                         
                         // Basic validation that it's a project
