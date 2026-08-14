@@ -20,7 +20,6 @@ import BrowserChoiceModal from './components/BrowserChoiceModal';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
-import { ProjectSyncModal } from './components/ProjectSyncModal';
 import { fetchSampleManifest, type PresetManifestEntry } from './data/samplePacks';
 import { NewsModal } from './components/NewsModal';
 // dynamic descriptor imports
@@ -200,7 +199,6 @@ function App({ onExitToHub }: AppProps) {
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   const [presets, setPresets] = useState<PresetManifestEntry[]>([]);
   const [showLibrarySyncModal, setShowLibrarySyncModal] = useState(false);
-  const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
   const [skBackups, setSkBackups] = useState<{ timestamp: string; sizeBytes: number }[]>([]);
@@ -1126,7 +1124,10 @@ function App({ onExitToHub }: AppProps) {
     }
   };
 
-  const handleRenameProject = async (oldName: string, rawNewName: string, renameBackup: boolean = false) => {
+  // Renames the project in the workspace, and only there. The "also rename it on the
+  // backup drive?" prompt went with the mirror in Phase 7 — a copy sitting on a card
+  // is a copy, not a linked second location the app is responsible for keeping in step.
+  const handleRenameProject = async (oldName: string, rawNewName: string) => {
     if (!workHandle) return;
     const newName = sanitizeFilename(rawNewName);
     try {
@@ -1135,20 +1136,7 @@ function App({ onExitToHub }: AppProps) {
       const { renameProject } = await import('./utils/exportUtils');
       // @ts-ignore
       await renameProject(workHandle, oldName, newName);
-
-      if (renameBackup && sdHandle) {
-        try {
-          setProgressMsg("Renaming Backup...");
-          // @ts-ignore
-          await renameProject(sdHandle, oldName, newName);
-          showToast(`Renamed Local & Backup to "${newName}"`, 'success');
-        } catch (e) {
-          console.error("Backup rename failed", e);
-          showToast(`Renamed Local, but Backup failed`, 'info');
-        }
-      } else {
-        showToast(`Renamed to "${newName}"`, 'success');
-      }
+      showToast(`Renamed to "${newName}"`, 'success');
 
       if (currentProjectName === oldName) {
         setCurrentProjectName(newName);
@@ -4906,36 +4894,6 @@ function App({ onExitToHub }: AppProps) {
                 hasUnsavedChanges={hasUnsavedChanges}
                 onCleanupProject={handleCleanupProject}
                 onDeleteProject={handleDeleteProject}
-                onDeleteBackupProject={sdHandle ? async (name) => {
-                  setConfirmAction({
-                    title: 'Delete SD Backup?',
-                    message: (
-                      <span>
-                        This will permanently delete <strong>{name}</strong> from the SD card backup.<br /><br />
-                        The local copy in your Work Folder will <em>not</em> be affected.
-                      </span>
-                    ),
-                    isDestructive: true,
-                    confirmLabel: 'Delete from SD',
-                    onConfirm: async () => {
-                      try {
-                        setIsProcessing(true);
-                        setProgressMsg(`Deleting SD backup: ${name}...`);
-                        const projectsDir = await sdHandle!
-                          .getDirectoryHandle('WAV_Builder', { create: false })
-                          .then(d => d.getDirectoryHandle('Projects', { create: false }));
-                        await projectsDir.removeEntry(name, { recursive: true });
-                        showToast(`SD backup "${name}" deleted`, 'success');
-                        await scanProjects(workHandle, sdHandle);
-                      } catch (e: any) {
-                        showToast('Delete failed: ' + e.message, 'error');
-                      } finally {
-                        setIsProcessing(false);
-                        setProgressMsg('');
-                      }
-                    },
-                  });
-                } : undefined}
                 onRenameProject={handleRenameProject}
                 onDuplicateProject={handleDuplicateProject}
                 onScan={async () => {
@@ -4966,7 +4924,6 @@ function App({ onExitToHub }: AppProps) {
                 sdHandle={sdHandle}
                 onChangeWorkFolder={handleSetWorkFolder}
                 onChangeSDFolder={handleSetSDFolder}
-                onSyncProject={(projectName) => setSyncProjectTarget(projectName)}
                 onImportZip={handleImportZip}
                 onExportZip={handleExportZip}
                 onBuildProject={async (projectName) => {
@@ -5023,69 +4980,9 @@ function App({ onExitToHub }: AppProps) {
                     setProgressMsg('');
                   }
                 }}
-                onSyncUserLibraryToSD={() => setShowLibrarySyncModal(true)}
                 activeSKProject={activeSKProject || undefined}
               />
             </Suspense>
-
-            {syncProjectTarget && workHandle && sdHandle && (
-              <ProjectSyncModal
-                projectName={syncProjectTarget}
-                localState={state}
-                sdHandle={sdHandle}
-                onChangeSDCard={handleSetSDFolder}
-                onClose={() => setSyncProjectTarget(null)}
-                onApply={async (newState) => {
-                  if (!workHandle || !sdHandle || !syncProjectTarget) return;
-                  setIsProcessing(true);
-                  setProgressMsg('Saving sync changes locally...');
-                  try {
-                    // Stamp a shared saved-at timestamp so both copies have the same
-                    // metadata.exportDate — this prevents scanProjects from
-                    // marking the project as "modified" right after a sync.
-                    const savedAt = new Date().toISOString();
-                    // Collapsed here rather than left to saveProjectToDirectory, so both
-                    // copies and the in-memory adoption below are the same state.
-                    const stampedState: AppState = collapseVersionHistory({
-                      ...newState,
-                      metadata: {
-                        ...newState.metadata,
-                        exportDate: savedAt,
-                        appName: newState.metadata?.appName ?? 'WAV Builder',
-                        version: newState.metadata?.version ?? '1.0',
-                      },
-                    });
-
-                    const { saveProjectToDirectory } = await import('./utils/exportUtils');
-                    // Local: Work/Projects/{name}/
-                    await saveProjectToDirectory(stampedState, workHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
-
-                    // Backup: SD/WAV_Builder/ → Projects/{name}/
-                    setProgressMsg('Saving sync changes to SD backup...');
-                    const wavBuilderHandle = await sdHandle.getDirectoryHandle('WAV_Builder', { create: true });
-                    await saveProjectToDirectory(stampedState, wavBuilderHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
-
-                    // If this is the active project, update in-memory state without
-                    // triggering the hasUnsavedChanges watcher.
-                    if (currentProjectName === syncProjectTarget) {
-                      markSystemUpdate();
-                      setState(stampedState);
-                      setHasUnsavedChanges(false);
-                    }
-
-                    showToast(`${syncProjectTarget} synced successfully`, 'success');
-                    setSyncProjectTarget(null);
-                    await scanProjects(workHandle, sdHandle);
-                  } catch (e: any) {
-                    console.error(e);
-                    showToast('Sync failed: ' + e.message, 'error');
-                  } finally {
-                    setIsProcessing(false);
-                    setProgressMsg('');
-                  }
-                }}
-              />
-            )}
 
             {syncModalState?.diff && (
               <ExportPreviewModal
