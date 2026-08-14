@@ -137,6 +137,19 @@ export const SampleBrowser = ({
     // Playback State
     const [playingSample, setPlayingSample] = useState<string | null>(null);
     const [playingSampleName, setPlayingSampleName] = useState<string>('');
+    /**
+     * Which source the playing sample came from, captured at play time.
+     *
+     * "Locate" has to be able to jump back to it after the user has wandered off
+     * into other packs. Searching every loaded source for the path would be both
+     * slower and ambiguous — two mounted folders can produce the same relative
+     * path — so we simply remember where we were.
+     */
+    const [playingSampleOrigin, setPlayingSampleOrigin] = useState<{
+        packId: string;
+        projectId: string | null;
+        folderId: string | null;
+    } | null>(null);
     const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
     const [playbackTime, setPlaybackTime] = useState(0);
     const [playbackDuration, setPlaybackDuration] = useState(0);
@@ -149,7 +162,10 @@ export const SampleBrowser = ({
     const [selectedUserLibraryTags, setSelectedUserLibraryTags] = useState<string[]>([]);
     const [importingSample, setImportingSample] = useState<string | null>(null);
     const [addedSamples, setAddedSamples] = useState<Set<string>>(new Set());
+    /** Handed to LocalFolderBrowser, which owns locating inside a mounted folder. */
     const [locateTarget, setLocateTarget] = useState<string | null>(null);
+    /** The row to scroll to and glow in the pack/library/project list. */
+    const [locatedSamplePath, setLocatedSamplePath] = useState<string | null>(null);
 
     // Multi-select state
     const [selectedSamplePaths, setSelectedSamplePaths] = useState<Set<string>>(new Set());
@@ -403,6 +419,18 @@ export const SampleBrowser = ({
     }, []);
 
     // --------------------------------------------------------------------------------
+    // 4a. Locate: scroll the located row into view once the source switch has rendered
+    // --------------------------------------------------------------------------------
+    useEffect(() => {
+        if (!locatedSamplePath) return;
+        const timer = setTimeout(() => {
+            const row = scrollRef.current?.querySelector(`[data-sample-path="${CSS.escape(locatedSamplePath)}"]`);
+            row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [locatedSamplePath]);
+
+    // --------------------------------------------------------------------------------
     // 4b. External Stop Signal
     // --------------------------------------------------------------------------------
     useEffect(() => {
@@ -535,7 +563,42 @@ export const SampleBrowser = ({
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
                 setPlayingSample(sample.path);
                 setPlayingSampleName(sample.name || sample.path);
+                setPlayingSampleOrigin({
+                    packId: selectedPackId,
+                    projectId: selectedProjectId,
+                    folderId: selectedCustomFolderId,
+                });
             }
+        }
+    };
+
+    /**
+     * Jump back to the playing file: reopen the source it came from, scroll it into
+     * view and leave it glowing until the user clicks it. Same behaviour as locate
+     * inside a mounted folder, which LocalFolderBrowser handles via `locateTarget`.
+     */
+    const handleLocatePlaying = () => {
+        if (!playingSample) return;
+
+        if (playingSampleOrigin) {
+            // Setting an unchanged id is a no-op, so an in-place locate won't trip
+            // the source-change effect that clears the current multi-selection.
+            setSelectedPackId(playingSampleOrigin.packId);
+            setSelectedProjectId(playingSampleOrigin.projectId);
+            setSelectedCustomFolderId(playingSampleOrigin.folderId);
+
+            // A tag filter can be hiding the very row we're about to scroll to.
+            if (playingSampleOrigin.packId === 'my-library') {
+                setUserLibraryTagFilter('');
+                setSelectedUserLibraryTags([]);
+            }
+        }
+
+        // A mounted folder renders LocalFolderBrowser instead of the categorised list,
+        // and it owns the scroll-and-glow for its own rows.
+        setLocateTarget(playingSample);
+        if (playingSampleOrigin?.packId !== 'custom-folder') {
+            setLocatedSamplePath(playingSample);
         }
     };
 
@@ -976,12 +1039,19 @@ export const SampleBrowser = ({
                                                                 const isImporting = importingSample === sample.path;
                                                                 const isAdded = allAddedPaths.paths.has(sample.path) || allAddedPaths.addedNames.has(sample.name);
                                                                 const isSelected = selectedSamplePaths.has(sample.path);
+                                                                const isLocated = locatedSamplePath === sample.path;
 
                                                                 return (
-                                                                    <div 
-                                                                        key={idx} 
-                                                                        onClick={(e) => toggleSampleSelection(sample.path, allSamplesInView, e)}
-                                                                        className={`grid grid-cols-[30px_40px_1fr_auto_100px] gap-3 items-center px-4 py-2 hover:bg-gray-800/80 transition-all group cursor-pointer border rounded-md ${isSelected ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
+                                                                    <div
+                                                                        key={idx}
+                                                                        data-sample-path={sample.path}
+                                                                        onClick={(e) => {
+                                                                            // Acknowledging the file is what dismisses the glow.
+                                                                            if (isLocated) setLocatedSamplePath(null);
+                                                                            toggleSampleSelection(sample.path, allSamplesInView, e);
+                                                                        }}
+                                                                        className={`grid grid-cols-[30px_40px_1fr_auto_100px] gap-3 items-center px-4 py-2 hover:bg-gray-800/80 transition-all group cursor-pointer border rounded-md ${isLocated ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : isSelected ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
+                                                                        style={isLocated ? { animation: 'locatePulse 2s ease-in-out infinite' } : undefined}
                                                                     >
                                                                         <div className="flex items-center justify-center">
                                                                             <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-synthux-orange border-synthux-orange shadow-[0_0_8px_rgba(249,115,22,0.3)]' : 'bg-black/40 border-gray-700 group-hover:border-gray-500'}`}>
@@ -1092,9 +1162,7 @@ export const SampleBrowser = ({
                             </span>
                             {playingSample && (
                                 <button
-                                    onClick={() => {
-                                        if (playingSample) setLocateTarget(playingSample);
-                                    }}
+                                    onClick={handleLocatePlaying}
                                     className="shrink-0 p-1 text-gray-500 hover:text-synthux-orange hover:bg-white/10 rounded transition-colors"
                                     title="Locate playing file"
                                 >
