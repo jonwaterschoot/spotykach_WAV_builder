@@ -153,8 +153,9 @@ moment to introduce one.
 
 **Outcome.** `#/browse` is its own mode. New `modes/BrowseMode.tsx`, `utils/detachedState.ts`,
 `utils/newsFeed.ts`, `components/NewsArticle.tsx`, `shell/HubNews.tsx`. `tsc -b && vite build` clean,
-eslint clean on every new/changed file. Entry bundle unchanged at 10.3 kB; `BrowseMode` is a 10.7 kB
-lazy chunk, `HubNews` 3.3 kB.
+eslint clean on every new/changed file, and the whole flow walked by hand in the browser. Entry bundle
+unchanged at 10.3 kB; `BrowseMode` is a 13.8 kB lazy chunk, `HubNews` 3.3 kB.
+Commits `6c5461b`, `3911788`, `9e6a677`.
 
 - **`SampleBrowser` took a `mode: 'standalone' | 'project'` prop**, and the old
   `mode: 'global' | 'slot-selection'` was renamed `selectionMode` — two orthogonal things had one
@@ -202,9 +203,21 @@ which reads against locked decision 3 — but it fires only on an explicit click
 "permission follows intent" means, and Appendix B lists `LocalFolderBrowser` as a Tier-1 asset. The
 "Done when" still holds: packs, preview, pool and both downloads need no prompt at all.
 
-**One Studio-side fix rode along.** `handleBulkActionWithTarget` re-found the pack in `SAMPLE_PACKS`,
-so bulk actions only ever worked for built-in packs and logged *"coming soon"* for the library and
-project sources. It now reads the already-resolved `selectedPack`, so those bulk-import too.
+**Two Studio-side fixes rode along**, both bugs that predate v4:
+
+- `handleBulkActionWithTarget` re-found the pack in `SAMPLE_PACKS`, so bulk actions only ever worked
+  for built-in packs and logged *"coming soon"* for the library and project sources. It now reads the
+  already-resolved `selectedPack`, so those bulk-import too.
+- **The preview bar's locate button did nothing outside a mounted folder** — it only set
+  `locateFilePath`, a `LocalFolderBrowser` prop. The source a sample was played from is now captured
+  at play time (`playingSampleOrigin`) rather than searched for by path afterwards, which would be
+  ambiguous across two folders with the same relative path. Locate reopens that source, scrolls the
+  row to centre and leaves it on the shared `locatePulse` glow until clicked, matching
+  `LocalFolderBrowser` and `LibraryManager`.
+
+**Still blocked for deploy.** Locked decision 9 is untouched: Browse writes no storage, but Studio
+shares the origin, so `#/browse` can't go up on Pages until the DB names and key prefix are
+namespaced. Appendix F.3.
 
 **Read first:** Appendix B (Tier 1 row).
 
