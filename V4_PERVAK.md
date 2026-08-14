@@ -610,7 +610,8 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 ## Open questions
 
 Questions 1–5 are **answered and folded into the phase briefs** — a phase chat reads its own brief and
-doesn't need this section. Kept here for the reasoning. Question 6 is open.
+doesn't need this section. Kept here for the reasoning. **Questions 6 and 7 are open**, and neither
+blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware side first.
 
 1. **Landing default.** Hub for everyone, or remember the last mode and skip it on return?
    *Recommendation: hub on first visit, remembered mode after, hub always one click away.*
@@ -695,6 +696,43 @@ doesn't need this section. Kept here for the reasoning. Question 6 is open.
    or aim for the public manifest; and does authoring justify its own surface or ride on Studio's
    existing export?
    *Not blocking any current phase.* Decide before committing to a Phase 7.
+   → **Answer:**
+
+7. **Multiple projects on one card — `SK1/`, `SK2/`, …?** *(new, from the community thread, 2026-08-14)*
+   Today a card holds exactly one set of 6×6 tapes, so swapping projects means rebuilding the card.
+   The proposal: let the device scan for numbered SK folders at boot and offer a picker — six slots
+   is probably already enough for "swap between sets", two rows of six if it's cheap.
+
+   **This is a firmware question first.** Nothing in the app can make the device read `SK2/`. The ask
+   to @Vlad is feasibility: does a boot-time folder scan and a selection UI fit, and what's the
+   ceiling? Practical usefulness is worth asking the wider group in the same breath — it may turn out
+   people simply carry a second card.
+
+   **What WAV.builder would own if the answer is yes:**
+   - **Numbering and naming** — build a project into `SK<n>/` rather than `SK/`, renumber to close
+     gaps, and keep a per-folder title plus a short summary (the notes field is already there and is
+     the obvious source).
+   - **A per-project `config.txt`**, for a project that wants its own MIDI setup.
+   - **Reading a card back** — `scanSKStructure` currently finds one structure; multi-project cards
+     mean listing what's on the card before importing.
+
+   **The wrinkle worth deciding early, and it lands on Phase 5's surface:** a per-project config can't
+   be the only config. Boot options — including "is the project picker on at all" — have to live
+   somewhere the device reads *before* it knows which project you want. So the model is a **root
+   `config.txt` for the device, plus an optional per-project one that overrides it**, which is exactly
+   question 4's "device-scoped by default, per-project still allowed" pushed one level further. Config
+   mode would then edit two things and needs to say clearly which one it is writing.
+
+   **What already helps:** Phase 5 made unknown key/value pairs survive a round-trip, so a config file
+   carrying keys this build doesn't know — a boot-loader toggle, say — isn't stripped by editing it.
+   Against that, `'SK'` is a **hardcoded string in 13 places across 6 files** (`exportUtils`,
+   `importUtils`, `configFile`, `App.tsx`, `SetupWizard`), so "which SK folder" would first have to
+   become a parameter threaded through the export and scan paths. Worth doing as one mechanical change
+   *before* any feature work, the way Phase 4 did `backupHandle → sdHandle`.
+
+   *Not blocking any current phase.* **Next step is the conversation, not code** — and if it stalls,
+   forking the Spotykach firmware repo to see what a boot-time scan would actually take is a
+   reasonable way to answer the feasibility half ourselves.
    → **Answer:**
 
 
