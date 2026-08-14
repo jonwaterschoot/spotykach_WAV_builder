@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Settings, RefreshCw, AlertTriangle, X, Save, Trash2, Shield } from 'lucide-react';
 import type { VisualFilters } from '../types';
 import { getDurabilityPrefs, setDurabilityPref, type DurabilityPrefs } from '../utils/durabilityPrefs';
+import { appStorage } from '../utils/storageNamespace';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -57,7 +58,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const [customPresets, setCustomPresets] = useState<Record<string, Partial<VisualFilters>>>(() => {
         try {
-            const saved = localStorage.getItem('spotykach_custom_presets');
+            const saved = appStorage.getItem('spotykach_custom_presets');
             return saved ? JSON.parse(saved) : { '1': {}, '2': {}, '3': {} };
         } catch (e) { return { '1': {}, '2': {}, '3': {} }; }
     });
@@ -365,7 +366,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const toSave = { ...visualFilters };
         const updated = { ...customPresets, [slot]: toSave };
         setCustomPresets(updated);
-        localStorage.setItem('spotykach_custom_presets', JSON.stringify(updated));
+        appStorage.setItem('spotykach_custom_presets', JSON.stringify(updated));
     };
 
     const resetValue = (key: keyof VisualFilters) => {

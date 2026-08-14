@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
 import { saveDirectoryHandle } from './storageUtils';
+import { appStorage } from './storageNamespace';
 
 /** Matches App.tsx's rule, so a project made out here loads in there. */
 export const sanitizeProjectName = (name: string): string =>
@@ -58,7 +59,7 @@ export const createProjectFromState = async (
     await saveDirectoryHandle('work', workHandle).catch(e => {
         console.warn('Could not store the work folder handle', e);
     });
-    localStorage.setItem('spotykach_current_project', projectName);
+    appStorage.setItem('spotykach_current_project', projectName);
 
     return { projectName, workHandle };
 };

@@ -13,42 +13,53 @@
 // see `safeWriteBlob`, which writes atomically — rather than by copying 36 WAVs
 // twice more on every build.
 
+import { appStorage } from './storageNamespace';
+
 export interface DurabilityPrefs {
     /** Snapshot the card's SK folder into the project folder after a build. */
     skSnapshots: boolean;
     /** Keep a copy of the project source (project.json + Assets) on the SD card. */
     mirrorProjectsToSD: boolean;
+    /**
+     * Keep a crash-recovery snapshot of the open project in the browser's own
+     * storage. Default ON — it is the only thing standing between a closed tab and
+     * lost work, and unlike the two above it copies nothing onto anyone's disk.
+     * Explicit save is still what writes the project folder.
+     */
+    autoSave: boolean;
 }
 
 const KEYS: Record<keyof DurabilityPrefs, string> = {
     skSnapshots: 'spotykach_sk_snapshots',
     mirrorProjectsToSD: 'spotykach_sd_project_mirror',
+    autoSave: 'spotykach_autosave',
 };
 
 export const DURABILITY_DEFAULTS: DurabilityPrefs = {
     skSnapshots: false,
     mirrorProjectsToSD: false,
+    autoSave: true,
 };
 
 const readFlag = (key: keyof DurabilityPrefs): boolean => {
-    try {
-        const raw = localStorage.getItem(KEYS[key]);
-        // Absent means never chosen, which means the default — not `false` by accident.
-        return raw === null ? DURABILITY_DEFAULTS[key] : raw === 'true';
-    } catch {
-        return DURABILITY_DEFAULTS[key];
-    }
+    const raw = appStorage.getItem(KEYS[key]);
+    // Absent means never chosen, which means the default — not `false` by accident.
+    return raw === null ? DURABILITY_DEFAULTS[key] : raw === 'true';
 };
 
 export const getDurabilityPrefs = (): DurabilityPrefs => ({
     skSnapshots: readFlag('skSnapshots'),
     mirrorProjectsToSD: readFlag('mirrorProjectsToSD'),
+    autoSave: readFlag('autoSave'),
 });
 
+/**
+ * Read one preference at the moment it matters, rather than through a snapshot
+ * taken at mount. The autosave loop needs this: flipping the switch in Settings
+ * has to stop the next write, not the next reload.
+ */
+export const getDurabilityPref = (key: keyof DurabilityPrefs): boolean => readFlag(key);
+
 export const setDurabilityPref = (key: keyof DurabilityPrefs, value: boolean): void => {
-    try {
-        localStorage.setItem(KEYS[key], String(value));
-    } catch (e) {
-        console.warn(`[Durability] Failed to persist ${key}`, e);
-    }
+    appStorage.setItem(KEYS[key], String(value));
 };

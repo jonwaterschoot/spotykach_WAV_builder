@@ -1,7 +1,8 @@
 import { openDB, deleteDB } from 'idb';
 import type { AppState } from '../types';
+import { dbName } from './storageNamespace';
 
-const DB_NAME = 'spotykach-wav-builder';
+const DB_NAME = dbName('spotykach-wav-builder');
 const DB_VERSION = 3;
 const STORE_NAME = 'app-state';
 const USER_LIBRARY_STORE = 'user-library';
@@ -39,6 +40,22 @@ export const saveStateToDB = async (state: AppState) => {
         await db.put(STORE_NAME, state, 'current');
     } catch (e) {
         console.error('Failed to save state to DB', e);
+    }
+};
+
+/**
+ * Drop the auto-save snapshot.
+ *
+ * Called when auto-save is switched off: leaving the last snapshot behind would
+ * mean a later session silently restoring a state the user stopped consenting to
+ * have saved. The projects on disk are untouched — this is only the IDB slot.
+ */
+export const clearStateFromDB = async () => {
+    try {
+        const db = await initDB();
+        await db.delete(STORE_NAME, 'current');
+    } catch (e) {
+        console.error('Failed to clear state slot', e);
     }
 };
 

@@ -3,6 +3,7 @@ import { Save, Play, Trash2, FolderOpen, Plus, Check, ExternalLink, Info, Scisso
 import { configWithoutUnknown } from '../utils/configFile';
 import { DEFAULT_PROJECT_CONFIG } from '../types';
 import type { ProjectConfig, ProjectSummary } from '../types';
+import { appStorage } from '../utils/storageNamespace';
 
 /**
  * The `config.txt` fields themselves, plus the saved presets that go with them.
@@ -71,7 +72,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
     // Load presets from localStorage
     useEffect(() => {
-        const saved = localStorage.getItem('spotykach_config_presets');
+        const saved = appStorage.getItem('spotykach_config_presets');
         if (saved) {
             try {
                 setPresets(JSON.parse(saved));
@@ -92,7 +93,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
     const savePresets = (newPresets: Preset[]) => {
         setPresets(newPresets);
-        localStorage.setItem('spotykach_config_presets', JSON.stringify(newPresets));
+        appStorage.setItem('spotykach_config_presets', JSON.stringify(newPresets));
     };
 
     const handleAddPreset = () => {

@@ -1,5 +1,8 @@
+import { dbName } from './storageNamespace';
 
-const DB_NAME = 'SpotykachDB';
+// Namespaced per build — a preview deploy must never reach the real work folder
+// and SD card handles stored here. Locked decision 9, Appendix F.3.
+const DB_NAME = dbName('SpotykachDB');
 const STORE_NAME = 'handles';
 const DB_VERSION = 1;
 

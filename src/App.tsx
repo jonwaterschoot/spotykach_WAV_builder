@@ -61,12 +61,13 @@ import { useAudioConverter } from './utils/useAudioConverter';
 // Confirm Action Helper
 // dynamic persistence imports
 import { saveDirectoryHandle } from './utils/storageUtils';
-import { getDurabilityPrefs } from './utils/durabilityPrefs';
+import { getDurabilityPrefs, getDurabilityPref } from './utils/durabilityPrefs';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
 import { collapseVersionHistory } from './utils/versionHistory';
 import { useProjectSession } from './session/ProjectSession';
 import { useEscapeLayer } from './shell/escapeStack';
+import { appStorage } from './utils/storageNamespace';
 
 const sanitizeFilename = (name: string) => {
   return name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.\-_]/g, '');
@@ -516,7 +517,7 @@ function App({ onExitToHub }: AppProps) {
   // Visual Filters State
   const [visualFilters, setVisualFilters] = useState<import('./types').VisualFilters>(() => {
     try {
-      const saved = localStorage.getItem('spotykach_visual_filters');
+      const saved = appStorage.getItem('spotykach_visual_filters');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn('Failed to load visual filters', e);
@@ -536,7 +537,7 @@ function App({ onExitToHub }: AppProps) {
 
   // Sync Visual Filters to CSS Variables
   useEffect(() => {
-    localStorage.setItem('spotykach_visual_filters', JSON.stringify(visualFilters));
+    appStorage.setItem('spotykach_visual_filters', JSON.stringify(visualFilters));
     const root = document.documentElement;
     root.style.setProperty('--master-invert', String(visualFilters.invert));
     root.style.setProperty('--master-grayscale', String(visualFilters.grayscale));
@@ -683,7 +684,7 @@ function App({ onExitToHub }: AppProps) {
         try {
           const { clearState } = await import('./utils/persistence');
           await clearState();
-          localStorage.removeItem('spotykach_state');
+          appStorage.removeItem('spotykach_state');
           setState(getInitialState());
           showToast("Application Reset", "success");
           window.location.reload();
@@ -704,7 +705,13 @@ function App({ onExitToHub }: AppProps) {
 
     // Only warn if something changed AND the project isn't empty (we don't care about saving empty projects)
     if ((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty) {
-      const confirmed = window.confirm("You have unsaved changes. These will be lost. Continue anyway?");
+      // With auto-save on the work is not actually lost — it is in the browser's
+      // recovery slot, just not in the project folder. Saying "these will be lost"
+      // in that case would be a lie the app can be caught in.
+      const message = getDurabilityPref('autoSave')
+        ? "You have changes that haven't been saved to the project folder. They're kept in this browser and will come back, but the folder on disk won't have them. Continue anyway?"
+        : "You have unsaved changes. These will be lost. Continue anyway?";
+      const confirmed = window.confirm(message);
       if (confirmed) action();
     } else {
       action();
@@ -1304,7 +1311,7 @@ function App({ onExitToHub }: AppProps) {
         } else {
           // Fallback for old sessions that may have used localStorage only
           try {
-            const raw = localStorage.getItem('spotykach_user_library');
+            const raw = appStorage.getItem('spotykach_user_library');
             if (raw) {
               const parsed = JSON.parse(raw);
               if (parsed && parsed.files && parsed.metadata) {
@@ -1368,7 +1375,7 @@ function App({ onExitToHub }: AppProps) {
       // 1. Always save to DB
       const { saveUserLibraryToDB } = await import('./utils/persistence');
       await saveUserLibraryToDB(userLibrary);
-      localStorage.setItem('spotykach_user_library', JSON.stringify(userLibrary));
+      appStorage.setItem('spotykach_user_library', JSON.stringify(userLibrary));
 
       // 2. Sync to local folder if connected
       if (workHandle) {
@@ -3171,7 +3178,7 @@ function App({ onExitToHub }: AppProps) {
     } else {
       // Empty slot -> Check preference 
       setTargetSlotForUpload(id);
-      const pref = localStorage.getItem('spotykach_emptySlotPreferredBrowser');
+      const pref = appStorage.getItem('spotykach_emptySlotPreferredBrowser');
       if (pref === 'os') {
         singleFileInputRef.current?.click();
       } else if (pref === 'sample-browser') {
@@ -3806,7 +3813,7 @@ function App({ onExitToHub }: AppProps) {
       // 3b. Open Upload
       setTargetSlotForUpload(slotId);
 
-      const pref = localStorage.getItem('spotykach_emptySlotPreferredBrowser');
+      const pref = appStorage.getItem('spotykach_emptySlotPreferredBrowser');
       if (pref === 'os') {
         singleFileInputRef.current?.click();
       } else if (pref === 'sample-browser') {
@@ -4116,7 +4123,7 @@ function App({ onExitToHub }: AppProps) {
   };
 
   const handleResetEmptySlotBrowserPreference = () => {
-    localStorage.removeItem('spotykach_emptySlotPreferredBrowser');
+    appStorage.removeItem('spotykach_emptySlotPreferredBrowser');
     showToast('Empty slot browser preference reset', 'success');
   };
   const handleOpenSyncModal = async (mode: 'push' | 'import' = 'push') => {
@@ -4213,7 +4220,9 @@ function App({ onExitToHub }: AppProps) {
               <div className="flex items-center gap-3 min-w-0 shrink-0">
                 {onExitToHub && (
                   <button
-                    onClick={onExitToHub}
+                    // Leaving Studio unmounts it, so this is a real exit — it has to
+                    // ask the same question every other project-losing action asks.
+                    onClick={() => checkUnsavedChanges(onExitToHub)}
                     title="Back to the hub"
                     className="flex items-center px-1.5 py-1.5 rounded-md text-gray-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"
                   >
@@ -4745,7 +4754,7 @@ function App({ onExitToHub }: AppProps) {
               onChoice={(choice, remember) => {
                 setShowBrowserChoiceModal(false);
                 if (remember) {
-                  localStorage.setItem('spotykach_emptySlotPreferredBrowser', choice);
+                  appStorage.setItem('spotykach_emptySlotPreferredBrowser', choice);
                 }
                 if (choice === 'os') {
                   singleFileInputRef.current?.click();

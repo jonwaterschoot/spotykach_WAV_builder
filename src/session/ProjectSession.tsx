@@ -4,6 +4,12 @@ import type { AppState } from '../types';
 import { getInitialState } from '../utils/initialState';
 import { getDirectoryHandle } from '../utils/storageUtils';
 import { logger } from '../utils/logger';
+import { appStorage } from '../utils/storageNamespace';
+import { getDurabilityPref } from '../utils/durabilityPrefs';
+
+/** Long enough that dragging a slider doesn't write 40 snapshots, short enough
+ *  that "the tab crashed" costs seconds of work rather than minutes. */
+const AUTOSAVE_DEBOUNCE_MS = 3000;
 
 /** The two handles the session can hold, as they come back from `SpotykachDB`. */
 export interface RestorableHandles {
@@ -73,14 +79,35 @@ export function useProjectSession(): ProjectSession {
   const [sdHandle, setSdHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [restorableHandles, setRestorableHandles] = useState<RestorableHandles | null>(null);
   const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(
-    () => localStorage.getItem('spotykach_current_project') || undefined
+    () => appStorage.getItem('spotykach_current_project') || undefined
   );
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isEditorDirty, setIsEditorDirty] = useState(false);
+  /** True once the mount-time IDB load has resolved — see the auto-save effect. */
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const projectRootHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   const isFirstRender = useRef(true);
   const isSystemUpdate = useRef(false);
+  const isAutoSaving = useRef(false);
+  const pendingSnapshot = useRef<AppState | null>(null);
+
+  /** One auto-save, followed by whatever arrived while it was running. */
+  const runAutoSave = useCallback(async (snapshot: AppState) => {
+    isAutoSaving.current = true;
+    try {
+      const { saveStateToDB } = await import('../utils/persistence');
+      await saveStateToDB(snapshot);
+    } finally {
+      isAutoSaving.current = false;
+    }
+    const queued = pendingSnapshot.current;
+    if (queued) {
+      pendingSnapshot.current = null;
+      // Still wanted? The switch may have been flipped mid-write.
+      if (getDurabilityPref('autoSave')) void runAutoSave(queued);
+    }
+  }, []);
 
   const markSystemUpdate = useCallback(() => {
     isSystemUpdate.current = true;
@@ -95,9 +122,9 @@ export function useProjectSession(): ProjectSession {
   // and are read back off disk.
   useEffect(() => {
     if (currentProjectName) {
-      localStorage.setItem('spotykach_current_project', currentProjectName);
+      appStorage.setItem('spotykach_current_project', currentProjectName);
     } else {
-      localStorage.removeItem('spotykach_current_project');
+      appStorage.removeItem('spotykach_current_project');
     }
   }, [currentProjectName]);
 
@@ -138,21 +165,62 @@ export function useProjectSession(): ProjectSession {
         if (cancelled) return;
         if (saved) {
           applySystemUpdate(saved);
+          setIsHydrated(true);
           return;
         }
-        const savedLS = localStorage.getItem('spotykach_state');
-        if (!savedLS) return;
+        const savedLS = appStorage.getItem('spotykach_state');
+        if (!savedLS) {
+          setIsHydrated(true);
+          return;
+        }
         try {
           const parsed = JSON.parse(savedLS);
           if (parsed.files && parsed.tapes) applySystemUpdate(parsed);
         } catch (e) {
           console.error(e);
         }
-      });
+        setIsHydrated(true);
+      }).catch(() => { if (!cancelled) setIsHydrated(true); });
     });
 
     return () => { cancelled = true; };
   }, [applySystemUpdate]);
+
+  /**
+   * Auto-save — Phase 7, step 2.
+   *
+   * The `app-state` slot was read on mount and never written by anything, so until
+   * now closing the tab lost whatever had not been saved to disk. This writes it
+   * back, debounced, and deliberately writes *only* the IDB slot: a real save to the
+   * project folder runs the two-version collapse and rewrites assets, which is not
+   * something to do on a timer behind the user's back. Explicit save still owns the
+   * disk; this owns "the tab crashed".
+   *
+   * Gated on `isHydrated` so the initial empty state can never overwrite the
+   * snapshot it is about to be replaced by, and the preference is read per run so
+   * turning it off in Settings stops the very next write.
+   *
+   * **`AppState` carries the audio**, so a snapshot is not small — up to 36 files
+   * × 2 versions once the two-version rule has run. The debounce alone would still
+   * let a slow write be overtaken by the next one, so writes are serialised: while
+   * one is in flight the newest state waits in `pendingSnapshot` and goes out when
+   * the current write lands. Under continuous editing that self-limits to one write
+   * per write-duration instead of building a queue.
+   */
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!getDurabilityPref('autoSave')) return;
+
+    const timer = setTimeout(() => {
+      if (isAutoSaving.current) {
+        pendingSnapshot.current = state;
+        return;
+      }
+      void runAutoSave(state);
+    }, AUTOSAVE_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [state, isHydrated, runAutoSave]);
 
   // Handles persist across sessions but their permission does not, so they are only
   // offered here — `handleRestoreSession` in the shell does the asking.
