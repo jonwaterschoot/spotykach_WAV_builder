@@ -17,7 +17,7 @@
 | Phase | | What | Deliverable |
 |---|---|---|---|
 | 0 | ✅ | Cleanup | 1002 lines of dead code removed |
-| 1 | ☐ | Mode scaffold | Four doors on a landing screen |
+| 1 | ✅ | Mode scaffold | Four doors on a landing screen |
 | 2 | ☐ | Browse mode | Linkable sample library, zero setup |
 | 3 | ☐ | Preset → SD | Cold start → curated project on the card |
 | 4 | ☐ | Backup & safety rework | SD card is a build target again |
@@ -84,7 +84,39 @@ Why each was safe:
 
 ---
 
-### Phase 1 — Mode scaffold ☐
+### Phase 1 — Mode scaffold ✅
+
+**Outcome.** New `src/shell/` — `useAppMode.ts`, `HubScreen.tsx`, `ModeRouter.tsx`, `AppShell.tsx`,
+`escapeStack.ts`. `main.tsx` mounts `AppShell` instead of `App`. `tsc -b && vite build` clean, eslint
+clean on the new files.
+
+- **Routing.** `useAppMode` keeps `AppMode` in sync with `window.location.hash`; `#/browse` etc. are
+  linkable and back/forward move between modes. Unrecognised hashes render the hub and get rewritten
+  to `#/` with `replaceState`, so the URL never lies about what's on screen.
+- **Studio is now lazy.** `ModeRouter` loads `App` through `React.lazy`, so the hub no longer pays for
+  it — Vite split a 355 kB `App` chunk out of the entry bundle (entry is now 9.8 kB).
+- **The wizard gate moved by construction, not by editing it.** `App` simply isn't mounted until a
+  studio-ish mode is entered, so `isWelcomeActive` fires on entering Studio. The gate logic at
+  `App.tsx` is untouched.
+- **Escape stack introduced** (`shell/escapeStack.ts`): layers register with `useEscapeLayer`, the
+  newest gets Escape first, `false` falls through to the layer below. The studio's 15-flag `if` chain
+  became one layer instead of its own `window` listener — same order, same behaviour, no longer the
+  only claimant on the key. New surfaces register their own layer rather than extending the chain.
+- **News auto-open** is now gated on a module-level `hasCheckedNewsThisSession`, so it stays
+  once-per-page-load now that Studio can mount more than once.
+- **Two small additions to `App.tsx` beyond the listed touches:** an optional `onExitToHub` prop, and
+  the button that calls it — in the header next to the logo, and pinned above the wizard (`z-[110]`),
+  since the wizard covers everything and browser-back would otherwise be the only way out.
+
+Deliberately deferred:
+
+- **Leaving Studio unmounts it.** Re-entering re-boots from IndexedDB and offers the handle restore,
+  so nothing is lost, but permission has to be re-granted per mount. Keeping Studio alive while
+  hidden would violate locked decision 5; the real fix is the `ProjectSession` extraction in Phase 6.
+- **Landing default** is always the hub (open question #1 unanswered). Remembering the last mode is a
+  small change inside `useAppMode` when you decide.
+- `browse` / `presets` / `config` / `editor` fall through to Studio in `ModeRouter` — one line each
+  for the phase that lands them.
 
 **Read first:** Appendix A (blockers 1, 4, 5, 7) and Appendix C (target architecture).
 
@@ -252,6 +284,7 @@ Answer inline; a phase chat will read these.
    *Recommendation: hub on first visit, remembered mode after, hub always one click away.*
    → **Answer:**
 
+
 2. **Preset → SD without hydrating.** For presets with `sdExportUrl`, the prebuilt ZIP is far cheaper
    than hydrating 36 blobs and re-writing them. Prefer the ZIP when available, fall back to
    hydrate+write?
@@ -397,7 +430,7 @@ This is the single change that makes Tiers 1–2 possible: **permission follows 
 
 ```
 src/
-  shell/        AppShell.tsx, ModeRouter.tsx, useAppMode.ts, HubScreen.tsx
+  shell/        AppShell.tsx, ModeRouter.tsx, useAppMode.ts, HubScreen.tsx, escapeStack.ts
   modes/        BrowseMode.tsx, PresetsMode.tsx, ConfigMode.tsx, EditorMode.tsx, StudioMode.tsx
   session/      ProjectSession.tsx   (the extracted App.tsx state + handlers)
   components/   (unchanged — now consumed by modes)

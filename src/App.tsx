@@ -35,7 +35,7 @@ const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal'
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -62,6 +62,7 @@ import { useAudioConverter } from './utils/useAudioConverter';
 // dynamic persistence imports
 import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
+import { useEscapeLayer } from './shell/escapeStack';
 
 const sanitizeFilename = (name: string) => {
   return name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.\-_]/g, '');
@@ -80,7 +81,16 @@ const getNotePreview = (notes?: string) => {
     .trim();
 };
 
-function App() {
+// The news modal auto-opens once per page load. Studio unmounts when the user
+// leaves for another mode, so without this it would re-open on every entry.
+let hasCheckedNewsThisSession = false;
+
+interface AppProps {
+  /** Provided by the shell; absent when Studio is mounted on its own. */
+  onExitToHub?: () => void;
+}
+
+function App({ onExitToHub }: AppProps) {
   console.log("App Component Rendered");
   // ==========================================
   // STATE DEFINITIONS
@@ -587,102 +597,93 @@ function App() {
     logger.setWorkHandle(workHandle);
   }, [workHandle]);
 
-  // Global Escape Key Listener for UI Panels
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Priority order for closing (inner/layered modals first)
-        if (confirmAction) {
-          setConfirmAction(null);
-          return;
-        }
-        if (projectNameModal) {
-          setProjectNameModal(null);
-          return;
-        }
-        if (syncModalState) {
-          setSyncModalState(null);
-          return;
-        }
-        if (bulkConflictState) {
-          setBulkConflictState(null);
-          return;
-        }
-        if (importAnalysis) {
-          setImportAnalysis(null);
-          return;
-        }
-        if (missingFilesWarning) {
-          setMissingFilesWarning(null);
-          return;
-        }
+  // Escape closes the topmost studio panel. This is one layer of the shell's escape
+  // stack (see shell/escapeStack.ts) — returning false lets anything below it try.
+  // Don't grow this chain: new surfaces register their own layer instead.
+  useEscapeLayer(true, () => {
+    // Priority order for closing (inner/layered modals first)
+    if (confirmAction) {
+      setConfirmAction(null);
+      return true;
+    }
+    if (projectNameModal) {
+      setProjectNameModal(null);
+      return true;
+    }
+    if (syncModalState) {
+      setSyncModalState(null);
+      return true;
+    }
+    if (bulkConflictState) {
+      setBulkConflictState(null);
+      return true;
+    }
+    if (importAnalysis) {
+      setImportAnalysis(null);
+      return true;
+    }
+    if (missingFilesWarning) {
+      setMissingFilesWarning(null);
+      return true;
+    }
 
-        // Major panels
-        if (showSampleBrowser) {
-          setShowSampleBrowser(false);
-          setTargetSlotForUpload(null);
-          return;
-        }
-        if (showLibraryManager) {
-          setShowLibraryManager(false);
-          return;
-        }
-        if (showProjectNotes) {
-          setShowProjectNotes(false);
-          setIsProjectNotesMinimized(false);
-          return;
-        }
-        if (showNews) {
-          setShowNews(false);
-          return;
-        }
-        if (showAboutHelp) {
-          setShowAboutHelp(false);
-          return;
-        }
-        if (showExport) {
-          setShowExport(false);
-          return;
-        }
-        if (isLogModalOpen) {
-          setIsLogModalOpen(false);
-          return;
-        }
-        if (showPresetsPanel) {
-          setShowPresetsPanel(false);
-          return;
-        }
-        if (showConfigModal) {
-          setShowConfigModal(false);
-          return;
-        }
-        if (showCleanupModal) {
-          setShowCleanupModal(false);
-          return;
-        }
-        if (showSettings) {
-          setShowSettings(false);
-          return;
-        }
-        if (showProjectManager) {
-          setShowProjectManager(false);
-          return;
-        }
-        if (showLibrarySyncModal) {
-          setShowLibrarySyncModal(false);
-          return;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    confirmAction, projectNameModal, syncModalState, bulkConflictState, importAnalysis,
-    missingFilesWarning, showSampleBrowser, showLibraryManager, showProjectNotes,
-    showAboutHelp, showExport, isLogModalOpen, showPresetsPanel,
-    showConfigModal, showCleanupModal, showSettings, showProjectManager, showLibrarySyncModal
-  ]);
+    // Major panels
+    if (showSampleBrowser) {
+      setShowSampleBrowser(false);
+      setTargetSlotForUpload(null);
+      return true;
+    }
+    if (showLibraryManager) {
+      setShowLibraryManager(false);
+      return true;
+    }
+    if (showProjectNotes) {
+      setShowProjectNotes(false);
+      setIsProjectNotesMinimized(false);
+      return true;
+    }
+    if (showNews) {
+      setShowNews(false);
+      return true;
+    }
+    if (showAboutHelp) {
+      setShowAboutHelp(false);
+      return true;
+    }
+    if (showExport) {
+      setShowExport(false);
+      return true;
+    }
+    if (isLogModalOpen) {
+      setIsLogModalOpen(false);
+      return true;
+    }
+    if (showPresetsPanel) {
+      setShowPresetsPanel(false);
+      return true;
+    }
+    if (showConfigModal) {
+      setShowConfigModal(false);
+      return true;
+    }
+    if (showCleanupModal) {
+      setShowCleanupModal(false);
+      return true;
+    }
+    if (showSettings) {
+      setShowSettings(false);
+      return true;
+    }
+    if (showProjectManager) {
+      setShowProjectManager(false);
+      return true;
+    }
+    if (showLibrarySyncModal) {
+      setShowLibrarySyncModal(false);
+      return true;
+    }
+    return false;
+  });
 
   const handleReset = () => {
     setConfirmAction({
@@ -712,16 +713,16 @@ function App() {
   };
 
   useEffect(() => {
-    // Only check for news after the user has left the setup wizard
+    // Only check for news after the user has left the setup wizard, and only once
+    // per page load — entering Studio a second time shouldn't reopen it.
     if (isWelcomeActive) return;
+    if (hasCheckedNewsThisSession) return;
+    hasCheckedNewsThisSession = true;
 
-    const checkNewsPreference = () => {
-      const showOnStart = localStorage.getItem('spotykach_show_news_on_start') !== 'false';
-      if (showOnStart) {
-        setShowNews(true);
-      }
-    };
-    checkNewsPreference();
+    const showOnStart = localStorage.getItem('spotykach_show_news_on_start') !== 'false';
+    if (showOnStart) {
+      setShowNews(true);
+    }
   }, [isWelcomeActive]);
 
   const checkUnsavedChanges = (action: () => void) => {
@@ -4188,6 +4189,17 @@ function App() {
         />
       )}
 
+      {/* The wizard covers everything, so the way back to the hub has to sit above it. */}
+      {isWelcomeActive && !workHandle && onExitToHub && (
+        <button
+          onClick={onExitToHub}
+          className="fixed top-4 left-4 z-[110] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-black/50 backdrop-blur text-[11px] font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:bg-white/10 transition-all"
+        >
+          <ChevronLeft size={14} strokeWidth={2.5} />
+          Hub
+        </button>
+      )}
+
       {(!isWelcomeActive || workHandle) && (
         <div className="flex h-screen bg-synthux-main text-white font-sans overflow-hidden noise-texture">
 
@@ -4217,6 +4229,15 @@ function App() {
 
               {/* LEFT — Logo + Context (Now just Logo + Name) */}
               <div className="flex items-center gap-3 min-w-0 shrink-0">
+                {onExitToHub && (
+                  <button
+                    onClick={onExitToHub}
+                    title="Back to the hub"
+                    className="flex items-center px-1.5 py-1.5 rounded-md text-gray-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"
+                  >
+                    <ChevronLeft size={16} strokeWidth={2.5} />
+                  </button>
+                )}
                 <img src={logoImg} alt="Spotykach Logo" className="h-8 w-auto object-contain shrink-0" />
                 <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent hidden sm:block font-header leading-none">
                   Spotykach WAV.builder
