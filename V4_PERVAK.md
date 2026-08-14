@@ -18,7 +18,7 @@
 |---|---|---|---|
 | 0 | ✅ | Cleanup | 1002 lines of dead code removed |
 | 1 | ✅ | Mode scaffold | Four doors on a landing screen |
-| 2 | ☐ | Browse mode | Linkable sample library, zero setup |
+| 2 | ☐ | Browse mode | Linkable sample library + selection pool, zero setup |
 | 3 | ☐ | Preset → SD | Cold start → curated project on the card |
 | 4 | ☐ | Backup & safety rework | SD card is a build target again |
 | 5 | ☐ | Config mode | MIDI setup without the studio |
@@ -153,26 +153,48 @@ moment to introduce one.
 
 **Read first:** Appendix B (Tier 1 row).
 
-**Goal.** `SampleBrowser` full-screen under `#/browse` with no project.
+**Goal.** `SampleBrowser` full-screen under `#/browse` with no project, a selection pool, and two
+download exits.
 
-**Touches.** `SampleBrowser.tsx` props, new `modes/BrowseMode.tsx`.
+**Touches.** `SampleBrowser.tsx` props, new `modes/BrowseMode.tsx`, `HubScreen.tsx` (news section).
 
 **Steps.**
 1. Make `userLibrary` / `projects` / `workHandle` optional; add `mode: 'standalone' | 'project'` so
    "Send to Project" actions hide when there's no project.
 2. Mount full-screen rather than inside the `Rnd` draggable window used at
    [App.tsx:5228](src/App.tsx#L5228).
-3. Downloads via existing `exportSingleFile` / `exportSingleTape` — no new export logic.
-4. Add the "SK-ready folder vs. original files" download choice from
-   [UX_Overhaul.md](UX_Overhaul.md) §1.
+3. **User library shown only when non-empty, read-only** (open question 3). Load it directly with
+   `loadUserLibraryFromDB()` ([persistence.ts:64](src/utils/persistence.ts#L64)) — blobs are resident
+   in its own IDB store, so no work folder and no permission prompt. No upload, no delete, no
+   `LibraryManager` in standalone mode; those stay in Studio.
+4. **`buildDetachedState(samples) → AppState`** — the pool's payload. Autospread across the 6×6 grid,
+   drag to reorder. Never assigned to the live editor, never written to the global IDB slot
+   (locked decision 5). Appendix C.3 already names this shape; **Phase 3's `hydratePreset` returns the
+   same thing**, so build it here and Phase 3 inherits it.
+5. Two download exits off the pool, both existing code fed by that `AppState`:
+   - **SK-ready files** → `exportFilesOnly` ([exportUtils.ts:824](src/utils/exportUtils.ts#L824)) —
+     ZIP, `keepStructure`, plus the `onConvert` hardware-conversion hook.
+   - **SD-ready 6×6** → `exportSDStructure` ([exportUtils.ts:545](src/utils/exportUtils.ts#L545)).
+   Single-file/single-tape downloads keep using `exportSingleFile` / `exportSingleTape`.
+6. Hub news section (open question 1): news renders **beneath the doors on the hub**, not as a
+   covering modal. Delete the `NewsModal` auto-open path and its `hasCheckedNewsThisSession` gate
+   ([App.tsx:714-725](src/App.tsx#L714-L725)) along with the `spotykach_show_news_on_start`
+   preference, rather than maintaining both routes.
 
-**Done when.** A cold visitor can browse packs, preview, and download without a single permission
-prompt, and `#/browse` is shareable.
+**Done when.** A cold visitor can browse packs, preview, pool a selection, and download it in either
+format without a single permission prompt; `#/browse` is shareable; the hub shows news inline.
 
-**Open question this phase must settle:** does Browse include the user library? (Open questions, #3.)
+**Deliberately out of scope** (Phase 6 — see its steps): "import into project" and "single-file edit
+before download". Both cross into project ownership or the editor.
+
+**Settled going in:** open questions 1, 3 and 5 — no calls left to make in this phase.
 
 **Notes.**
->
+> **Filename case needs no work.** SD writes are uppercase `${slot.id}.WAV`
+> ([exportUtils.ts:629](src/utils/exportUtils.ts#L629), [790](src/utils/exportUtils.ts#L790),
+> [922](src/utils/exportUtils.ts#L922)); single-file downloads are lowercase `.wav`
+> ([exportUtils.ts:944](src/utils/exportUtils.ts#L944)). Recent SK firmware accepts both, so this is
+> already correct in both places — don't "fix" it.
 >
 
 ---
@@ -196,8 +218,17 @@ prompt, and `#/browse` is shareable.
 **Done when.** From a fresh browser profile: open app → presets → pick one → choose SD card → done.
 No work folder, no project name, nothing written to the global IDB slot.
 
-**Open question this phase must settle:** prefer the prebuilt `sdExportUrl` ZIP over hydrating 36
-blobs when it exists? (Open questions, #2.)
+**Settled going in:** open question 2 — **always hydrate for card writes.** The prebuilt
+`sdExportUrl` ZIP stays what it is today, a manual download link in `PresetsPanel`. Reasons: it is a
+*download*, not a write, so using it would mean fetch → unzip (jszip is available) → write through
+the SD handle, i.e. a second writer to maintain; a stale ZIP would silently produce a card that
+differs from what the app builds; and once presets can be user-authored (open question 6) most
+presets won't have one at all, so ZIP-first would only sometimes apply. Revisit only if hydration
+measurably drags.
+
+**Reuse note.** `hydratePreset(entry) → AppState` should return the same detached `AppState` that
+Phase 2's `buildDetachedState` produces, and hand it to the same `exportSDStructure` call. If Phase 2
+landed, most of step 1 is already done.
 
 **Notes.**
 >
@@ -245,13 +276,31 @@ existing file.
 2. `config.txt` import/export against a bare SD handle, via the existing pure functions
    `generateConfigText` / `parseConfigText`
    ([exportUtils.ts:35](src/utils/exportUtils.ts#L35), [exportUtils.ts:1445](src/utils/exportUtils.ts#L1445)).
+3. With an SD handle present, offer to load the card's existing `config.txt`. With no workspace at
+   all, just show the settings and offer a plain `config.txt` download — permission-free, consistent
+   with Tiers 1–2.
+4. **Preserve unknown key/value pairs on round-trip.** See the note below — this is the one real code
+   change open question 4 implies.
+5. Per-project config stays available in Studio. `spotykach_config_presets` (localStorage) already
+   exists and is the natural mechanism — a project's config is a *saved preset you can apply*, while
+   the file on the card is the device's truth.
 
-**Open question this phase must settle:** device-scoped or project-scoped by default?
-(Open questions, #4 — recommendation is device-scoped.)
+**Settled going in:** open question 4 — device-scoped by default, per-project still allowed.
 
 **Notes.**
+> **The parser is strictly positional — a comment line would break it.** `parseConfigText`
+> ([exportUtils.ts:1445](src/utils/exportUtils.ts#L1445)) drops blank lines and then walks two-line
+> pairs (`i += 2`). A single stray line shifts every pair after it and the whole file misparses. So
+> writing the project title as a comment is not safe; write it as a normal 8-char key + value pair —
+> unknown keys are skipped harmlessly *because* they still consume two lines. The ask to the hardware
+> developer is therefore the smaller one: **"does the device tolerate an unknown key/value pair?"**,
+> not "please ignore a comment".
 >
->
+> **Round-tripping currently deletes fields we don't know.** `parseConfigText` returns a fixed
+> five-field `ProjectConfig` and `generateConfigText` writes exactly those five
+> ([exportUtils.ts:35](src/utils/exportUtils.ts#L35)). Since the field set is expected to grow, a
+> `config.txt` written by newer firmware would come back stripped. Carry unrecognised pairs through
+> untouched before this phase ships.
 
 ---
 
@@ -269,6 +318,13 @@ existing file.
 4. Extract `App.tsx` state into `session/ProjectSession.tsx`.
 5. Cleanup becomes its own surface, out of the editor sidebar (per
    [UX_Overhaul.md](UX_Overhaul.md) §"Other UX thoughts").
+6. **The two tier-crossing exits deferred from Phase 2** (open question 5), both of which need
+   `ProjectSession` to exist first:
+   - **"Import into project" from the Browse pool.** Needs a work folder chosen mid-flow with the
+     selection surviving the permission prompt. The "temporary project in browser cache, save later"
+     variant needs its *own* IDB slot — writing the global one violates locked decision 5.
+   - **Single-file edit before download.** Editor mode opened on one pooled file, download as the
+     only exit, plus a button to carry the edited file into a project.
 
 **Notes.**
 >
@@ -276,30 +332,96 @@ existing file.
 
 ---
 
-## Open questions — need your call
+## Open questions
 
-Answer inline; a phase chat will read these.
+Questions 1–5 are **answered and folded into the phase briefs** — a phase chat reads its own brief and
+doesn't need this section. Kept here for the reasoning. Question 6 is open.
 
 1. **Landing default.** Hub for everyone, or remember the last mode and skip it on return?
    *Recommendation: hub on first visit, remembered mode after, hub always one click away.*
-   → **Answer:**
+   → **Answer:** ✅
+  - always hub by default, for everyone
+  - hub can also become home of the news section, but displayed beneath the hub options instead as a covering modal on top.
 
+   **Settled.** Always hub — which is already `useAppMode`'s behaviour, so no routing code changes.
+   News moves inline onto the hub in **Phase 2**, and the modal auto-open path plus the
+   `spotykach_show_news_on_start` preference get deleted rather than kept as a second route.
 
 2. **Preset → SD without hydrating.** For presets with `sdExportUrl`, the prebuilt ZIP is far cheaper
    than hydrating 36 blobs and re-writing them. Prefer the ZIP when available, fall back to
    hydrate+write?
-   → **Answer:**
+   → **Answer:** ✅
+   - This implies also the conclusive way to save presets. 
+     - building presets should be as simple as possible so that it might also become the way for external artists to build a preset, as well as allow users to create a shareable project containing their own samples.
+     - we currently already have a way to handle this; should it be simplified, where are users able to create presets.
+       - e.g. an external artist might be someone who needs more the import 36 files, rearrnage, add their info for the sample browser, and then the option to add tape names, and notes.
+       - whereas regular users might prefer to take one of their projects and export that.
+       - we could also "force" artists that want to submit sample packs and / or project presets to use the full app. Or make a fully separate page that uses specific fields to fill in per file, and leave room for the additional info.   
+
+   **Settled, for the narrow question:** **always hydrate** for card writes; the ZIP stays a manual
+   download. Reasoning in the Phase 3 brief — and the authoring answer above *supports* it, since
+   user-authored presets won't have an `sdExportUrl` at all, making ZIP-first a path that only
+   sometimes exists. **The authoring half moved to question 6**, since no phase covers it.
 
 3. **Does Browse include the user library?** It's IDB-backed and project-independent, so it *can* be
    there — but it may muddy a "just show me the packs" tier.
-   → **Answer:**
+   → **Answer:** ✅
+   - including user library would need a local workspace / folder, wheras just browsing and downloading would just point to default download location, nothing else.
+   - when a user has made projects before and hence already has a local workspace setup but chooses to go to the sample browser via the hub and a local library is present, we'd probably need to either include it, or tell them to go to the full app. Feels like we should include if it exists. Hence decision lands on: "Library shown only when non-empty."
+
+   **Settled: shown when non-empty** — and it's cheaper than the answer assumes. The library needs
+   **no workspace folder**: `UserLibrary` is `files: Record<string, FileRecord>`
+   ([types.ts:59](src/types.ts#L59)) with blobs resident in its own `user-library` IDB store, separate
+   from the `app-state` slot that locked decision 5 protects. Browse can list, preview and download
+   from it with zero permission prompts. Read-only in standalone mode — upload/delete/`LibraryManager`
+   stay in Studio, or Browse gains a write path into IDB.
 
 4. **Config scope.** Device-level by default *(recommended)* or per-project?
-   → **Answer:**
+   → **Answer:** ✅
+   - if a project folder with SD card has been setup, we can ask the user to load that file, 
+   - if no workspace has been setup, we just offer the settings and the download
+   - in projects we still allow a per project config.txt, maybe we can write the title of the project into the txt file, I don't think it'll obstruct the reading on the hardware, and else we can ask the developer to add this as a comment to ignore on device.
+   - we are expecting to get additional options in this file, so the amount of setable fields will grow.
+
+   **Settled: device-scoped, per-project still allowed.** Two code facts shape the implementation,
+   both written up in the Phase 5 notes: the parser is strictly positional so **the project title must
+   be a key/value pair, not a comment**, and **unknown keys are currently dropped on round-trip** —
+   which matters precisely because the field set is expected to grow. Open sub-point, low stakes: when
+   a card's `config.txt` and a project's config disagree on build, the card is proposed as the
+   device's truth and the project's config as an applicable preset.
 
 5. **Tier upgrade prompts.** When a Tier-1 user selects 36 files, offer "make this a project"
    inline, or keep tiers strictly separate?
+   → **Answer:** ✅
+   - when in simple sample browser and user is selecting multiple files, we should keep a list or pool of added files, with an option to do:
+     - **download -> as SK ready files** - ("big" change since a not so recent SK firmware update, it now also accepts small caps .wav and not just .WAV, file format still stands only extension has been added)
+     - **download -> as SK SD Ready formatting** (autospread over 6x6 slots, with option to drag in list)
+     - **import into project** -> will need the setup of local folder if none exists, needs to remeber the selected file after apointing the local folder, or we could make a temporary project in browser cache with option to save?
+     - **Single file edit before download** -> open editor with only the option to download in editor a button could be used to allow taking the edited file into a project
+
+   **Settled, split across two phases.** The pool and both **download** exits are Phase 2 — they're
+   nearly free, because `exportFilesOnly` ([exportUtils.ts:824](src/utils/exportUtils.ts#L824)) and
+   `exportSDStructure` ([exportUtils.ts:545](src/utils/exportUtils.ts#L545)) already do the work and
+   only need an `AppState`. That shared requirement is the unlock: Phase 2 builds
+   `buildDetachedState(samples)`, and Phase 3's `hydratePreset` returns the same thing.
+   **"Import into project" and "single-file edit" move to Phase 6** — the first needs a work folder
+   mid-flow (and its "temp project in cache" variant would need its own IDB slot to stay inside locked
+   decision 5), the second needs `WaveformEditor` decoupled from the on-disk project.
+
+6. **Preset & pack authoring — who makes them, and where?** *(new, from the answer to 2)* Presets
+   should be simple enough that external artists can build one and users can turn their own samples
+   into a shareable project. Three shapes were floated: force authors through the full app; extend
+   Studio with a "export project as preset" path; or a dedicated authoring surface with per-file
+   metadata fields plus tape names, notes and pack info.
+   **Constraint to design around:** `manifest.json` is generated by `scripts/generate-manifest.mjs`,
+   a repo-side script — so today "publishing" is a commit, not an upload. Without a backend, any
+   authoring surface ends in a **submission bundle you commit**, not self-publishing. Sub-questions:
+   what's the artist's minimum metadata set; do user-authored presets stay local/shareable-as-a-file
+   or aim for the public manifest; and does authoring justify its own surface or ride on Studio's
+   existing export?
+   *Not blocking any current phase.* Decide before committing to a Phase 7.
    → **Answer:**
+
 
 ---
 ---
