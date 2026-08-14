@@ -657,7 +657,6 @@ interface WaveformEditorProps {
     onSaveAsCopy?: (blob: Blob, duration: number, createdId: string) => void;
     onDeleteVersion?: (versionId: string) => void;
     onAssignVersion?: (versionId: string) => void;
-    onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
     onMoveVersionToPool?: (versionId: string) => void;
     tapeColor?: TapeColor;
     isDuplicate?: boolean;
@@ -671,7 +670,7 @@ interface WaveformEditorProps {
     transportActions?: React.ReactNode;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onCleanupProject, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, transportActions }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, transportActions }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -2840,16 +2839,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 </button>
                                 {isHistoryExpanded && <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">History</h4>}
                             </div>
-                            {isHistoryExpanded && onCleanupProject && (
-                                <button
-                                    onClick={() => onCleanupProject()}
-                                    className="px-2 py-1.5 hover:bg-red-500/10 rounded flex items-center gap-1.5 text-gray-400 hover:text-red-400 font-bold text-xs uppercase tracking-wider transition-colors tooltip-trigger"
-                                    title="Clean Up Project History"
-                                >
-                                    <Trash2 size={13} strokeWidth={2.5} />
-                                    <span>Clean</span>
-                                </button>
-                            )}
+                            {/* Cleanup used to live here. A project-wide destructive
+                                action inside one file's history panel was the wrong
+                                home for it; it is its own entry under Project ▸
+                                Advanced now. Phase 6, step 5. */}
                         </div>
                         {isHistoryExpanded && selectedVersionIds.size > 0 && (
                             <div className="flex gap-1">

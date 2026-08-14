@@ -527,6 +527,10 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                                     Standard cleanup preserves the <span className="text-white font-black underline decoration-synthux-blue decoration-4 underline-offset-4">Original</span> file and the <span className="text-white font-black underline decoration-synthux-blue decoration-4 underline-offset-4">Latest Saved Step</span> for every file. 
                                     <br/><br/>
                                     Intermediate history versions of both assigned and unused pool files are marked for removal to free up memory.
+                                    <br/><br/>
+                                    Saving a project now does this on its own, so there is usually nothing here to
+                                    reclaim. What is left over — orphaned assets on disk, files you no longer want,
+                                    old SD backups — is what this screen is for.
                                 </p>
                             </div>
                         </div>

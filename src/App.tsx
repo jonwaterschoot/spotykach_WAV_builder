@@ -35,7 +35,7 @@ const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal'
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2 } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -4430,6 +4430,16 @@ function App({ onExitToHub }: AppProps) {
                       label: 'Export Portable & Presets',
                       icon: <Download size={14} />,
                       onClick: () => setShowExport(true)
+                    },
+                    {
+                      // Cleanup's own entry point. It used to hang off the editor's
+                      // history sidebar, where a project-wide destructive action sat
+                      // inside a single file's panel (UX_Overhaul.md, "Other UX
+                      // thoughts"). Phase 6 moved it out here beside the other
+                      // project-level actions.
+                      label: 'Clean Up Project',
+                      icon: <Trash2 size={14} />,
+                      onClick: handleCleanupProject
                     }
                   ]}
                 />
@@ -4760,7 +4770,6 @@ function App({ onExitToHub }: AppProps) {
                           onClose={() => {
                             setActiveSlotId(null);
                           }}
-                          onCleanupProject={handleCleanupProject}
                           onRenameFile={handleRenameFile}
                           onDirtyStateChange={(dirty) => {
                             setIsEditorDirty(dirty);
