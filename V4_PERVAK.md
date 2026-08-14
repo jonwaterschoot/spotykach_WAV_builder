@@ -12,6 +12,68 @@
 
 ---
 
+## Open items — everything still on the table
+
+*Added 2026-08-14, after Phase 6. Extracted from the six phase outcomes, the appendices,
+[UX_Overhaul.md](UX_Overhaul.md) and [roadmap-bugs.md](roadmap-bugs.md). This section is the one place
+that says what is **not** done; the phase briefs below say what is.*
+
+### Blocking a v4 release
+
+| # | Item | Source | Where it lands |
+|---|---|---|---|
+| A | **Storage keys are not namespaced.** Root and `/next/` share an origin, so a preview build reads and writes the real `SpotykachDB` — including live directory handles. | Locked decision 9, Appendix F.3 | Do before **any** Pages deploy. Not a phase. |
+| B | **Nothing in Phases 4–6 was verified in a browser.** Types, build and lint are clean; no path was exercised against a real card or folder picker. | Phase 4, 5, 6 outcomes | Phase 7, step 6 |
+| C | **No functional pass over the five hub doors**, and known editor bugs are unassessed. | New, this round | Phase 7, step 6 |
+
+The specific unverified paths, collected from the three outcomes: `move()`-based atomic swap on removable
+media · the per-build SK-snapshot toggle · Config mode's card read/write and the file input ·
+Editor mode's "Save as project" · Browse's "Import into a project" · the first Studio save after the
+two-version collapse.
+
+### Open, not blocking
+
+| # | Item | Source | Status |
+|---|---|---|---|
+| D | **`saveStateToDB` has no callers.** The `app-state` slot is read on mount and never written — so there is **no autosave in the app today**. Decide: wire it up or delete it. | Phase 6 note, [persistence.ts:36](src/utils/persistence.ts#L36) | Now coupled to the auto-save setting — Phase 7, step 2 |
+| E | **Backup and sync still live in the Project Manager**, per project and for the library, contradicting the tone of Phase 4. | New, this round | Phase 7, steps 3–4 |
+| F | **No workspace-level backup exists.** Phase 4 removed the implicit copies without replacing them with an explicit one. | New, this round + D.3 "backup location is the user's choice" | Phase 7, step 4 |
+| G | **The editor can only be reached from the pool**, not from a browser row. | New, this round | Phase 7, step 5 |
+| H | **The mirror vocabulary survives.** `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` were predicted to evaporate; they didn't, because existing cards still carry projects. | D.3, deferred by Phase 4 *and* Phase 6 | Phase 7, step 3 decides how much of it goes |
+| I | **The SD-import compare view was not built** — the `SyncDashboard`-derived per-slot view. `ProjectManager`'s import button covers the case for now. | Phase 4, "deliberately not built" | Only when SD import gets real use |
+| J | **Open question 6 — preset & pack authoring.** Who makes presets, and where. Needs a product decision. | Open questions | Decide before committing to anything past Phase 7 |
+| K | **Open question 7 — multiple projects per card (`SK1/`, `SK2/`).** Firmware question first. `'SK'` is hardcoded in 13 places across 6 files and would need to become a parameter before any feature work. | Open questions | Blocked on @Vlad |
+| L | **Does the device tolerate an unknown key/value pair?** The app now preserves them either way; writing the *project title* into `config.txt` waits on this answer. | Phase 5 notes | Blocked on the hardware developer |
+| M | **Non-destructive editing / op log.** `AudioVersion.processing[]` is a flat tag set and a real model is a different data model, not an extension. | Appendix E.3 | **Explicitly not a v4 goal.** Don't let it creep in |
+| N | **Docs are scattered and partly stale.** `docs/deployment_guidelines.md` describes a script that no longer exists; there is no docs index and no archive. | Appendix F.4 + new, this round | Phase 7, step 7 |
+| O | **UX_Overhaul's four wireframing boxes are unchecked** — hub, independent editor, browser-to-grid, guest-artist flow. Three of the four were built without ever being sketched. | [UX_Overhaul.md](UX_Overhaul.md) §"Next Steps" | Close them as built, or say what's still wanted |
+
+### Discrepancies between the documents
+
+Found by reading the two plans against each other and against the code. Each is a place where a
+document says something the codebase no longer agrees with.
+
+1. **Four personas, five doors.** UX_Overhaul names four user journeys; the hub ships five —
+   **Preset → SD is a tier the persona document never describes.** It is the headline flow and has no
+   persona written for it.
+2. **The backup complaint is only half answered.** UX_Overhaul §"Other UX thoughts" says backups make
+   the flow slow and visually complex. Phase 4 fixed the *build* — a default build now writes `SK/`
+   and nothing else. It did not touch the *Project Manager*, which still shows "Sync ↕ Backup",
+   "Import Sync", "Sync Lib", "Delete from SD Backup" and three backup status badges. The complaint
+   is still true of the screen the user actually reads.
+3. **Appendix A blocker 3 is stale.** It describes `persistence.ts:36` as autosaving one `AppState`.
+   Phase 6 established that function has no callers. Corrected inline below.
+4. **roadmap-bugs still frames the overhaul as an open choice** — "adjust the current app vs. build a
+   new one". That is locked decision 1, settled before Phase 0.
+5. **roadmap-bugs still lists resolved work as open:** the editor's clean-history column (Phase 6
+   moved cleanup out of the sidebar entirely) and ".wav as well as .WAV" (already correct in both
+   export paths — see the Phase 2 notes; do not "fix" it).
+6. **UX_Overhaul §4 asks "config.txt is maybe not a necessity per project?"** — answered by open
+   question 4 (device-scoped by default, per-project still allowed) and built in Phase 5. The answer
+   was never folded back into the persona document.
+
+---
+
 ## Status
 
 | Phase | | What | Deliverable |
@@ -23,10 +85,11 @@
 | 4 | ✅ | Backup & safety rework | SD card is a build target again |
 | 5 | ✅ | Config mode | MIDI setup without the studio |
 | 6 | ✅ | Editor mode + Studio extraction | Edit one file with no project; the session leaves `App.tsx` |
+| 7 | ☐ | Close-out | Settings owns the options, backup becomes one explicit act, and the whole thing gets tested |
 
-**All six phases are in.** What is left before v4 ships is locked decision 9 (storage-key namespacing,
-Appendix F.3), one browser pass over the paths marked unverified in Phases 4–6, and the two open
-questions below — neither of which blocks a release.
+**The six build phases are in; Phase 7 is the close-out.** What is left before v4 ships is locked
+decision 9 (storage-key namespacing, Appendix F.3), Phase 7, and the open questions above — of which
+only A, B and C block a release.
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
 `importUtils`, `projectDescriptorUtils`, `lib/audio`) is already mode-agnostic, and every major panel
@@ -712,6 +775,179 @@ Browse "Import into a project", and the first Studio save after this change (the
 
 ---
 
+### Phase 7 — Close-out ☐  *(settings, backup, and the test pass)*
+
+**Read first:** the **Open items** section at the top of this file, then Appendix D.
+
+**Goal.** Finish what Phase 4 started. Options stop being scattered across the Project Manager and the
+build dialog and live in one settings surface; "backup" stops meaning four things and becomes one
+explicit act the user initiates; and the whole of v4 gets its first real test.
+
+**Why it's one phase.** Steps 1–4 are the same change seen from four sides — the app currently has no
+single place that answers "what does this tool do with my files, and when". Splitting them would mean
+touching `SettingsModal` and `ProjectManager` three times over.
+
+---
+
+#### Step 1 — Settings becomes the home for options
+
+Today's `SettingsModal` (763 lines) is visual filters, quick presets, one "Backup & Durability" block
+added in Phase 4, and a danger zone. It is the right container; it just isn't where anything else
+lives yet.
+
+Moves in:
+
+- **Auto-save** (step 2).
+- **Locations** — work folder and SD card. These sit in the Project Manager header today
+  ([ProjectManager.tsx:393-407](src/components/ProjectManager.tsx#L393-L407)), and roadmap-bugs has
+  been asking for them under the settings icon since v3. Leave the inline "Change" where it is; a
+  setting is a second entry, not a replacement.
+- **History & cleanup** — `CleanupModal` is reachable from Settings and the Project Manager already
+  (Phase 6 removed the third entry, in the editor sidebar). This is where the "what does cleanup
+  remove" copy belongs, now that the two-version rule means cleanup only ever deals with leftovers.
+- **Workspace backup** (step 4).
+
+**Watch out for.** `SettingsModal` is already close to being three screens in one. If the section list
+passes ~6, give it tabs before adding the seventh — the same call `AboutHelpModal` already made.
+
+#### Step 2 — Auto-save as a real setting
+
+**The premise needs correcting before it can be built: there is no auto-save.** `saveStateToDB`
+([persistence.ts:36](src/utils/persistence.ts#L36)) is exported and never called; the `app-state` IDB
+slot is read on mount and never written. Projects reach disk only through explicit saves and
+`ProjectManager`'s save-before-sync guard
+([ProjectManager.tsx:123-131](src/components/ProjectManager.tsx#L123-L131)). So this step **builds**
+the feature; "toggle it in settings, on by default" is the second half of it.
+
+- **What auto-save saves — two candidates, and they are different promises.** Writing `project.json`
+  through `saveProjectToDirectory` is a real save to the user's disk: durable, but it also runs the
+  two-version collapse and writes assets, so it is not free. Writing the `app-state` IDB slot is cheap
+  and crash-proof but invisible in the user's folder. *Recommendation: the IDB slot, debounced* — it
+  is what that slot exists for, and it makes "the tab crashed" survivable without surprising anyone's
+  disk. Explicit save stays the thing that writes the project.
+- **Default on**, with its key alongside the two in [durabilityPrefs.ts](src/utils/durabilityPrefs.ts)
+  — same absent-means-default reading, so changing a default later doesn't rewrite anyone's choice.
+- **When it's off, exiting to the hub must warn.** It doesn't today: the header's back button calls
+  `onExitToHub` directly ([App.tsx:4214-4218](src/App.tsx#L4214-L4218)) with no unsaved check, while
+  `handleWithUnsavedCheck` ([App.tsx:700-712](src/App.tsx#L700-L712)) already exists and already knows
+  to stay quiet for an empty project. Route the button through it. **Worth doing whether or not
+  auto-save lands** — leaving Studio unmounts it, so that warning is missing right now.
+
+#### Step 3 — Strip backup and sync out of the Project Manager
+
+*What was already done, what is still there, what goes.*
+
+**Already done (Phase 4).** Builds no longer copy: `SK/` and nothing else, with `skSnapshots` and
+`mirrorProjectsToSD` as default-off opt-ins in Settings. `backupHandle` → `sdHandle`. Writes are
+atomic. `SyncOptionsModal` deleted.
+
+**Still there — all of it in [ProjectManager.tsx](src/components/ProjectManager.tsx):**
+
+| What | Where | Verdict |
+|---|---|---|
+| "Sync ↕ Backup" / "Sync to Backup", three variants | [543](src/components/ProjectManager.tsx#L543), [568](src/components/ProjectManager.tsx#L568), [582](src/components/ProjectManager.tsx#L582) | **Remove.** The push half of the mirror locked decision 6 retired. |
+| "Sync Lib" — library → SD | [410-416](src/components/ProjectManager.tsx#L410-L416) → `LibrarySyncModal` (501 lines) | **Remove from here.** The library belongs in the workspace backup (step 4), not on a card. |
+| "Delete from SD Backup" | [629-633](src/components/ProjectManager.tsx#L629-L633) | **Remove.** Deleting from a card the app no longer writes to is a file-manager job. |
+| "Rename synced project? Also rename it on the backup drive" | [185-258](src/components/ProjectManager.tsx#L185-L258) | **Remove** with the mirror. |
+| Badges "Backup Synced" / "Backup Modified" | [506-553](src/components/ProjectManager.tsx#L506-L553) | **Remove.** They describe a mirror that no longer runs. |
+| The auto-save-before-sync banner | [113-131](src/components/ProjectManager.tsx#L113-L131) | **Remove** with its trigger; the guard itself folds into step 2. |
+| **"Import" a project found on the card** | [588-598](src/components/ProjectManager.tsx#L588-L598) | **Keep.** D.3's migration path, and the reason the read side survives at all. |
+| **"Import Sync" — device changes back into the project** | [352](src/components/ProjectManager.tsx#L352) | **Keep.** Reading the card is not mirroring it. |
+| **"Hardware Synced" badge** | [519](src/components/ProjectManager.tsx#L519) | **Keep.** That one describes the build, which is still a real relationship. |
+
+**The vocabulary question (open item H).** D.3 predicted `status: 'synced'|'local'|'backup'|'modified'`
+and `.local`/`.backup` would evaporate once the mirror was off; Phases 4 and 6 both found they don't,
+because existing cards still carry projects that have to be scanned and merged. What actually happens
+is that it *shrinks*: with the push half gone, `'synced'` and `'modified'` stop being reachable for new
+work and the live distinction collapses to **"in the workspace" vs "only on the card, importable"**.
+Decide here whether to rename now or only stop *rendering* the dead states. *Recommendation: stop
+rendering first, rename in a separate mechanical commit* — the Phase 4 `backupHandle → sdHandle`
+pattern, which is what kept that diff readable.
+
+**Done when.** The Project Manager reads as a list of projects with an import path for cards, and the
+word "backup" appears in it zero times.
+
+#### Step 4 — Workspace backup, as one explicit act
+
+Replaces everything step 3 removes, and it is deliberately *one* thing rather than four.
+
+- **Scope: the whole workspace.** Projects, the user library, and optionally the card's current
+  contents. Not a per-project mirror.
+- **No default location, ever.** The user picks a folder at the moment of backing up, and nothing is
+  written until they do. D.3's "backup location is the user's choice", made literal.
+- **Show what it contains before writing** — an itemised list with per-item sizes: projects (n, with
+  their assets), library (n files), history leftovers, the SD snapshot if included. The user should be
+  able to see what the total is made of, which is the one thing the old sync UI never showed.
+- **Size check — with a platform constraint to be honest about.** ⚠️ **The File System Access API
+  cannot report free space on a picked directory.** `navigator.storage.estimate()` measures the
+  origin's own quota, not the target drive, so there is no truthful "this won't fit" *before* the
+  write. What is achievable: compute the backup's size by walking the sources, state it plainly beside
+  a reminder of typical card sizes, and fail gracefully mid-write — clean up the partial copy and say
+  "the target ran out of room after N files" rather than throwing. Say that in the UI rather than
+  implying a check the platform can't perform. (SD cards are the case that makes this matter: a
+  workspace with history and a custom library will outgrow a small card.)
+- **Where it lives.** Settings ▸ Backup & Durability, beside the two existing opt-ins — where a user
+  who just turned `mirrorProjectsToSD` off will go looking for what replaced it.
+
+**Reuse.** The deleted `SyncDashboard` (`git show 72c2893:src/components/SyncDashboard.tsx`) is still
+the best per-item comparison view in the repo's history, and the itemised list is the same shape.
+`LibrarySyncModal`'s file-walking is the other half — if step 3 removes its entry point, salvage the
+walk rather than the modal.
+
+#### Step 5 — Edit one file straight from the browser
+
+The editor already opens over Browse and applied edits go back into the pool
+([BrowseMode.tsx:558](src/modes/BrowseMode.tsx#L558)) — but **only from a pool row**. A user who wants
+to trim one sample has to add it to a selection first, which is a concept they never asked for.
+
+- A **pen icon on the sample row** in `SampleBrowser`, beside preview. It decodes that one file and
+  opens the same `LooseFileEditor` overlay the pool rows use.
+- **Decide where the edit lands when the file was never pooled.** *Recommendation: applying an edit
+  adds it to the pool as an edited entry* — then both downloads and "import into a project" keep
+  working with no second set of endings, and the pen reads as "pool this, edited".
+- Studio's `SampleBrowser` wants the same affordance eventually, but that is a different host with a
+  project behind it. Standalone first.
+
+#### Step 6 — The test pass
+
+Two rounds, in this order:
+
+1. **The five doors, cold.** A fresh browser profile through Browse, Presets, Config, Editor and
+   Studio, plus every path in the unverified list at the top of this file. Real SD card, real folder
+   picker, Chromium *and* one engine without `showDirectoryPicker` — the ZIP and file-input fallbacks
+   from Phases 3 and 5 have never been exercised.
+2. **The editor, deeply.** Starting points from roadmap-bugs: the cleanup confirm modal glitching out
+   of sight, and stereo splitting. Log what the pass finds in
+   [roadmap-bugs.md](roadmap-bugs.md), not here — Phase 7 is where this document stops being the place
+   things get written down.
+
+#### Step 7 — Retire the v4 documents
+
+The end state: **[roadmap-bugs.md](roadmap-bugs.md) and [CHANGELOG.md](CHANGELOG.md) are the only live
+documents**, as they were before v4.
+
+1. ✅ `roadmap-bugs.md` rewritten against the overhaul — obsolete items retired to its Done section,
+   the rest regrouped. Done 2026-08-14, alongside this section.
+2. ✅ `docs/README.md` — an index of every documentation file with its status, and `docs/archive/`
+   for what has stopped being true. Done 2026-08-14.
+3. Write v4 up in `CHANGELOG.md` as one release entry, not seven.
+4. Move `V4_PERVAK.md` and `UX_Overhaul.md` into `docs/archive/` **once v4 ships**, not before — the
+   appendices are still the only written record of why several of these decisions went the way they
+   did, and Phase 7 is being run out of this file.
+5. Fix or archive `docs/deployment_guidelines.md` (Appendix F.4 — it documents a script that no longer
+   exists, though its asset-path section is still accurate) and the `public/v2/index.html` redirect
+   stub.
+
+**Done when.** The five doors all work on real hardware; the Project Manager says nothing about
+backups; one settings screen answers "what does this app do with my files"; and this file is ready to
+move into `docs/archive/`.
+
+**Notes.**
+>
+>
+
+---
+
 ## Open questions
 
 Questions 1–5 are **answered and folded into the phase briefs** — a phase chat reads its own brief and
@@ -871,9 +1107,12 @@ lives behind it as an overlay.
 1. **The boolean gate.** [App.tsx:4160/4191](src/App.tsx#L4160) — wizard *or* studio, no third state.
 2. **Monolithic shell.** 5656 lines, ~60 `useState`. Every handler is a closure inside the studio
    component; a browse-only mode can't reach `handleSampleImport` without the whole file.
-3. **Global single-slot persistence.** [persistence.ts:36](src/utils/persistence.ts#L36) autosaves one
-   `AppState`; [App.tsx:1212-1224](src/App.tsx#L1212-L1224) flags *any* state change as unsaved. A
-   Tier-1/2 session touching `state` pollutes the studio's autosave and raises phantom warnings.
+3. **Global single-slot persistence.** ~~[persistence.ts:36](src/utils/persistence.ts#L36) autosaves
+   one `AppState`~~ — **correction (Phase 6): `saveStateToDB` has no callers.** The slot is *read* on
+   mount and never written, so there is no autosave. What is true is the second half:
+   [the dirty watcher](src/session/ProjectSession.tsx) flags *any* state change as unsaved, so a
+   Tier-1/2 session touching `state` would still raise phantom warnings. The blocker was real; the
+   mechanism named was not. See open item D.
 4. **Manual modal z-stack.** [App.tsx:592-684](src/App.tsx#L592-L684) — hand-ordered `if` chain over
    ~15 flags. Adding modes multiplies it.
 5. **No routing.** No router dep; `base: '/spotykach_WAV_builder/'`. Deep links impossible, and
@@ -1196,3 +1435,7 @@ a custom domain would isolate it.
 only `generate-manifest.mjs`, `normalize.py`, `collect-release-samples.ps1`. And
 [public/v2/index.html](public/v2/index.html) is now just a redirect stub to root. Worth correcting
 when Pages deployment comes back into play.
+
+**Tracked as Phase 7, step 7.** The file is classified 🟡 *partly stale* in
+[docs/README.md](docs/README.md) — its asset-path section is still accurate, so the choice is repair
+the second half or fold the first half elsewhere and archive it.

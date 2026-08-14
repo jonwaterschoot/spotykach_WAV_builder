@@ -6,6 +6,24 @@ This document outlines the high-level wireflows, user journeys, and potential UX
 > The implementation plan built from it is [V4_PERVAK.md](V4_PERVAK.md) — phase checklist, decisions
 > already locked, and the codebase analysis behind them. Start there for any build work.
 
+> **Status, 2026-08-14 — where this document and the built app disagree.** Phases 0–6 are in. Read
+> alongside the **Open items** section at the top of [V4_PERVAK.md](V4_PERVAK.md), which is the one
+> place that lists what is *not* done.
+>
+> - **Four personas, five doors.** The hub ships Browse, **Preset → SD**, Device Config, Edit One File
+>   and Studio. Preset → SD became the headline flow and has no persona written for it below.
+> - **§"Other UX thoughts" on backups is half answered.** A default build now writes `SK/` and nothing
+>   else (v4 Phase 4) — but the Project Manager still shows sync and backup controls, so the
+>   complexity this document complains about is still on screen. That is v4 Phase 7.
+> - **§"Other UX thoughts" on cleaning projects is answered.** Persisted history is now exactly two
+>   versions, original + current, collapsed on save — so the mess no longer accumulates and cleanup
+>   stopped being a rescue operation. It also left the editor's right-hand sidebar and became its own
+>   entry under Project ▸ Advanced, which is the separation asked for below.
+> - **§4's "config.txt is maybe not a necessity per project?"** — answered: device-scoped by default,
+>   per-project still allowed.
+> - **The four wireframing boxes at the bottom were never ticked**, and three of the four shipped
+>   without being sketched. Close them or say what is still wanted.
+
 ## Design Direction
 We have two main paths to consider for achieving the best UX:
 1. **Iterative Molding:** Mold and adapt the existing UI elements to adhere to these new workflows.

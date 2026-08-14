@@ -117,6 +117,7 @@ Whether you are a musician contributing a sample pack, a user sharing a project 
 *   **For Developers & Maintainers**:
     *   [Preset Upload & Integration Guide](public/presets/README.md) – Developer instructions on integrating presets, JSON schema specs, and deploying sample packs.
     *   [Audio Processing & Normalization Scripts](scripts/normalize-audio.md) – Documentation for running scripts to normalize, FLAC-compress, and tag audio files.
+    *   [Documentation Index](docs/README.md) – Every documentation file in the repository, what it covers, and whether it is still current.
 
 ## Contributing
 
