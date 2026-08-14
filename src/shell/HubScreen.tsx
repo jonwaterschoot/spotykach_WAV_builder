@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Library, HardDrive, Sliders, FolderOpen, ArrowRight } from 'lucide-react';
+import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
 
@@ -55,6 +55,17 @@ const DOORS: Door[] = [
     ready: true,
   },
   {
+    mode: 'editor',
+    label: 'Edit One File',
+    tagline: 'No project',
+    body: 'Open a single audio file, trim, fade and slice it, then download it — or turn it into a project.',
+    icon: <AudioWaveform size={26} strokeWidth={1.75} />,
+    accentText: 'text-synthux-pink',
+    accentBorder: 'hover:border-synthux-pink/60',
+    accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(255,90,158,0.45)]',
+    ready: true,
+  },
+  {
     mode: 'studio',
     label: 'Studio',
     tagline: 'The full workspace',
@@ -72,7 +83,7 @@ interface HubScreenProps {
 }
 
 /**
- * The landing screen: four doors, no project, no permission prompts.
+ * The landing screen: five doors, no project, no permission prompts.
  * Doors whose mode isn't built yet still route to their own hash — the router
  * falls back to Studio until the matching phase lands.
  */

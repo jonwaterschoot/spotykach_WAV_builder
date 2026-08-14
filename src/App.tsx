@@ -64,6 +64,7 @@ import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
 import { getDurabilityPrefs } from './utils/durabilityPrefs';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
+import { collapseVersionHistory } from './utils/versionHistory';
 import { useEscapeLayer } from './shell/escapeStack';
 
 const sanitizeFilename = (name: string) => {
@@ -927,8 +928,10 @@ function App({ onExitToHub }: AppProps) {
 
       // 4. Save
       const { saveProjectToDirectory } = await import('./utils/exportUtils');
-      // @ts-ignore
-      const exportedFiles = await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+      await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+
+      // Match the live state to what went to disk — see executeSaveProject.
+      setState(prev => collapseVersionHistory(prev));
 
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
@@ -1118,6 +1121,7 @@ function App({ onExitToHub }: AppProps) {
           (msg) => setProgressMsg(msg || ''),
           currentProjectName
         );
+        setState(prev => collapseVersionHistory(prev));
         setHasUnsavedChanges(false);
       }
 
@@ -2670,6 +2674,12 @@ function App({ onExitToHub }: AppProps) {
         // Save using Root Handle + Project Name logic for robustness
         // @ts-ignore
         await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), currentProjectName);
+
+        // The save collapsed history to the two-version rule on its way to disk;
+        // collapse the live state to match, or memory and the IDB autosave keep the
+        // versions the disk no longer has. Applied to `prev` rather than to the
+        // returned state so an edit made mid-save isn't rolled back. Appendix E.2.
+        setState(prev => collapseVersionHistory(prev));
 
         showToast("Project Saved Successfully", 'success');
         setHasUnsavedChanges(false);
@@ -5080,7 +5090,9 @@ function App({ onExitToHub }: AppProps) {
                     // metadata.exportDate — this prevents scanProjects from
                     // marking the project as "modified" right after a sync.
                     const savedAt = new Date().toISOString();
-                    const stampedState: AppState = {
+                    // Collapsed here rather than left to saveProjectToDirectory, so both
+                    // copies and the in-memory adoption below are the same state.
+                    const stampedState: AppState = collapseVersionHistory({
                       ...newState,
                       metadata: {
                         ...newState.metadata,
@@ -5088,7 +5100,7 @@ function App({ onExitToHub }: AppProps) {
                         appName: newState.metadata?.appName ?? 'WAV Builder',
                         version: newState.metadata?.version ?? '1.0',
                       },
-                    };
+                    });
 
                     const { saveProjectToDirectory } = await import('./utils/exportUtils');
                     // Local: Work/Projects/{name}/

@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
@@ -613,12 +614,38 @@ const BpmInput = ({ value, onChange }: { value: number | null, onChange: (val: n
 
 import type { AudioVersion, TapeColor, WavMetadata } from '../types';
 
-interface EditorSlot {
-    id: number;
+export interface EditorSlot {
+    /** The grid slot this file sits in. Absent when the editor is opened on a loose file. */
+    id?: number;
     name: string;
     blob: Blob;
     fileId?: string; // Add this if needed, or stick to Slot
 }
+
+/**
+ * Wording for the commit button, its tooltip and its no-op toast.
+ *
+ * The defaults describe assigning to a tape, which is Studio's framing. Editor mode
+ * has no tape and no grid, so it passes its own — the alternative was a `standalone`
+ * boolean, which would put the mode's vocabulary inside the component.
+ */
+export interface CommitLabels {
+    /** Button text when there is nothing to bake. */
+    clean: string;
+    /** Button text when edits are pending. */
+    dirty: string;
+    /** Tooltip while edits are pending. */
+    hint: string;
+    /** Toast shown when committing with nothing dirty. */
+    cleanToast: string;
+}
+
+export const TAPE_COMMIT_LABELS: CommitLabels = {
+    clean: 'ASSIGNED',
+    dirty: 'ASSIGN TO TAPE',
+    hint: 'Bake changes and assign to tape',
+    cleanToast: 'Assigned to Tape',
+};
 
 interface WaveformEditorProps {
     slot: EditorSlot;
@@ -626,7 +653,8 @@ interface WaveformEditorProps {
     activeVersionId: string;
     onClose: () => void;
     onSave: (blob: Blob, duration: number, description: string, isDirty: boolean, processing?: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[]) => void;
-    onSaveAsCopy: (blob: Blob, duration: number, createdId: string) => void;
+    /** Absent without a project: there is no unused pool to copy into. */
+    onSaveAsCopy?: (blob: Blob, duration: number, createdId: string) => void;
     onDeleteVersion?: (versionId: string) => void;
     onAssignVersion?: (versionId: string) => void;
     onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
@@ -638,9 +666,12 @@ interface WaveformEditorProps {
     onRenameFile?: (fileId: string, newName: string) => void;
     onDirtyStateChange?: (isDirty: boolean) => void;
     showToast: (message: string, type?: 'success' | 'error' | 'warning') => void;
+    commitLabels?: CommitLabels;
+    /** Host-supplied buttons in the transport bar — the surface's own exits. */
+    transportActions?: React.ReactNode;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onCleanupProject, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onCleanupProject, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, transportActions }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -2516,7 +2547,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 // Let's mark it 'trimmed' if start/end were modified or it's a save.
                 onSave(finalBlob, finalDuration, 'Edited', isDirty, ['trimmed']);
             }
-            showToast(isDirty ? "Version Saved!" : "Assigned to Tape", "success");
+            showToast(isDirty ? "Version Saved!" : commitLabels.cleanToast, "success");
 
             if (!isDirty) {
                 onClose();
@@ -4424,7 +4455,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {isPlaying ? <Pause fill="white" size={18} /> : <Play fill="white" size={18} />}
                                     {isPlaying ? 'PAUSE' : 'PLAY'}
                                 </button>
-                                <div title={!isDirty && loadedVersionId === activeVersionId ? "File is assigned and up to date" : "Bake changes and assign to tape"}>
+                                <div title={!isDirty && loadedVersionId === activeVersionId ? "File is up to date" : commitLabels.hint}>
                                     <button
                                         onClick={() => {
                                             if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
@@ -4447,7 +4478,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         }`}
                                     >
                                         {isProcessing ? <RefreshCw className="animate-spin" size={18} /> : (!isDirty && loadedVersionId === activeVersionId) ? <Check size={18} /> : <Save size={18} />}
-                                        {isProcessing ? 'SAVING...' : (!isDirty && loadedVersionId === activeVersionId) ? 'ASSIGNED' : 'ASSIGN TO TAPE'}
+                                        {isProcessing ? 'SAVING...' : (!isDirty && loadedVersionId === activeVersionId) ? commitLabels.clean : commitLabels.dirty}
                                     </button>
                                 </div>
 
@@ -4519,42 +4550,47 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     </button>
                                 )}
 
-                                <button
-                                    onClick={async () => {
-                                        if (!originalBuffer) return;
-                                        setIsProcessing(true);
-                                        try {
-                                            let start = 0;
-                                            let end = originalBuffer.duration;
-                                            if (regions.current) {
-                                                const regionList = regions.current.getRegions();
-                                                if (regionList && regionList.length > 0) {
-                                                    start = regionList[0].start;
-                                                    end = regionList[0].end;
+                                {/* The unused pool is a project concept — no project, no button. */}
+                                {onSaveAsCopy && (
+                                    <button
+                                        onClick={async () => {
+                                            if (!originalBuffer) return;
+                                            setIsProcessing(true);
+                                            try {
+                                                let start = 0;
+                                                let end = originalBuffer.duration;
+                                                if (regions.current) {
+                                                    const regionList = regions.current.getRegions();
+                                                    if (regionList && regionList.length > 0) {
+                                                        start = regionList[0].start;
+                                                        end = regionList[0].end;
+                                                    }
                                                 }
+                                                let processed = await audioProcessor.trim(originalBuffer, start, end);
+                                                if (fadeIn > 0 || fadeOut > 0) {
+                                                    processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
+                                                }
+                                                const newId = uuidv4();
+                                                const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+                                                const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: newId };
+                                                const newBlob = encodeWAV(processed, meta);
+                                                onSaveAsCopy(newBlob, processed.duration, newId);
+                                                showToast("Saved copy to Unused Pool!", "success");
+                                            } catch (e) {
+                                                console.error(e);
+                                                showToast("Failed to save copy", "error");
                                             }
-                                            let processed = await audioProcessor.trim(originalBuffer, start, end);
-                                            if (fadeIn > 0 || fadeOut > 0) {
-                                                processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
-                                            }
-                                            const newId = uuidv4();
-                                            const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
-                                            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: newId };
-                                            const newBlob = encodeWAV(processed, meta);
-                                            onSaveAsCopy(newBlob, processed.duration, newId);
-                                            showToast("Saved copy to Unused Pool!", "success");
-                                        } catch (e) {
-                                            console.error(e);
-                                            showToast("Failed to save copy", "error");
-                                        }
-                                        finally { setIsProcessing(false); }
-                                    }}
-                                    disabled={isProcessing}
-                                    className="flex items-center gap-2 px-6 h-12 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
-                                    title="Save as a new Parked file (Unassigned)"
-                                >
-                                    <Save size={16} /> SAVE COPY TO POOL
-                                </button>
+                                            finally { setIsProcessing(false); }
+                                        }}
+                                        disabled={isProcessing}
+                                        className="flex items-center gap-2 px-6 h-12 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
+                                        title="Save as a new Parked file (Unassigned)"
+                                    >
+                                        <Save size={16} /> SAVE COPY TO POOL
+                                    </button>
+                                )}
+
+                                {transportActions}
                             </div>
                         </div>
                     </div>

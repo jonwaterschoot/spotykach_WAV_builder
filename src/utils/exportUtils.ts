@@ -2,6 +2,7 @@ import type JSZip from 'jszip';
 import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from '../types';
 import type { AppState, ProjectConfig } from '../types';
 import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
+import { collapseVersionHistory } from './versionHistory';
 
 // ==========================================
 // SHARED HELPERS
@@ -1173,8 +1174,20 @@ export const getActiveSKProject = async (rootHandle: FileSystemDirectoryHandle):
     }
 };
 
-export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSystemDirectoryHandle, onProgress?: (msg: string | undefined, progress?: number) => void, projectName?: string) => {
+/**
+ * Writes the project to `Projects/<projectName>/`, and returns the state as written.
+ *
+ * The return value matters: history is collapsed to the two-version rule (Appendix
+ * E.2) before anything is serialised, so the caller should adopt what comes back as
+ * its live state. Otherwise memory and the IDB autosave keep the versions the disk
+ * no longer has, and the next save re-collapses the same records.
+ */
+export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSystemDirectoryHandle, onProgress?: (msg: string | undefined, progress?: number) => void, projectName?: string): Promise<AppState> => {
     onProgress?.("Saving Project...", 0);
+
+    // Two versions per file — the original and the current. This is the one place
+    // every save path funnels through, which is why the rule lives here.
+    state = collapseVersionHistory(state);
 
     try {
         let targetHandle = rootHandle;
@@ -1298,6 +1311,8 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
         }
 
         onProgress?.("Project Saved Successfully!", 100);
+
+        return state;
 
     } catch (e: any) {
         console.error("Save Project Failed", e);

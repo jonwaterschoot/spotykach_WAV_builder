@@ -1,6 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Check, ChevronLeft, Download, FileStack, GripVertical, HardDrive, Layers, Loader, Trash2, X,
+  AudioWaveform, Check, ChevronLeft, Download, FileStack, GripVertical, HardDrive, Layers, Loader,
+  Trash2, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
@@ -14,6 +15,12 @@ import type { AppState, UserLibrary } from '../types';
 
 const SampleBrowser = React.lazy(() =>
   import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser }))
+);
+
+// The editor is the heaviest thing Browse can open — wavesurfer, the processor, the
+// overlays. Lazy so a visit that never edits anything never downloads it.
+const LooseFileEditor = React.lazy(() =>
+  import('./EditorMode').then(m => ({ default: m.LooseFileEditor }))
 );
 
 /** A pooled sample: decoded, resident in memory, belonging to no project. */
@@ -123,6 +130,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [sortLooseIntoTapes, setSortLooseIntoTapes] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [exportLogs, setExportLogs] = useState<string[]>([]);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
@@ -148,6 +156,8 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
   }, []);
 
   useEscapeLayer(true, () => {
+    // The editor sits on top and handles its own Escape; don't close the pool under it.
+    if (editingId) return false;
     if (isPoolOpen) {
       setIsPoolOpen(false);
       return true;
@@ -213,6 +223,25 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
   }, [addToPool]);
 
   const removeFromPool = (id: string) => setPool(prev => prev.filter(item => item.id !== id));
+
+  /**
+   * Single-file edit before download — open question 5's fourth exit.
+   *
+   * The editor opens over Browse rather than routing to `#/editor`, so the rest of
+   * the pool survives the trip. Applied edits come back through `onEdited` and
+   * replace the pooled blob in place, which means both downloads below pick up the
+   * edit with no "keep this?" step to forget.
+   */
+  const editingItem = useMemo(
+    () => pool.find(item => item.id === editingId) ?? null,
+    [pool, editingId]
+  );
+
+  const applyEdit = useCallback((id: string, blob: Blob, duration: number, name: string) => {
+    setPool(prev => prev.map(item => (
+      item.id === id ? { ...item, blob, duration, name } : item
+    )));
+  }, []);
 
   /** One file straight out of the pool — no ZIP, no grid. */
   const downloadOne = async (item: PoolItem) => {
@@ -472,6 +501,13 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
                           </span>
                         </span>
                         <button
+                          onClick={() => setEditingId(item.id)}
+                          className="shrink-0 p-1 rounded text-gray-600 hover:text-synthux-pink hover:bg-synthux-pink/10 transition-colors"
+                          title="Edit this file"
+                        >
+                          <AudioWaveform size={12} />
+                        </button>
+                        <button
                           onClick={() => downloadOne(item)}
                           className="shrink-0 p-1 rounded text-gray-600 hover:text-synthux-blue hover:bg-synthux-blue/10 transition-colors"
                           title="Download this file"
@@ -558,6 +594,30 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub }) => {
           </aside>
         )}
       </div>
+
+      {editingItem && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[80] bg-synthux-main flex items-center justify-center text-gray-500">
+            <Loader size={20} className="animate-spin" />
+          </div>
+        }>
+          <LooseFileEditor
+            // Remount on a different pool entry rather than reusing the editor's state.
+            key={editingItem.id}
+            file={{
+              name: editingItem.fileName || editingItem.name,
+              blob: editingItem.blob,
+              duration: editingItem.duration,
+              origin: editingItem.origin,
+              license: editingItem.license,
+              sourceSamplePath: editingItem.sourceSamplePath,
+            }}
+            subtitle={`Editing ${editingItem.name} from your selection — applied edits go back into the pool, and both downloads pick them up.`}
+            onEdited={({ blob, duration, name }) => applyEdit(editingItem.id, blob, duration, name)}
+            onClose={() => setEditingId(null)}
+          />
+        </Suspense>
+      )}
 
       <ExportProgressModal
         isOpen={showExportProgress}
