@@ -9,7 +9,8 @@ import {
 } from '../utils/detachedState';
 import { useEscapeLayer } from '../shell/escapeStack';
 import {
-  clearBrowsePoolFromDB, loadBrowsePoolFromDB, loadUserLibraryFromDB, saveBrowsePoolToDB,
+  clearBrowsePoolFromDB, loadBrowsePoolCopiesFromDB, loadBrowsePoolFromDB, loadUserLibraryFromDB,
+  saveBrowsePoolCopiesToDB, saveBrowsePoolToDB,
 } from '../utils/persistence';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -38,6 +39,7 @@ interface PoolItem extends DetachedSample {
   edited?: boolean;
   /** The file as it was pooled. `blob` is the current version; this is the other one. */
   originalBlob: Blob;
+  originalDuration: number;
 }
 
 /** How long a change waits before the pool is written back. */
@@ -189,6 +191,15 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   const poolRef = useRef<PoolItem[]>(pool);
   poolRef.current = pool;
 
+  /**
+   * Projects this pool has been copied into — R2-9.
+   *
+   * A record, not a link: see `saveBrowsePoolCopiesToDB`. Persisted, because the pool
+   * itself now survives a refresh and a warning that evaporates on the reload is a
+   * warning that is missing exactly when it matters.
+   */
+  const [copiedInto, setCopiedInto] = useState<string[]>([]);
+
   /** True once the mount-time read of the pool store has resolved. */
   const [isHydrated, setIsHydrated] = useState(false);
   const isSavingPoolRef = useRef(false);
@@ -231,6 +242,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
           blob: entry.current,
           originalBlob: entry.original,
           duration: entry.duration,
+          originalDuration: entry.originalDuration ?? entry.duration,
           origin: entry.origin,
           license: entry.license,
           sourceSamplePath: entry.sourceSamplePath,
@@ -241,6 +253,14 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       })
       .catch(e => console.warn('Could not read the temporary pool', e))
       .finally(() => { if (!cancelled) setIsHydrated(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadBrowsePoolCopiesFromDB()
+      .then(names => { if (!cancelled && names.length > 0) setCopiedInto(names); })
+      .catch(e => console.warn('Could not read where the pool was copied', e));
     return () => { cancelled = true; };
   }, []);
 
@@ -256,6 +276,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
           name: item.name,
           fileName: item.fileName,
           duration: item.duration || 0,
+          originalDuration: item.originalDuration,
           origin: item.origin,
           license: item.license,
           sourceSamplePath: item.sourceSamplePath,
@@ -336,6 +357,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         blob: processedBlob,
         originalBlob: processedBlob,
         duration: buffer.duration,
+        originalDuration: buffer.duration,
         origin,
         license,
         sourceSamplePath: isObjectUrl ? undefined : url,
@@ -620,6 +642,15 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       setExportProgress(100);
       setShowExportProgress(false);
       setCreatedProject(created.projectName);
+
+      // The pool stays. Emptying it here would take away the surface the user was
+      // working on because they asked for a copy of it — so instead it remembers,
+      // and the panel says the copy is not a link.
+      setCopiedInto(prev => {
+        const next = prev.includes(created.projectName) ? prev : [...prev, created.projectName];
+        void saveBrowsePoolCopiesToDB(next);
+        return next;
+      });
     } catch (e) {
       console.error(e);
       setExportError(e instanceof Error ? e.message : 'Could not create the project.');
@@ -953,6 +984,32 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               )}
 
               {/*
+                * R2-9, and the whole of it. The copy is one-way and finished: the
+                * project is folders on disk, this is blobs in a browser store, and
+                * nothing reconciles them. Saying so here is cheaper and more honest
+                * than a link that would have to hold a directory handle Browse
+                * refuses to ask for.
+                */}
+              {copiedInto.length > 0 && (
+                <p className="flex items-start gap-1.5 text-[10px] text-synthux-yellow/80 leading-relaxed pt-2 border-t border-white/5">
+                  <FolderPlus size={11} className="shrink-0 mt-0.5" />
+                  <span>
+                    Copied into Studio as{' '}
+                    {copiedInto.map((name, i) => (
+                      <React.Fragment key={name}>
+                        {i > 0 && ', '}
+                        <span className="font-mono text-synthux-yellow">{name}</span>
+                      </React.Fragment>
+                    ))}
+                    . <span className="text-gray-500">
+                      That copy and this pool are not linked — changes here don't reach the project,
+                      and saving again makes another new project.
+                    </span>
+                  </span>
+                </p>
+              )}
+
+              {/*
                 * Where the files actually live. Permanent, not a toast: it is the one
                 * thing about the pool that isn't visible on screen, and the last clause
                 * is the honest part — eviction is neither preventable nor detectable
@@ -987,6 +1044,11 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               origin: editingItem.origin,
               license: editingItem.license,
               sourceSamplePath: editingItem.sourceSamplePath,
+              // Both versions the pool holds, so a second visit to an edited entry
+              // shows the real original beside the edit instead of the edit alone,
+              // wearing the original's name.
+              originalBlob: editingItem.originalBlob,
+              originalDuration: editingItem.originalDuration,
             }}
             subtitle={`Editing ${editingItem.name} — "Save to temporary pool" puts the edit back in the pool, where the downloads and "Import into a project" pick it up.`}
             onEdited={({ blob, duration, name }) => applyEdit(editingItem.id, blob, duration, name)}

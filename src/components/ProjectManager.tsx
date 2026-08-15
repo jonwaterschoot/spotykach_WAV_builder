@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Folder, FolderOpen, HardDrive, Trash2, Edit2, X, Check, Copy, RefreshCw, Save, Download, Upload, HelpCircle } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Folder, FolderOpen, HardDrive, Layers, Trash2, Edit2, X, Check, Copy, RefreshCw, Save, Download, Upload, HelpCircle } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { ProjectSummary } from '../types';
+import { loadBrowsePoolSummaryFromDB, type BrowsePoolSummary } from '../utils/persistence';
 import { SlotGrid6x6 } from './SlotGrid6x6';
 
 /**
@@ -123,6 +124,18 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
     // Track pending creation to auto-edit
     const [pendingCreate, setPendingCreate] = useState<string | null>(null);
+
+    /** Browse's pool, if there is one. Re-read each time this modal opens. */
+    const [poolSummary, setPoolSummary] = useState<BrowsePoolSummary | null>(null);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        loadBrowsePoolSummaryFromDB()
+            .then(summary => { if (!cancelled) setPoolSummary(summary); })
+            .catch(e => console.warn('Could not read the temporary pool summary', e));
+        return () => { cancelled = true; };
+    }, [isOpen]);
 
     // Effect to trigger edit mode when pending project appears
     React.useEffect(() => {
@@ -351,6 +364,36 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
                 {/* PROJECT LIST */}
                 <div className="flex-1 overflow-y-auto bg-[#0f0f0f]">
+                    {/*
+                      * The temporary pool — R2-9's other half.
+                      *
+                      * Browse's pool survives a refresh now, which means it can sit in
+                      * storage indefinitely with nothing on this side of the app ever
+                      * mentioning it. One line, deliberately inert: it is not a project,
+                      * it is not selectable, and there is no sync between it and
+                      * anything here. Read from the summary key, so mentioning the pool
+                      * never loads its audio.
+                      */}
+                    {poolSummary && poolSummary.count > 0 && (
+                        <div className="flex items-center gap-4 px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+                            <div className="w-9 h-9 shrink-0 rounded-full bg-white/5 flex items-center justify-center text-gray-500">
+                                <Layers size={15} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-sm text-gray-400">
+                                    Temporary pool
+                                    <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-gray-600">
+                                        not a project
+                                    </span>
+                                </div>
+                                <div className="text-[11px] text-gray-600 truncate">
+                                    {poolSummary.count} {poolSummary.count === 1 ? 'file' : 'files'} kept in this
+                                    browser's storage, from Browse. Open Browse to download it or copy it into a project.
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {workspaceProjects.length === 0 && cardOnlyProjects.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-full opacity-50 space-y-4">
                             <Folder size={48} className="text-gray-600" />

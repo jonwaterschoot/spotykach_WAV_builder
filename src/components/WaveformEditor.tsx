@@ -2773,7 +2773,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             )}
 
 
-            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] h-[95vh] shadow-2xl flex flex-row-reverse overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
+            {/*
+              * A column, not a row. The header used to sit inside the editor column
+              * with the history sidebar beside it, which put the modal's close ✕
+              * to the *left* of a panel — the one control that should be furthest
+              * top-right was neither. The header now spans the whole modal and the
+              * two columns share the space beneath it.
+              */}
+            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] h-[95vh] shadow-2xl flex flex-col overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
 
 
                 {/* Tool Switch Confirmation */}
@@ -2828,6 +2835,57 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     message="These versions will be removed from this file's history and created as new unassigned files."
                     confirmLabel="Move to Pool"
                 />
+
+                {/* MODAL HEADER — full width, so the ✕ is the top-right-most control */}
+                <div className="shrink-0 flex justify-between items-center gap-4 p-6 pb-4 border-b border-gray-800 bg-[#1a1a1a]">
+                    <div className="flex items-center gap-4 min-w-0">
+                        {/* Tape Icon: Fixed size */}
+                        <div className="flex items-center justify-center">
+                            <TapeIcon color={tapeColor ? `var(--color-synthux-${tapeColor.toLowerCase()})` : 'gold'} size={40} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-3">
+                                {isRenaming ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={renameValue}
+                                        onChange={e => setRenameValue(e.target.value)}
+                                        onBlur={handleRenameSubmit}
+                                        onKeyDown={handleRenameKeyDown}
+                                        className="text-2xl font-black bg-[#111] text-white tracking-tighter uppercase border border-synthux-yellow rounded outline-none px-2 py-0"
+                                    />
+                                ) : (
+                                    <h2
+                                        className="text-2xl font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase cursor-text hover:opacity-80 transition-opacity truncate"
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            setRenameValue(slot.name);
+                                            setIsRenaming(true);
+                                        }}
+                                        title="Double click to rename"
+                                    >
+                                        {slot.name}
+                                    </h2>
+                                )}
+                            </div>
+                            <div className="text-xs font-bold text-gray-500 tracking-widest uppercase flex items-center gap-2">
+                                <span>Waveform Editor</span>
+                                <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
+                                <span className={isDirty ? "text-amber-500" : "text-gray-600"}>
+                                    {isDirty ? "Unsaved Changes" : "All Saved"}
+                                </span>
+                            </div>
+                            <div className="text-[10px] text-gray-500 max-w-sm mt-1 leading-[1.2]">
+                                Note: Edits save to this slot's history. The original file is not altered until export.
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="shrink-0 p-2 hover:bg-gray-800 rounded-full transition-colors">✕</button>
+                </div>
+
+                {/* The two columns, beneath the header they now share. */}
+                <div className="flex-1 flex flex-row-reverse min-h-0 overflow-hidden">
 
                 {/* SIDEBAR: Versions */}
                 <div className={`bg-[#111] border-l border-gray-800 flex flex-col shrink-0 transition-all duration-300 ${isHistoryExpanded ? 'w-64' : 'w-16 items-center'}`}>
@@ -3003,56 +3061,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 {/* MAIN EDITOR AREA */}
                 <div className="flex-1 flex flex-col relative bg-[#1a1a1a] min-w-0">
 
-                    <div className="flex justify-between items-center p-6 pb-2">
-                        <div className="flex items-center gap-4">
-                            {/* Tape Icon: Fixed size */}
-                            <div className="flex items-center justify-center">
-                                <TapeIcon color={tapeColor ? `var(--color-synthux-${tapeColor.toLowerCase()})` : 'gold'} size={40} />
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    {isRenaming ? (
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            value={renameValue}
-                                            onChange={e => setRenameValue(e.target.value)}
-                                            onBlur={handleRenameSubmit}
-                                            onKeyDown={handleRenameKeyDown}
-                                            className="text-2xl font-black bg-[#111] text-white tracking-tighter uppercase border border-synthux-yellow rounded outline-none px-2 py-0"
-                                        />
-                                    ) : (
-                                        <h2
-                                            className="text-2xl font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase cursor-text hover:opacity-80 transition-opacity"
-                                            onDoubleClick={(e) => {
-                                                e.stopPropagation();
-                                                setRenameValue(slot.name);
-                                                setIsRenaming(true);
-                                            }}
-                                            title="Double click to rename"
-                                        >
-                                            {slot.name}
-                                        </h2>
-                                    )}
-                                </div>
-                                <div className="text-xs font-bold text-gray-500 tracking-widest uppercase flex items-center gap-2">
-                                    <span>Waveform Editor</span>
-                                    <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                                    <span className={isDirty ? "text-amber-500" : "text-gray-600"}>
-                                        {isDirty ? "Unsaved Changes" : "All Saved"}
-                                    </span>
-                                </div>
-                                <div className="text-[10px] text-gray-500 max-w-sm mt-1 leading-[1.2]">
-                                    Note: Edits save to this slot's history. The original file is not altered until export.
-                                </div>
-                            </div>
-                        </div>
-                        <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors">✕</button>
-                    </div>
-
                     {/* Editor Helpers */}
 
-                    <div className="p-6 pt-2 flex flex-col h-full overflow-hidden">
+                    <div className="p-6 pt-4 flex flex-col h-full overflow-hidden">
                         {/* Toolbar Container */}
                         <div className="flex flex-col mb-4 bg-[#111] relative z-20 p-4 rounded-xl border border-gray-800 shrink-0 max-w-full">
 
@@ -4590,6 +4601,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         </div>
                     </div>
                 </div>
+                </div>{/* /the two columns */}
             </div>
 
             {/* Advanced EQ Modal */}

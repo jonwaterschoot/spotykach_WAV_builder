@@ -62,24 +62,46 @@ export interface LooseFile {
   license?: string;
   sourceSamplePath?: string;
   metadata?: WavMetadata;
+  /**
+   * The file as it first arrived, when the host still has it.
+   *
+   * Without this the editor had only the current blob to build a record from, and
+   * labelled it "Original" — so reopening an edited pool entry showed the *edit*
+   * under the original's name, with no way back. Browse has held both since R2-4.
+   */
+  originalBlob?: Blob;
+  originalDuration?: number;
 }
 
 const recordFromLooseFile = (file: LooseFile): FileRecord => {
-  const versionId = newId();
-  const original: AudioVersion = {
-    id: versionId,
+  const currentId = newId();
+  const current: AudioVersion = {
+    id: currentId,
     timestamp: Date.now(),
-    description: 'Original',
+    description: 'Current',
     blob: file.blob,
     duration: file.duration ?? 0,
   };
+
+  // Same blob object means nothing has been edited yet: one entry, and it really is
+  // the original. Two distinct blobs are the two-version rule's `[original, current]`.
+  const isEdited = !!file.originalBlob && file.originalBlob !== file.blob;
+  const versions: AudioVersion[] = isEdited
+    ? [{
+        id: newId(),
+        timestamp: Date.now(),
+        description: 'Original',
+        blob: file.originalBlob!,
+        duration: file.originalDuration ?? 0,
+      }, current]
+    : [{ ...current, description: 'Original' }];
 
   return {
     id: newId(),
     name: stripExtension(file.name),
     originalName: file.name,
-    versions: [original],
-    currentVersionId: versionId,
+    versions,
+    currentVersionId: isEdited ? currentId : versions[0].id,
     isParked: false,
     origin: file.origin,
     license: file.license,
@@ -111,10 +133,14 @@ interface LooseFileEditorProps {
  *
  * The whole file lives in this component's state as a single `FileRecord`, which is
  * why it needs no project, no work folder and no IndexedDB: nothing here is persisted
- * until the user picks one of the two exits. History follows the two-version rule from
- * the first edit rather than at a save boundary (Appendix E.2) — there is no save
- * boundary to defer to, and it means the sidebar reads as "original / current", which
- * is exactly the safety story the rule is there to tell.
+ * until the user picks one of the two exits.
+ *
+ * History is deep in session and collapsed on the way out — Appendix E.2's actual
+ * shape. It used to collapse on every commit, which meant the sidebar could never
+ * show more than two entries even with the editor open, and a host that handed back
+ * only the current blob then relabelled that edit "Original" on the next visit. Now
+ * every step is kept while the editor lives, `collapseFileVersions` runs at the
+ * project exit, and the pool receives one blob against the original it already holds.
  */
 export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterStudio }) => {
   const [record, setRecord] = useState<FileRecord>(() => recordFromLooseFile(file));
@@ -162,7 +188,13 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
       duration,
     };
 
-    setRecord(prev => collapseFileVersions({
+    // Not collapsed here. Every step stays in this component's state for as long as
+    // the editor is open, which is the in-session depth Appendix E.2 explicitly
+    // allows — collapsing on each commit gave that up and left the sidebar with
+    // nothing to step back through. The two exits below both collapse, and the host
+    // pool only ever receives one blob, so nothing past `[original, current]`
+    // reaches disk or IndexedDB.
+    setRecord(prev => ({
       ...prev,
       versions: [...prev.versions, version],
       currentVersionId: version.id,

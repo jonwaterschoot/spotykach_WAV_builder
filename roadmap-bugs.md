@@ -73,9 +73,8 @@ second `<audio>` (R2-1), and the pool is no longer memory-only (R2-4).
 
 ### Round 2 — Sample Browser, walked in a browser *(2026-08-15)*
 
-Nine items. **R2-1 through R2-8 are built** (2026-08-15) and none of them has been used in a browser
-yet — round 3 is walking them. **R2-9 is a design, deliberately not built**; the design pass it asked
-for is written out below and is what a build would follow.
+Nine items, **all closed** (2026-08-15). R2-1 through R2-8 were built as written; **R2-9 turned out not
+to be a feature at all** — see below. None of it has been used in a browser except what round 3 reached.
 
 ---
 
@@ -165,10 +164,47 @@ home instead of its old position.
 - A line under Curated says where the collection comes from, worded per host: read-only in standalone,
   "add and tag them in the Library Manager" in Studio.
 
-#### R2-9 — Link the pool to the workspace 🏗️ *(design done, not built)*
+#### R2-9 — Link the pool to the workspace 🏗️ ✅ *resolved 2026-08-15: there is no link, only a label*
 
-With R2-4 in, the pool is durable and the link is possible. **Nothing here is built.** The design pass
-the item asked for:
+**The item dissolved on contact with the code.** `createProjectFromState`
+([newProject.ts:34](src/utils/newProject.ts#L34)) already opens `showDirectoryPicker({ id:
+'spotykach_work' })` — *the same picker id Studio's wizard uses* — then stores the work handle and sets
+`spotykach_current_project`. So "save the pool into the workspace" is what **"Import into a project"
+has always done**. The only thing the item proposed adding on top — writing to the workspace *without*
+a picker — needs Browse to hold a persistent readwrite directory handle, which is precisely what tier 1
+refuses (Appendix C.2, "permission follows intent"), and would not survive a reload anyway; that is why
+`handleRestoreSession` exists.
+
+Decided, and built: **lose the link.** Reasons beyond "keep it simple":
+
+- v4 has already deleted this exact shape twice — `SyncDashboard` (1002 lines) and `ProjectSyncModal`
+  (497 lines). A live pool ↔ project link is a third sync surface.
+- `buildDetachedState` assigns files to slots **by array index**
+  ([detachedState.ts:77](src/utils/detachedState.ts#L77)). A round-trip through the pool would silently
+  reorder someone's grid and drop notes, tape names, per-file metadata and config on the way.
+- The feature sets are asymmetric in Studio's favour, so any shared record would be lossy in one
+  direction only.
+
+What shipped instead, which is all R2-9 ever needed to be:
+
+- **A persisted record of the copy.** `copied-into` in the pool's own store, so the note survives the
+  refresh that makes it matter. The pool panel reads *"Copied into Studio as X. That copy and this pool
+  are not linked — changes here don't reach the project, and saving again makes another new project."*
+- **The pool is not emptied by the copy.** Taking away the surface someone was working on because they
+  asked for a copy of it is the surprise the item warned about.
+- **One inert row in the Project Manager**, above the list, only while the pool is non-empty:
+  "Temporary pool — N files kept in this browser's storage, from Browse", marked *not a project*, not
+  selectable, with no action on it. It reads a small `summary` key rather than the entries, so
+  mentioning the pool never loads its audio. No navigation on it either — routing to `#/browse` from
+  inside Studio would go around App's unsaved-changes guard.
+
+**Not built, and no longer wanted:** a "Save into the workspace" button, a pool-shaped project type, and
+any notification in Studio beyond that one row.
+
+<details>
+<summary>The original design pass, kept for the reasoning</summary>
+
+
 
 **What the link is.** One direction only, for now: *pool → workspace*. The pool already has an
 "Import into a project" exit that creates a whole new project; this is the smaller, later act of a
@@ -206,7 +242,54 @@ into Browse. It is not a project, it is not selectable as one, and saying so pla
 **Open, and the reason to build this after a round 3:** whether a visitor who reaches Studio should be
 *told* their pool is still there. A pool sitting in storage that nothing ever mentions again is a
 quiet way to lose work; a banner in Studio about a browse-mode scratch pool is noise. Decide that with
-the round-3 walk in hand, not before.
+the round-3 walk in hand, not before. *(Answered above: the inert Project Manager row, nothing louder.)*
+
+</details>
+
+---
+
+### Round 3 — the Browse editor, walked in a browser *(2026-08-15)*
+
+**Every editor tool passed.** Trim/fade, automation, loop, EQ, pitch, limiter, normalize, cutter,
+slicer, stereo — all behave as intended in the Browse-hosted editor. Two things came out of it, both
+built the same day, both still unwalked.
+
+#### R3-1 — The history panel called the edit "Original" ✅ *built*
+
+Reopening an edited pool entry showed a single history row labelled **Original** that was actually the
+latest version. Two separate causes, and the answer to "are they deleted or just not shown" is *both*:
+
+- **In session they really were deleted.** `handleSave` ran `collapseFileVersions` on *every* commit
+  ([EditorMode.tsx](src/modes/EditorMode.tsx)), so the loose editor never held more than two versions
+  even with the editor open — giving up the in-session depth that
+  [versionHistory.ts:9-12](src/utils/versionHistory.ts#L9-L12) explicitly allows.
+- **Across reopens the original was never passed in.** `recordFromLooseFile` built one version out of
+  `file.blob` — the *current* blob — and hardcoded `description: 'Original'`.
+
+Fixed on both counts, and the data for it already existed: R2-4 gave the pool `original + current` the
+day before.
+
+- `LooseFile` takes an optional `originalBlob`/`originalDuration`; Browse passes both. When they differ
+  from the current blob the editor opens on a real `[Original, Current]` pair, so stepping back to the
+  file as pooled works after a reopen.
+- **Depth is in-session, collapsed on the way out** — the shape Appendix E.2 describes. Every step is
+  kept while the editor lives; `collapseFileVersions` still runs at the project exit, and the pool only
+  ever receives one blob against the original it already holds. Nothing past two versions reaches disk
+  or IndexedDB.
+
+**Considered and rejected: a checkbox to persist every step.** It breaks the locked two-version cap, and
+the cost is real — 48 kHz stereo 32-bit float is ~375 KB *per second*, so the 37 s file in the test
+screenshot is 14 MB and a full pool is already ~1 GB at two versions. Growing the store we had just
+warned the user may be evicted, in order to hold intermediate states, is the wrong trade. If depth
+across sessions is wanted later, the shape is the op log in Appendix E.3 (**Non-destructive editing**,
+under consideration) — parameters are bytes, not megabytes.
+
+#### R3-2 — The editor header didn't span the modal ✅ *built*
+
+The header lived *inside* the editor column with the history sidebar as its sibling, so the modal's
+close ✕ sat to the **left** of a whole panel — the one control that should be furthest top-right was
+neither. The modal shell is now a column: header full width with the ✕ at its right end, and the two
+columns share the space beneath it. Same blast radius as R2-3 — this is Studio's tape editor too.
 
 ---
 

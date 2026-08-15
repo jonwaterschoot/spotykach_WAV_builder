@@ -108,6 +108,8 @@ export interface BrowsePoolEntry {
     name: string;
     fileName?: string;
     duration: number;
+    /** Optional: entries written before the editor needed the original's length. */
+    originalDuration?: number;
     origin?: string;
     license?: string;
     sourceSamplePath?: string;
@@ -117,12 +119,40 @@ export interface BrowsePoolEntry {
     current: Blob;
 }
 
+/**
+ * Enough to mention the pool without reading it.
+ *
+ * Studio only wants to say "there is a pool and it has N files in it". Reading the
+ * entries to count them would materialise every blob in the store — up to two per
+ * file — for a number, so the number is written alongside them instead.
+ */
+export interface BrowsePoolSummary {
+    count: number;
+    /** Seconds across the whole pool. */
+    duration: number;
+}
+
 export const saveBrowsePoolToDB = async (entries: BrowsePoolEntry[]) => {
     try {
         const db = await initDB();
         await db.put(BROWSE_POOL_STORE, entries, 'current');
+        const summary: BrowsePoolSummary = {
+            count: entries.length,
+            duration: entries.reduce((acc, entry) => acc + (entry.duration || 0), 0),
+        };
+        await db.put(BROWSE_POOL_STORE, summary, 'summary');
     } catch (e) {
         console.error('Failed to save the temporary pool to DB', e);
+    }
+};
+
+export const loadBrowsePoolSummaryFromDB = async (): Promise<BrowsePoolSummary | null> => {
+    try {
+        const db = await initDB();
+        return (await db.get(BROWSE_POOL_STORE, 'summary')) || null;
+    } catch (e) {
+        console.error('Failed to read the temporary pool summary', e);
+        return null;
     }
 };
 
@@ -136,10 +166,44 @@ export const loadBrowsePoolFromDB = async (): Promise<BrowsePoolEntry[]> => {
     }
 };
 
+/**
+ * The projects this pool has been copied into — R2-9, the whole of it.
+ *
+ * Not a link. Copying the pool into a project is a one-way export through
+ * `createProjectFromState`, and the two have nothing to say to each other
+ * afterwards: the pool is blobs in IndexedDB, the project is folders behind a
+ * permission Browse deliberately never holds. This is the record that the copy
+ * happened, so the panel can say so and say plainly that it is not a link.
+ *
+ * Kept beside the pool rather than inside it because it describes the selection as
+ * a whole, and because it must outlive individual entries being removed.
+ */
+export const saveBrowsePoolCopiesToDB = async (projectNames: string[]) => {
+    try {
+        const db = await initDB();
+        await db.put(BROWSE_POOL_STORE, projectNames, 'copied-into');
+    } catch (e) {
+        console.error('Failed to record where the pool was copied', e);
+    }
+};
+
+export const loadBrowsePoolCopiesFromDB = async (): Promise<string[]> => {
+    try {
+        const db = await initDB();
+        return (await db.get(BROWSE_POOL_STORE, 'copied-into')) || [];
+    } catch (e) {
+        console.error('Failed to read where the pool was copied', e);
+        return [];
+    }
+};
+
+/** Emptying the pool forgets where it was copied too — a new pool, a new history. */
 export const clearBrowsePoolFromDB = async () => {
     try {
         const db = await initDB();
         await db.delete(BROWSE_POOL_STORE, 'current');
+        await db.delete(BROWSE_POOL_STORE, 'copied-into');
+        await db.delete(BROWSE_POOL_STORE, 'summary');
     } catch (e) {
         console.error('Failed to clear the temporary pool', e);
     }
