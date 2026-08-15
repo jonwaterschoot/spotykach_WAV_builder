@@ -1,14 +1,17 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Check, ChevronLeft, Download, FileStack, FolderPlus, GripVertical, HardDrive,
-  Layers, Loader, Pause, Play, Trash2, X,
+  AudioWaveform, Check, ChevronLeft, Database, Download, FileStack, FolderPlus, GripVertical,
+  HardDrive, Layers, Loader, Pause, Play, Trash2, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
   buildDetachedState, slotLabelForIndex, tapeForIndex, GRID_CAPACITY, type DetachedSample,
 } from '../utils/detachedState';
 import { useEscapeLayer } from '../shell/escapeStack';
-import { loadUserLibraryFromDB } from '../utils/persistence';
+import {
+  clearBrowsePoolFromDB, loadBrowsePoolFromDB, loadUserLibraryFromDB, saveBrowsePoolToDB,
+} from '../utils/persistence';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
 import { ProjectNameModal } from '../components/modals/ProjectNameModal';
 import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
@@ -26,12 +29,19 @@ const LooseFileEditor = React.lazy(() =>
   import('./EditorMode').then(m => ({ default: m.LooseFileEditor }))
 );
 
-/** A pooled sample: decoded, resident in memory, belonging to no project. */
+/** A pooled sample: decoded, belonging to no project, kept in this browser. */
 interface PoolItem extends DetachedSample {
   id: string;
   /** The browser's own key for this sample, so the pool can mark it as taken. */
   sourcePath?: string;
+  /** An edit has been applied since it was pooled — the row says so. */
+  edited?: boolean;
+  /** The file as it was pooled. `blob` is the current version; this is the other one. */
+  originalBlob: Blob;
 }
+
+/** How long a change waits before the pool is written back. */
+const POOL_SAVE_DEBOUNCE_MS = 600;
 
 const newId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -68,7 +78,23 @@ const buildLooseReadme = (items: PoolItem[], sortedIntoTapes: boolean): string =
     .map(item => `- ${stripExtension(item.fileName || item.name)}.wav${item.origin ? `  —  ${item.origin}` : ''}`)
     .join('\n');
 
-  const licenses = Array.from(new Set(items.map(i => i.license).filter(Boolean)));
+  // Grouped by origin, not flattened into one set: a selection drawn from two packs
+  // produced two licences run together as if they were a single statement, with no
+  // way to tell which belonged to whom. Same `[origin] → licence` shape `generateReadme`
+  // uses for a built card.
+  const byOrigin = new Map<string, Set<string>>();
+  items.forEach(item => {
+    if (!item.license) return;
+    const origin = item.origin || 'Unknown origin';
+    const licenses = byOrigin.get(origin) ?? new Set<string>();
+    licenses.add(item.license);
+    byOrigin.set(origin, licenses);
+  });
+
+  const usageContext = Array.from(byOrigin.entries())
+    .map(([origin, licenses]) =>
+      Array.from(licenses).map(license => `- [${origin}]  →  ${license}`).join('\n'))
+    .join('\n');
 
   return `# Spotykach — loose file export
 
@@ -103,14 +129,14 @@ you want, and rename each one to its slot number. Recent firmware accepts both
 
 ${sortedIntoTapes
       ? 'This ZIP is already grouped into tape folders (B/G/P/R/T/Y, plus POOL for\nanything past the 36 slots) — the names inside them still need changing to\n1.WAV … 6.WAV.'
-      : 'This ZIP is a flat list — no tape folders. Tick "Sort into tape folders" in\nBrowse if you would rather have the grouping done for you.'}
+      : 'This ZIP is a flat list — no tape folders. Tick "Sort this ZIP into tape\nfolders", under the "Download the files" button in Browse, if you would rather\nhave the grouping done for you.'}
 
 Want none of this by hand? Use **Download SD card 6×6** in Browse, which builds
 the whole \`SK/\` folder ready to copy, or open Studio for a full project.
 
 ## Files
 ${credits}
-${licenses.length > 0 ? `\n## Usage context\n${licenses.map(l => `- ${l}`).join('\n')}\n` : ''}`;
+${usageContext ? `\n## Usage context\n\nOne line per pack — each licence covers only the files credited to that pack above.\n\n${usageContext}\n` : ''}`;
 };
 
 interface BrowseModeProps {
@@ -137,6 +163,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   const [sortLooseIntoTapes, setSortLooseIntoTapes] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [createdProject, setCreatedProject] = useState<string | null>(null);
 
   const [exportLogs, setExportLogs] = useState<string[]>([]);
@@ -146,15 +173,14 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   const [exportError, setExportError] = useState<string | null>(null);
   const [showExportProgress, setShowExportProgress] = useState(false);
 
-  // Auditioning a pooled file. The browser has its own player for its own sources;
-  // this one plays the blob as it now stands, which is the only way to hear an edit
-  // without opening the editor again.
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-  const previewUrlRef = useRef<string | null>(null);
-  const previewIdRef = useRef<string | null>(previewId);
-  previewIdRef.current = previewId;
+  // Auditioning a pooled file. There is one player in this mode and it belongs to the
+  // browser: a pool row asks for its blob, and the request comes back with the
+  // transport bar, the scrubber, the name and locate that the browser's own rows get.
+  const [playRequest, setPlayRequest] =
+    useState<{ key: string; name: string; blob: Blob; nonce: number } | null>(null);
+  const [playingPoolId, setPlayingPoolId] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const nonceRef = useRef(0);
 
   /** The pool row to scroll to and glow, when locate points here. */
   const [locatedPoolId, setLocatedPoolId] = useState<string | null>(null);
@@ -162,6 +188,11 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
 
   const poolRef = useRef<PoolItem[]>(pool);
   poolRef.current = pool;
+
+  /** True once the mount-time read of the pool store has resolved. */
+  const [isHydrated, setIsHydrated] = useState(false);
+  const isSavingPoolRef = useRef(false);
+  const pendingPoolRef = useRef<PoolItem[] | null>(null);
 
   // The library is IDB-resident with its own store, so reading it costs no folder
   // and no prompt. Shown read-only, and only when the visitor actually has one.
@@ -175,6 +206,92 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       .catch(e => console.warn('Could not read user library', e));
     return () => { cancelled = true; };
   }, []);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // The pool survives the mode — R2-4
+  //
+  // It used to be React state that lived and died with `BrowseMode`, so leaving for
+  // the hub and coming back emptied it, and a refresh took the edit history with it.
+  // It now has its own IDB store, namespaced like every other store, so a preview
+  // build never shares a pool with the live app. The `app-state` slot is still
+  // untouched — locked decision 5 stands.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+    loadBrowsePoolFromDB()
+      .then(entries => {
+        if (cancelled || entries.length === 0) return;
+        // Anything added while the read was in flight wins — the restore is what
+        // must not clobber, which is the trap auto-save hit in Phase 7.
+        setPool(prev => (prev.length > 0 ? prev : entries.map(entry => ({
+          id: entry.id,
+          name: entry.name,
+          fileName: entry.fileName,
+          blob: entry.current,
+          originalBlob: entry.original,
+          duration: entry.duration,
+          origin: entry.origin,
+          license: entry.license,
+          sourceSamplePath: entry.sourceSamplePath,
+          sourcePath: entry.sourcePath,
+          edited: entry.edited,
+        }))));
+        setIsPoolOpen(true);
+      })
+      .catch(e => console.warn('Could not read the temporary pool', e))
+      .finally(() => { if (!cancelled) setIsHydrated(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  /** One write, followed by whatever arrived while it was running. */
+  const runPoolSave = useCallback(async (snapshot: PoolItem[]) => {
+    isSavingPoolRef.current = true;
+    try {
+      if (snapshot.length === 0) {
+        await clearBrowsePoolFromDB();
+      } else {
+        await saveBrowsePoolToDB(snapshot.map(item => ({
+          id: item.id,
+          name: item.name,
+          fileName: item.fileName,
+          duration: item.duration || 0,
+          origin: item.origin,
+          license: item.license,
+          sourceSamplePath: item.sourceSamplePath,
+          sourcePath: item.sourcePath,
+          edited: item.edited,
+          original: item.originalBlob,
+          current: item.blob,
+        })));
+      }
+    } finally {
+      isSavingPoolRef.current = false;
+    }
+    const queued = pendingPoolRef.current;
+    if (queued) {
+      pendingPoolRef.current = null;
+      void runPoolSave(queued);
+    }
+  }, []);
+
+  /**
+   * Gated on the mount-time load, so the empty initial state can never overwrite the
+   * snapshot it is about to be replaced by. Writes are serialised for the same reason
+   * auto-save serialises its own: every entry carries two audio blobs, so a slow
+   * write must not be overtaken by the next one.
+   */
+  useEffect(() => {
+    if (!isHydrated) return;
+    const timer = setTimeout(() => {
+      if (isSavingPoolRef.current) {
+        pendingPoolRef.current = pool;
+        return;
+      }
+      void runPoolSave(pool);
+    }, POOL_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [pool, isHydrated, runPoolSave]);
 
   useEscapeLayer(true, () => {
     // The editor sits on top and handles its own Escape; don't close the pool under it.
@@ -217,6 +334,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         name,
         fileName: fileNameFromSource(url, name),
         blob: processedBlob,
+        originalBlob: processedBlob,
         duration: buffer.duration,
         origin,
         license,
@@ -251,75 +369,53 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   // Auditioning what's in the pool
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** Drop the object URL behind the current preview. Safe to call twice. */
-  const releasePreviewUrl = useCallback(() => {
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = null;
-    }
+  /** The browser's key for a pooled blob — no row of its own owns this path. */
+  const poolPlayKey = (id: string) => `pool:${id}`;
+
+  /**
+   * Ask the browser to play this entry as it now stands. Repeating the request for
+   * the entry already loaded is how play/pause toggles, which is why the nonce
+   * matters: without it a second click on the same row is the same object and the
+   * browser never hears about it.
+   */
+  const requestPoolPlay = useCallback((item: PoolItem) => {
+    nonceRef.current += 1;
+    setPlayRequest({
+      key: poolPlayKey(item.id),
+      name: item.name,
+      blob: item.blob,
+      nonce: nonceRef.current,
+    });
   }, []);
 
-  useEffect(() => releasePreviewUrl, [releasePreviewUrl]);
-
-  /**
-   * Stop this player. Handed to the browser as `onPreviewPlay`, which is the other
-   * half of the `forceStop` handshake below — without both, the two audio elements
-   * play over each other.
-   */
-  const stopPoolPreview = useCallback(() => {
-    const audio = previewAudioRef.current;
-    if (audio && !audio.paused) audio.pause();
+  /** The blob behind the request is gone or replaced; the player must let go of it. */
+  const dropPlayRequestFor = useCallback((id: string) => {
+    setPlayRequest(prev => (prev && prev.key === poolPlayKey(id) ? null : prev));
   }, []);
 
   /**
-   * A pooled blob has no URL of its own, so each preview mints one and the previous
-   * one is revoked. Only one can be loaded at a time, which is also what makes
-   * dropping the URL on remove or edit sufficient cleanup.
+   * What the one player is on. A key with our prefix is a pool row; anything else is
+   * one of the browser's own sources, which means no pool row is playing.
    */
-  const togglePoolPreview = useCallback((item: PoolItem) => {
-    const audio = previewAudioRef.current;
-    if (!audio) return;
-
-    if (previewId === item.id) {
-      if (audio.paused) audio.play().catch(e => console.error('Could not resume the preview', e));
-      else audio.pause();
-      return;
-    }
-
-    audio.pause();
-    releasePreviewUrl();
-    const url = URL.createObjectURL(item.blob);
-    previewUrlRef.current = url;
-    audio.src = url;
-    setPreviewId(item.id);
-    audio.play().catch(e => console.error('Could not preview this file', e));
-  }, [previewId, releasePreviewUrl]);
-
-  /** The loaded blob is gone or replaced; the URL pointing at it is now a lie. */
-  const dropPreviewOf = useCallback((id: string) => {
-    if (previewIdRef.current !== id) return;
-    previewAudioRef.current?.pause();
-    previewAudioRef.current?.removeAttribute('src');
-    releasePreviewUrl();
-    setPreviewId(null);
-  }, [releasePreviewUrl]);
+  const handlePlaybackChange = useCallback((key: string | null, playing: boolean) => {
+    const id = key?.startsWith('pool:') ? key.slice('pool:'.length) : null;
+    setPlayingPoolId(id);
+    setIsPlaying(playing);
+  }, []);
 
   /**
-   * Locate, arriving from the browser's player — the file it is playing may also be
-   * sitting in the pool. A path we don't hold is simply not ours to answer.
+   * Locate, arriving from the browser's player. Two cases share this door: a file
+   * playing from one of the browser's own sources that also happens to be pooled,
+   * and a pooled blob we asked the browser to play, whose only home is the pool.
    */
-  const locateInPool = useCallback((sourcePath: string) => {
-    const match = poolRef.current.find(item => item.sourcePath === sourcePath);
-    if (!match) return;
+  const locateInPool = useCallback((key: string) => {
+    const id = key.startsWith('pool:')
+      ? key.slice('pool:'.length)
+      : poolRef.current.find(item => item.sourcePath === key)?.id;
+    if (!id) return;
     setIsPoolOpen(true);
-    setLocatedPoolId(match.id);
+    setLocatedPoolId(id);
   }, []);
-
-  // The editor brings its own transport. Two of them playing at once is the same
-  // problem the browser handshake solves, with one fewer component involved.
-  useEffect(() => {
-    if (editingId) stopPoolPreview();
-  }, [editingId, stopPoolPreview]);
 
   useEffect(() => {
     if (!locatedPoolId) return;
@@ -331,7 +427,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   }, [locatedPoolId]);
 
   const removeFromPool = (id: string) => {
-    dropPreviewOf(id);
+    dropPlayRequestFor(id);
     setPool(prev => prev.filter(item => item.id !== id));
   };
 
@@ -369,12 +465,13 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   );
 
   const applyEdit = useCallback((id: string, blob: Blob, duration: number, name: string) => {
-    // The preview is holding a URL for the blob this replaces.
-    dropPreviewOf(id);
+    // The player is holding an object URL for the blob this replaces. Retracting the
+    // request drops it; the next play on this row mints a fresh one for the new blob.
+    dropPlayRequestFor(id);
     setPool(prev => prev.map(item => (
-      item.id === id ? { ...item, blob, duration, name } : item
+      item.id === id ? { ...item, blob, duration, name, edited: true } : item
     )));
-  }, [dropPreviewOf]);
+  }, [dropPlayRequestFor]);
 
   /** One file straight out of the pool — no ZIP, no grid. */
   const downloadOne = async (item: PoolItem) => {
@@ -562,7 +659,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         <div className="min-w-0 text-center">
           <span className="text-xs font-bold uppercase tracking-[0.2em] text-synthux-green">Browse</span>
           <span className="hidden sm:inline text-[11px] text-gray-500 ml-3">
-            Preview, collect, download. Nothing is written to your drive.
+            Preview, collect, download. No folder is opened and no permission is asked.
           </span>
         </div>
 
@@ -602,9 +699,11 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               // browser only cares that the import resolved.
               onImport={async (...args) => { await addToPool(...args); }}
               onEditSample={editFromBrowser}
-              onPreviewPlay={stopPoolPreview}
+              hostPlayback={playRequest}
+              onPlaybackChange={handlePlaybackChange}
               onLocateInPool={locateInPool}
-              forceStop={isPreviewPlaying}
+              // The editor opens over Browse with a transport of its own.
+              forceStop={!!editingId}
               addedPaths={pooledPaths}
               userLibrary={userLibrary}
               onRemoteBulkImport={(samples, _target, origin, license) => addManyToPool(samples, origin, license)}
@@ -638,12 +737,17 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                 <p className="text-[11px] text-gray-500 mt-0.5">{poolSummary}</p>
               </div>
               <div className="flex items-center gap-1">
+                {/*
+                  * The way out. A refresh used to be it — the pool is now kept, so
+                  * this is the only thing that empties it, and it says so.
+                  */}
                 {pool.length > 0 && (
                   <button
-                    onClick={() => { if (previewId) dropPreviewOf(previewId); setPool([]); }}
+                    onClick={() => setConfirmClear(true)}
                     className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    title="Empty the pool and forget its edits"
                   >
-                    Clear
+                    Empty pool
                   </button>
                 )}
                 <button
@@ -659,9 +763,9 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
             <div ref={poolListRef} className="flex-1 overflow-y-auto p-2 min-h-0">
               {pool.length === 0 ? (
                 <p className="p-4 text-xs text-gray-500 leading-relaxed">
-                  Add samples from the browser and they collect here — in memory only, until you
-                  download them or turn them into a project. The first 36 spread across the
-                  6&nbsp;×&nbsp;6 grid in this order — drag to rearrange.
+                  Add samples from the browser and they collect here, ready to download or turn
+                  into a project. The first 36 spread across the 6&nbsp;×&nbsp;6 grid in this
+                  order — drag to rearrange.
                 </p>
               ) : (
                 <ul className="space-y-1">
@@ -669,7 +773,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                     const slot = slotLabelForIndex(index);
                     const tape = tapeForIndex(index);
                     const isLocated = locatedPoolId === item.id;
-                    const isPreviewing = previewId === item.id;
+                    const isPlayingThis = playingPoolId === item.id && isPlaying;
                     return (
                       <li
                         key={item.id}
@@ -706,28 +810,35 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                           {slot || 'POOL'}
                         </span>
                         <button
-                          onClick={() => togglePoolPreview(item)}
+                          onClick={() => requestPoolPlay(item)}
                           className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-full border transition-all ${
-                            isPreviewing && isPreviewPlaying
+                            isPlayingThis
                               ? 'bg-synthux-yellow border-synthux-yellow text-black scale-105'
                               : 'bg-black/50 border-white/10 text-gray-400 hover:text-white hover:border-white/30'
                           }`}
-                          title={isPreviewing && isPreviewPlaying ? 'Pause' : 'Listen to this file as it stands'}
+                          title={isPlayingThis ? 'Pause' : 'Listen to this file as it stands — it plays in the bar below'}
                         >
-                          {isPreviewing && isPreviewPlaying
+                          {isPlayingThis
                             ? <Pause size={11} fill="currentColor" />
                             : <Play size={11} fill="currentColor" className="ml-0.5" />}
                         </button>
                         <span className="min-w-0 flex-1">
                           <span className="block text-[11px] font-mono truncate text-gray-200">{item.name}</span>
                           <span className="block text-[9px] text-gray-600 truncate">
+                            {item.edited && <span className="text-synthux-pink font-bold">Edited · </span>}
                             {formatDuration(item.duration || 0)}{item.origin ? ` · ${item.origin}` : ''}
                           </span>
                         </span>
                         <button
                           onClick={() => setEditingId(item.id)}
-                          className="shrink-0 p-1 rounded text-gray-600 hover:text-synthux-pink hover:bg-synthux-pink/10 transition-colors"
-                          title="Edit this file — saved edits go straight back into the pool"
+                          className={`shrink-0 p-1 rounded transition-colors ${
+                            item.edited
+                              ? 'text-synthux-pink bg-synthux-pink/10 hover:bg-synthux-pink/20'
+                              : 'text-gray-600 hover:text-synthux-pink hover:bg-synthux-pink/10'
+                          }`}
+                          title={item.edited
+                            ? 'Edited since it was pooled — open the editor again'
+                            : 'Edit this file — saved edits go straight back into the pool'}
                         >
                           <AudioWaveform size={12} />
                         </button>
@@ -775,39 +886,46 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                 </p>
               )}
 
-              <button
-                onClick={downloadLooseFiles}
-                disabled={pool.length === 0 || isExporting}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-blue/40 bg-synthux-blue/10
-                  text-synthux-blue text-left transition-all hover:bg-synthux-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <FileStack size={16} className="shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-bold">Download the files</span>
-                  <span className="block text-[10px] opacity-70">
-                    All {pool.length || ''} of them, original names, SK-ready WAV
+              {/*
+                * Button and checkbox share one bordered block: the grouping option is the
+                * loose download's alone, and sitting loose underneath both buttons it read
+                * as if it also applied to the SD build, which it never did.
+                */}
+              <div className="rounded-lg border border-synthux-blue/40 bg-synthux-blue/10 overflow-hidden">
+                <button
+                  onClick={downloadLooseFiles}
+                  disabled={pool.length === 0 || isExporting}
+                  className="w-full flex items-center gap-3 px-3 py-2.5
+                    text-synthux-blue text-left transition-all hover:bg-synthux-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <FileStack size={16} className="shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-bold">Download the files</span>
+                    <span className="block text-[10px] opacity-70">
+                      All {pool.length || ''} of them, original names, SK-ready WAV
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
 
-              <label className="flex items-center gap-2 pl-1 cursor-pointer group select-none">
-                <span className={`w-3.5 h-3.5 shrink-0 rounded-[3px] border flex items-center justify-center transition-colors ${
-                  sortLooseIntoTapes
-                    ? 'bg-synthux-blue border-synthux-blue'
-                    : 'bg-black/40 border-gray-700 group-hover:border-gray-500'
-                }`}>
-                  {sortLooseIntoTapes && <Check size={9} className="text-black stroke-[4]" />}
-                </span>
-                <input
-                  type="checkbox"
-                  checked={sortLooseIntoTapes}
-                  onChange={(e) => setSortLooseIntoTapes(e.target.checked)}
-                  className="sr-only"
-                />
-                <span className="text-[10px] text-gray-500 group-hover:text-gray-300 transition-colors">
-                  Sort into tape folders ({TAPE_COLORS.map(c => c.charAt(0)).join('/')})
-                </span>
-              </label>
+                <label className="flex items-center gap-2 px-3 py-2 border-t border-synthux-blue/20 cursor-pointer group select-none">
+                  <span className={`w-3.5 h-3.5 shrink-0 rounded-[3px] border flex items-center justify-center transition-colors ${
+                    sortLooseIntoTapes
+                      ? 'bg-synthux-blue border-synthux-blue'
+                      : 'bg-black/40 border-gray-700 group-hover:border-gray-500'
+                  }`}>
+                    {sortLooseIntoTapes && <Check size={9} className="text-black stroke-[4]" />}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={sortLooseIntoTapes}
+                    onChange={(e) => setSortLooseIntoTapes(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className="text-[10px] text-gray-500 group-hover:text-gray-300 transition-colors">
+                    Sort this ZIP into tape folders ({TAPE_COLORS.map(c => c.charAt(0)).join('/')})
+                  </span>
+                </label>
+              </div>
 
               <p className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed pt-1">
                 <Download size={11} className="shrink-0 mt-0.5" />
@@ -833,6 +951,21 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                   </button>
                 </>
               )}
+
+              {/*
+                * Where the files actually live. Permanent, not a toast: it is the one
+                * thing about the pool that isn't visible on screen, and the last clause
+                * is the honest part — eviction is neither preventable nor detectable
+                * from here, so nothing above should read as a promise.
+                */}
+              <p className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed pt-2 border-t border-white/5">
+                <Database size={11} className="shrink-0 mt-0.5" />
+                <span>
+                  The pool is kept in this browser's storage. It survives a refresh and leaving
+                  for the hub. It is gone if you clear this site's data, and your browser may
+                  evict it on its own. Download or import anything you want to keep.
+                </span>
+              </p>
             </div>
           </aside>
         )}
@@ -862,17 +995,6 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         </Suspense>
       )}
 
-      {/*
-        * The pool's own player. One blob is loaded at a time, so `previewUrlRef` is
-        * the whole of the object-URL bookkeeping.
-        */}
-      <audio
-        ref={previewAudioRef}
-        onPlay={() => setIsPreviewPlaying(true)}
-        onPause={() => setIsPreviewPlaying(false)}
-        onEnded={() => setIsPreviewPlaying(false)}
-      />
-
       <ExportProgressModal
         isOpen={showExportProgress}
         onClose={() => setShowExportProgress(false)}
@@ -896,6 +1018,20 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         projectName={createdProject}
         onDismiss={() => setCreatedProject(null)}
         onEnterStudio={onEnterStudio}
+      />
+
+      <ConfirmModal
+        isOpen={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          setPlayRequest(null);
+          setPool([]);
+        }}
+        title="Empty the temporary pool?"
+        message={`All ${pool.length} ${pool.length === 1 ? 'file' : 'files'} leave the pool, and any edits you made to them are forgotten. Files you have already downloaded or imported into a project are not affected.`}
+        confirmLabel="Empty it"
+        isDestructive
       />
     </div>
   );

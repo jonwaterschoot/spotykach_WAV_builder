@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, Layers, Menu } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { SamplePack } from '../data/samplePacks';
@@ -50,17 +50,28 @@ interface SampleBrowserProps {
      */
     onEditSample?: (url: string, name: string, origin?: string, license?: string, sourcePath?: string) => Promise<void>;
     /**
-     * Fires when this browser starts a preview, so a host with its own player can
-     * stop it. `forceStop` is the other half of the same handshake — without both,
-     * two audio elements happily play over each other.
+     * A blob the *host* wants played, routed through this browser's own player so it
+     * arrives with the transport bar, the scrubber, the name and locate.
+     *
+     * There used to be a second `<audio>` in Browse mode and a two-way handshake to
+     * keep the pair from playing over each other; one player and one request needs
+     * neither. `null` means "stop" — the host sends it when the blob behind the key
+     * is replaced or removed, so a stale object URL is never played. `nonce` is
+     * bumped per click, so asking twice for the same key still arrives and toggles.
      */
-    onPreviewPlay?: () => void;
+    hostPlayback?: { key: string; name: string; blob: Blob; nonce: number } | null;
+    /** What the player is on now, so a host row can show its own play/pause state. */
+    onPlaybackChange?: (key: string | null, playing: boolean) => void;
     /**
      * "Locate" for a file the host is also holding. Called with the playing sample's
      * path alongside the in-list locate, and the host decides whether it recognises
      * it — Browse mode reveals it in the temporary pool.
      */
     onLocateInPool?: (sourcePath: string) => void;
+    /**
+     * One-way "stop, something else has the audio now" — both hosts raise it while an
+     * editor is open, and that editor brings its own transport.
+     */
     forceStop?: boolean;
 }
 
@@ -101,9 +112,10 @@ export const SampleBrowser = ({
     onImportToTape,
     onRemoteBulkImport,
     onEditSample,
-    onPreviewPlay,
+    hostPlayback,
+    onPlaybackChange,
     onLocateInPool,
-    forceStop
+    forceStop,
 }: SampleBrowserProps) => {
 
     const isStandalone = mode === 'standalone';
@@ -473,16 +485,54 @@ export const SampleBrowser = ({
     }, [locatedSamplePath]);
 
     // --------------------------------------------------------------------------------
-    // 4b. External Stop Signal
+    // 4b. The host's player: a blob it holds, played through this one
     // --------------------------------------------------------------------------------
-    useEffect(() => {
-        if (forceStop && audioRef.current && !audioRef.current.paused) {
+    /**
+     * `handlePlay` is declared further down (after the `isOpen` guard) and is a fresh
+     * closure every render, so the request effect reaches it through a ref rather
+     * than listing it as a dependency and re-firing on every render.
+     */
+    const handlePlayRef = useRef<(sample: any) => void>(() => {});
+
+    /** Off, unloaded, and no object URL left behind. */
+    const stopPlayback = useCallback(() => {
+        if (audioRef.current) {
             audioRef.current.pause();
-            setIsPreviewPlaying(false);
-            setPlayingSample(null);
-            setPlayingSampleName('');
+            audioRef.current.removeAttribute('src');
         }
-    }, [forceStop]);
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+        }
+        setIsPreviewPlaying(false);
+        setPlayingSample(null);
+        setPlayingSampleName('');
+        setPlayingSampleOrigin(null);
+    }, []);
+
+    useEffect(() => {
+        if (forceStop) stopPlayback();
+    }, [forceStop, stopPlayback]);
+
+    useEffect(() => {
+        if (!hostPlayback) {
+            // Nothing requested, or the host retracting one: whatever it had us load
+            // may be a blob that no longer exists.
+            stopPlayback();
+            return;
+        }
+        handlePlayRef.current({
+            path: hostPlayback.key,
+            name: hostPlayback.name,
+            _isVirtual: true,
+            _blob: hostPlayback.blob,
+            _external: true,
+        });
+    }, [hostPlayback, stopPlayback]);
+
+    useEffect(() => {
+        onPlaybackChange?.(playingSample, isPreviewPlaying);
+    }, [playingSample, isPreviewPlaying, onPlaybackChange]);
 
 
     // --------------------------------------------------------------------------------
@@ -586,10 +636,8 @@ export const SampleBrowser = ({
         if (playingSample === sample.path && audioRef.current && !audioRef.current.paused) {
             audioRef.current?.pause();
         } else if (playingSample === sample.path && audioRef.current && audioRef.current.paused) {
-            onPreviewPlay?.();
             audioRef.current.play().catch(e => console.error("Preview resume failed", e));
         } else {
-            onPreviewPlay?.();
             if (audioRef.current) {
                 audioRef.current.pause();
                 if (previewUrlRef.current) {
@@ -607,7 +655,9 @@ export const SampleBrowser = ({
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
                 setPlayingSample(sample.path);
                 setPlayingSampleName(sample.name || sample.path);
-                setPlayingSampleOrigin({
+                // A host blob belongs to no source in this column, so there is nowhere
+                // for locate to switch to — it hands the key to the host instead.
+                setPlayingSampleOrigin(sample._external ? null : {
                     packId: selectedPackId,
                     projectId: selectedProjectId,
                     folderId: selectedCustomFolderId,
@@ -615,6 +665,8 @@ export const SampleBrowser = ({
             }
         }
     };
+
+    handlePlayRef.current = handlePlay;
 
     /**
      * Jump back to the playing file: reopen the source it came from, scroll it into
@@ -624,24 +676,29 @@ export const SampleBrowser = ({
     const handleLocatePlaying = () => {
         if (!playingSample) return;
 
-        if (playingSampleOrigin) {
-            // Setting an unchanged id is a no-op, so an in-place locate won't trip
-            // the source-change effect that clears the current multi-selection.
-            setSelectedPackId(playingSampleOrigin.packId);
-            setSelectedProjectId(playingSampleOrigin.projectId);
-            setSelectedCustomFolderId(playingSampleOrigin.folderId);
+        // A blob the host asked us to play has no row in this column — only the host
+        // knows where it lives, so the whole of locate is its answer.
+        if (!playingSampleOrigin) {
+            onLocateInPool?.(playingSample);
+            return;
+        }
 
-            // A tag filter can be hiding the very row we're about to scroll to.
-            if (playingSampleOrigin.packId === 'my-library') {
-                setUserLibraryTagFilter('');
-                setSelectedUserLibraryTags([]);
-            }
+        // Setting an unchanged id is a no-op, so an in-place locate won't trip
+        // the source-change effect that clears the current multi-selection.
+        setSelectedPackId(playingSampleOrigin.packId);
+        setSelectedProjectId(playingSampleOrigin.projectId);
+        setSelectedCustomFolderId(playingSampleOrigin.folderId);
+
+        // A tag filter can be hiding the very row we're about to scroll to.
+        if (playingSampleOrigin.packId === 'my-library') {
+            setUserLibraryTagFilter('');
+            setSelectedUserLibraryTags([]);
         }
 
         // A mounted folder renders LocalFolderBrowser instead of the categorised list,
         // and it owns the scroll-and-glow for its own rows.
         setLocateTarget(playingSample);
-        if (playingSampleOrigin?.packId !== 'custom-folder') {
+        if (playingSampleOrigin.packId !== 'custom-folder') {
             setLocatedSamplePath(playingSample);
         }
 
@@ -767,62 +824,35 @@ export const SampleBrowser = ({
                 >
                     <div className="flex-1 p-4 flex flex-col gap-1 overflow-y-auto">
 
-                        {/* MY LIBRARY */}
-                        {showUserLibrary && (
+                        {/*
+                          * BUILT-IN PACKS (Remote + Local) — first in the column.
+                          *
+                          * Curated Library used to lead, which put the one source whose
+                          * origin is unexplained, and whose contents can't be changed from
+                          * here, at the top with a filter field attached. The packs are what
+                          * a visitor with nothing set up can actually browse.
+                          */}
                         <div className="mb-4">
-                            <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center justify-between px-1 mb-2">
-                                Curated Library
-                                {onOpenLibraryManager && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onOpenLibraryManager(); }}
-                                        className="p-1 hover:bg-gray-700 rounded text-synthux-orange"
-                                        title="Open Library Manager"
-                                    >
-                                        <Edit2 size={12} />
-                                    </button>
-                                )}
-                            </h3>
-                            <button
-                                data-source
-                                onClick={() => { setSelectedPackId('my-library'); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
-                                className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'my-library'
-                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                    }`}
-                            >
-                                <User size={14} /> Curated Library
-                            </button>
-                            {isUserLibrarySelected && (
-                                <div className="mt-2 ml-2 pl-2 border-l border-gray-800">
-                                    <input
-                                        value={userLibraryTagFilter}
-                                        onChange={(e) => setUserLibraryTagFilter(e.target.value)}
-                                        placeholder="Filter by tags..."
-                                        className="w-full bg-black/40 border border-gray-700 rounded px-2 py-1.5 text-[11px] text-gray-200"
-                                    />
-                                    {availableUserLibraryTags.length > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1.5">
-                                            {availableUserLibraryTags.slice(0, 10).map(tag => {
-                                                const selected = selectedUserLibraryTags.includes(tag);
-                                                return (
-                                                    <button
-                                                        key={tag}
-                                                        onClick={() => setSelectedUserLibraryTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
-                                                        className={`px-2 py-1 rounded-full text-[9px] border transition-colors ${selected
-                                                            ? 'bg-synthux-orange/20 border-synthux-orange/50 text-synthux-orange'
-                                                            : 'bg-black/40 border-gray-700 text-gray-500 hover:text-gray-300'
-                                                            }`}
-                                                    >
-                                                        {tag}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase px-1 mb-2">Built-in Packs</h3>
+                            {isManifestLoading && remotePacks.length === 0 && (
+                                <div className="px-3 py-2 text-xs text-gray-600 flex items-center gap-2">
+                                    <Loader size={12} className="animate-spin" /> Loading manifest...
                                 </div>
                             )}
+                            {allPacks.map((pack: any) => (
+                                <button
+                                    key={pack.id}
+                                    data-source
+                                    onClick={() => { setSelectedPackId(pack.id); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors mb-0.5 ${selectedPackId === pack.id
+                                        ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                        }`}
+                                >
+                                    {pack.name}
+                                </button>
+                            ))}
                         </div>
-                        )}
 
                         {/* PROJECT SAMPLES — a project source needs a work folder, so Studio only. */}
                         {!isStandalone && (
@@ -861,8 +891,80 @@ export const SampleBrowser = ({
                         </div>
                         )}
 
-                        {/* LOCAL FOLDERS */}
+                        {/* CURATED LIBRARY */}
+                        {showUserLibrary && (
                         <div className="mb-4">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center justify-between px-1 mb-2">
+                                Curated Library
+                                {onOpenLibraryManager && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenLibraryManager(); }}
+                                        className="p-1 hover:bg-gray-700 rounded text-synthux-orange"
+                                        title="Open Library Manager"
+                                    >
+                                        <Edit2 size={12} />
+                                    </button>
+                                )}
+                            </h3>
+                            <button
+                                data-source
+                                onClick={() => { setSelectedPackId('my-library'); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'my-library'
+                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                    }`}
+                            >
+                                <User size={14} /> Curated Library
+                            </button>
+                            {/* Where the collection comes from — the one thing the name doesn't say. */}
+                            <p className="px-3 pt-1.5 text-[10px] text-gray-600 leading-relaxed">
+                                {isStandalone
+                                    ? 'Sounds you saved to your own library in Studio, kept in this browser. Read-only here.'
+                                    : 'Sounds you saved to your own library, kept in this browser — add and tag them in the Library Manager.'}
+                            </p>
+                            {isUserLibrarySelected && (
+                                <div className="mt-2 ml-2 pl-2 border-l border-gray-800">
+                                    {/*
+                                      * The typed filter is Studio's. There it sits over the user's
+                                      * own managed library with a Library Manager behind it; in
+                                      * standalone the list is short, read-only, and the field was
+                                      * the most prominent control in the column. The chips stay in
+                                      * both — they say what is in the list rather than asking.
+                                      */}
+                                    {!isStandalone && (
+                                        <input
+                                            value={userLibraryTagFilter}
+                                            onChange={(e) => setUserLibraryTagFilter(e.target.value)}
+                                            placeholder="Filter by tags..."
+                                            className="w-full bg-black/40 border border-gray-700 rounded px-2 py-1.5 text-[11px] text-gray-200"
+                                        />
+                                    )}
+                                    {availableUserLibraryTags.length > 0 && (
+                                        <div className={`flex flex-wrap gap-1.5 ${isStandalone ? '' : 'mt-2'}`}>
+                                            {availableUserLibraryTags.slice(0, 10).map(tag => {
+                                                const selected = selectedUserLibraryTags.includes(tag);
+                                                return (
+                                                    <button
+                                                        key={tag}
+                                                        onClick={() => setSelectedUserLibraryTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+                                                        className={`px-2 py-1 rounded-full text-[9px] border transition-colors ${selected
+                                                            ? 'bg-synthux-orange/20 border-synthux-orange/50 text-synthux-orange'
+                                                            : 'bg-black/40 border-gray-700 text-gray-500 hover:text-gray-300'
+                                                            }`}
+                                                    >
+                                                        {tag}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        )}
+
+                        {/* LOCAL FOLDERS — last: mounting a folder is a deliberate act. */}
+                        <div>
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center justify-between px-1 mb-2">
                                 Local Folders
                                 <button onClick={handleAddCustomFolder} className="p-1 hover:bg-gray-700 rounded text-synthux-orange" title="Mount Local Folder">
@@ -905,29 +1007,6 @@ export const SampleBrowser = ({
                             {customFolders.length === 0 && (
                                 <div className="px-3 py-2 text-xs text-gray-600 italic">No folders mounted.</div>
                             )}
-                        </div>
-
-                        {/* BUILT-IN PACKS (Remote + Local) */}
-                        <div>
-                            <h3 className="text-[10px] font-bold text-gray-500 uppercase px-1 mb-2">Built-in Packs</h3>
-                            {isManifestLoading && remotePacks.length === 0 && (
-                                <div className="px-3 py-2 text-xs text-gray-600 flex items-center gap-2">
-                                    <Loader size={12} className="animate-spin" /> Loading manifest...
-                                </div>
-                            )}
-                            {allPacks.map((pack: any) => (
-                                <button
-                                    key={pack.id}
-                                    data-source
-                                    onClick={() => { setSelectedPackId(pack.id); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
-                                    className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors mb-0.5 ${selectedPackId === pack.id
-                                        ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
-                                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                        }`}
-                                >
-                                    {pack.name}
-                                </button>
-                            ))}
                         </div>
 
                     </div>

@@ -3,10 +3,11 @@ import type { AppState } from '../types';
 import { dbName } from './storageNamespace';
 
 const DB_NAME = dbName('spotykach-wav-builder');
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_NAME = 'app-state';
 const USER_LIBRARY_STORE = 'user-library';
 const CUSTOM_FOLDERS_STORE = 'custom-folders';
+const BROWSE_POOL_STORE = 'browse-pool';
 
 const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -19,6 +20,9 @@ const initDB = async () => {
             }
             if (!db.objectStoreNames.contains(CUSTOM_FOLDERS_STORE)) {
                 db.createObjectStore(CUSTOM_FOLDERS_STORE);
+            }
+            if (!db.objectStoreNames.contains(BROWSE_POOL_STORE)) {
+                db.createObjectStore(BROWSE_POOL_STORE);
             }
         },
     });
@@ -85,6 +89,59 @@ export const loadUserLibraryFromDB = async (): Promise<import('../types').UserLi
     } catch (e) {
         console.error('Failed to load user library from DB', e);
         return null;
+    }
+};
+
+/**
+ * One entry of Browse mode's temporary pool — R2-4.
+ *
+ * Its own store, not the `app-state` slot: locked decision 5 says the project-free
+ * tiers must not write that slot, and Browse still doesn't. The pool used to be
+ * React state that died with the mode, so leaving for the hub emptied it.
+ *
+ * `original` as well as `current`, which is the same two-version rule the rest of
+ * the app follows: an edit replaces `current` and leaves the file as it was pooled
+ * still recoverable.
+ */
+export interface BrowsePoolEntry {
+    id: string;
+    name: string;
+    fileName?: string;
+    duration: number;
+    origin?: string;
+    license?: string;
+    sourceSamplePath?: string;
+    sourcePath?: string;
+    edited?: boolean;
+    original: Blob;
+    current: Blob;
+}
+
+export const saveBrowsePoolToDB = async (entries: BrowsePoolEntry[]) => {
+    try {
+        const db = await initDB();
+        await db.put(BROWSE_POOL_STORE, entries, 'current');
+    } catch (e) {
+        console.error('Failed to save the temporary pool to DB', e);
+    }
+};
+
+export const loadBrowsePoolFromDB = async (): Promise<BrowsePoolEntry[]> => {
+    try {
+        const db = await initDB();
+        return (await db.get(BROWSE_POOL_STORE, 'current')) || [];
+    } catch (e) {
+        console.error('Failed to load the temporary pool from DB', e);
+        return [];
+    }
+};
+
+export const clearBrowsePoolFromDB = async () => {
+    try {
+        const db = await initDB();
+        await db.delete(BROWSE_POOL_STORE, 'current');
+    } catch (e) {
+        console.error('Failed to clear the temporary pool', e);
     }
 };
 

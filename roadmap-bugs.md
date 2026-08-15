@@ -26,8 +26,9 @@ release:
   with the live app. The production bundle's names are unchanged, so no existing user loses handles.
 - **Phases 4–7 have not been verified in a browser**, apart from what the test pass has reached. Build
   and types are clean; most paths have never been exercised against a real SD card or folder picker.
-- **Four of the five doors have had no functional pass.** Browse has had one round; Presets, Config,
-  Editor and Studio have had none, and the editor's known bugs are unassessed.
+- **Four of the five doors have had no functional pass.** Browse has had two rounds; Presets, Config,
+  Editor and Studio have had none, and the editor's known bugs are unassessed. Everything round 2
+  built is itself untested in a browser — that is round 3.
 
 ---
 
@@ -67,121 +68,145 @@ All six built 2026-08-15; **none of it has been used on real hardware or a real 
 
 Still on the list: the drawer and the pool sheet on a real phone.
 
+**Superseded by round 2:** the pool's own play button now drives the main player bar rather than a
+second `<audio>` (R2-1), and the pool is no longer memory-only (R2-4).
+
 ### Round 2 — Sample Browser, walked in a browser *(2026-08-15)*
 
-Nine items, none built. **R2-1 is the only defect**; the rest are the surface not yet saying what it
-means, plus one piece of architecture (R2-4, decided — the pool gets persisted) that R2-9 waits on.
-Every item below is self-contained: pick one, read the lines it points at, build it, commit it.
-
-Suggested order — the first four are an hour of work between them and clear the noise, then the two
-that change how a screen reads, then the big one:
-**R2-5 → R2-7 → R2-6 → R2-2 → R2-1 → R2-3 → R2-8 → R2-4 → R2-9.**
+Nine items. **R2-1 through R2-8 are built** (2026-08-15) and none of them has been used in a browser
+yet — round 3 is walking them. **R2-9 is a design, deliberately not built**; the design pass it asked
+for is written out below and is what a build would follow.
 
 ---
 
-#### R2-1 — One player, not two 🐞
+#### R2-1 — One player, not two 🐞 ✅ *built*
 
-*Playing a file from the temporary pool should show in the main player bar.* Today only the browser's
-own rows drive the scrub bar; a pool row plays with no scrubber, no name, no locate. Play/pause on the
-row works, which is the half that should be kept.
+*Playing a file from the temporary pool should show in the main player bar.* Only the browser's own
+rows drove the scrub bar; a pool row played with no scrubber, no name, no locate.
 
-The cause is that round 1 gave the pool its own `<audio>` element ([BrowseMode.tsx:152](src/modes/BrowseMode.tsx#L152))
-and then needed a two-way handshake — `onPreviewPlay` + `forceStop` — to stop the two players talking
-over each other. **The fix is to delete the second player**, not to duplicate the bar:
+The cause was round 1 giving the pool its own `<audio>` element and a two-way handshake —
+`onPreviewPlay` + `forceStop` — to stop the two players talking over each other. The second player is
+gone rather than the bar duplicated:
 
-- Hand the blob *into* the browser instead. A new optional prop on `SampleBrowser` — a play request
-  (`{ key, name, blob }`) that it routes through its existing `handlePlay` as a virtual sample
-  ([SampleBrowser.tsx:585](src/components/SampleBrowser.tsx#L585)) — gets the bar, the scrubber, the
-  name and locate for free.
-- The pool row needs the playing state back, so pair it with `onPlaybackChange(key, playing)`.
-- `onPreviewPlay`/`forceStop`, `togglePoolPreview`, `dropPreviewOf` and the `previewUrlRef`
-  bookkeeping in BrowseMode all go away with it. Net less code than there is now.
-- Keep: the object URL must still be re-minted when an edit replaces a pooled blob.
+- `SampleBrowser` takes a **`hostPlayback`** prop — `{ key, name, blob, nonce }` — and routes it
+  through its own `handlePlay` as a virtual sample, so a pool row gets the bar, the scrubber, the name
+  and locate for free. `nonce` is bumped per click, which is what makes a second click on the same row
+  arrive at all and toggle play/pause.
+- **`onPlaybackChange(key, playing)`** hands the row its play state back. Keys are `pool:<id>`, so the
+  browser's own paths can never collide with them.
+- `hostPlayback = null` means *stop*: Browse retracts the request when an edit replaces the blob or the
+  entry is removed, so a stale object URL is never played and the next play mints a fresh one.
+- Locate on a host blob has nowhere in the column to jump to, so `playingSampleOrigin` is left null and
+  the whole of locate becomes `onLocateInPool` — which now accepts a `pool:` key as well as a source
+  path, and reveals the pool row either way.
+- `onPreviewPlay`, `togglePoolPreview`, `dropPreviewOf`, `previewUrlRef` and the second `<audio>` are
+  all gone. **`forceStop` stayed**: Studio uses it (`App.tsx`) for "the editor is open and owns the
+  audio", which is a one-way signal and not part of the handshake. Browse now raises it too, so opening
+  the editor over Browse stops the browser's player as well as the pool's used to be stopped.
 
-#### R2-2 — Show that a pool entry has been edited
+#### R2-2 — Show that a pool entry has been edited ✅ *built*
 
-An edited entry looks exactly like an untouched one. Add an `edited` flag to `PoolItem`, set it in
-`applyEdit` ([BrowseMode.tsx:371](src/modes/BrowseMode.tsx#L371)), and accent the row's editor button
-when it's true — plus a word in the row's second line, which currently shows duration and origin.
+`PoolItem` has an `edited` flag, set in `applyEdit`. The row's editor button is accented pink and
+persistently tinted when it's true, and the second line leads with **Edited ·** before duration and
+origin.
 
-#### R2-3 — The editor's two green buttons
+#### R2-3 — The editor's two green buttons ✅ *built*
 
-"SAVED TO POOL" and "DONE" sit side by side, both green, both with a check, meaning different things.
-Scrap the DONE state: the close button at [WaveformEditor.tsx:4479](src/components/WaveformEditor.tsx#L4479)
-should always read **CLOSE** with an X and stay visually secondary. The "you are safe to leave" signal
-is the commit button's job, and it already does it.
+The close button is now always **CLOSE** with an X, always visually secondary — the green/check DONE
+state is gone. "You are safe to leave" is the commit button's signal and it already gives it. As
+flagged, this changes Studio's tape editor too, since it is the same button.
 
-**Note:** that button is shared with Studio's tape editor, so this changes both. That reads like an
-improvement in both — but it is the one item here that touches a surface outside Browse.
+#### R2-4 — Persist the temporary pool 🏗️ ✅ *built (decided 2026-08-15: persist)*
 
-#### R2-4 — Persist the temporary pool 🏗️ *(decided 2026-08-15: persist)*
+The pool used to be React state that lived and died with the mode, so leaving for the hub or refreshing
+emptied it and took the edit history with it. It now survives both.
 
-Today it doesn't survive anything: leaving for the hub and coming back, or refreshing, empties the
-pool and loses the edit history with it. That was deliberate — the pool is React state that lives and
-dies with the mode, which is what let Browse write nothing at all. **Decided: persist it**, so
-revisiting Browse from anywhere in the hub finds the selection where it was left.
+- **Its own IndexedDB store** — `browse-pool` in `spotykach-wav-builder`, DB version 4. Not the
+  app-state slot: locked decision 5 stands and Studio's state is untouched. It goes through
+  `dbName()` like every other store, so a preview build never shares a pool with the live app.
+- **`original + current` per entry.** `PoolItem` carries `originalBlob` alongside `blob`; the store
+  writes both. Same two-version rule as the rest of the app, and the thing R2-9 would build on.
+- **Restored on mount**, and the restore refuses to clobber: anything added while the read was in
+  flight wins. Writes are gated on the load resolving and serialised behind a 600 ms debounce, the same
+  shape as Phase 7's auto-save, because every entry carries two audio blobs.
+- **"Clear" is now "Empty pool"**, behind a confirm that says what goes: the files leave and their
+  edits are forgotten, downloads and imported projects are untouched.
+- **A permanent line on the pool panel** says where the files live — this browser's storage, survives a
+  refresh and the trip to the hub, gone if site data is cleared, and the browser may evict it on its
+  own. No promise beyond that, because eviction is neither preventable nor detectable from here.
+- The exit-to-hub path was re-read: Browse never had a leaving warning, so there was nothing claiming
+  work would be lost. The editor's discard warning is about unsaved *editor* changes and already says
+  that anything saved to the pool stays.
 
-- **Its own IndexedDB store.** Not the app-state slot — locked decision 5 stays intact and Studio's
-  state is untouched. Namespaced through `storageNamespace.ts` like every other store, so a preview
-  build never shares a pool with the live app.
-- **Store `original + current` per entry**, not just the current blob. That keeps the edit history the
-  round-2 note asked about, and it is the same two-version rule the rest of the app follows.
-- **Restored on mount.** Careful with the same trap auto-save hit in Phase 7: don't let an empty
-  initial state write over the snapshot it is about to be replaced by.
-- **"Clear" becomes the way out**, not a refresh — reword it to say what it clears.
-- **Say where the files live.** A permanent line on the pool panel: kept in this browser's storage,
-  survives a refresh, gone if site data is cleared or the browser evicts it. We can neither prevent
-  eviction nor detect it, so the wording should not promise otherwise.
-- With this in, **the leaving warning is no longer needed** — but the exit-to-hub path should be
-  re-read to make sure it doesn't still claim work will be lost.
+#### R2-5 — The UPPERCASE warning is wrong ✂️ ✅ *built*
 
-#### R2-5 — The UPPERCASE warning is wrong ✂️
+All three copies — [docs/how_to_copy_to_SDcard.md](docs/how_to_copy_to_SDcard.md) (which ships verbatim
+as `INSTALL_INSTRUCTIONS.txt`), `AboutHelpModal` and `HelpModal` — now say the app writes uppercase and
+recent firmware accepts either case, with `B/1.WAV` and `B/1.wav` both shown.
 
-`INSTALL_INSTRUCTIONS.txt` in the SD download is [docs/how_to_copy_to_SDcard.md](docs/how_to_copy_to_SDcard.md)
-verbatim, and line 67 still says *"⚠️ Folder and File names must be UPPERCASE."* Recent firmware
-accepts `B/1.wav` and `B/1.WAV` alike as long as the contents are right — this is already recorded as
-settled in the Done section below, so the doc is simply stale. Same sentence is repeated in
-[AboutHelpModal.tsx:359](src/components/AboutHelpModal.tsx#L359) and
-[HelpModal.tsx:188](src/components/HelpModal.tsx#L188); fix all three to say the app writes uppercase
-and the firmware accepts either.
+#### R2-6 — The loose download's README must credit per pack ✅ *built*
 
-#### R2-6 — The loose download's README must credit per pack
+`buildLooseReadme` groups licences by origin into a `Map` instead of flattening them into one `Set`,
+and prints `- [origin] → licence` per pack, with a line saying each licence covers only the files
+credited to that pack above. Same shape `generateReadme` uses for a built card.
 
-Picking from two packs produces a "Usage context" section that lists both licences with no indication
-of which belongs to whom — one CC-BY 4.0 and one WTFPL, run together as if they were a single
-statement. `buildLooseReadme` ([BrowseMode.tsx:65](src/modes/BrowseMode.tsx#L65)) flattens
-`items.map(i => i.license)` into a `Set` and drops the origin on the floor. Group by origin and print
-`[pack / artist] → licence`, the way `generateReadme` already does at
-[exportUtils.ts:509](src/utils/exportUtils.ts#L509).
+#### R2-7 — The tape-folder checkbox belongs to one button ✂️ ✅ *built*
 
-#### R2-7 — The tape-folder checkbox belongs to one button ✂️
+The checkbox now lives inside a bordered block with the "Download the files" button and nothing else,
+reads **"Sort this ZIP into tape folders"**, and the loose README's sentence about it points at its new
+home instead of its old position.
 
-"Sort into tape folders" sits below both download buttons ([BrowseMode.tsx:793](src/modes/BrowseMode.tsx#L793)),
-so it reads as applying to the SD build as well — which it doesn't. Move it inside the "Download the
-files" block, visually bound to that button alone. The loose README refers to it by position too
-([BrowseMode.tsx:106](src/modes/BrowseMode.tsx#L106)) — update that sentence with it.
+#### R2-8 — The sources column leads with its least obvious source ✅ *built*
 
-#### R2-8 — The sources column leads with its least obvious source
+- Column order is now **Built-in Packs → Projects (Studio only) → Curated Library → Local Folders**.
+- The tag filter *input* is Studio-only, per the recommendation: standalone keeps the chips, which
+  describe the list rather than asking the user to type at it. Studio keeps both — there the list is
+  the user's own managed library with a Library Manager behind it.
+- A line under Curated says where the collection comes from, worded per host: read-only in standalone,
+  "add and tag them in the Library Manager" in Studio.
 
-Curated Library is first *and* carries a filter field, which makes the most prominent thing in the
-column the one whose origin is unexplained and whose contents can't be changed from here. Local
-Folders, by contrast, earns a place — mounting a folder for a quick browse is exactly what this
-surface is for.
+#### R2-9 — Link the pool to the workspace 🏗️ *(design done, not built)*
 
-- Reorder the column: built-in packs first, then Curated Library and Local Folders at the bottom
-  ([SampleBrowser.tsx:761](src/components/SampleBrowser.tsx#L761) onwards).
-- Drop the tag filter *input* from Curated. **Decide:** the tag chips too, or just the text field —
-  and does this apply in Studio, where the same list is the user's own managed library with a
-  Library Manager behind it? Recommendation: standalone only, text field only.
-- Add one line under Curated saying where the collection comes from.
+With R2-4 in, the pool is durable and the link is possible. **Nothing here is built.** The design pass
+the item asked for:
 
-#### R2-9 — Link the pool to the workspace 🏗️ *(design; build after R2-4)*
+**What the link is.** One direction only, for now: *pool → workspace*. The pool already has an
+"Import into a project" exit that creates a whole new project; this is the smaller, later act of a
+visitor who has since been to Studio and now has a workspace. Reading a workspace project back *into*
+the pool is not part of this — the browser can already open a project as a source.
 
-With R2-4 decided as *persist*, this is live. If someone has been to Studio, the pool and the
-workspace can know about each other: saving the temporary pool into the workspace, and the Project
-Manager listing it with where it currently lives — "still in this browser's storage" or similar. Needs
-its own design pass before any code, in particular what notification makes the link legible rather
-than surprising, and what happens to the pool once it has been saved into a workspace.
+**The trigger.** A third button on the pool panel, visible only when a work folder is known:
+**"Save into the workspace"**. Not automatic, not a prompt on arrival. The pool is a scratch surface
+and the whole reason it reads as safe is that it never acts on its own.
+
+**What it writes.** The pool becomes a project folder like any other, through the same
+`createProjectFromState(buildDetachedState(pool), name)` path "Import into a project" uses — the
+difference is only that the destination is the known workspace rather than a picker. Which means: no
+new on-disk format, no second thing for the Project Manager to understand, and the two-version rule
+applies to `originalBlob + blob` exactly as it does to a project's files.
+
+**What happens to the pool afterwards** — *the pool stays*. Deleting it on save would be the surprise
+the item warns about: the user asked to save a copy somewhere, not to have the surface they were
+working on emptied. Instead each saved entry is marked, and the panel's header says where the copy
+went. If the pool is edited afterwards the mark goes stale, which is honest — the mark says "this was
+saved", not "this is in sync". A second save is a second project, or an overwrite the user confirms by
+name; **it must never silently update the earlier one**, because the pool has no idea what the project
+has done since.
+
+**The notification.** The existing `ProjectCreatedModal` is the right surface and already handles the
+one thing that matters — offering the trip to Studio. It needs one extra line naming the workspace
+folder the project landed in, since unlike the picker flow the user never chose it in the moment.
+
+**The Project Manager's half.** A project created this way is an ordinary project on disk and should
+not be labelled as special. What the item actually asked for — the Manager listing the pool with where
+it currently lives — is a different, smaller thing: **one row above the project list, present only
+while the pool is non-empty**, reading "Temporary pool — N files, kept in this browser" with a link
+into Browse. It is not a project, it is not selectable as one, and saying so plainly is the point.
+
+**Open, and the reason to build this after a round 3:** whether a visitor who reaches Studio should be
+*told* their pool is still there. A pool sitting in storage that nothing ever mentions again is a
+quiet way to lose work; a banner in Studio about a browse-mode scratch pool is noise. Decide that with
+the round-3 walk in hand, not before.
 
 ---
 

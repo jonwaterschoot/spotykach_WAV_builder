@@ -4475,19 +4475,21 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     </button>
                                 </div>
 
+                                {/*
+                                  * Always CLOSE, always secondary. It used to turn green with a
+                                  * check and read DONE once the work was saved — beside a commit
+                                  * button that was also green with a check, saying something else.
+                                  * "You are safe to leave" is the commit button's signal and it
+                                  * already gives it; this one only ever closes the editor.
+                                  */}
                                 <button
                                     onClick={onClose}
-                                    className={`flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg border ${
-                                        isDirty 
-                                            ? 'bg-gray-800 hover:bg-gray-700 text-gray-500 border-transparent hover:border-gray-500' 
-                                            : (!isDirty && (loadedVersionId === activeVersionId || activeVersionId === (versions?.[0]?.id || '')))
-                                                ? 'bg-green-600 hover:bg-green-500 text-white border-transparent hover:scale-105 active:scale-95 shadow-green-900/50'
-                                                : 'bg-gray-800 hover:bg-gray-700 text-gray-400 border-transparent hover:border-gray-500'
-                                    }`}
+                                    className="flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg border
+                                        bg-gray-800 hover:bg-gray-700 text-gray-400 border-transparent hover:border-gray-500"
                                     title={isDirty ? "Close without saving" : "Close Editor"}
                                 >
-                                    {(!isDirty && (loadedVersionId === activeVersionId || activeVersionId === (versions?.[0]?.id || ''))) ? <Check size={18} /> : <X size={18} />}
-                                    {(!isDirty && (loadedVersionId === activeVersionId || activeVersionId === (versions?.[0]?.id || ''))) ? 'DONE' : 'CLOSE'}
+                                    <X size={18} />
+                                    CLOSE
                                 </button>
 
                                 {/* Save Unique Button (For Duplicates) */}
