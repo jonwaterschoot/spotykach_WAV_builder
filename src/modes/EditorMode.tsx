@@ -38,6 +38,21 @@ const LOOSE_COMMIT_LABELS: CommitLabels = {
   cleanToast: 'Nothing to apply',
 };
 
+/**
+ * The same button when a host pool is holding this file — Browse's editor.
+ *
+ * "Apply edit" described the mechanism and left the destination unsaid, which is
+ * the whole of what the user needed to know: the edit goes back to the temporary
+ * pool, and everything the pool can do downstream picks it up. Naming the
+ * destination also makes the button the answer to "where did my edit go".
+ */
+const POOL_COMMIT_LABELS: CommitLabels = {
+  clean: 'SAVED TO POOL',
+  dirty: 'SAVE TO TEMPORARY POOL',
+  hint: 'Save these edits back into the temporary pool',
+  cleanToast: 'Already saved to the pool',
+};
+
 /** A file being edited outside any project: a blob and a name, nothing else. */
 export interface LooseFile {
   name: string;
@@ -218,6 +233,13 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
     }
   }, [record, showToast]);
 
+  /**
+   * A host pool means this file already has somewhere to land, and the pool has its
+   * own "Import into a project" that carries the whole selection rather than this one
+   * file. Offering "Save as project" here as well would be a second, narrower version
+   * of that exit — so the Browse-hosted editor shows one exit, the download, and the
+   * commit button names the other.
+   */
   const transportActions = (
     <>
       <button
@@ -228,16 +250,18 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
       >
         <Download size={16} /> DOWNLOAD
       </button>
-      <button
-        onClick={() => setNameModalOpen(true)}
-        disabled={busy !== null}
-        className="flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
-          active:scale-95 shadow-lg border border-synthux-yellow/50 bg-synthux-yellow/15 text-synthux-yellow
-          hover:bg-synthux-yellow/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-        title="Create a project on your drive from this file"
-      >
-        <FolderPlus size={16} /> SAVE AS PROJECT
-      </button>
+      {!onEdited && (
+        <button
+          onClick={() => setNameModalOpen(true)}
+          disabled={busy !== null}
+          className="flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
+            active:scale-95 shadow-lg border border-synthux-yellow/50 bg-synthux-yellow/15 text-synthux-yellow
+            hover:bg-synthux-yellow/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+          title="Create a project on your drive from this file"
+        >
+          <FolderPlus size={16} /> SAVE AS PROJECT
+        </button>
+      )}
     </>
   );
 
@@ -260,7 +284,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
             versions={record.versions}
             activeVersionId={record.currentVersionId}
             metadata={record.metadata}
-            commitLabels={LOOSE_COMMIT_LABELS}
+            commitLabels={onEdited ? POOL_COMMIT_LABELS : LOOSE_COMMIT_LABELS}
             transportActions={transportActions}
             onAssignVersion={handleAssignVersion}
             onRenameFile={handleRename}
@@ -303,7 +327,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
         title="Leave the editor?"
         message={
           onEdited
-            ? 'Pending changes that have not been applied will be lost. Applied edits stay in your selection.'
+            ? 'Changes you have not saved to the temporary pool will be lost. Everything already saved to the pool stays there.'
             : 'This file is only in memory. Anything you have not downloaded or saved as a project will be lost.'
         }
         confirmLabel="Leave"

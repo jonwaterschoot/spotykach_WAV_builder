@@ -86,6 +86,13 @@ img {
     --font-body: var(--font-body);
 
     --texture-noise: var(--master-texture-image);
+
+    /*
+     * One breakpoint below Tailwind's `sm` (40rem). Phones in portrait sit under
+     * it — that is where Browse drops its second word and its second column, and
+     * where a label has to become an icon rather than wrap.
+     */
+    --breakpoint-xs: 26rem;
 }
 
 @keyframes pulse-glow-anim {

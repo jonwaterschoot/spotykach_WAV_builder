@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioWaveform, Check, ChevronLeft, Download, FileStack, FolderPlus, GripVertical, HardDrive,
-  Layers, Loader, Trash2, X,
+  Layers, Loader, Pause, Play, Trash2, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
@@ -146,6 +146,20 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   const [exportError, setExportError] = useState<string | null>(null);
   const [showExportProgress, setShowExportProgress] = useState(false);
 
+  // Auditioning a pooled file. The browser has its own player for its own sources;
+  // this one plays the blob as it now stands, which is the only way to hear an edit
+  // without opening the editor again.
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewIdRef = useRef<string | null>(previewId);
+  previewIdRef.current = previewId;
+
+  /** The pool row to scroll to and glow, when locate points here. */
+  const [locatedPoolId, setLocatedPoolId] = useState<string | null>(null);
+  const poolListRef = useRef<HTMLDivElement | null>(null);
+
   const poolRef = useRef<PoolItem[]>(pool);
   poolRef.current = pool;
 
@@ -233,7 +247,93 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
     }
   }, [addToPool]);
 
-  const removeFromPool = (id: string) => setPool(prev => prev.filter(item => item.id !== id));
+  // ──────────────────────────────────────────────────────────────────────────
+  // Auditioning what's in the pool
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** Drop the object URL behind the current preview. Safe to call twice. */
+  const releasePreviewUrl = useCallback(() => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => releasePreviewUrl, [releasePreviewUrl]);
+
+  /**
+   * Stop this player. Handed to the browser as `onPreviewPlay`, which is the other
+   * half of the `forceStop` handshake below — without both, the two audio elements
+   * play over each other.
+   */
+  const stopPoolPreview = useCallback(() => {
+    const audio = previewAudioRef.current;
+    if (audio && !audio.paused) audio.pause();
+  }, []);
+
+  /**
+   * A pooled blob has no URL of its own, so each preview mints one and the previous
+   * one is revoked. Only one can be loaded at a time, which is also what makes
+   * dropping the URL on remove or edit sufficient cleanup.
+   */
+  const togglePoolPreview = useCallback((item: PoolItem) => {
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+
+    if (previewId === item.id) {
+      if (audio.paused) audio.play().catch(e => console.error('Could not resume the preview', e));
+      else audio.pause();
+      return;
+    }
+
+    audio.pause();
+    releasePreviewUrl();
+    const url = URL.createObjectURL(item.blob);
+    previewUrlRef.current = url;
+    audio.src = url;
+    setPreviewId(item.id);
+    audio.play().catch(e => console.error('Could not preview this file', e));
+  }, [previewId, releasePreviewUrl]);
+
+  /** The loaded blob is gone or replaced; the URL pointing at it is now a lie. */
+  const dropPreviewOf = useCallback((id: string) => {
+    if (previewIdRef.current !== id) return;
+    previewAudioRef.current?.pause();
+    previewAudioRef.current?.removeAttribute('src');
+    releasePreviewUrl();
+    setPreviewId(null);
+  }, [releasePreviewUrl]);
+
+  /**
+   * Locate, arriving from the browser's player — the file it is playing may also be
+   * sitting in the pool. A path we don't hold is simply not ours to answer.
+   */
+  const locateInPool = useCallback((sourcePath: string) => {
+    const match = poolRef.current.find(item => item.sourcePath === sourcePath);
+    if (!match) return;
+    setIsPoolOpen(true);
+    setLocatedPoolId(match.id);
+  }, []);
+
+  // The editor brings its own transport. Two of them playing at once is the same
+  // problem the browser handshake solves, with one fewer component involved.
+  useEffect(() => {
+    if (editingId) stopPoolPreview();
+  }, [editingId, stopPoolPreview]);
+
+  useEffect(() => {
+    if (!locatedPoolId) return;
+    poolListRef.current
+      ?.querySelector(`[data-pool-id="${locatedPoolId}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const timer = setTimeout(() => setLocatedPoolId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [locatedPoolId]);
+
+  const removeFromPool = (id: string) => {
+    dropPreviewOf(id);
+    setPool(prev => prev.filter(item => item.id !== id));
+  };
 
   /**
    * The pen on a browser row — Phase 7, step 5, open item G.
@@ -269,10 +369,12 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   );
 
   const applyEdit = useCallback((id: string, blob: Blob, duration: number, name: string) => {
+    // The preview is holding a URL for the blob this replaces.
+    dropPreviewOf(id);
     setPool(prev => prev.map(item => (
       item.id === id ? { ...item, blob, duration, name } : item
     )));
-  }, []);
+  }, [dropPreviewOf]);
 
   /** One file straight out of the pool — no ZIP, no grid. */
   const downloadOne = async (item: PoolItem) => {
@@ -438,10 +540,17 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   }, [pool]);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-synthux-main text-white overflow-hidden">
+    // `dvh` where it exists: a phone's address bar eats into `100vh`, which puts the
+    // preview bar under it and leaves the page scrolling by exactly that much.
+    <div className="h-screen supports-[height:100dvh]:h-[100dvh] w-full flex flex-col bg-synthux-main text-white overflow-hidden">
 
-      {/* Mode bar */}
-      <div className="shrink-0 flex items-center justify-between gap-4 px-4 py-2 border-b border-white/10 bg-synthux-panel">
+      {/*
+        * Mode bar. The border spans the window; its contents share the content
+        * row's ceiling below, so the pool toggle stays over the pool column on a
+        * very wide monitor instead of drifting off to the far edge.
+        */}
+      <div className="shrink-0 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2 border-b border-white/10 bg-synthux-panel
+        w-full max-w-[2200px] mx-auto">
         <button
           onClick={onExitToHub}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
@@ -466,12 +575,18 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
           }`}
         >
           <Layers size={14} />
-          Selection
+          <span className="hidden xs:inline">Temporary pool</span>
+          <span className="xs:hidden">Pool</span>
           <span className="px-1.5 py-0.5 rounded-full bg-black/50 text-[10px] font-mono">{pool.length}</span>
         </button>
       </div>
 
-      <div className="flex-1 flex min-h-0">
+      {/*
+        * Capped, not stretched. Past roughly 2200px the sample rows turn into
+        * metre-wide bands of empty space with a filename at one end and a button at
+        * the other, which is the one thing a 4K monitor makes worse.
+        */}
+      <div className="flex-1 flex min-h-0 w-full max-w-[2200px] mx-auto">
         {/* The browser itself — full-screen here, rather than the draggable window Studio uses. */}
         <div className="flex-1 min-w-0">
           <Suspense fallback={
@@ -487,6 +602,9 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               // browser only cares that the import resolved.
               onImport={async (...args) => { await addToPool(...args); }}
               onEditSample={editFromBrowser}
+              onPreviewPlay={stopPoolPreview}
+              onLocateInPool={locateInPool}
+              forceStop={isPreviewPlaying}
               addedPaths={pooledPaths}
               userLibrary={userLibrary}
               onRemoteBulkImport={(samples, _target, origin, license) => addManyToPool(samples, origin, license)}
@@ -504,20 +622,25 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
           </Suspense>
         </div>
 
-        {/* Selection pool */}
+        {/*
+          * The temporary pool. A column on a desktop, the whole screen on a phone:
+          * at 400px it is wider than the window it would sit beside, so below `md`
+          * it takes over — its own X and Escape are the ways back.
+          */}
         {isPoolOpen && (
-          <aside className="w-[340px] shrink-0 border-l border-white/10 bg-synthux-panel flex flex-col">
+          <aside className="fixed inset-0 z-40 w-full md:static md:z-auto md:w-[400px] xl:w-[440px]
+            shrink-0 border-l border-white/10 bg-synthux-panel flex flex-col">
             <div className="shrink-0 flex items-start justify-between gap-2 p-4 border-b border-white/10">
               <div className="min-w-0">
                 <h2 className="text-sm font-bold flex items-center gap-2">
-                  <Layers size={15} className="text-synthux-green" /> Selection pool
+                  <Layers size={15} className="text-synthux-green" /> Temporary pool
                 </h2>
                 <p className="text-[11px] text-gray-500 mt-0.5">{poolSummary}</p>
               </div>
               <div className="flex items-center gap-1">
                 {pool.length > 0 && (
                   <button
-                    onClick={() => setPool([])}
+                    onClick={() => { if (previewId) dropPreviewOf(previewId); setPool([]); }}
                     className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                   >
                     Clear
@@ -533,10 +656,11 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 min-h-0">
+            <div ref={poolListRef} className="flex-1 overflow-y-auto p-2 min-h-0">
               {pool.length === 0 ? (
                 <p className="p-4 text-xs text-gray-500 leading-relaxed">
-                  Add samples from the browser and they collect here. The first 36 spread across the
+                  Add samples from the browser and they collect here — in memory only, until you
+                  download them or turn them into a project. The first 36 spread across the
                   6&nbsp;×&nbsp;6 grid in this order — drag to rearrange.
                 </p>
               ) : (
@@ -544,9 +668,13 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                   {pool.map((item, index) => {
                     const slot = slotLabelForIndex(index);
                     const tape = tapeForIndex(index);
+                    const isLocated = locatedPoolId === item.id;
+                    const isPreviewing = previewId === item.id;
                     return (
                       <li
                         key={item.id}
+                        data-pool-id={item.id}
+                        style={isLocated ? { animation: 'locatePulse 2s ease-in-out infinite' } : undefined}
                         draggable
                         onDragStart={() => setDragIndex(index)}
                         onDragOver={(e) => { e.preventDefault(); setDropIndex(index); }}
@@ -561,7 +689,9 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                           transition-colors cursor-grab active:cursor-grabbing ${
                           dropIndex === index && dragIndex !== null && dragIndex !== index
                             ? 'border-synthux-green bg-synthux-green/10'
-                            : 'border-white/5 bg-black/20 hover:bg-white/5'
+                            : isLocated
+                              ? 'border-synthux-orange bg-synthux-orange/10'
+                              : 'border-white/5 bg-black/20 hover:bg-white/5'
                         } ${dragIndex === index ? 'opacity-40' : ''}`}
                       >
                         {/* Tape colour, so the grouping reads at a glance without counting rows. */}
@@ -575,6 +705,19 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                         }`}>
                           {slot || 'POOL'}
                         </span>
+                        <button
+                          onClick={() => togglePoolPreview(item)}
+                          className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-full border transition-all ${
+                            isPreviewing && isPreviewPlaying
+                              ? 'bg-synthux-yellow border-synthux-yellow text-black scale-105'
+                              : 'bg-black/50 border-white/10 text-gray-400 hover:text-white hover:border-white/30'
+                          }`}
+                          title={isPreviewing && isPreviewPlaying ? 'Pause' : 'Listen to this file as it stands'}
+                        >
+                          {isPreviewing && isPreviewPlaying
+                            ? <Pause size={11} fill="currentColor" />
+                            : <Play size={11} fill="currentColor" className="ml-0.5" />}
+                        </button>
                         <span className="min-w-0 flex-1">
                           <span className="block text-[11px] font-mono truncate text-gray-200">{item.name}</span>
                           <span className="block text-[9px] text-gray-600 truncate">
@@ -584,7 +727,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                         <button
                           onClick={() => setEditingId(item.id)}
                           className="shrink-0 p-1 rounded text-gray-600 hover:text-synthux-pink hover:bg-synthux-pink/10 transition-colors"
-                          title="Edit this file"
+                          title="Edit this file — saved edits go straight back into the pool"
                         >
                           <AudioWaveform size={12} />
                         </button>
@@ -684,7 +827,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                     <span className="min-w-0">
                       <span className="block text-xs font-bold">Import into a project</span>
                       <span className="block text-[10px] opacity-70">
-                        Keeps the layout, on a folder you pick — then carry on in Studio
+                        The whole pool, layout kept, on a folder you pick — then carry on in Studio
                       </span>
                     </span>
                   </button>
@@ -712,12 +855,23 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               license: editingItem.license,
               sourceSamplePath: editingItem.sourceSamplePath,
             }}
-            subtitle={`Editing ${editingItem.name} from your selection — applied edits go back into the pool, and both downloads pick them up.`}
+            subtitle={`Editing ${editingItem.name} — "Save to temporary pool" puts the edit back in the pool, where the downloads and "Import into a project" pick it up.`}
             onEdited={({ blob, duration, name }) => applyEdit(editingItem.id, blob, duration, name)}
             onClose={() => setEditingId(null)}
           />
         </Suspense>
       )}
+
+      {/*
+        * The pool's own player. One blob is loaded at a time, so `previewUrlRef` is
+        * the whole of the object-URL bookkeeping.
+        */}
+      <audio
+        ref={previewAudioRef}
+        onPlay={() => setIsPreviewPlaying(true)}
+        onPause={() => setIsPreviewPlaying(false)}
+        onEnded={() => setIsPreviewPlaying(false)}
+      />
 
       <ExportProgressModal
         isOpen={showExportProgress}

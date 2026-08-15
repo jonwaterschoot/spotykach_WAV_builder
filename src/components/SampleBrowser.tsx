@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, Layers } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, Layers, Menu } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { SamplePack } from '../data/samplePacks';
 import { resolveAssetPath } from '../utils/assetUtils';
@@ -49,6 +49,18 @@ interface SampleBrowserProps {
      * simply doesn't pass it yet.
      */
     onEditSample?: (url: string, name: string, origin?: string, license?: string, sourcePath?: string) => Promise<void>;
+    /**
+     * Fires when this browser starts a preview, so a host with its own player can
+     * stop it. `forceStop` is the other half of the same handshake — without both,
+     * two audio elements happily play over each other.
+     */
+    onPreviewPlay?: () => void;
+    /**
+     * "Locate" for a file the host is also holding. Called with the playing sample's
+     * path alongside the in-list locate, and the host decides whether it recognises
+     * it — Browse mode reveals it in the temporary pool.
+     */
+    onLocateInPool?: (sourcePath: string) => void;
     forceStop?: boolean;
 }
 
@@ -89,6 +101,8 @@ export const SampleBrowser = ({
     onImportToTape,
     onRemoteBulkImport,
     onEditSample,
+    onPreviewPlay,
+    onLocateInPool,
     forceStop
 }: SampleBrowserProps) => {
 
@@ -191,6 +205,9 @@ export const SampleBrowser = ({
     const [locateTarget, setLocateTarget] = useState<string | null>(null);
     /** The row to scroll to and glow in the pack/library/project list. */
     const [locatedSamplePath, setLocatedSamplePath] = useState<string | null>(null);
+
+    /** Below `md` the sources list is a drawer over the sample list, not a column beside it. */
+    const [sourcesOpen, setSourcesOpen] = useState(false);
 
     // Multi-select state
     const [selectedSamplePaths, setSelectedSamplePaths] = useState<Set<string>>(new Set());
@@ -569,8 +586,10 @@ export const SampleBrowser = ({
         if (playingSample === sample.path && audioRef.current && !audioRef.current.paused) {
             audioRef.current?.pause();
         } else if (playingSample === sample.path && audioRef.current && audioRef.current.paused) {
+            onPreviewPlay?.();
             audioRef.current.play().catch(e => console.error("Preview resume failed", e));
         } else {
+            onPreviewPlay?.();
             if (audioRef.current) {
                 audioRef.current.pause();
                 if (previewUrlRef.current) {
@@ -625,6 +644,10 @@ export const SampleBrowser = ({
         if (playingSampleOrigin?.packId !== 'custom-folder') {
             setLocatedSamplePath(playingSample);
         }
+
+        // A file can be in two places at once — here and in the host's pool. The host
+        // ignores a path it doesn't hold, so this is unconditional.
+        onLocateInPool?.(playingSample);
     };
 
     const handleImport = async (sample: any) => {
@@ -693,11 +716,19 @@ export const SampleBrowser = ({
         <div className="bg-synthux-panel border border-gray-700 rounded-lg shadow-2xl w-full h-full flex flex-col overflow-hidden">
 
             {/* Header */}
-            <div className="sample-browser-drag-handle flex items-center justify-between p-4 border-b border-gray-800 bg-synthux-panel shadow-md z-10 cursor-move">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-white">
-                    <FolderOpen className="text-synthux-orange" /> Sample Browser
+            <div className="sample-browser-drag-handle flex items-center justify-between p-3 sm:p-4 border-b border-gray-800 bg-synthux-panel shadow-md z-10 cursor-move">
+                <h2 className="text-base sm:text-xl font-bold flex items-center gap-2 text-white min-w-0">
+                    {/* The sources list is a drawer below `md`; this is the only way back to it. */}
+                    <button
+                        onClick={() => setSourcesOpen(v => !v)}
+                        className="md:hidden p-1.5 -ml-1 rounded text-gray-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                        title="Sources"
+                    >
+                        <Menu size={18} />
+                    </button>
+                    <FolderOpen className="text-synthux-orange shrink-0" /> <span className="truncate">Sample Browser</span>
                 </h2>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     {onOpenLibraryManager && (
                         <button
                             onClick={() => onOpenLibraryManager('settings')}
@@ -713,9 +744,27 @@ export const SampleBrowser = ({
                 </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
-                {/* Sidebar: Tree View */}
-                <div className="w-72 bg-synthux-browsebg border-r border-gray-800 flex flex-col overflow-hidden">
+            <div className="flex-1 flex overflow-hidden relative">
+                {/* Tapping the list behind the drawer is how you dismiss it. */}
+                {sourcesOpen && (
+                    <div
+                        className="md:hidden absolute inset-0 z-30 bg-black/60"
+                        onClick={() => setSourcesOpen(false)}
+                    />
+                )}
+
+                {/*
+                  * Sidebar: Tree View. A fixed 288px column takes most of a phone
+                  * screen, so below `md` it slides over the list instead of beside
+                  * it, and picking a source closes it again.
+                  */}
+                <div
+                    onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('[data-source]')) setSourcesOpen(false);
+                    }}
+                    className={`${sourcesOpen ? 'flex' : 'hidden'} md:flex absolute md:static inset-y-0 left-0 z-40
+                        w-72 max-w-[85%] md:max-w-none shrink-0 bg-synthux-browsebg border-r border-gray-800 flex-col overflow-hidden`}
+                >
                     <div className="flex-1 p-4 flex flex-col gap-1 overflow-y-auto">
 
                         {/* MY LIBRARY */}
@@ -734,6 +783,7 @@ export const SampleBrowser = ({
                                 )}
                             </h3>
                             <button
+                                data-source
                                 onClick={() => { setSelectedPackId('my-library'); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
                                 className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedPackId === 'my-library'
                                     ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
@@ -793,6 +843,7 @@ export const SampleBrowser = ({
                                     {projects.filter(p => (p as any).hasMeta && ((p as any).local || !(p as any).backup)).map(proj => (
                                         <button
                                             key={proj.name}
+                                            data-source
                                             onClick={() => {
                                                 setSelectedProjectId(proj.name);
                                                 setProjectLoadError(null);
@@ -822,6 +873,7 @@ export const SampleBrowser = ({
                             {customFolders.map(folder => (
                                 <div key={folder.id} className="group relative">
                                     <button
+                                        data-source
                                         onClick={() => { setSelectedPackId('custom-folder'); setSelectedProjectId(null); setSelectedCustomFolderId(folder.id); }}
                                         className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${selectedCustomFolderId === folder.id
                                             ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
@@ -866,6 +918,7 @@ export const SampleBrowser = ({
                             {allPacks.map((pack: any) => (
                                 <button
                                     key={pack.id}
+                                    data-source
                                     onClick={() => { setSelectedPackId(pack.id); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
                                     className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors mb-0.5 ${selectedPackId === pack.id
                                         ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
@@ -882,12 +935,12 @@ export const SampleBrowser = ({
 
                 {/* Main View: Sample List */}
                 <div className="flex-1 bg-synthux-main flex flex-col overflow-hidden relative noise-texture">
-                    <div ref={scrollRef} className="flex-1 p-6 overflow-y-auto relative z-10">
+                    <div ref={scrollRef} className="flex-1 p-3 sm:p-6 overflow-y-auto relative z-10">
                         {selectedPack ? (
                             <>
-                                <div className="mb-10 w-full">
+                                <div className="mb-6 sm:mb-10 w-full">
                                     {/* HERO BANNER */}
-                                    <div className="relative w-full h-80 rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black/40 group mb-8">
+                                    <div className="relative w-full h-40 sm:h-64 lg:h-80 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black/40 group mb-5 sm:mb-8">
                                         {selectedPack.coverImage ? (
                                             <img
                                                 src={selectedPack.coverImage}
@@ -903,7 +956,7 @@ export const SampleBrowser = ({
                                         )}
                                         
                                         {/* Overlay with Title */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent flex flex-col justify-end p-8 md:p-10">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent flex flex-col justify-end p-4 sm:p-8 md:p-10">
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center gap-2 mb-2">
                                                     <span className="px-2 py-0.5 bg-synthux-orange/90 text-white text-[10px] font-bold uppercase tracking-widest rounded-sm shadow-lg">
@@ -917,7 +970,7 @@ export const SampleBrowser = ({
                                                         </span>
                                                     )}
                                                 </div>
-                                                <h1 className="text-4xl md:text-5xl font-black text-white tracking-tighter drop-shadow-2xl">
+                                                <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tighter drop-shadow-2xl">
                                                     {selectedPack.name}
                                                 </h1>
                                             </div>
@@ -964,7 +1017,7 @@ export const SampleBrowser = ({
                                                                     href={link.url}
                                                                     target="_blank"
                                                                     rel="noreferrer"
-                                                                    className="group flex flex-1 min-w-[280px] max-w-[400px] items-center justify-between px-5 py-4 bg-synthux-blue/10 hover:bg-synthux-blue/20 text-synthux-blue rounded-xl border border-synthux-blue/30 transition-all active:scale-95"
+                                                                    className="group flex flex-1 min-w-full sm:min-w-[280px] max-w-full sm:max-w-[400px] items-center justify-between px-5 py-4 bg-synthux-blue/10 hover:bg-synthux-blue/20 text-synthux-blue rounded-xl border border-synthux-blue/30 transition-all active:scale-95"
                                                                 >
                                                                     <div className="flex items-center gap-4">
                                                                         <Download size={20} className="group-hover:animate-bounce-subtle" />
@@ -1099,7 +1152,7 @@ export const SampleBrowser = ({
                                                                             if (isLocated) setLocatedSamplePath(null);
                                                                             toggleSampleSelection(sample.path, allSamplesInView, e);
                                                                         }}
-                                                                        className={`grid grid-cols-[30px_40px_1fr_auto_100px] gap-3 items-center px-4 py-2 hover:bg-gray-800/80 transition-all group cursor-pointer border rounded-md ${isLocated ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : isSelected ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
+                                                                        className={`grid grid-cols-[22px_32px_1fr_auto_auto] sm:grid-cols-[30px_40px_1fr_auto_auto] gap-2 sm:gap-3 items-center px-2 sm:px-4 py-2 hover:bg-gray-800/80 transition-all group cursor-pointer border rounded-md ${isLocated ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : isSelected ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
                                                                         style={isLocated ? { animation: 'locatePulse 2s ease-in-out infinite' } : undefined}
                                                                     >
                                                                         <div className="flex items-center justify-center">
@@ -1110,7 +1163,7 @@ export const SampleBrowser = ({
 
                                                                         <button
                                                                             onClick={(e) => { e.stopPropagation(); handlePlay(sample); }}
-                                                                            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${isPlaying && isPreviewPlaying ? 'text-black bg-synthux-yellow scale-110 shadow-lg' : 'text-gray-400 hover:text-white bg-black hover:bg-gray-700 border border-gray-700'
+                                                                            className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full transition-all ${isPlaying && isPreviewPlaying ? 'text-black bg-synthux-yellow scale-110 shadow-lg' : 'text-gray-400 hover:text-white bg-black hover:bg-gray-700 border border-gray-700'
                                                                                 }`}
                                                                         >
                                                                             {isPlaying && isPreviewPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" className="ml-0.5" />}
@@ -1125,28 +1178,37 @@ export const SampleBrowser = ({
                                                                             )}
                                                                         </div>
 
-                                                                        {onEditSample && (
-                                                                            <button
-                                                                                onClick={(e) => { e.stopPropagation(); handleEdit(sample); }}
-                                                                                disabled={editingSample === sample.path}
-                                                                                className="p-1.5 text-gray-500 hover:text-synthux-yellow hover:bg-synthux-yellow/10 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all disabled:opacity-70"
-                                                                                title="Trim or edit this file, then download it"
-                                                                            >
-                                                                                {editingSample === sample.path
-                                                                                    ? <Loader size={14} className="animate-spin" />
-                                                                                    : <Pencil size={14} />}
-                                                                            </button>
-                                                                        )}
+                                                                        {/*
+                                                                          * Both row actions share one grid cell. Separately they were two
+                                                                          * children for one `auto` column, so a source that offered both
+                                                                          * pushed the import button onto a second row.
+                                                                          */}
+                                                                        <div className="flex items-center justify-end gap-1">
+                                                                            {onEditSample && (
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); handleEdit(sample); }}
+                                                                                    disabled={editingSample === sample.path}
+                                                                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-bold text-gray-400 hover:text-synthux-yellow
+                                                                                        hover:bg-synthux-yellow/10 transition-all disabled:opacity-70"
+                                                                                    title="Edit this file — it goes into the temporary pool and opens in the editor"
+                                                                                >
+                                                                                    {editingSample === sample.path
+                                                                                        ? <Loader size={14} className="animate-spin" />
+                                                                                        : <Pencil size={14} />}
+                                                                                    <span className="hidden sm:inline">Edit</span>
+                                                                                </button>
+                                                                            )}
 
-                                                                        {isUserLibrarySelected && onOpenLibraryManager && (
-                                                                            <button
-                                                                                onClick={(e) => { e.stopPropagation(); onOpenLibraryManager('manage', sample.path); }}
-                                                                                className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded opacity-0 group-hover:opacity-100 transition-all"
-                                                                                title="Edit in Library Manager"
-                                                                            >
-                                                                                <Edit2 size={14} />
-                                                                            </button>
-                                                                        )}
+                                                                            {isUserLibrarySelected && onOpenLibraryManager && (
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); onOpenLibraryManager('manage', sample.path); }}
+                                                                                    className="p-1.5 text-gray-500 hover:text-synthux-orange hover:bg-synthux-orange/10 rounded transition-all"
+                                                                                    title="Edit in Library Manager"
+                                                                                >
+                                                                                    <Edit2 size={14} />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
 
                                                                         <div className="text-right">
                                                                             <button
@@ -1163,11 +1225,15 @@ export const SampleBrowser = ({
                                                                                     </>
                                                                                 ) : isAdded ? (
                                                                                     <>
-                                                                                        <Check size={14} /> {isStandalone ? 'Pooled (Add Again)' : 'Added (Add Again)'}
+                                                                                        <Check size={14} />
+                                                                                        <span className="sm:hidden">{isStandalone ? 'In pool' : 'Added'}</span>
+                                                                                        <span className="hidden sm:inline">{isStandalone ? 'In pool (add again)' : 'Added (Add Again)'}</span>
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
-                                                                                        <Download size={14} /> {selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? 'Pool' : 'Add'}
+                                                                                        <Download size={14} />
+                                                                                        <span className="sm:hidden">{selectionMode === 'slot-selection' ? 'Assign' : 'Add'}</span>
+                                                                                        <span className="hidden sm:inline">{selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? 'Add to pool' : 'Add'}</span>
                                                                                     </>
                                                                                 )}
                                                                             </button>
@@ -1202,7 +1268,7 @@ export const SampleBrowser = ({
             </div>
 
             {/* AUDIO PREVIEW BAR */}
-            <div className="border-t border-gray-800 bg-[#121212] flex items-center px-4 py-3 gap-4 shadow-xl z-20">
+            <div className="border-t border-gray-800 bg-[#121212] flex items-center px-3 sm:px-4 py-3 gap-3 sm:gap-4 shadow-xl z-20">
                 <button
                     onClick={() => {
                         if (audioRef.current) {
@@ -1226,7 +1292,9 @@ export const SampleBrowser = ({
                                 <button
                                     onClick={handleLocatePlaying}
                                     className="shrink-0 p-1 text-gray-500 hover:text-synthux-orange hover:bg-white/10 rounded transition-colors"
-                                    title="Locate playing file"
+                                    title={onLocateInPool
+                                        ? 'Show this file where it came from — and in the temporary pool if it is there'
+                                        : 'Locate playing file'}
                                 >
                                     <Crosshair size={12} />
                                 </button>
@@ -1278,7 +1346,7 @@ export const SampleBrowser = ({
 
             {/* Bulk Action Sticky Bar — matches LocalFolderBrowser pattern */}
             {selectedSamplePaths.size > 0 && (
-                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-4 duration-300">
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] max-w-[95vw] animate-in slide-in-from-bottom-4 duration-300">
                     {/* Submenu dropdown — every target below is a project target, so standalone has none. */}
                     {showActionMenu && !isStandalone && (
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-[#1a1a1a] border border-gray-700/50 rounded-xl shadow-2xl py-2 min-w-[280px] animate-in fade-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
@@ -1342,7 +1410,7 @@ export const SampleBrowser = ({
                                 onClick={() => handleBulkActionWithTarget(isStandalone ? 'pool' : 'slots')}
                                 className="bg-synthux-orange hover:bg-synthux-orange/80 text-black py-2 px-6 rounded-full font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-synthux-orange/20"
                             >
-                                <Plus size={14} /> {isStandalone ? 'Add to Selection' : 'Import Selection'}
+                                <Plus size={14} /> {isStandalone ? 'Add to pool' : 'Import Selection'}
                             </button>
 
                             {!isStandalone && (

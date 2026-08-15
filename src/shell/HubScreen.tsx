@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight } from 'lucide-react';
+import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
 
@@ -18,6 +18,13 @@ interface Door {
   accentBorder: string;
   accentGlow: string;
   ready: boolean;
+  /**
+   * Needs a desktop browser. Not a guess about screen size: these four either open
+   * a folder picker, or lay out a 6×6 grid and a waveform with its overlays, and
+   * neither survives a phone. Browse is the one door built for reading and
+   * listening, so it is the one door a phone is offered.
+   */
+  desktopOnly?: boolean;
 }
 
 const DOORS: Door[] = [
@@ -42,6 +49,7 @@ const DOORS: Door[] = [
     accentBorder: 'hover:border-synthux-orange/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(245,139,68,0.45)]',
     ready: true,
+    desktopOnly: true,
   },
   {
     mode: 'config',
@@ -53,6 +61,7 @@ const DOORS: Door[] = [
     accentBorder: 'hover:border-synthux-blue/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(71,113,249,0.45)]',
     ready: true,
+    desktopOnly: true,
   },
   {
     mode: 'editor',
@@ -64,6 +73,7 @@ const DOORS: Door[] = [
     accentBorder: 'hover:border-synthux-pink/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(255,90,158,0.45)]',
     ready: true,
+    desktopOnly: true,
   },
   {
     mode: 'studio',
@@ -75,6 +85,7 @@ const DOORS: Door[] = [
     accentBorder: 'hover:border-synthux-yellow/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(255,185,0,0.45)]',
     ready: true,
+    desktopOnly: true,
   },
 ];
 
@@ -104,6 +115,22 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
           </div>
         </header>
 
+        {/*
+          * Said once, up front, on the screens where it is true. A phone visitor who
+          * taps Studio first meets a folder picker that may not exist and a 6×6 grid
+          * that doesn't fit, and concludes the app is broken rather than that they
+          * are on the wrong device.
+          */}
+        <div className="sm:hidden mb-5 flex gap-3 rounded-xl border border-white/10 bg-synthux-panel/80 p-4">
+          <Smartphone size={18} className="shrink-0 text-synthux-green mt-0.5" />
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-gray-200 font-bold">On a phone, Browse Samples is the door that works.</span>{' '}
+            Listen through the packs and download what you like. The other four need a desktop
+            browser — they open folders on your drive and lay out grids and waveforms that a phone
+            screen can't hold.
+          </p>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-2">
           {DOORS.map(door => (
             <button
@@ -115,8 +142,16 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
             >
               <div className="flex items-start justify-between gap-3 mb-3">
                 <span className={`${door.accentText} shrink-0`}>{door.icon}</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mt-1">
-                  {door.tagline}
+                <span className="flex items-center gap-2 mt-1">
+                  {door.desktopOnly && (
+                    <span className="sm:hidden flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
+                      text-gray-500 border border-white/10 rounded px-1.5 py-0.5">
+                      <Monitor size={10} /> Desktop
+                    </span>
+                  )}
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                    {door.tagline}
+                  </span>
                 </span>
               </div>
 
