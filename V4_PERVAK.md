@@ -23,17 +23,26 @@ that says what is **not** done; the phase briefs below say what is.*
 | # | Item | Source | Where it lands |
 |---|---|---|---|
 | A | ~~**Storage keys are not namespaced.**~~ ✅ **Done 2026-08-14.** `utils/storageNamespace.ts` is the one place every DB name and localStorage key passes through. Root derives `''` and stays byte-identical for existing users; `/next/` derives `next`. `build:next` / `deploy:next` added. Verified against both bundles. | Locked decision 9, Appendix F.3 | Done |
-| B | **Nothing in Phases 4–7 has been verified in a browser.** Types, build and lint are clean; no path has been exercised against a real card or folder picker. | Phase 4, 5, 6, 7 outcomes | Phase 7, step 6 — **the only work left** |
-| C | **No functional pass over the five hub doors**, and known editor bugs are unassessed. | New, this round | Phase 7, step 6 |
+| B | **Most of Phases 4–7 has not been verified in a browser.** Types, build and lint are clean. Browse is now the exception — see C. | Phase 4, 5, 6, 7 outcomes | Phase 7, step 6 — **the only work left** |
+| C | ◐ **The functional pass over the five doors is one-fifth done.** **Browse is verified on a desktop** across four rounds (2026-08-14 → 15), which raised and closed 15 numbered findings — logged in [roadmap-bugs.md](roadmap-bugs.md) ▸ *The v4 test pass*. **Presets, Config, `#/editor` and Studio have not been walked**, and the editor's known bugs are still unassessed. | New, this round | Phase 7, step 6 |
 
-The specific unverified paths, collected from the four outcomes: `move()`-based atomic swap on removable
-media · the per-build SK-snapshot toggle · Config mode's card read/write and the file input ·
-Editor mode's "Save as project" · Browse's "Import into a project" · the first Studio save after the
-two-version collapse · **the auto-save loop under a real edit session** (its cost is bounded by the
-serialising guard, not measured) · **a workspace backup onto a real card, including one that runs out
-of room mid-write** — the cleanup path is the whole point of that surface and has never run · **the
-Project Manager against a card that already carries projects** (the migration list) · **the pen on a
-browser row**.
+**Still unverified**, from the four outcomes plus what the Browse rounds added:
+
+- `move()`-based atomic swap on removable media · the per-build SK-snapshot toggle · Config mode's card
+  read/write and the file input · `#/editor`'s "Save as project" · the first Studio save after the
+  two-version collapse · **the auto-save loop under a real edit session** (bounded by the serialising
+  guard, not measured) · **a workspace backup onto a real card, including one that runs out of room
+  mid-write** — the cleanup path is the whole point of that surface and has never run · **the Project
+  Manager against a card that already carries projects** (the migration list) · any engine without
+  `showDirectoryPicker`.
+- **Added by the Browse rounds, and none of it walked in its own host:** the shared editor's close
+  button and header layout (Studio's tape editor is the same component) · **Studio's boot**, which now
+  restores a still-permitted session instead of showing the setup wizard — this changes how Studio opens
+  for every user, not just the Browse path · the Project Manager's temporary-pool row · the new optional
+  workspace parameter on `createProjectFromState`, which `#/editor` also calls.
+- **Browse on a phone.** The layout exists and all four rounds were walked on a desktop.
+
+**Verified and struck:** Browse's "Import into a project" · the pen on a browser row.
 
 ### Open, not blocking
 
@@ -68,11 +77,11 @@ document says something the codebase no longer agrees with.
    someone touches `LibraryManager` next.
 3. **Appendix A blocker 3 is stale.** It describes `persistence.ts:36` as autosaving one `AppState`.
    Phase 6 established that function has no callers. Corrected inline below.
-4. **roadmap-bugs still frames the overhaul as an open choice** — "adjust the current app vs. build a
-   new one". That is locked decision 1, settled before Phase 0.
-5. **roadmap-bugs still lists resolved work as open:** the editor's clean-history column (Phase 6
-   moved cleanup out of the sidebar entirely) and ".wav as well as .WAV" (already correct in both
-   export paths — see the Phase 2 notes; do not "fix" it).
+4. ~~**roadmap-bugs still frames the overhaul as an open choice.**~~ ✅ **Fixed** by the 2026-08-14
+   rewrite of that file; it now records locked decision 1 as settled, in its Done section.
+5. ~~**roadmap-bugs still lists resolved work as open.**~~ ✅ **Fixed** by the same rewrite. Both the
+   editor's clean-history column and ".wav as well as .WAV" are in its Done section — the latter with
+   **"don't 'fix' it"** attached, which is the part that had to survive.
 6. **UX_Overhaul §4 asks "config.txt is maybe not a necessity per project?"** — answered by open
    question 4 (device-scoped by default, per-project still allowed) and built in Phase 5. The answer
    was never folded back into the persona document.
@@ -90,11 +99,16 @@ document says something the codebase no longer agrees with.
 | 4 | ✅ | Backup & safety rework | SD card is a build target again |
 | 5 | ✅ | Config mode | MIDI setup without the studio |
 | 6 | ✅ | Editor mode + Studio extraction | Edit one file with no project; the session leaves `App.tsx` |
-| 7 | ◐ | Close-out | Settings owns the options, backup is one explicit act — **steps 1–5 and 7 in, step 6 (the test pass) is yours to run** |
+| 7 | ◐ | Close-out | Settings owns the options, backup is one explicit act — **steps 1–5 and 7 in; step 6, the test pass, is one door of five through** |
 
 **The six build phases are in, and Phase 7's code is in.** Locked decision 9 is closed. What is
 left before v4 ships is **step 6 — the browser and hardware pass** — plus open questions 6 and 7,
 neither of which blocks a release. Of the items above only B and C still block.
+
+**Step 6, as of 2026-08-15:** Browse is walked and verified over four rounds; Preset → SD, Device
+Config, `#/editor` and Studio have not been opened. The rounds are logged in
+[roadmap-bugs.md](roadmap-bugs.md) under *The v4 test pass*, which is now the live record of that
+work — this file only says what is left.
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
 `importUtils`, `projectDescriptorUtils`, `lib/audio`) is already mode-agnostic, and every major panel
@@ -960,7 +974,11 @@ to trim one sample has to add it to a selection first, which is a concept they n
 - Studio's `SampleBrowser` wants the same affordance eventually, but that is a different host with a
   project behind it. Standalone first.
 
-#### Step 6 — The test pass
+#### Step 6 — The test pass ◐ *in progress*
+
+**The live record is [roadmap-bugs.md](roadmap-bugs.md) ▸ *The v4 test pass*** — findings, round by
+round, and a table of which doors are through. Phase 7 is where this document stops being the place
+things get written down, so nothing below is repeated there.
 
 Two rounds, in this order:
 
@@ -968,10 +986,15 @@ Two rounds, in this order:
    Studio, plus every path in the unverified list at the top of this file. Real SD card, real folder
    picker, Chromium *and* one engine without `showDirectoryPicker` — the ZIP and file-input fallbacks
    from Phases 3 and 5 have never been exercised.
+   **Browse: done** (four rounds, 2026-08-14 → 15, 20 findings raised and closed). Four doors left.
 2. **The editor, deeply.** Starting points from roadmap-bugs: the cleanup confirm modal glitching out
-   of sight, and stereo splitting. Log what the pass finds in
-   [roadmap-bugs.md](roadmap-bugs.md), not here — Phase 7 is where this document stops being the place
-   things get written down.
+   of sight, and stereo splitting.
+   **Partly done:** every tool passed in the *Browse-hosted* editor in round 3. Neither starting point
+   was reachable there — cleanup is a project action, so both still need Studio.
+
+**One thing the rounds changed about this step.** Findings from Browse repeatedly landed in components
+Studio shares — the waveform editor twice, the Project Manager, and Studio's own boot sequence. Walking
+the remaining doors is therefore also a regression pass over those, not only a first look at them.
 
 #### Step 7 — Retire the v4 documents
 

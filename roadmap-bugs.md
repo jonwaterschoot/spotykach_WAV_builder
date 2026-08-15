@@ -8,34 +8,68 @@
 > [CHANGELOG.md](CHANGELOG.md) go back to being the only live documents** — see
 > [docs/README.md](docs/README.md).
 >
-> *Last reconciled against the code: 2026-08-15, during the Phase 7 test pass.*
+> *Last reconciled against the code: 2026-08-15, after the Browse test rounds 1–4.*
 
 ---
 
 ## In flight — v4 Pervak
 
-The UX overhaul that used to be described here as an open choice is decided and largely built. The hub
-now has five doors — Browse, Preset → SD, Device Config, Edit One File, Studio — each of which runs
-with only the permission it actually needs.
+The UX overhaul that used to be described here as an open choice is decided and built. The hub has five
+doors — Browse, Preset → SD, Device Config, Edit One File, Studio — each running with only the
+permission it actually needs.
 
-What is left is collected in the **Open items** section at the top of [V4_PERVAK.md](V4_PERVAK.md).
-Phase 7 closed everything except **step 6, the test pass** — which is now the only thing blocking the
-release:
-
-- ✅ **Storage keys are namespaced** per build, so a preview on GitHub Pages no longer shares state
-  with the live app. The production bundle's names are unchanged, so no existing user loses handles.
-- **Phases 4–7 have not been verified in a browser**, apart from what the test pass has reached. Build
-  and types are clean; most paths have never been exercised against a real SD card or folder picker.
-- **Four of the five doors have had no functional pass.** Browse has had two rounds; Presets, Config,
-  Editor and Studio have had none, and the editor's known bugs are unassessed. Everything round 2
-  built is itself untested in a browser — that is round 3.
+**Phase 7 closed everything except step 6, the test pass, which is the only thing blocking the
+release.** Its state is the table below. Anything not about the test pass is in the **Open items**
+section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
 ## The v4 test pass
 
-Phase 7, step 6 in [V4_PERVAK.md](V4_PERVAK.md) — the last thing blocking the release. Findings land
-here, round by round.
+Phase 7, step 6 in [V4_PERVAK.md](V4_PERVAK.md) — the last thing blocking the release.
+
+### Where it stands
+
+| Door | Rounds | Verdict |
+|---|---|---|
+| **Browse Samples** (`#/browse`) | 4 | ✅ **Verified on a desktop.** 15 numbered findings raised and closed. The phone layout is the one part never opened on a phone. |
+| **Preset → SD** (`#/presets`) | 0 | Not walked |
+| **Device Config** (`#/config`) | 0 | Not walked. The file-input and ZIP fallbacks have never run. |
+| **Edit One File** (`#/editor`) | 0 | Not walked *as a door*. The same editor passed inside Browse in round 3, but this route's own entry, "Save as project" and picker have not been opened. |
+| **Studio** | 0 | Not walked — and the Browse rounds changed five things inside it, listed below. |
+
+Plus, from [V4_PERVAK.md](V4_PERVAK.md)'s unverified list and untouched by rounds 1–4: the workspace
+backup's **failure path** (never run), the Project Manager against **a card that already has projects**,
+the atomic `move()` swap on removable media, the SK-snapshot toggle, the auto-save loop under a real
+session, and any engine without `showDirectoryPicker`.
+
+### What the Browse rounds changed outside Browse
+
+Five surfaces were touched by findings that began in Browse. **None has been walked in its own host**,
+and each is a place where a Browse fix could have broken Studio:
+
+- **The editor's close button** (R2-3) — shared with Studio's tape editor.
+- **The editor's header and history layout** (R3-2) — same component, a structural change.
+- **Studio's boot** (R4-4) — a session whose folder permission is still live now restores itself
+  instead of showing the setup wizard. This changes how Studio opens for *everyone*, not just the
+  Browse path.
+- **The Project Manager** (R2-9) — one inert row when a temporary pool exists.
+- **`createProjectFromState`** (R4-2) — a new optional workspace parameter. `#/editor`'s "Save as
+  project" calls it and still gets the old behaviour, but has not been opened since.
+
+### Next round
+
+Whichever door you take next. Findings go under a new `### Round N` heading here.
+
+---
+
+## Closed test rounds — Browse ✅ *(2026-08-14 → 2026-08-15)*
+
+Kept for the reasoning. **Nothing below is open** — the two things these rounds raised that are still
+outstanding were filed where the work belongs, not left here: the workspace backup's missing restore
+path and backup reminder are under
+[Settings, backup and project management](#settings-backup-and-project-management), and the untested
+phone layout is under [Onboarding, news and guides](#onboarding-news-and-guides).
 
 ### Round 1 — workspace backup ✅ *(2026-08-14)*
 
@@ -44,9 +78,10 @@ Two things it doesn't answer — **no restore path**, and **nothing ever suggest
 Both written up under [Settings, backup and project management](#settings-backup-and-project-management)
 below, since that is where the work belongs.
 
-### Round 1 — Sample Browser ✅ built, needs re-testing
+### Round 1 — Sample Browser ✅
 
-All six built 2026-08-15; **none of it has been used on real hardware or a real phone.**
+All six built 2026-08-15. Verified on a desktop browser across rounds 2–4; **the phone layout below has
+still never been opened on a phone** — see [Onboarding, news and guides](#onboarding-news-and-guides).
 
 - **Max width on very large monitors** — Browse caps its content at 2200px and centres it.
 - **A mobile version of the samples page** — the sources list becomes a drawer, the pool becomes a
@@ -66,15 +101,13 @@ All six built 2026-08-15; **none of it has been used on real hardware or a real 
 - **Locate points at the pool too** — the browser's locate reveals the file where it came from and,
   when it is also pooled, opens the pool and glows the row.
 
-Still on the list: the drawer and the pool sheet on a real phone.
-
 **Superseded by round 2:** the pool's own play button now drives the main player bar rather than a
 second `<audio>` (R2-1), and the pool is no longer memory-only (R2-4).
 
-### Round 2 — Sample Browser, walked in a browser *(2026-08-15)*
+### Round 2 — Sample Browser, walked in a browser ✅ *(2026-08-15)*
 
-Nine items, **all closed** (2026-08-15). R2-1 through R2-8 were built as written; **R2-9 turned out not
-to be a feature at all** — see below. None of it has been used in a browser except what round 3 reached.
+Nine items, **all closed**. R2-1 through R2-8 were built as written; **R2-9 turned out not to be a
+feature at all** — see below.
 
 ---
 
@@ -248,11 +281,11 @@ the round-3 walk in hand, not before. *(Answered above: the inert Project Manage
 
 ---
 
-### Round 3 — the Browse editor, walked in a browser *(2026-08-15)*
+### Round 3 — the Browse editor, walked in a browser ✅ *(2026-08-15)*
 
 **Every editor tool passed.** Trim/fade, automation, loop, EQ, pitch, limiter, normalize, cutter,
 slicer, stereo — all behave as intended in the Browse-hosted editor. Two things came out of it, both
-built the same day, both still unwalked.
+built the same day and confirmed in round 4's walk.
 
 #### R3-1 — The history panel called the edit "Original" ✅ *built*
 
@@ -293,11 +326,16 @@ columns share the space beneath it. Same blast radius as R2-3 — this is Studio
 
 ---
 
-### Round 4 — pool → project, walked in a browser *(2026-08-15)*
+### Round 4 — pool → project, walked in a browser ✅ *(2026-08-15)*
 
-**The walkthrough passed.** What came out of it is all one thing: *"Import into a project" is where a
-browse visitor becomes a Studio user, and it was treating that as a file operation.* Four fixes, built
-the same day, none walked yet.
+**The walkthrough passed**, and so did the re-walk of the four fixes it produced — which is what closed
+Browse. What came out of it is all one thing: *"Import into a project" is where a browse visitor becomes
+a Studio user, and it was treating that as a file operation.*
+
+Two of the four reach outside Browse and are **not** verified there: **R4-4 changes how Studio boots for
+every session**, and R4-2 added a parameter to `createProjectFromState`, which the standalone `#/editor`
+door also calls — it defaults to the old behaviour, but that host has not been opened since.
+(R4-1's `buildDetachedState` is Browse's alone, so it reaches nothing else.)
 
 #### R4-1 — The project didn't inherit the pool's edits ✅ *built*
 
@@ -369,14 +407,19 @@ Expand with a better preview of both channels and the option to audition each.
 
 ### Cleanup confirm modal glitches out of sight
 
-The confirmation inside the cleanup flow renders off-screen. **First thing to reproduce when the test
-pass reaches the editor**, since cleanup moved to Project ▸ Advanced and the modal is now reached from
-a different place than when this was logged.
+The confirmation inside the cleanup flow renders off-screen. **Not reachable from Browse** — cleanup is
+a project-wide action and lives in Project ▸ Advanced — so round 3 could not touch it. Still the first
+thing to reproduce when the test pass reaches Studio, and it is now reached from a different place than
+when this was logged.
 
 ### Editor bug sweep
 
-Deeper round of testing on the editor specifically, after the five hub doors are walked. Findings go
-under **The v4 test pass** above as they are found.
+**Half done.** Round 3 walked every tool in the *Browse-hosted* editor — trim/fade, automation, loop,
+EQ, pitch, limiter, normalize, cutter, slicer, stereo — and all of them passed. What that round could
+not see is everything the editor only does with a project behind it: version history across saves,
+assignment to a slot, "save unique" and "save copy to pool", cleanup, and the two shared-component
+changes it made (R2-3, R3-2) as they land in Studio's tape editor. That is the rest of the sweep, and it
+belongs to the Studio walk. Findings go under **The v4 test pass** above as they are found.
 
 ---
 
@@ -422,12 +465,21 @@ Summarised here because it is where a reader will look for it:
   shown before the picker opens, no default destination, and one folder that is removed if the write
   fails partway.
 
-Open, from the round 1 backup test:
+Open:
 
-- **A restore path.** The backup describes its contents and not how to put them back. Wanted: an
-  "import workspace / restore" action in the app, and a new-computer setup section written into the
-  `.txt` that ships inside the backup.
-- **Suggest a backup now and then**, with an opt-out of the reminder.
+- **A restore path** *(round 1)*. The backup describes its contents and not how to put them back.
+  Wanted: an "import workspace / restore" action in the app, and a new-computer setup section written
+  into the `.txt` that ships inside the backup.
+- **Suggest a backup now and then** *(round 1)*, with an opt-out of the reminder.
+- **The backup's failure path has never run.** Everything lands in one new folder and a write that dies
+  part way removes it — that rollback is the whole point of the surface, and the only way to see it is a
+  destination that runs out of room mid-write.
+- **One sync entry point survived.** The library → SD sync still has a button in `LibraryManager`
+  (`onOpenLibrarySync`). Phase 7's table only covered the Project Manager, and workspace backup now
+  covers the need — worth removing next time someone touches that file.
+- **The mirror vocabulary is still in the types.** `status: 'synced' | 'local' | 'backup' | 'modified'`
+  plus `.local`/`.backup`, kept because cards still carry projects that `scanProjects` merges. The dead
+  states stopped *rendering* in Phase 7; the rename is still open, as one mechanical commit.
 
 ### Project Manager overview
 
@@ -436,11 +488,6 @@ revisiting once the sync columns are gone:
 
 - a "recent projects" list in the shape other apps use
 - File ▸ Open / Save / Save As, rather than buttons scattered across the modal
-
-### Locations
-
-Work folder and SD card locations under the settings icon, in addition to the inline "Change" in the
-Project Manager header. → v4 Phase 7, step 1.
 
 ---
 
@@ -453,6 +500,16 @@ Project Manager header. → v4 Phase 7, step 1.
 ---
 
 ## Onboarding, news and guides
+
+### Browse on a real phone — built, never opened on one
+
+The phone layout landed in round 1: the sources list becomes a drawer, the pool becomes a full-screen
+sheet, the hero and rows shrink, and the hub tells phone-sized screens that Browse is the door that
+works. **All four Browse rounds were walked on a desktop.** The drawer and the pool sheet have never
+been touched on a touch screen, which is also where the round-1 decision to make the pen always-visible
+rather than hover-only was aimed. Not a blocker for the release — Browse is the only door that claims to
+work there — but it is the one part of Browse still unverified. Tunnelling notes for testing on a real
+device are in `docs/MOBILE_TESTING.private.md` (gitignored).
 
 ### Onboarding for newcomers
 
@@ -544,6 +601,9 @@ this file:
   are uppercase, single-file downloads lowercase, recent firmware accepts both. **Don't "fix" it.**
 - **News on start** — the covering auto-open modal and its preference are gone; news renders inline on
   the hub.
+- **Work folder and SD card under the settings icon** — asked for since v3, built in Phase 7, step 1.
+  The inline "Change" in the Project Manager header stayed; a setting is a second entry, not a
+  replacement.
 - **Dead components removed** — `WelcomeScreen`, `SamplePackModal`, `SyncDashboard` (1002 lines, zero
   references), later `SyncOptionsModal`. `SyncDashboard`'s design survives as a written reference in
   Appendix D of [V4_PERVAK.md](V4_PERVAK.md); it is still the best App ↔ SD comparison view the repo

@@ -2,7 +2,7 @@
 
 Every documentation file in the repository, what it is for, and whether it is still true.
 
-*Last reconciled 2026-08-14, during v4 Phase 7.*
+*Last reconciled 2026-08-15, during v4 Phase 7's test pass.*
 
 **Status key** — 🟢 current · 🔵 reference (stable, rarely changes) · 🟡 partly stale · 🗄️ archived ·
 ⚠️ **load-bearing — code or the app links to it, do not move**
@@ -23,7 +23,11 @@ These two are the ones to keep up to date. Everything else is reference material
 | File | Status | What it is |
 |---|---|---|
 | [../V4_PERVAK.md](../V4_PERVAK.md) | 🟢 | The v4 plan of record: phases, locked decisions, open items and the appendices behind them. **Moves to `archive/` when v4 ships** — see its Phase 7, step 7. |
-| [../UX_Overhaul.md](../UX_Overhaul.md) | 🟢 | The intent document behind v4: personas, user journeys, UX thinking. Same fate. |
+| [../UX_Overhaul.md](../UX_Overhaul.md) | 🟡 | The intent document behind v4: personas, user journeys, UX thinking. Same fate. **Partly overtaken:** it describes four personas where the hub ships five doors, and its §4 `config.txt` question was answered in Phase 5. Both are logged as discrepancies in `V4_PERVAK.md`. |
+
+**Which file holds what, while v4 is in flight:** `V4_PERVAK.md` says what is *left* — open items, locked
+decisions, the reasoning in the appendices. `roadmap-bugs.md` ▸ *The v4 test pass* is the live record of
+the test pass itself, round by round. Findings go in roadmap-bugs, never in the plan.
 
 ## Project-level
 
