@@ -31,24 +31,54 @@ export interface CreatedProject {
  * the project again, but the `app-state` IDB slot is never touched. Studio reads the
  * project back off disk like any other.
  */
+/**
+ * Permission back on a handle the app already stored.
+ *
+ * Handles survive in IndexedDB; their permission does not survive a reload, so a
+ * remembered workspace still has to be asked for. **Call this as the first `await`
+ * inside a click handler** — `requestPermission` needs the transient activation from
+ * that click, and any earlier await spends it.
+ */
+export const ensureWorkspacePermission = async (
+    handle: FileSystemDirectoryHandle,
+): Promise<boolean> => {
+    // @ts-ignore — permission methods are not in the TS DOM lib yet.
+    let permission = await handle.queryPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') {
+        // @ts-ignore
+        permission = await handle.requestPermission({ mode: 'readwrite' });
+    }
+    return permission === 'granted';
+};
+
 export const createProjectFromState = async (
     state: AppState,
     rawName: string,
     onProgress?: (msg: string | undefined) => void,
+    /**
+     * The workspace to write into. Omitted means "ask" — which is the old behaviour
+     * and still the right one for someone who has no workspace yet. Supplied, the
+     * caller has already secured permission via `ensureWorkspacePermission`.
+     */
+    existingWorkspace?: FileSystemDirectoryHandle | null,
 ): Promise<CreatedProject | null> => {
     const projectName = sanitizeProjectName(rawName);
     if (!projectName) throw new Error('That name has no usable characters.');
-    if (!canPickFolder()) {
-        throw new Error('This browser cannot open a folder — use the download instead.');
-    }
 
     let workHandle: FileSystemDirectoryHandle;
-    try {
-        // Same picker id Studio's wizard uses, so it opens where the user keeps
-        // their projects rather than at some default.
-        workHandle = await window.showDirectoryPicker({ id: 'spotykach_work', mode: 'readwrite' });
-    } catch {
-        return null;
+    if (existingWorkspace) {
+        workHandle = existingWorkspace;
+    } else {
+        if (!canPickFolder()) {
+            throw new Error('This browser cannot open a folder — use the download instead.');
+        }
+        try {
+            // Same picker id Studio's wizard uses, so it opens where the user keeps
+            // their projects rather than at some default.
+            workHandle = await window.showDirectoryPicker({ id: 'spotykach_work', mode: 'readwrite' });
+        } catch {
+            return null;
+        }
     }
 
     const { saveProjectToDirectory } = await import('./exportUtils');

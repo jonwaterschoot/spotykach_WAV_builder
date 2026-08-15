@@ -15,8 +15,10 @@ import {
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
 import { ProjectNameModal } from '../components/modals/ProjectNameModal';
+import { WorkspaceChoiceModal } from '../components/modals/WorkspaceChoiceModal';
 import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
-import { canPickFolder } from '../utils/newProject';
+import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
+import { getDirectoryHandle } from '../utils/storageUtils';
 import { COLOR_MAP, TAPE_COLORS } from '../types';
 import type { AppState, UserLibrary } from '../types';
 
@@ -168,6 +170,12 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   const [confirmClear, setConfirmClear] = useState(false);
   const [createdProject, setCreatedProject] = useState<string | null>(null);
 
+  // The workspace step between the name and the picker — round 4. `pendingName` is
+  // the project waiting on that answer; `knownWorkspace` is the folder the app has
+  // already stored, read for its name without asking for permission.
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const [knownWorkspace, setKnownWorkspace] = useState<FileSystemDirectoryHandle | null>(null);
+
   const [exportLogs, setExportLogs] = useState<string[]>([]);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -253,6 +261,17 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       })
       .catch(e => console.warn('Could not read the temporary pool', e))
       .finally(() => { if (!cancelled) setIsHydrated(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Read for its `name` only. A stored handle costs no permission to look at, which
+  // is what lets Browse say "you already have a workspace" without becoming a mode
+  // that holds one.
+  useEffect(() => {
+    let cancelled = false;
+    getDirectoryHandle('work')
+      .then(handle => { if (!cancelled) setKnownWorkspace(handle); })
+      .catch(e => console.warn('Could not read the stored workspace handle', e));
     return () => { cancelled = true; };
   }, []);
 
@@ -617,7 +636,10 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
    * deliberately not built — it would need its own IDB slot to stay inside locked
    * decision 5, and this path makes it unnecessary.
    */
-  const importIntoProject = async (rawName: string) => {
+  const importIntoProject = async (
+    rawName: string,
+    existingWorkspace?: FileSystemDirectoryHandle | null,
+  ) => {
     if (poolRef.current.length === 0) return;
 
     setShowExportProgress(true);
@@ -633,6 +655,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         buildDetachedState(poolRef.current),
         rawName,
         msg => { if (msg) setExportLogs(prev => (prev[prev.length - 1] === msg ? prev : [...prev, msg])); },
+        existingWorkspace,
       );
 
       if (!created) {
@@ -658,6 +681,34 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       setIsExporting(false);
       setIsExportComplete(true);
     }
+  };
+
+  /**
+   * "Use your workspace" — the path that skips the picker entirely.
+   *
+   * `ensureWorkspacePermission` is the first await after the click on purpose: the
+   * browser's permission prompt needs that click's activation, and anything awaited
+   * before it spends the activation and makes the prompt fail silently.
+   */
+  const useKnownWorkspace = async () => {
+    if (!knownWorkspace || !pendingName) return;
+    const name = pendingName;
+    const granted = await ensureWorkspacePermission(knownWorkspace);
+    if (!granted) {
+      setExportError('Permission to your workspace folder was refused, so nothing was written.');
+      setShowExportProgress(true);
+      setIsExportComplete(true);
+      return;
+    }
+    setPendingName(null);
+    await importIntoProject(name, knownWorkspace);
+  };
+
+  const pickAnotherWorkspace = async () => {
+    if (!pendingName) return;
+    const name = pendingName;
+    setPendingName(null);
+    await importIntoProject(name);
   };
 
   const overflowCount = Math.max(0, pool.length - GRID_CAPACITY);
@@ -1069,11 +1120,28 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       <ProjectNameModal
         isOpen={nameModalOpen}
         onClose={() => setNameModalOpen(false)}
-        onConfirm={importIntoProject}
+        // The name no longer runs straight into the OS folder dialog — the workspace
+        // step below explains what that folder is before anything is picked.
+        onConfirm={(name) => setPendingName(name)}
         title="Import into a project"
         initialValue="New Project"
         placeholder="Project name…"
-        confirmLabel="Choose folder & create"
+        confirmLabel="Continue"
+      />
+
+      <WorkspaceChoiceModal
+        isOpen={pendingName !== null}
+        onClose={() => setPendingName(null)}
+        projectName={pendingName || ''}
+        existing={knownWorkspace}
+        onUseExisting={useKnownWorkspace}
+        onPickFolder={pickAnotherWorkspace}
+        // Only when there is nothing set up yet; with a workspace already known the
+        // wizard has nothing left to ask. The pool survives the detour — R2-4.
+        onRunSetup={knownWorkspace || !onEnterStudio ? undefined : () => {
+          setPendingName(null);
+          onEnterStudio();
+        }}
       />
 
       <ProjectCreatedModal

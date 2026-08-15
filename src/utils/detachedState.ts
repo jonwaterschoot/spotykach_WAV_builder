@@ -25,6 +25,14 @@ export interface DetachedSample {
     origin?: string;
     license?: string;
     sourceSamplePath?: string;
+    /**
+     * The file before any edit, when the caller kept it. Browse's pool has held both
+     * versions since R2-4, and dropping the original on the way into a project meant
+     * the edit arrived there labelled "Original" with no way back — the same lie the
+     * editor's history panel used to tell.
+     */
+    originalBlob?: Blob;
+    originalDuration?: number;
 }
 
 const SLOTS_PER_TAPE = 6;
@@ -84,16 +92,29 @@ export const buildDetachedState = (samples: DetachedSample[]): AppState => {
         const version: AudioVersion = {
             id: versionId,
             timestamp: Date.now(),
-            description: 'Original',
+            description: sample.originalBlob && sample.originalBlob !== sample.blob ? 'Edited' : 'Original',
             blob: sample.blob,
             duration: sample.duration ?? 0,
         };
+
+        // `[original, current]` when the caller kept both — exactly the two-version
+        // rule the project would have collapsed to anyway, so this adds history
+        // without adding depth.
+        const versions: AudioVersion[] = sample.originalBlob && sample.originalBlob !== sample.blob
+            ? [{
+                id: newId(),
+                timestamp: Date.now(),
+                description: 'Original',
+                blob: sample.originalBlob,
+                duration: sample.originalDuration ?? 0,
+            }, version]
+            : [version];
 
         const record: FileRecord = {
             id: fileId,
             name: toSlotName(sample.name) || `SAMPLE-${index + 1}`,
             originalName: sample.fileName || sample.name,
-            versions: [version],
+            versions,
             currentVersionId: versionId,
             isParked: index >= GRID_CAPACITY,
             origin: sample.origin,

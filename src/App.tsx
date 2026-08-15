@@ -104,12 +104,21 @@ function App({ onExitToHub }: AppProps) {
     workHandle, setWorkHandle,
     sdHandle, setSdHandle: setBackupHandle,
     projectRootHandleRef,
-    restorableHandles,
+    restorableHandles, isRestoreResolved,
     currentProjectName, setCurrentProjectName,
     hasUnsavedChanges, setHasUnsavedChanges,
     isEditorDirty, setIsEditorDirty,
     markSystemUpdate,
   } = useProjectSession();
+
+  /**
+   * True until the shell knows whether it can walk back in without asking.
+   *
+   * The setup wizard would otherwise render for the second or so the handle lookup
+   * and permission check take — a setup screen flashing in front of someone who has
+   * a workspace, which is the thing this is here to prevent.
+   */
+  const [isAutoRestoring, setIsAutoRestoring] = useState(true);
 
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
@@ -1358,6 +1367,50 @@ function App({ onExitToHub }: AppProps) {
       await handleLoadProject(currentProjectName, restorableHandles.work);
     }
   };
+
+  /**
+   * Walk straight in when the permission is still live.
+   *
+   * The setup wizard is the right screen for someone who has to grant something —
+   * `requestPermission` needs a user gesture, so the Restore button exists to
+   * provide one. But arriving from Browse's "Import into a project", the folder was
+   * picked seconds ago and permission is *already* granted: the wizard then asked
+   * the user to re-announce a decision they had just made, and put a setup screen
+   * between them and the project they had asked for.
+   *
+   * `queryPermission` needs no gesture, so a still-granted handle can restore
+   * itself. A reload drops permission back to `prompt`, where this does nothing and
+   * the wizard behaves exactly as before.
+   */
+  const autoRestoreAttempted = useRef(false);
+  useEffect(() => {
+    if (autoRestoreAttempted.current) return;
+    // Nothing stored, or already in: either way there is no restore to do, and the
+    // wizard (or the studio) can render.
+    if (!isRestoreResolved) return;
+    if (!restorableHandles || workHandle) {
+      autoRestoreAttempted.current = true;
+      setIsAutoRestoring(false);
+      return;
+    }
+    autoRestoreAttempted.current = true;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        // @ts-ignore — permission methods are not in the TS DOM lib yet.
+        const permission = await restorableHandles.work.queryPermission({ mode: 'readwrite' });
+        if (cancelled) return;
+        if (permission === 'granted') await handleRestoreSession();
+      } catch (e) {
+        console.warn('Could not check the stored workspace permission', e);
+      } finally {
+        if (!cancelled) setIsAutoRestoring(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRestoreResolved, restorableHandles, workHandle]);
 
   // Autosave User Library (DB + Local Folder Sync)
   useEffect(() => {
@@ -4135,9 +4188,18 @@ function App({ onExitToHub }: AppProps) {
 
   const missingFileIds = useMemo(() => new Set((missingFilesWarning || []).map(a => a.fileId)), [missingFilesWarning]);
 
+  const showSetupWizard = isWelcomeActive && !workHandle && !isAutoRestoring;
+
   return (
     <ErrorBoundary>
-      {isWelcomeActive && !workHandle && (
+      {/* Deciding whether a restore is possible. Neither screen is correct yet. */}
+      {isWelcomeActive && !workHandle && isAutoRestoring && (
+        <div className="h-screen w-full flex items-center justify-center bg-synthux-main text-gray-500">
+          <Loader size={20} className="animate-spin" />
+        </div>
+      )}
+
+      {showSetupWizard && (
         <SetupWizard
           onComplete={async (work, backup, projectName) => {
             setWorkHandle(work);
@@ -4169,7 +4231,7 @@ function App({ onExitToHub }: AppProps) {
       )}
 
       {/* The wizard covers everything, so the way back to the hub has to sit above it. */}
-      {isWelcomeActive && !workHandle && onExitToHub && (
+      {showSetupWizard && onExitToHub && (
         <button
           onClick={onExitToHub}
           className="fixed top-4 left-4 z-[110] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-black/50 backdrop-blur text-[11px] font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:bg-white/10 transition-all"

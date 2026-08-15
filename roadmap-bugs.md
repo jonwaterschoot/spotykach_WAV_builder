@@ -293,6 +293,69 @@ columns share the space beneath it. Same blast radius as R2-3 — this is Studio
 
 ---
 
+### Round 4 — pool → project, walked in a browser *(2026-08-15)*
+
+**The walkthrough passed.** What came out of it is all one thing: *"Import into a project" is where a
+browse visitor becomes a Studio user, and it was treating that as a file operation.* Four fixes, built
+the same day, none walked yet.
+
+#### R4-1 — The project didn't inherit the pool's edits ✅ *built*
+
+`buildDetachedState` built one version per file, always described `'Original'` — so an entry edited in
+Browse arrived in the project as a single version, the edit wearing the original's name, with no way
+back. The same lie R3-1 fixed inside the editor, one layer further out.
+
+`DetachedSample` now takes `originalBlob`/`originalDuration`, and `PoolItem` already had both. When
+they differ from the current blob the record is built as `[Original, Edited]` with `currentVersionId`
+on the edit. This adds *history*, not depth — it is exactly the pair the project would have collapsed
+to anyway. Every export resolves `currentVersionId`, so the two downloads are unaffected.
+
+**Consequence worth knowing:** an edited file now writes two WAVs into `Assets/`, not one. That is the
+two-version rule working as designed, and Cleanup sweeps orphans.
+
+#### R4-2 — The picker was asking for a workspace without saying so ✅ *built*
+
+"Import into a project" went straight to `showDirectoryPicker`. But that folder is not a destination —
+it is the **workspace**, the single most consequential choice in the app, and it was being made inside
+an OS dialog with no explanation and no way to know one had already been made. A returning user was
+quietly invited to start a second workspace beside their first.
+
+New `WorkspaceChoiceModal` between the name and the picker. It names the decision, and:
+
+- **When a workspace is already known**, it says so by folder name and offers **"Use your workspace"** —
+  which skips the picker entirely. "Choose a different folder" stays as the deliberate alternative,
+  and says plainly that it becomes the workspace from now on.
+- **When there is none**, it explains what the folder will become before opening the picker.
+
+`createProjectFromState` takes an optional workspace handle; omitted still means "ask". The reused
+handle needs its permission back, which is what `ensureWorkspacePermission` is for — and it must be
+the **first `await` after the click**, because `requestPermission` needs that click's transient
+activation and any earlier await spends it.
+
+#### R4-3 — Offer the setup walkthrough at that moment ✅ *built*
+
+Someone choosing their workspace for the first time is exactly who Studio's setup wizard is for, so the
+step offers **"Walk me through setup instead"**. Only when there is no workspace yet — with one already
+known the wizard has nothing left to ask. The pool survives the detour, which is a payoff of R2-4:
+before it, sending someone to Studio mid-selection would have emptied their pool.
+
+#### R4-4 — Landing on the setup screen instead of the project ✅ *built*
+
+After creating the project, "Open Studio" showed the **setup wizard** — asking the user to re-announce
+a decision made seconds earlier, with the project they had just asked for behind it.
+
+The wizard is right for someone who has to *grant* something: `requestPermission` needs a user gesture,
+which is what its Restore button provides. But arriving from Browse the permission is already granted,
+and `queryPermission` needs no gesture — so a still-granted handle now restores itself and goes
+straight to the loaded project. A reload drops permission back to `prompt`, where this does nothing and
+the wizard behaves exactly as before.
+
+Two supporting changes: `useProjectSession` exposes **`isRestoreResolved`**, so the shell can tell
+"nothing stored" from "still looking"; and the wizard is held behind a spinner until that question is
+answered, or it would flash a setup screen at someone who has a workspace.
+
+---
+
 ## Editor
 
 ### Stereo splitting

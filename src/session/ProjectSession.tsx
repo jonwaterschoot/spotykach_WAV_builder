@@ -37,6 +37,12 @@ export interface ProjectSession {
    * outside: the session finds them, the shell asks the user for permission back.
    */
   restorableHandles: RestorableHandles | null;
+  /**
+   * True once the lookup above has finished, whether or not it found anything. The
+   * shell needs "nothing stored" and "still looking" to be different answers before
+   * it decides between the setup wizard and a silent restore.
+   */
+  isRestoreResolved: boolean;
 
   // ── Identity ──────────────────────────────────────────────────────────────
   currentProjectName: string | undefined;
@@ -78,6 +84,8 @@ export function useProjectSession(): ProjectSession {
   const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [sdHandle, setSdHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [restorableHandles, setRestorableHandles] = useState<RestorableHandles | null>(null);
+  /** True once the mount-time handle lookup has finished, found or not. */
+  const [isRestoreResolved, setIsRestoreResolved] = useState(false);
   const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(
     () => appStorage.getItem('spotykach_current_project') || undefined
   );
@@ -224,6 +232,10 @@ export function useProjectSession(): ProjectSession {
 
   // Handles persist across sessions but their permission does not, so they are only
   // offered here — `handleRestoreSession` in the shell does the asking.
+  //
+  // `isRestoreResolved` flips either way, found or not. Without it the shell cannot
+  // tell "there is nothing stored" from "the lookup hasn't finished", and it needs
+  // that difference to decide whether to show the setup wizard or wait for a restore.
   useEffect(() => {
     let cancelled = false;
 
@@ -236,6 +248,8 @@ export function useProjectSession(): ProjectSession {
         }
       } catch (e) {
         console.error('Error loading handles', e);
+      } finally {
+        if (!cancelled) setIsRestoreResolved(true);
       }
     })();
 
@@ -251,6 +265,7 @@ export function useProjectSession(): ProjectSession {
     setSdHandle,
     projectRootHandleRef,
     restorableHandles,
+    isRestoreResolved,
     currentProjectName,
     setCurrentProjectName,
     hasUnsavedChanges,
