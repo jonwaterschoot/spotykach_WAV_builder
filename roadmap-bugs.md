@@ -8,7 +8,7 @@
 > [CHANGELOG.md](CHANGELOG.md) go back to being the only live documents** — see
 > [docs/README.md](docs/README.md).
 >
-> *Last reconciled against the code: 2026-08-14, after v4 Phase 6.*
+> *Last reconciled against the code: 2026-08-15, during the Phase 7 test pass.*
 
 ---
 
@@ -19,24 +19,170 @@ now has five doors — Browse, Preset → SD, Device Config, Edit One File, Stud
 with only the permission it actually needs.
 
 What is left is collected in the **Open items** section at the top of [V4_PERVAK.md](V4_PERVAK.md).
-The three that block a release:
+Phase 7 closed everything except **step 6, the test pass** — which is now the only thing blocking the
+release:
 
-- **Storage keys are not namespaced.** A preview build on GitHub Pages shares an origin with the live
-  app and would read and write real project state, including saved directory handles. Nothing goes on
-  Pages until this is fixed.
-- **Phases 4–6 were never verified in a browser.** Build and types are clean; no path was exercised
-  against a real SD card or folder picker.
-- **No functional pass over the five doors**, and the editor's known bugs are unassessed.
-
-The rest of the v4 close-out — settings, backup, the browser's pen icon, the test pass — is
-**Phase 7** in that document.
+- ✅ **Storage keys are namespaced** per build, so a preview on GitHub Pages no longer shares state
+  with the live app. The production bundle's names are unchanged, so no existing user loses handles.
+- **Phases 4–7 have not been verified in a browser**, apart from what the test pass has reached. Build
+  and types are clean; most paths have never been exercised against a real SD card or folder picker.
+- **Four of the five doors have had no functional pass.** Browse has had one round; Presets, Config,
+  Editor and Studio have had none, and the editor's known bugs are unassessed.
 
 ---
-Quick note to be placed in correct place:
 
-Tested the saving of the backup. Folder looked good, there's a txt file describing the content. → we should also include a guide on how te reinstate or setup on a new computer. Import workplace / restore ...
+## The v4 test pass
 
-Do we propose backups every now and then with an optional opt-out of the reminder?
+Phase 7, step 6 in [V4_PERVAK.md](V4_PERVAK.md) — the last thing blocking the release. Findings land
+here, round by round.
+
+### Round 1 — workspace backup ✅ *(2026-08-14)*
+
+Written to a folder on a card. The folder was right and the `.txt` describing its contents was there.
+Two things it doesn't answer — **no restore path**, and **nothing ever suggests making a backup**.
+Both written up under [Settings, backup and project management](#settings-backup-and-project-management)
+below, since that is where the work belongs.
+
+### Round 1 — Sample Browser ✅ built, needs re-testing
+
+All six built 2026-08-15; **none of it has been used on real hardware or a real phone.**
+
+- **Max width on very large monitors** — Browse caps its content at 2200px and centres it.
+- **A mobile version of the samples page** — the sources list becomes a drawer, the pool becomes a
+  full-screen sheet, the hero and rows shrink, and the hub says on phone-sized screens that Browse
+  is the door that works and the other four are desktop-only.
+- **The pen now says "Edit"**, is always visible rather than hover-only (a hover affordance is
+  unreachable on a touch screen), and the two row actions share one grid cell so a source offering
+  both can't push the add button onto a second line.
+- **One name for the pool.** It was "Selection pool", "Selection" and "APPLY EDIT" for the same
+  thing; it is "temporary pool" everywhere now. Opened from Browse, the editor commits with
+  **SAVE TO TEMPORARY POOL** and offers **DOWNLOAD** — "Save as project" is gone from that host,
+  because the pool's own "Import into a project" already carries the whole selection. The standalone
+  `#/editor` door is unchanged.
+- **The pool column is wider (400px)** and every row has a play button that auditions the blob as it
+  currently stands — the only way to hear an edit without reopening the editor. The two players stop
+  each other.
+- **Locate points at the pool too** — the browser's locate reveals the file where it came from and,
+  when it is also pooled, opens the pool and glows the row.
+
+Still on the list: the drawer and the pool sheet on a real phone.
+
+### Round 2 — Sample Browser, walked in a browser *(2026-08-15)*
+
+Nine items, none built. **R2-1 is the only defect**; the rest are the surface not yet saying what it
+means, plus one piece of architecture (R2-4, decided — the pool gets persisted) that R2-9 waits on.
+Every item below is self-contained: pick one, read the lines it points at, build it, commit it.
+
+Suggested order — the first four are an hour of work between them and clear the noise, then the two
+that change how a screen reads, then the big one:
+**R2-5 → R2-7 → R2-6 → R2-2 → R2-1 → R2-3 → R2-8 → R2-4 → R2-9.**
+
+---
+
+#### R2-1 — One player, not two 🐞
+
+*Playing a file from the temporary pool should show in the main player bar.* Today only the browser's
+own rows drive the scrub bar; a pool row plays with no scrubber, no name, no locate. Play/pause on the
+row works, which is the half that should be kept.
+
+The cause is that round 1 gave the pool its own `<audio>` element ([BrowseMode.tsx:152](src/modes/BrowseMode.tsx#L152))
+and then needed a two-way handshake — `onPreviewPlay` + `forceStop` — to stop the two players talking
+over each other. **The fix is to delete the second player**, not to duplicate the bar:
+
+- Hand the blob *into* the browser instead. A new optional prop on `SampleBrowser` — a play request
+  (`{ key, name, blob }`) that it routes through its existing `handlePlay` as a virtual sample
+  ([SampleBrowser.tsx:585](src/components/SampleBrowser.tsx#L585)) — gets the bar, the scrubber, the
+  name and locate for free.
+- The pool row needs the playing state back, so pair it with `onPlaybackChange(key, playing)`.
+- `onPreviewPlay`/`forceStop`, `togglePoolPreview`, `dropPreviewOf` and the `previewUrlRef`
+  bookkeeping in BrowseMode all go away with it. Net less code than there is now.
+- Keep: the object URL must still be re-minted when an edit replaces a pooled blob.
+
+#### R2-2 — Show that a pool entry has been edited
+
+An edited entry looks exactly like an untouched one. Add an `edited` flag to `PoolItem`, set it in
+`applyEdit` ([BrowseMode.tsx:371](src/modes/BrowseMode.tsx#L371)), and accent the row's editor button
+when it's true — plus a word in the row's second line, which currently shows duration and origin.
+
+#### R2-3 — The editor's two green buttons
+
+"SAVED TO POOL" and "DONE" sit side by side, both green, both with a check, meaning different things.
+Scrap the DONE state: the close button at [WaveformEditor.tsx:4479](src/components/WaveformEditor.tsx#L4479)
+should always read **CLOSE** with an X and stay visually secondary. The "you are safe to leave" signal
+is the commit button's job, and it already does it.
+
+**Note:** that button is shared with Studio's tape editor, so this changes both. That reads like an
+improvement in both — but it is the one item here that touches a surface outside Browse.
+
+#### R2-4 — Persist the temporary pool 🏗️ *(decided 2026-08-15: persist)*
+
+Today it doesn't survive anything: leaving for the hub and coming back, or refreshing, empties the
+pool and loses the edit history with it. That was deliberate — the pool is React state that lives and
+dies with the mode, which is what let Browse write nothing at all. **Decided: persist it**, so
+revisiting Browse from anywhere in the hub finds the selection where it was left.
+
+- **Its own IndexedDB store.** Not the app-state slot — locked decision 5 stays intact and Studio's
+  state is untouched. Namespaced through `storageNamespace.ts` like every other store, so a preview
+  build never shares a pool with the live app.
+- **Store `original + current` per entry**, not just the current blob. That keeps the edit history the
+  round-2 note asked about, and it is the same two-version rule the rest of the app follows.
+- **Restored on mount.** Careful with the same trap auto-save hit in Phase 7: don't let an empty
+  initial state write over the snapshot it is about to be replaced by.
+- **"Clear" becomes the way out**, not a refresh — reword it to say what it clears.
+- **Say where the files live.** A permanent line on the pool panel: kept in this browser's storage,
+  survives a refresh, gone if site data is cleared or the browser evicts it. We can neither prevent
+  eviction nor detect it, so the wording should not promise otherwise.
+- With this in, **the leaving warning is no longer needed** — but the exit-to-hub path should be
+  re-read to make sure it doesn't still claim work will be lost.
+
+#### R2-5 — The UPPERCASE warning is wrong ✂️
+
+`INSTALL_INSTRUCTIONS.txt` in the SD download is [docs/how_to_copy_to_SDcard.md](docs/how_to_copy_to_SDcard.md)
+verbatim, and line 67 still says *"⚠️ Folder and File names must be UPPERCASE."* Recent firmware
+accepts `B/1.wav` and `B/1.WAV` alike as long as the contents are right — this is already recorded as
+settled in the Done section below, so the doc is simply stale. Same sentence is repeated in
+[AboutHelpModal.tsx:359](src/components/AboutHelpModal.tsx#L359) and
+[HelpModal.tsx:188](src/components/HelpModal.tsx#L188); fix all three to say the app writes uppercase
+and the firmware accepts either.
+
+#### R2-6 — The loose download's README must credit per pack
+
+Picking from two packs produces a "Usage context" section that lists both licences with no indication
+of which belongs to whom — one CC-BY 4.0 and one WTFPL, run together as if they were a single
+statement. `buildLooseReadme` ([BrowseMode.tsx:65](src/modes/BrowseMode.tsx#L65)) flattens
+`items.map(i => i.license)` into a `Set` and drops the origin on the floor. Group by origin and print
+`[pack / artist] → licence`, the way `generateReadme` already does at
+[exportUtils.ts:509](src/utils/exportUtils.ts#L509).
+
+#### R2-7 — The tape-folder checkbox belongs to one button ✂️
+
+"Sort into tape folders" sits below both download buttons ([BrowseMode.tsx:793](src/modes/BrowseMode.tsx#L793)),
+so it reads as applying to the SD build as well — which it doesn't. Move it inside the "Download the
+files" block, visually bound to that button alone. The loose README refers to it by position too
+([BrowseMode.tsx:106](src/modes/BrowseMode.tsx#L106)) — update that sentence with it.
+
+#### R2-8 — The sources column leads with its least obvious source
+
+Curated Library is first *and* carries a filter field, which makes the most prominent thing in the
+column the one whose origin is unexplained and whose contents can't be changed from here. Local
+Folders, by contrast, earns a place — mounting a folder for a quick browse is exactly what this
+surface is for.
+
+- Reorder the column: built-in packs first, then Curated Library and Local Folders at the bottom
+  ([SampleBrowser.tsx:761](src/components/SampleBrowser.tsx#L761) onwards).
+- Drop the tag filter *input* from Curated. **Decide:** the tag chips too, or just the text field —
+  and does this apply in Studio, where the same list is the user's own managed library with a
+  Library Manager behind it? Recommendation: standalone only, text field only.
+- Add one line under Curated saying where the collection comes from.
+
+#### R2-9 — Link the pool to the workspace 🏗️ *(design; build after R2-4)*
+
+With R2-4 decided as *persist*, this is live. If someone has been to Studio, the pool and the
+workspace can know about each other: saving the temporary pool into the workspace, and the Project
+Manager listing it with where it currently lives — "still in this browser's storage" or similar. Needs
+its own design pass before any code, in particular what notification makes the link legible rather
+than surprising, and what happens to the pool once it has been saved into a workspace.
+
 ---
 
 ## Editor
@@ -52,14 +198,14 @@ Expand with a better preview of both channels and the option to audition each.
 
 ### Cleanup confirm modal glitches out of sight
 
-The confirmation inside the cleanup flow renders off-screen. **First thing to reproduce in the v4
-Phase 6 test pass**, since cleanup moved to Project ▸ Advanced and the modal is now reached from a
-different place than when this was logged.
+The confirmation inside the cleanup flow renders off-screen. **First thing to reproduce when the test
+pass reaches the editor**, since cleanup moved to Project ▸ Advanced and the modal is now reached from
+a different place than when this was logged.
 
 ### Editor bug sweep
 
 Deeper round of testing on the editor specifically, after the five hub doors are walked. Findings go
-here as they are found. → v4 Phase 7, step 6.
+under **The v4 test pass** above as they are found.
 
 ---
 
@@ -91,17 +237,26 @@ card from the browser is not possible; the Windows 32 GB limit can't be bypassed
 
 ## Settings, backup and project management
 
-All of this is **v4 Phase 7**, steps 1–4. Summarised here because it is where a reader will look for
-it:
+**v4 Phase 7, steps 1–4 — built 2026-08-14**, and all of it still waiting on the test pass above.
+Summarised here because it is where a reader will look for it:
 
-- One settings surface owns the options — auto-save, folder locations, history & cleanup, backup.
-- **Auto-save doesn't exist yet** (`saveStateToDB` has no callers). It gets built, defaults on, and is
-  toggleable; with it off, leaving Studio for the hub warns about unsaved work. That warning is
-  missing today regardless of the setting.
-- Backup and sync leave the Project Manager. The card's *read* path stays — projects found on a card
-  can still be imported.
-- One explicit **workspace backup** replaces them: user picks a location every time, sees an itemised
-  list of what it contains with sizes, no default destination.
+- ✅ One settings surface owns the options — auto-save, folder locations, history & cleanup, backup —
+  in three tabs, Files / Look / System.
+- ✅ Auto-save, which genuinely had no callers before. Defaults on, toggleable, writes serialised so a
+  snapshot carrying audio blobs can't pile up, and gated on the mount-time load resolving. With it
+  off, leaving Studio for the hub warns about unsaved work.
+- ✅ Backup and sync left the Project Manager, which is one list again. The card's *read* path stays —
+  projects found on a card can still be imported.
+- ✅ One explicit **workspace backup**: a location picked every time, an itemised list with sizes
+  shown before the picker opens, no default destination, and one folder that is removed if the write
+  fails partway.
+
+Open, from the round 1 backup test:
+
+- **A restore path.** The backup describes its contents and not how to put them back. Wanted: an
+  "import workspace / restore" action in the app, and a new-computer setup section written into the
+  `.txt` that ships inside the backup.
+- **Suggest a backup now and then**, with an opt-out of the reminder.
 
 ### Project Manager overview
 
