@@ -77,6 +77,12 @@ release whose premise is separating one muddled thing into clean tiers.*
   bare folder never said so.
 
 ### Fixed
+- **Every hover state in the app was dead on a touchscreen machine.** Tailwind v4 only applies
+  `hover:` styles when the browser says the primary pointer can hover, and a touchscreen laptop
+  says it cannot — even when you are driving it with a mouse. All 333 hover rules, 16% of the
+  stylesheet, were being skipped: buttons stayed grey, rows never lit, and the only hover left
+  working anywhere was the `+` on an empty slot, which is hand-written CSS rather than a utility.
+  Hover now applies wherever there is a pointer to do it.
 - **"Write to SD card" in Preset → SD could never open the picker.** The preset's audio was
   downloaded first and the card asked for afterwards, by which time the click that could open a
   file picker had expired — Chrome refused it outright. The card is now chosen *before* anything

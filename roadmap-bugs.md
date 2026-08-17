@@ -25,11 +25,15 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 5 of 14 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 6 of 15 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
 below is written to be picked up on its own — what is wrong, where it lives, and what closing it means.
+
+**A fifteenth arrived mid-round.** S1-15 was found while walking S1-5 — it is not a Studio finding at
+all but an app-wide one, and the only item here that was ever invisible in a browser on a desktop
+machine. It is kept in this round because this is where it surfaced.
 
 **What this round did *not* cover.** Two things were deliberately left out and each wants a pass of its
 own, described under **Not this round** at the end of this section:
@@ -63,6 +67,7 @@ answered and built — S1-11 and the auto-save question are what is left.
 | **S1-12** | Slider reset is double-click only, undiscoverable | `SettingsModal.tsx` | ✂️ |
 | **S1-13** | Brightness capped at 2× | `SettingsModal.tsx` | ✂️ |
 | **S1-14** | Texture 8 (the mp4) dead on Pages — **cause found** | `App.tsx` | 🐞 |
+| **S1-15** | **Every hover state in the app is dead on a touchscreen machine** | `index.css` | 🐞 ✅ |
 
 **Cheapest first, if that matters:** S1-13 and S1-14 are one line each, S1-14 with the fix already
 identified. S1-12 is small and local, as S1-1, S1-2 and S1-5 were, and all three are built. S1-8 is the
@@ -207,6 +212,11 @@ worse than a second line. Shortening the wording would fix it and is a copy deci
 *Driven in Chrome against the dev server:* the button reads `⊞ BROWSE` in the header, turns orange on
 hover with the folder-plus icon following, and opens the Sample Browser on click.
 
+**Walking this is what turned up S1-15.** The hover above fired under automation and not on the machine
+it was walked on — which turned out to be nothing to do with this button, and true of every hover in the
+app. It is written up as its own item; the orange described here only actually arrives once that fix is
+in.
+
 ### New project
 
 #### S1-6 — Creating a new project doesn't warn about unsaved changes 🐞
@@ -303,6 +313,48 @@ absolute URL resolves off the site root and 404s. The file itself is committed
 
 **Fix: wrap it in `resolveAssetPath`.** Then check whether anything else hardcodes a leading `/` asset
 path the same way, since the local build hides this class of bug completely.
+
+### Found mid-round — app-wide
+
+#### S1-15 — Every hover state in the app is dead on a touchscreen machine 🐞 ✅ *built and walked 2026-08-18*
+
+Noticed while walking S1-5: the new Browse button didn't light up on hover. It wasn't the button.
+**Nothing in the app was reacting to hover**, and had never been, on that machine.
+
+**Tailwind v4 wraps the `hover` variant in `@media (hover: hover)`.** Where v3 emitted a plain `:hover`
+rule, v4 emits one that only applies when the browser reports the *primary* pointer can hover. A
+Windows touchscreen laptop reports `hover: none` even when it is being driven by a mouse — so the media
+query never matches and the whole block is skipped. Measured in the built stylesheet: the app has **333
+hover rules, and every one of them that Tailwind generates — all but the hand-written scrollbar-thumb
+rule — sat inside the gate. 33KB, 16% of the CSS, inert.** `group-hover:` is gated the same way.
+
+**The tell was the one hover that still worked** — the middle `+` on an empty slot in single-tape view.
+It is the only hover in the app that isn't a Tailwind utility: hand-written CSS injected in a `<style>`
+tag ([MiniSlotCard.tsx:347-353](src/components/MiniSlotCard.tsx#L347-L353)), so nothing gates it. The
+same element also carries `group-hover:scale-110`
+([MiniSlotCard.tsx:341](src/components/MiniSlotCard.tsx#L341)) — a real utility — which is why the `+`
+would glow and change colour but never grow. One element, both behaviours, the gate visible between them.
+
+**Reproduced and fixed under Chrome with touch emulation**, driving the real app:
+
+| | `matchMedia('(hover: hover)')` | Browse button on hover |
+|---|---|---|
+| Desktop pointer | `true` | grey → orange |
+| Touch device | `false` | **no change at all** |
+| Touch device, after the fix | `false` | grey → orange |
+
+The fix is one line in [src/index.css](src/index.css), `@custom-variant hover (&:hover)`, which redefines
+the variant to the ungated form the styling was always written against.
+
+**This was never a regression.** The project was born on Tailwind v4 (`ac1db25`, 2026-02-06), so these
+hover states have been dead on hover-less devices since the first commit — invisible to anyone testing
+on a desktop, which is why four rounds of walking never caught it.
+
+**What it costs, since v4's gate exists for a reason.** On genuine touch use a tap can leave an element
+stuck in its hover look until you tap elsewhere. Accepted deliberately: this is a desktop studio tool
+whose affordances lean on hover throughout, and a hybrid touchscreen laptop — common in this audience —
+is exactly the machine that loses all of them. If sticky hover becomes a real complaint, the narrower
+form is to gate on `(pointer: fine)` instead, which gives a mouse its hover without giving a finger one.
 
 ### Not this round — two passes of their own
 
