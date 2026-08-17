@@ -121,7 +121,15 @@ function App({ onExitToHub }: AppProps) {
   const [isAutoRestoring, setIsAutoRestoring] = useState(true);
 
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
-  const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
+  /**
+   * The all-tapes grid is the overview, so it is what a project opens on — always,
+   * not remembered from last time. Single-tape is where you go to work on one of the
+   * six, and picking a tape is how you say so. Every path that makes a different
+   * project the live one puts this back to 'all' (see `handleLoadProject` and
+   * friends); renaming or saving-as the project you are already in does not, because
+   * neither is opening anything. Roadmap S1-1.
+   */
+  const [viewMode, setViewMode] = useState<'single' | 'all'>('all');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
 
   const { stop: stopGlobalPlayer } = useAudioPlayer();
@@ -763,6 +771,7 @@ function App({ onExitToHub }: AppProps) {
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false); // Clean state after load
       setShowProjectManager(false);
+      setViewMode('all'); // A different project opens on the overview, not on whichever tape the last one left behind.
 
       // --- NEW: Load Visual Settings from Workspace ---
       try {
@@ -893,6 +902,7 @@ function App({ onExitToHub }: AppProps) {
       setState(emptyState);
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
+      setViewMode('all');
       showToast("Empty Project Created", "success");
 
       handleSmartScan(activeWorkHandle);
@@ -1238,6 +1248,7 @@ function App({ onExitToHub }: AppProps) {
     setCurrentProjectName(finalName);
     setHasUnsavedChanges(false);
     setShowPresetsPanel(false);
+    setViewMode('all'); // A preset fills all six tapes — show them.
 
     const missing = missingAssetCount(newState);
     showToast(
@@ -1983,6 +1994,7 @@ function App({ onExitToHub }: AppProps) {
       if (loadedState) {
         setState(loadedState);
         setImportAnalysis(null);
+        setViewMode('all'); // A restore replaces the whole project, so it lands like an open.
         showToast("Project Restored Successfully", 'success');
       } else {
         showToast("Failed to load project from backup.", 'error');
