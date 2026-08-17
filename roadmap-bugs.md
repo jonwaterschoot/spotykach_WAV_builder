@@ -25,7 +25,7 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 6 of 15 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 7 of 15 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
@@ -58,7 +58,7 @@ answered and built — S1-11 and the auto-save question are what is left.
 | **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ ✅ |
 | **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ ✅ |
-| **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 |
+| **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 ✅ |
 | **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ |
 | **S1-8** | Clean Mirror doesn't show what it deletes | `ExportPreviewModal.tsx` | 🐞 |
 | **S1-9** | Files and System explainers too small to read | `SettingsModal.tsx` | ✂️ |
@@ -219,14 +219,42 @@ in.
 
 ### New project
 
-#### S1-6 — Creating a new project doesn't warn about unsaved changes 🐞
+#### S1-6 — Creating a new project doesn't warn about unsaved changes 🐞 ✅ *built and walked 2026-08-18*
 
-A new project replaces the open one with no question asked. The import path already does this correctly
-— *"…has unsaved changes. Save before importing a new project?"*
-([App.tsx:387](src/App.tsx#L387)) — so the guard exists and the new-project path simply doesn't call it.
+**"New Fresh Project" in the Project menu replaced the open project with no question asked.** The guard
+existed — `checkUnsavedChanges` ([App.tsx:732](src/App.tsx#L732)) — and every neighbouring path called
+it: loading a project, leaving for the hub, changing the work folder, and even *creating* an empty
+project from the Project Manager ([App.tsx:5067](src/App.tsx#L5067)). The one entry point that didn't
+was the menu item most likely to be used ([App.tsx:4468](src/App.tsx#L4468)).
 
-Auto-save makes this less likely to lose anything, but not impossible (it is off by default for some,
-and the recovery copy is browser-local), so the warning is wanted regardless.
+**The guard now asks before the name, not after**, so nothing is typed for a project that gets
+cancelled.
+
+**It also offers the third answer the old dialog couldn't.** `checkUnsavedChanges` was a
+`window.confirm`, which has room for two outcomes: lose the work or stay put. Saving first — the thing
+anyone in that dialog actually wants — meant closing it, hitting Save, and starting again. It is now the
+app's own `ConfirmModal`, which already had a three-button shape (`onDiscard` off to the left in red,
+then cancel, then the primary), and the primary is **Save "<name>" first**, with *New project without
+saving* as the red one. `confirmAction` didn't pass `onDiscard` through, so that was wired up.
+
+- **The save option is opt-in per call site** (`offerSave`), and only appears when there is a work
+  folder *and* a project name to save into. Without those, `executeSaveProject` starts prompting for a
+  name of its own ([App.tsx:2737](src/App.tsx#L2737)), which is not what "save first" should mean in a
+  dialog about something else. The two new-project paths ask for it; loading, exiting to the hub and
+  changing the work folder keep the two outcomes they had, in the new dialog.
+- **"Save first" waits for the save to land.** A save can stop short — missing assets put the resolver
+  up instead of writing ([App.tsx:2352](src/App.tsx#L2352)), and a write can fail — and going ahead
+  then would destroy exactly what was just asked to be kept. `executeSaveProject` and
+  `handleSaveProject` now return whether the project reached disk; on false the new project isn't
+  created and a toast says so.
+
+The auto-save wording is unchanged and still branches on the preference: with auto-save on, the work is
+in the browser's recovery slot and only the folder on disk is behind, and the dialog says that rather
+than claiming a loss.
+
+**Not done here:** loading a different project and leaving for the hub could offer the same "save
+first", and the zip-import guard at [App.tsx:399](src/App.tsx#L399) is still a separate `window.confirm`
+that proceeds whichever way it is answered. Both are outside this item.
 
 ### Import and build to SD — `ExportPreviewModal.tsx`
 

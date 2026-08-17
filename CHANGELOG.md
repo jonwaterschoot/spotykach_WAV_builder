@@ -77,7 +77,13 @@ release whose premise is separating one muddled thing into clean tiers.*
   bare folder never said so.
 
 ### Fixed
-- **Every hover state in the app was dead on a touchscreen machine.** Tailwind v4 only applies
+- **"New Fresh Project" replaced the open project without asking.** Every neighbouring path —
+  loading a project, leaving for the hub, changing the work folder — already warned about unsaved
+  changes; the one menu item that creates a project on top of yours did not. It asks now, before
+  the name is typed. The dialog also gained the answer it never had: **save the open project first,
+  then start the new one**, alongside going ahead without saving and cancelling. It waits for the
+  save to actually reach disk, so a save stopped by missing files leaves the open project where it
+  is instead of replacing it anyway. Tailwind v4 only applies
   `hover:` styles when the browser says the primary pointer can hover, and a touchscreen laptop
   says it cannot — even when you are driving it with a mouse. All 333 hover rules, 16% of the
   stylesheet, were being skipped: buttons stayed grey, rows never lit, and the only hover left

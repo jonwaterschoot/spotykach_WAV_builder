@@ -199,6 +199,10 @@ function App({ onExitToHub }: AppProps) {
     title: string;
     message: React.ReactNode;
     onConfirm: () => void;
+    // The third way out, sitting apart from confirm/cancel: used where "no" and
+    // "not like that" are different answers — see checkUnsavedChanges.
+    onDiscard?: () => void;
+    discardLabel?: string;
     isDestructive?: boolean;
     confirmLabel?: string;
     showCancel?: boolean;
@@ -715,7 +719,26 @@ function App({ onExitToHub }: AppProps) {
     });
   };
 
-  const checkUnsavedChanges = (action: () => void) => {
+  /**
+   * The guard in front of anything that replaces the open project.
+   *
+   * `offerSave` adds the way out a plain "continue anyway" can't give: save to the
+   * project folder first, then carry on. It is opt-in because it only makes sense
+   * where the action itself doesn't already deal with the save — and it is only
+   * actually offered when there is somewhere to save to (a work folder and a
+   * project name), since without those `executeSaveProject` starts prompting for
+   * one, which is not what "save first" should mean here.
+   */
+  const checkUnsavedChanges = (
+    action: () => void,
+    options?: {
+      offerSave?: boolean;
+      /** What is about to happen, as one sentence. Shown above the unsaved-changes line. */
+      consequence?: string;
+      /** Label for going ahead without saving. */
+      proceedLabel?: string;
+    }
+  ) => {
     // Determine if the project is effectively empty
     const hasAnyFiles = Object.keys(state.files).length > 0;
     const hasProjectNotes = !!(state.projectNotes && state.projectNotes.trim() !== '');
@@ -723,18 +746,57 @@ function App({ onExitToHub }: AppProps) {
     const isProjectEmpty = !hasAnyFiles && !hasProjectNotes && !hasTapeNotes;
 
     // Only warn if something changed AND the project isn't empty (we don't care about saving empty projects)
-    if ((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty) {
-      // With auto-save on the work is not actually lost — it is in the browser's
-      // recovery slot, just not in the project folder. Saying "these will be lost"
-      // in that case would be a lie the app can be caught in.
-      const message = getDurabilityPref('autoSave')
-        ? "You have changes that haven't been saved to the project folder. They're kept in this browser and will come back, but the folder on disk won't have them. Continue anyway?"
-        : "You have unsaved changes. These will be lost. Continue anyway?";
-      const confirmed = window.confirm(message);
-      if (confirmed) action();
-    } else {
+    if (!((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty)) {
       action();
+      return;
     }
+
+    // With auto-save on the work is not actually lost — it is in the browser's
+    // recovery slot, just not in the project folder. Saying "these will be lost"
+    // in that case would be a lie the app can be caught in.
+    const changesLine = getDurabilityPref('autoSave')
+      ? "You have changes that haven't been saved to the project folder. They're kept in this browser and will come back, but the folder on disk won't have them."
+      : "You have unsaved changes. These will be lost.";
+    const canSave = !!(workHandle && currentProjectName);
+    const offerSave = !!options?.offerSave && canSave;
+    const proceedLabel = options?.proceedLabel || 'Continue anyway';
+
+    const message = (
+      <>
+        {options?.consequence && <p>{options.consequence}</p>}
+        <p>{changesLine}</p>
+      </>
+    );
+
+    if (!offerSave) {
+      setConfirmAction({
+        title: 'Unsaved changes',
+        message,
+        isDestructive: true,
+        confirmLabel: proceedLabel,
+        onConfirm: () => { setConfirmAction(null); action(); },
+      });
+      return;
+    }
+
+    setConfirmAction({
+      title: 'Unsaved changes',
+      message,
+      // Saving first is the safe answer, so it takes the primary button and the
+      // discard sits off to the side in red.
+      confirmLabel: `Save "${currentProjectName}" first`,
+      discardLabel: proceedLabel,
+      onDiscard: () => { setConfirmAction(null); action(); },
+      onConfirm: async () => {
+        setConfirmAction(null);
+        const saved = await handleSaveProject();
+        // A save can stop short — missing assets put the resolver up instead, and a
+        // write can fail. Going ahead then would throw away exactly what the user
+        // just asked to keep, so the action waits for another try.
+        if (saved) action();
+        else showToast('Nothing was replaced — the save didn\'t finish.', 'warning');
+      },
+    });
   };
 
   // ==========================================
@@ -2278,7 +2340,8 @@ function App({ onExitToHub }: AppProps) {
   };
 
   // Save Project Handler
-  const handleSaveProject = async () => {
+  /** Resolves true only when the project actually reached disk — see checkUnsavedChanges. */
+  const handleSaveProject = async (): Promise<boolean> => {
     setIsProcessing(true);
     setProgressMsg("Checking files...");
     try {
@@ -2287,7 +2350,7 @@ function App({ onExitToHub }: AppProps) {
 
       if (missing.length > 0) {
         setMissingFilesWarning(missing);
-        return; // Pause save, wait for user resolution
+        return false; // Pause save, wait for user resolution
       }
     } catch (e) {
       console.error("Verification failed", e);
@@ -2296,7 +2359,7 @@ function App({ onExitToHub }: AppProps) {
       setProgressMsg('');
     }
 
-    await executeSaveProject();
+    return await executeSaveProject();
   };
 
   const handleSmartRelocate = async () => {
@@ -2670,7 +2733,8 @@ function App({ onExitToHub }: AppProps) {
     }
   }, [userLibrary.files, missingLibraryFiles]);
 
-  const executeSaveProject = async () => {
+  /** Resolves true only when the project actually reached disk — see checkUnsavedChanges. */
+  const executeSaveProject = async (): Promise<boolean> => {
     // 1. If we have an active project handle (or Work Handle + Name), save
     if (workHandle && currentProjectName) {
       setIsProcessing(true);
@@ -2689,21 +2753,22 @@ function App({ onExitToHub }: AppProps) {
 
         showToast("Project Saved Successfully", 'success');
         setHasUnsavedChanges(false);
+        return true;
       } catch (e: any) {
         console.error(e);
         showToast("Save Failed: " + e.message, 'error');
+        return false;
       } finally {
         setIsProcessing(false);
         setProgressMsg('');
       }
-      return;
     }
 
     // 2. If no active project handle, but we have a Work Folder -> Prompt to Create (Save As)
     if (workHandle) {
       const name = prompt("Enter Project Name to Save:");
       if (name) await handleSaveProjectAs(name);
-      return;
+      return false;
     }
 
     // 3. Fallback (Browser Mode) -> Prompt to Export
@@ -2713,6 +2778,7 @@ function App({ onExitToHub }: AppProps) {
         await exportSaveState(state, false, log);
       });
     }
+    return false;
   };
 
 
@@ -4397,14 +4463,22 @@ function App({ onExitToHub }: AppProps) {
                       icon: <FilePlus size={14} />,
                       onClick: async () => {
                         if (!workHandle) { handleSetWorkFolder(); return; }
-                        setProjectNameModal({
-                          isOpen: true,
-                          title: 'New Fresh Project',
-                          confirmLabel: 'Create Project',
-                          initialValue: 'New Project',
-                          onConfirm: async (name) => {
-                            await handleCreateEmptyProject(name);
-                          }
+                        // A fresh project replaces the open one, so it asks first — S1-6.
+                        // Before the name, not after: nothing is typed for nothing.
+                        checkUnsavedChanges(() => {
+                          setProjectNameModal({
+                            isOpen: true,
+                            title: 'New Fresh Project',
+                            confirmLabel: 'Create Project',
+                            initialValue: 'New Project',
+                            onConfirm: async (name) => {
+                              await handleCreateEmptyProject(name);
+                            }
+                          });
+                        }, {
+                          offerSave: true,
+                          consequence: `A new project replaces "${currentProjectName || 'the open project'}" in the studio.`,
+                          proceedLabel: 'New project without saving',
                         });
                       }
                     },
@@ -4990,7 +5064,11 @@ function App({ onExitToHub }: AppProps) {
                 }}
                 onSaveProject={handleSaveProjectAs}
                 onCreateEmptyProject={(name) => {
-                  checkUnsavedChanges(() => handleCreateEmptyProject(name));
+                  checkUnsavedChanges(() => handleCreateEmptyProject(name), {
+                    offerSave: true,
+                    consequence: `"${name}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+                    proceedLabel: 'Create without saving',
+                  });
                 }}
                 onImportBackupProject={handleImportBackupProject}
                 currentProjectName={currentProjectName}
@@ -5542,6 +5620,8 @@ function App({ onExitToHub }: AppProps) {
             isOpen={true}
             onClose={() => setConfirmAction(null)}
             onConfirm={confirmAction.onConfirm}
+            onDiscard={confirmAction.onDiscard}
+            discardLabel={confirmAction.discardLabel}
             title={confirmAction.title}
             message={confirmAction.message}
             isDestructive={confirmAction.isDestructive}
