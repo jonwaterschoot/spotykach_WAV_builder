@@ -245,13 +245,13 @@ export const FileBrowser = ({
 
     const handleSelectAllUnassigned = () => {
         const newSet = new Set(selectedFileIds);
-        unassignedFiles.forEach(f => newSet.add(f.id));
+        unassignedFiles.forEach(f => allUnassignedSelected ? newSet.delete(f.id) : newSet.add(f.id));
         setSelectedFileIds(newSet);
     };
 
     const handleSelectAllAssigned = () => {
         const newSet = new Set(selectedFileIds);
-        assignedFiles.forEach(f => newSet.add(f.id));
+        assignedFiles.forEach(f => allAssignedSelected ? newSet.delete(f.id) : newSet.add(f.id));
         setSelectedFileIds(newSet);
     };
 
@@ -328,6 +328,10 @@ export const FileBrowser = ({
 
     const unassignedFiles = files.filter(f => f.isParked);
     const assignedFiles = files.filter(f => !f.isParked);
+
+    // An empty section is never "all selected" — there would be nothing to deselect.
+    const allAssignedSelected = assignedFiles.length > 0 && assignedFiles.every(f => selectedFileIds.has(f.id));
+    const allUnassignedSelected = unassignedFiles.length > 0 && unassignedFiles.every(f => selectedFileIds.has(f.id));
 
     const getLabelStyle = (location?: string) => {
         if (!location) return '';
@@ -471,9 +475,9 @@ export const FileBrowser = ({
                         <button
                             onClick={(e) => { e.stopPropagation(); handleSelectAllAssigned(); }}
                             className="text-[10px] text-gray-500 hover:text-white underline decoration-transparent hover:decoration-white transition-all"
-                            title="Select All Assigned"
+                            title={allAssignedSelected ? "Deselect All Assigned" : "Select All Assigned"}
                         >
-                            Select All
+                            {allAssignedSelected ? 'Deselect All' : 'Select All'}
                         </button>
                     </div>
 
@@ -530,9 +534,9 @@ export const FileBrowser = ({
                         <button
                             onClick={(e) => { e.stopPropagation(); handleSelectAllUnassigned(); }}
                             className="text-[10px] text-gray-500 hover:text-white underline decoration-transparent hover:decoration-white transition-all"
-                            title="Select All in Pool"
+                            title={allUnassignedSelected ? "Deselect All in Pool" : "Select All in Pool"}
                         >
-                            Select All
+                            {allUnassignedSelected ? 'Deselect All' : 'Select All'}
                         </button>
 
                         {/* Fill Slots Button (Visible if we have unassigned files) */}

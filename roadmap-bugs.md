@@ -25,7 +25,7 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 1 of 14 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 2 of 14 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
@@ -49,7 +49,7 @@ start them cold; the rest are described well enough below to open the file and g
 | # | What | Where | Type |
 |---|---|---|---|
 | **S1-1** | A project opens on one tape, not all six | `App.tsx` | ✂️ ✅ |
-| **S1-2** | "Select All" never becomes "Deselect All" (two buttons) | `FileBrowser.tsx` | ✂️ |
+| **S1-2** | "Select All" never becomes "Deselect All" (two buttons) | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ |
 | **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ |
 | **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ |
@@ -64,8 +64,8 @@ start them cold; the rest are described well enough below to open the file and g
 | **S1-14** | Texture 8 (the mp4) dead on Pages — **cause found** | `App.tsx` | 🐞 |
 
 **Cheapest first, if that matters:** S1-13 and S1-14 are one line each, S1-14 with the fix already
-identified. S1-2, S1-5 and S1-12 are small and local (S1-1 was, and is built). S1-8 is the largest piece
-of real work here and the only one that changes what a destructive action does.
+identified. S1-5 and S1-12 are small and local (S1-1 and S1-2 were, and are built). S1-8 is the largest
+piece of real work here and the only one that changes what a destructive action does.
 
 ### The default view
 
@@ -95,14 +95,24 @@ direction.
 
 ### The left pool column — `FileBrowser.tsx`
 
-#### S1-2 — "Select All" doesn't become "Deselect All" ✂️
+#### S1-2 — "Select All" doesn't become "Deselect All" ✂️ ✅ *built and walked 2026-08-17*
 
-Once everything is selected the control still says *Select All* and does nothing visible. It should flip
-to *Deselect All*, as the Library Manager's equivalent already does
-([LibraryManager.tsx:1499](src/components/LibraryManager.tsx#L1499) is the pattern to copy).
+Once everything was selected the control still said *Select All* and did nothing visible. Both buttons now
+flip — the assigned list ([FileBrowser.tsx:480](src/components/FileBrowser.tsx#L480)) and the pool
+([FileBrowser.tsx:539](src/components/FileBrowser.tsx#L539)) — on the Library Manager's pattern, with the
+`title` tooltip flipping alongside the label.
 
-**Two buttons, not one** — the assigned list ([FileBrowser.tsx:476](src/components/FileBrowser.tsx#L476))
-and the pool ([FileBrowser.tsx:535](src/components/FileBrowser.tsx#L535)) each have their own.
+**Each button only ever owns its own section.** The selection is one set shared by both lists, so
+*Deselect All* in the pool removes the pool's ids and leaves an assigned selection standing, exactly as
+*Select All* only ever added its own. That is why the flip is per-section state
+([FileBrowser.tsx:333-334](src/components/FileBrowser.tsx#L333-L334)) and not one "everything is selected"
+flag.
+
+**An empty section never says *Deselect All*.** `[].every()` is true, so without the length guard an
+empty pool would offer to deselect nothing.
+
+Fixed alongside: the Library Manager said *Unselect* where this now says *Deselect*
+([LibraryManager.tsx:1499](src/components/LibraryManager.tsx#L1499)). One word for one control.
 
 #### S1-3 — Compact rows wear a full outline ✂️
 
