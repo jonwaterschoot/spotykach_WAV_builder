@@ -347,17 +347,17 @@ export const FileBrowser = ({
         }
     };
 
-    const getBorderColor = (location?: string) => {
-        if (!location) return 'border-gray-600'; // Default
+    const getLeftBorderColor = (location?: string) => {
+        if (!location) return 'border-l-gray-600'; // Default
         const color = location.split(' ')[0];
         switch (color) {
-            case 'Blue': return 'border-synthux-blue';
-            case 'Green': return 'border-synthux-green';
-            case 'Pink': return 'border-synthux-pink';
-            case 'Red': return 'border-synthux-red';
-            case 'Turquoise': return 'border-teal-400';
-            case 'Yellow': return 'border-synthux-yellow';
-            default: return 'border-gray-600';
+            case 'Blue': return 'border-l-synthux-blue';
+            case 'Green': return 'border-l-synthux-green';
+            case 'Pink': return 'border-l-synthux-pink';
+            case 'Red': return 'border-l-synthux-red';
+            case 'Turquoise': return 'border-l-teal-400';
+            case 'Yellow': return 'border-l-synthux-yellow';
+            default: return 'border-l-gray-600';
         }
     };
 
@@ -495,7 +495,7 @@ export const FileBrowser = ({
                                     onDragStart={handleDragStart}
                                     location={getFileLocation(file.id)}
                                     getLabelStyle={getLabelStyle}
-                                    getBorderColor={getBorderColor}
+                                    getLeftBorderColor={getLeftBorderColor}
                                     isDuplicate={duplicates.has(file.id)}
                                     onRenameFile={onRenameFile}
                                     onOpenDuplicateModal={onOpenDuplicateModal}
@@ -566,7 +566,7 @@ export const FileBrowser = ({
                                     onRenameFile={onRenameFile}
                                     location={null}
                                     getLabelStyle={getLabelStyle}
-                                    getBorderColor={getBorderColor}
+                                    getLeftBorderColor={getLeftBorderColor}
                                     isSelected={selectedFileIds.has(file.id)}
                                     onToggleSelect={() => toggleSelection(file.id)}
                                     onSelectionClick={(e) => handleSelectionClick(file.id, e)}
@@ -602,7 +602,7 @@ interface FileItemProps {
     onDragStart: (e: React.DragEvent, fileId: string) => void;
 
     getLabelStyle: (location?: string) => string;
-    getBorderColor: (location?: string) => string;
+    getLeftBorderColor: (location?: string) => string;
     isDuplicate?: boolean;
     onOpenDuplicateModal?: () => void;
     onUnassign?: () => void;
@@ -624,7 +624,7 @@ const FileItem = ({
     stop,
     onDragStart,
     getLabelStyle,
-    getBorderColor,
+    getLeftBorderColor,
     isDuplicate,
     onUnassign,
     onDelete,
@@ -651,9 +651,12 @@ const FileItem = ({
         if (e.key === 'Escape') setIsRenaming(false);
     };
 
-    // Dynamic classes based on state
+    // Dynamic classes based on state.
+    // Compact rows carry the tape colour on the left edge only — a full coloured ring
+    // is noise at that density. The rest of the row stays as quiet as any other.
+    const isTapeStriped = Boolean(isMinified && location);
     const borderClass = (isMinified && location)
-        ? getBorderColor(location)
+        ? `border-gray-700 border-l-2 ${getLeftBorderColor(location)}`
         : (location ? 'border-gray-700' : 'border-gray-600');
 
     const bgClass = location ? 'bg-gray-800/50' : 'bg-gray-800';
@@ -669,7 +672,8 @@ const FileItem = ({
             ${bgClass} ${borderClass}
             ${isMinified ? 'items-center p-1.5' : 'items-start p-2'}
 
-            hover:border-gray-500 hover:bg-gray-700
+            hover:bg-gray-700
+            ${isTapeStriped ? '' : 'hover:border-gray-500'}
             ${isDuplicate ? '!border-orange-500' : ''}
             ${isSelected ? 'bg-synthux-yellow/10 border-synthux-yellow/50' : ''}
         `}

@@ -50,7 +50,7 @@ start them cold; the rest are described well enough below to open the file and g
 |---|---|---|---|
 | **S1-1** | A project opens on one tape, not all six | `App.tsx` | ✂️ ✅ |
 | **S1-2** | "Select All" never becomes "Deselect All" (two buttons) | `FileBrowser.tsx` | ✂️ ✅ |
-| **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ |
+| **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ |
 | **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ |
 | **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 |
@@ -114,13 +114,27 @@ empty pool would offer to deselect nothing.
 Fixed alongside: the Library Manager said *Unselect* where this now says *Deselect*
 ([LibraryManager.tsx:1499](src/components/LibraryManager.tsx#L1499)). One word for one control.
 
-#### S1-3 — Compact rows wear a full outline ✂️
+#### S1-3 — Compact rows wear a full outline ✂️ ✅ *built and walked 2026-08-17*
 
-In the minified view every row is ringed by a thin coloured border, which at that density is noise. A
-coloured **left** border says the same thing and leaves the row quiet.
+In the minified view every row was ringed by a thin coloured border, which at that density is noise. The
+tape colour now sits on the **left edge** alone — 2px — and the rest of the row is the same quiet
+`border-gray-700` every other assigned row wears
+([FileBrowser.tsx:654-660](src/components/FileBrowser.tsx#L654-L660)).
 
-`borderClass` at [FileBrowser.tsx:651](src/components/FileBrowser.tsx#L651), applied only when
-`isMinified && location`.
+`getBorderColor` became `getLeftBorderColor` ([FileBrowser.tsx:350](src/components/FileBrowser.tsx#L350))
+and returns `border-l-*` classes. It has no other caller, so nothing else changed colour: the full-mode
+tape badge is `getLabelStyle`'s, untouched.
+
+**The class names have to be written out, one per tape.** Tailwind v4 only generates what it finds
+literally in the source, so deriving `border-l-synthux-blue` from `border-blue` at runtime would have
+produced a class with no CSS behind it. Verified in the built stylesheet — all seven are there.
+
+**Hover had to let go of the border on these rows.** `hover:border-gray-500` sets all four sides, and a
+pseudo-class outranks a plain side utility, so hovering a striped row would have wiped the tape colour
+for as long as the pointer sat on it. Compact rows now answer the pointer with `hover:bg-gray-700` only;
+every other row keeps the border hover it had. Selection and the duplicate ring still read correctly —
+side utilities are emitted after the all-side ones, and the duplicate's `!border-orange-500` is
+`!important` and still wins, which is what a duplicate should do.
 
 #### S1-4 — The pool has no sorting 🏗️
 
