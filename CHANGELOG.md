@@ -72,6 +72,9 @@ release whose premise is separating one muddled thing into clean tiers.*
   tape then slot, and falls back to A–Z in the pool, where nothing has a tape yet. *As added* is
   the order files arrived in and is still the default, so no list rearranges itself until you ask
   it to. The choice is remembered on your machine, not in the project.
+- **The way into the Sample Browser says what it does.** The Registry header's plain folder icon is
+  now a folder with a plus in it, with the word *Browse* beside it — the control adds files, and a
+  bare folder never said so.
 
 ### Fixed
 - **"Write to SD card" in Preset → SD could never open the picker.** The preset's audio was

@@ -25,7 +25,7 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 4 of 14 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 5 of 14 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
@@ -53,7 +53,7 @@ answered and built — S1-11 and the auto-save question are what is left.
 | **S1-2** | "Select All" never becomes "Deselect All" (two buttons) | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ ✅ |
-| **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ |
+| **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 |
 | **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ |
 | **S1-8** | Clean Mirror doesn't show what it deletes | `ExportPreviewModal.tsx` | 🐞 |
@@ -65,8 +65,8 @@ answered and built — S1-11 and the auto-save question are what is left.
 | **S1-14** | Texture 8 (the mp4) dead on Pages — **cause found** | `App.tsx` | 🐞 |
 
 **Cheapest first, if that matters:** S1-13 and S1-14 are one line each, S1-14 with the fix already
-identified. S1-5 and S1-12 are small and local (S1-1 and S1-2 were, and are built). S1-8 is the largest
-piece of real work here and the only one that changes what a destructive action does.
+identified. S1-12 is small and local, as S1-1, S1-2 and S1-5 were, and all three are built. S1-8 is the
+largest piece of real work here and the only one that changes what a destructive action does.
 
 ### The default view
 
@@ -176,11 +176,36 @@ Fixed alongside: `getFileLocation` scanned all six tapes for every row on every 
 and the tape rank now come from one `Map` built when the tapes change
 ([FileBrowser.tsx:122-132](src/components/FileBrowser.tsx#L122-L132)).
 
-#### S1-5 — The way into the Sample Browser is just a folder ✂️
+#### S1-5 — The way into the Sample Browser is just a folder ✂️ ✅ *built and walked 2026-08-18*
 
-The plain folder icon ([FileBrowser.tsx:445](src/components/FileBrowser.tsx#L445), `FolderOpen`) doesn't
-say that it *adds* anything. Wanted: a **Browse + icon** — a plus inside the folder — with the word
-beside it rather than an icon alone.
+The plain folder icon doesn't say that it *adds* anything. Wanted: a **Browse + icon** — a plus inside
+the folder — with the word beside it rather than an icon alone.
+
+`FolderOpen` became `FolderPlus`, and the button now carries the word
+([FileBrowser.tsx:562-570](src/components/FileBrowser.tsx#L562-L570)). It keeps the quiet grey it had and
+the orange it turns on hover, so it still reads as one of the three header controls rather than a call to
+action shouting over the Registry name. The tooltip says where the files land — *"Browse Sample Packs —
+add files to the Registry"* — because the button's own word can only carry so much.
+
+**The label is the only thing on that row that can't shrink**, so the control cluster is now `shrink-0`
+and its gap tightened from `gap-2` to `gap-1.5`. The panel's floor is 288px
+([FileBrowser.tsx:93](src/components/FileBrowser.tsx#L93)); measured in the app, the button is 78px and
+the cluster 140px, up from about 100px. Without `shrink-0` the flex row would have squeezed the word
+instead of the text beside *Registry*.
+
+**The 40px comes out of the left column, and one line there now wraps.** Both the project name and the
+workspace path are already `truncate` ([FileBrowser.tsx:520](src/components/FileBrowser.tsx#L520),
+[526](src/components/FileBrowser.tsx#L526)), so the normal header is unchanged. The odd one out is the
+*"All imported files."* fallback shown only when there is neither a project nor a workspace
+([FileBrowser.tsx:531-535](src/components/FileBrowser.tsx#L531-L535)) — it has no `truncate` and now sets
+on two lines, taking the header from 67px to 82px. Left as is: the state is static, so nothing jitters,
+`min-h-[60px]` was always a minimum, and truncating that line would read *"All imported fi…"*, which is
+worse than a second line. Shortening the wording would fix it and is a copy decision, not this item's.
+
+`FolderOpen` has no other caller in this file, so the swap touched nothing else.
+
+*Driven in Chrome against the dev server:* the button reads `⊞ BROWSE` in the header, turns orange on
+hover with the folder-plus icon following, and opens the Sample Browser on click.
 
 ### New project
 

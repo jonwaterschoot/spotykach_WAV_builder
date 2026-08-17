@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { FileAudio, GripVertical, ChevronDown, ChevronRight, Play, Square, List, LayoutList, FolderOpen, Download, Trash2, X, Check, ArrowRightToLine, ArrowDownAZ, ArrowUpAZ, Palette, ListOrdered } from 'lucide-react';
+import { FileAudio, GripVertical, ChevronDown, ChevronRight, Play, Square, List, LayoutList, FolderPlus, Download, Trash2, X, Check, ArrowRightToLine, ArrowDownAZ, ArrowUpAZ, Palette, ListOrdered } from 'lucide-react';
 import type { FileRecord, AppState } from '../types';
 import { TAPE_COLORS } from '../types';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
@@ -536,7 +536,7 @@ export const FileBrowser = ({
                     </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                     {/* Sort — one order, both lists */}
                     <div title={`Sort: ${SORT_LABELS[sort.mode]}${sort.dir === 'desc' ? ' (reversed)' : ''}`}>
                         <Dropdown
@@ -559,13 +559,14 @@ export const FileBrowser = ({
                         />
                     </div>
 
-                    {/* Sample Pack Browser Toggle */}
+                    {/* Sample Pack Browser — a plus in the folder, and the word, so it
+                        reads as "add files" rather than "open a folder somewhere" */}
                     <button
                         onClick={onOpenSampleBrowser}
-                        className="p-1.5 rounded hover:bg-gray-700 transition-colors text-gray-400 hover:text-synthux-orange"
-                        title="Browse Sample Packs"
+                        className="flex items-center gap-1 px-1.5 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-gray-700 transition-colors text-gray-400 hover:text-synthux-orange"
+                        title="Browse Sample Packs — add files to the Registry"
                     >
-                        <FolderOpen size={16} />
+                        <FolderPlus size={16} /> Browse
                     </button>
 
                     {/* Minified Toggle */}
