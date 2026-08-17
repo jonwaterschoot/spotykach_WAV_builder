@@ -1,12 +1,27 @@
-import React, { useState } from 'react';
-import { X, Play, Download, Loader, ChevronRight, Package, Check, HardDrive, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Play, Download, Loader, ChevronRight, Package, Check, HardDrive, AlertTriangle, ExternalLink } from 'lucide-react';
 import type { PresetManifestEntry } from '../data/samplePacks';
-import type { PresetProgress } from '../utils/presetLoader';
+import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL } from '../data/links';
+import { canWriteToSDDirectly, type PresetProgress } from '../utils/presetLoader';
+import { SDCardWriteModal, type SDCardWriteStage } from './modals/SDCardWriteModal';
+// Static, not lazy: `requestPermission` needs the click's transient activation, and
+// awaiting a dynamic import first is exactly how that gets spent.
+import { ensureWritable } from '../utils/configFile';
 
 type PresetAction = 'load' | 'sd';
 
-/** Returning a string surfaces it as a warning on the card — e.g. slots left empty. */
-type PresetRunner = (entry: PresetManifestEntry, onProgress: PresetProgress) => Promise<string | void>;
+/**
+ * Returning a string surfaces it as a warning on the card — e.g. slots left empty.
+ *
+ * `destination` is the card the user just picked, handed down so the writer doesn't
+ * open a second picker of its own (which would land outside the click's activation
+ * window and be refused).
+ */
+type PresetRunner = (
+    entry: PresetManifestEntry,
+    onProgress: PresetProgress,
+    destination?: FileSystemDirectoryHandle,
+) => Promise<string | void>;
 
 interface PresetsPanelProps {
     isOpen: boolean;
@@ -26,6 +41,17 @@ interface PresetsPanelProps {
     writeLabel?: string;
     /** Sits under the write button, saying where the files are about to land. */
     writeHint?: string;
+    /**
+     * A card the app already holds — Studio's connected card. Offered as a shortcut
+     * on the confirmation step, never written to without a click on it.
+     */
+    knownCard?: FileSystemDirectoryHandle | null;
+    /**
+     * The preset the visitor asked for by name — they clicked "use the preset" on a
+     * pack in the sample browser. Its card is scrolled to and ringed for a few
+     * seconds. Nothing is run: the buttons on the card are still the only way in.
+     */
+    focusPresetId?: string | null;
 }
 
 export const PresetsPanel: React.FC<PresetsPanelProps> = ({
@@ -37,6 +63,8 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
     onWriteToSD,
     writeLabel = 'To SD card',
     writeHint,
+    knownCard,
+    focusPresetId,
 }) => {
     const [busy, setBusy] = useState<{ id: string; action: PresetAction } | null>(null);
     const [progress, setProgress] = useState<{ msg: string; pct: number } | null>(null);
@@ -44,11 +72,47 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
     const [warning, setWarning] = useState<{ id: string; msg: string } | null>(null);
     const [errorId, setErrorId] = useState<{ id: string; msg: string } | null>(null);
 
+    /** The card conversation, from the moment "write" is clicked to the moment a root is in hand. */
+    const [cardPrompt, setCardPrompt] = useState<{
+        entry: PresetManifestEntry;
+        stage: SDCardWriteStage;
+        handle?: FileSystemDirectoryHandle;
+        error?: string | null;
+    } | null>(null);
+
     const isStandalone = mode === 'standalone';
+
+    /**
+     * The card that was asked for, ringed until it has been seen.
+     *
+     * Kept in state rather than read straight from the prop so the ring fades on its
+     * own — it is a "here it is", not a selection, and a highlight that never leaves
+     * starts reading as one.
+     */
+    const [highlightId, setHighlightId] = useState<string | null>(focusPresetId ?? null);
+    const listRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        setHighlightId(focusPresetId ?? null);
+    }, [focusPresetId]);
+
+    useEffect(() => {
+        if (!isOpen || !highlightId || presets.length === 0) return;
+        listRef.current
+            ?.querySelector(`[data-preset-id="${CSS.escape(highlightId)}"]`)
+            ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const timer = setTimeout(() => setHighlightId(null), 6000);
+        return () => clearTimeout(timer);
+    }, [isOpen, highlightId, presets.length]);
 
     if (!isOpen) return null;
 
-    const run = async (entry: PresetManifestEntry, action: PresetAction, runner: PresetRunner) => {
+    const run = async (
+        entry: PresetManifestEntry,
+        action: PresetAction,
+        runner: PresetRunner,
+        destination?: FileSystemDirectoryHandle,
+    ) => {
         if (busy) return; // one at a time — both actions download the same 36 files
         setBusy({ id: entry.id, action });
         setDone(null);
@@ -57,7 +121,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
         setProgress({ msg: 'Starting…', pct: 0 });
 
         try {
-            const note = await runner(entry, (msg, pct) => setProgress({ msg, pct }));
+            const note = await runner(entry, (msg, pct) => setProgress({ msg, pct }), destination);
             setDone({ id: entry.id, action });
             if (note) setWarning({ id: entry.id, msg: note });
 
@@ -79,6 +143,114 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
         }
     };
 
+    /**
+     * The card write, in the only order the browser allows: a click, then the picker,
+     * then the download. It used to be download-then-picker, which spent the click's
+     * transient activation on the fetch and got the picker refused outright
+     * ("Must be handling a user gesture to show a file picker").
+     *
+     * Where there is no directory picker at all the write is a ZIP download, so
+     * there is no card to choose and nothing to warn about — straight through.
+     */
+    const requestCard = (entry: PresetManifestEntry) => {
+        if (!onWriteToSD || busy) return;
+        if (!canWriteToSDDirectly()) {
+            void run(entry, 'sd', onWriteToSD);
+            return;
+        }
+        setCardPrompt({ entry, stage: 'intro' });
+    };
+
+    /**
+     * A root is in hand. Look for an `SK/` already on it before writing through one:
+     * this runs after the picker, so it costs no activation, and it turns "your set is
+     * gone" into a question asked in time.
+     */
+    const inspectCard = async (entry: PresetManifestEntry, handle: FileSystemDirectoryHandle) => {
+        setCardPrompt({ entry, stage: 'checking', handle });
+
+        let hasSK = false;
+        try {
+            await handle.getDirectoryHandle('SK');
+            hasSK = true;
+        } catch (e) {
+            // NotFoundError is the good case. Anything else — a card that went away, a
+            // permission that wasn't granted — is the write's problem to report, not ours.
+            const err = e as { name?: string };
+            if (err?.name && err.name !== 'NotFoundError' && err.name !== 'TypeMismatchError') {
+                setCardPrompt({
+                    entry,
+                    stage: 'intro',
+                    error: err.name === 'NotAllowedError'
+                        ? 'The browser didn’t grant write access to that card. Try choosing it again.'
+                        : 'That folder couldn’t be read. Try choosing the card again.',
+                });
+                return;
+            }
+        }
+
+        if (hasSK) {
+            setCardPrompt({ entry, stage: 'existing', handle });
+            return;
+        }
+
+        setCardPrompt(null);
+        if (onWriteToSD) void run(entry, 'sd', onWriteToSD, handle);
+    };
+
+    /** Straight out of the click — `showDirectoryPicker` is the first thing awaited. */
+    const handlePickCard = async () => {
+        const entry = cardPrompt?.entry;
+        if (!entry) return;
+
+        let handle: FileSystemDirectoryHandle;
+        try {
+            handle = await window.showDirectoryPicker({ id: 'spotykach_sd', mode: 'readwrite' });
+        } catch (e) {
+            const err = e as { name?: string; message?: string };
+            // Backing out of the picker is a decision, not a failure — leave the step up.
+            if (err?.name === 'AbortError') return;
+            setCardPrompt({ entry, stage: 'intro', error: err?.message || 'Could not open the folder picker.' });
+            return;
+        }
+        await inspectCard(entry, handle);
+    };
+
+    /** Same, for the card Studio already holds — the permission prompt needs the click too. */
+    const handleUseKnownCard = async () => {
+        const entry = cardPrompt?.entry;
+        if (!entry || !knownCard) return;
+
+        if (!(await ensureWritable(knownCard))) {
+            setCardPrompt({
+                entry,
+                stage: 'intro',
+                error: 'Write access to that card wasn’t granted. Choose it again below.',
+            });
+            return;
+        }
+        await inspectCard(entry, knownCard);
+    };
+
+    const cardModal = onWriteToSD && cardPrompt && (
+        <SDCardWriteModal
+            isOpen
+            presetName={cardPrompt.entry.name}
+            knownCard={knownCard}
+            stage={cardPrompt.stage}
+            chosenCard={cardPrompt.handle}
+            error={cardPrompt.error}
+            onUseKnownCard={() => { void handleUseKnownCard(); }}
+            onPickCard={() => { void handlePickCard(); }}
+            onConfirmOverwrite={() => {
+                const { entry, handle } = cardPrompt;
+                setCardPrompt(null);
+                void run(entry, 'sd', onWriteToSD, handle);
+            }}
+            onCancel={() => setCardPrompt(null)}
+        />
+    );
+
     const body = (
         <>
             {/* Header */}
@@ -91,7 +263,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                         <h2 className="text-xl font-bold text-white">Starter Presets</h2>
                         <p className="text-gray-400 text-sm mt-0.5">
                             {isStandalone
-                                ? 'Pick one and write it to your card — no project, no work folder'
+                                ? 'Pick one and write it to your card · No project, no work folder'
                                 : 'Curated project presets using built-in sample packs · Samples load from cloud'}
                         </p>
                     </div>
@@ -139,7 +311,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                             </p>
                             <p className="text-[11px] text-violet-300/70 leading-normal">
                                 {isStandalone
-                                    ? 'The card is asked for at the moment of writing — never before.'
+                                    ? 'The card is asked for at the moment of writing, never before.'
                                     : 'Save your own projects or share them through the Project Manager.'}
                             </p>
                         </div>
@@ -148,11 +320,11 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
             </div>
 
             {/* Cards */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div ref={listRef} className="flex-1 overflow-y-auto p-6">
                 {presets.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full opacity-40 gap-4">
+                    <div className={`flex flex-col items-center justify-center opacity-40 gap-4 ${isStandalone ? 'py-16' : 'h-full'}`}>
                         <Package size={48} className="text-gray-600" />
-                        <p className="text-gray-400">No presets available yet — check back soon.</p>
+                        <p className="text-gray-400">No presets available yet. Check back soon.</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -164,13 +336,19 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                             const isWritten = done?.id === entry.id && done.action === 'sd';
                             const hasError = errorId?.id === entry.id;
                             const hasWarning = warning?.id === entry.id;
+                            const isHighlighted = highlightId === entry.id;
 
                             return (
                                 <div
                                     key={entry.id}
+                                    data-preset-id={entry.id}
                                     className={`
                                         rounded-xl border overflow-hidden flex flex-col transition-all duration-200
-                                        ${isBusy ? 'border-violet-500/40 shadow-violet-500/10 shadow-lg' : 'border-white/8 hover:border-white/15'}
+                                        ${isBusy
+                                            ? 'border-violet-500/40 shadow-violet-500/10 shadow-lg'
+                                            : isHighlighted
+                                                ? 'border-violet-400 ring-2 ring-violet-500/40 shadow-lg shadow-violet-500/10'
+                                                : 'border-white/8 hover:border-white/15'}
                                         bg-[#161616]
                                     `}
                                 >
@@ -274,7 +452,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                                             {/* Write to the card — the whole point of the standalone tier */}
                                             {onWriteToSD && (
                                                 <button
-                                                    onClick={() => run(entry, 'sd', onWriteToSD)}
+                                                    onClick={() => requestCard(entry)}
                                                     disabled={!!busy}
                                                     title="Builds the SK/ folder from this preset and writes it to the card"
                                                     className={`
@@ -329,6 +507,36 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                         })}
                     </div>
                 )}
+
+                {/*
+                  * Where presets come from — the door never said, and one card in an empty
+                  * screen reads like a catalogue that ended rather than one that hasn't
+                  * started. A signpost, not a form: authoring a preset needs Studio, and this
+                  * tier has no project. Step 0 of docs/presets-samples/submission-workflow.md.
+                  */}
+                {isStandalone && (
+                    <div className="mt-6 rounded-xl border border-white/8 bg-[#141414] px-5 py-4
+                        flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-200">Want yours here?</p>
+                            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                                Presets are projects built in Studio, then sent in over Discord
+                                (<span className="text-gray-400">{DISCORD_HANDLE}</span>) or email. Sample packs
+                                come from artists the same way.
+                            </p>
+                        </div>
+                        <a
+                            href={SUBMISSION_GUIDE_URL}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/10
+                                bg-white/5 hover:bg-white/10 text-xs font-bold uppercase tracking-wide text-gray-300
+                                hover:text-white transition-colors no-underline"
+                        >
+                            How to submit <ExternalLink size={12} />
+                        </a>
+                    </div>
+                )}
             </div>
 
             {/* Footer */}
@@ -346,7 +554,12 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
 
     // Standalone fills the mode's own shell; project mode keeps the floating modal.
     if (isStandalone) {
-        return <div className="h-full w-full flex flex-col bg-[#0e0e0e] overflow-hidden">{body}</div>;
+        return (
+            <div className="h-full w-full flex flex-col bg-[#0e0e0e] overflow-hidden">
+                {body}
+                {cardModal}
+            </div>
+        );
     }
 
     return (
@@ -354,6 +567,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
             <div className="bg-[#0e0e0e] w-full max-w-5xl rounded-2xl border border-white/10 flex flex-col shadow-2xl overflow-hidden h-[90vh]">
                 {body}
             </div>
+            {cardModal}
         </div>
     );
 };

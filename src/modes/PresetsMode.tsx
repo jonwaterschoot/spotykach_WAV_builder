@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { ChevronLeft, Loader } from 'lucide-react';
 import { fetchSampleManifest, type PresetManifestEntry } from '../data/samplePacks';
+import { paramsFromHash } from '../shell/useAppMode';
 import {
   canWriteToSDDirectly, hydratePreset, missingAssetCount, writeToSD,
 } from '../utils/presetLoader';
@@ -19,12 +20,21 @@ interface PresetsModeProps {
  * The whole flow is: pick a preset, choose the card, done. No work folder, no
  * project name, nothing written to the global IDB slot — `hydratePreset` returns a
  * detached `AppState` that goes straight to `exportSDStructure` and is dropped
- * again. The only permission prompt is the directory picker, and it fires at the
- * moment of the write (locked decision 3).
+ * again. The only permission prompt is the directory picker, and it fires when the
+ * write is asked for and not a moment earlier (locked decision 3) — from the panel's
+ * own confirmation step, which is the last click before anything downloads.
  */
 export const PresetsMode: React.FC<PresetsModeProps> = ({ onExitToHub }) => {
   const [presets, setPresets] = useState<PresetManifestEntry[]>([]);
   const [manifestError, setManifestError] = useState<string | null>(null);
+
+  /**
+   * `#/presets?preset=<id>` — arriving from a pack page in Browse, which already
+   * knows which card it meant. Read once: the list is short today, but landing on
+   * a screenful of cards when you asked for one of them is the kind of small
+   * disorientation that makes a link feel like it went nowhere.
+   */
+  const [focusPresetId] = useState(() => paramsFromHash(window.location.hash).get('preset'));
 
   useEffect(() => {
     let cancelled = false;
@@ -43,19 +53,25 @@ export const PresetsMode: React.FC<PresetsModeProps> = ({ onExitToHub }) => {
   // ZIP instead of leaving the tier at a dead end.
   const canWriteDirectly = canWriteToSDDirectly();
 
-  const handleWriteToSD = async (entry: PresetManifestEntry, onProgress: (msg: string, pct: number) => void) => {
-    // Fetching the audio is the long half; the write is quick by comparison.
+  const handleWriteToSD = async (
+    entry: PresetManifestEntry,
+    onProgress: (msg: string, pct: number) => void,
+    destination?: FileSystemDirectoryHandle,
+  ) => {
+    // Fetching the audio is the long half; the write is quick by comparison. The card
+    // was chosen before any of this started — the panel holds the picker, because by
+    // the time the download is done the click that could open one is long gone.
     const { state, name } = await hydratePreset(entry, (msg, pct) => onProgress(msg, pct * 0.55));
 
     await writeToSD(
       state,
-      { projectName: name, asZip: !canWriteDirectly },
+      { projectName: name, asZip: !canWriteDirectly, destinationHandle: destination },
       (msg, pct) => onProgress(msg || 'Writing to card…', 55 + ((pct ?? 0) * 0.45)),
     );
 
     const missing = missingAssetCount(state);
     if (missing > 0) {
-      return `${missing} sample${missing === 1 ? '' : 's'} could not be downloaded — ${missing === 1 ? 'that slot is' : 'those slots are'} empty.`;
+      return `${missing} sample${missing === 1 ? '' : 's'} could not be downloaded, so ${missing === 1 ? 'that slot is' : 'those slots are'} empty.`;
     }
   };
 
@@ -77,7 +93,7 @@ export const PresetsMode: React.FC<PresetsModeProps> = ({ onExitToHub }) => {
           <span className="hidden sm:inline text-[11px] text-gray-500 ml-3">
             {canWriteDirectly
               ? 'Your card is asked for when the writing starts, not before.'
-              : 'This browser can’t write to a folder — presets come back as a ZIP instead.'}
+              : 'This browser can’t write to a folder, so presets come back as a ZIP instead.'}
           </span>
         </div>
 
@@ -100,6 +116,7 @@ export const PresetsMode: React.FC<PresetsModeProps> = ({ onExitToHub }) => {
               mode="standalone"
               onClose={onExitToHub}
               presets={presets}
+              focusPresetId={focusPresetId}
               onWriteToSD={handleWriteToSD}
               writeLabel={canWriteDirectly ? 'Write to SD card' : 'Build SD ZIP'}
               writeHint={canWriteDirectly

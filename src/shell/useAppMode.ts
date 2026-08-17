@@ -18,7 +18,25 @@ export const modeFromHash = (hash: string): AppMode => {
   return isAppMode(segment) ? segment : 'hub';
 };
 
-export const hashForMode = (mode: AppMode): string => (mode === 'hub' ? '#/' : `#/${mode}`);
+/**
+ * `#/presets` plus, optionally, `?preset=hainbach-tapes-preset`.
+ *
+ * The query is how one mode points at something *inside* another — Browse's
+ * "use the preset" link knows which preset it means, and the presets screen
+ * should open on it rather than on the whole list. `modeFromHash` already stops
+ * at the `?`, so a mode with params routes exactly like one without.
+ */
+export const hashForMode = (mode: AppMode, params?: Record<string, string>): string => {
+  const base = mode === 'hub' ? '#/' : `#/${mode}`;
+  const query = params ? new URLSearchParams(params).toString() : '';
+  return query ? `${base}?${query}` : base;
+};
+
+/** The query half of a mode hash, empty when there isn't one. */
+export const paramsFromHash = (hash: string): URLSearchParams => {
+  const start = hash.indexOf('?');
+  return new URLSearchParams(start === -1 ? '' : hash.slice(start + 1));
+};
 
 /**
  * Mode state kept in sync with `window.location.hash`, so modes are linkable and
@@ -43,8 +61,8 @@ export function useAppMode() {
     }
   }, []);
 
-  const setMode = useCallback((next: AppMode) => {
-    const nextHash = hashForMode(next);
+  const setMode = useCallback((next: AppMode, params?: Record<string, string>) => {
+    const nextHash = hashForMode(next, params);
     const currentHash = window.location.hash;
     // Assigning an identical hash fires no hashchange event, so settle state here.
     if (currentHash === nextHash || (next === 'hub' && currentHash === '')) {

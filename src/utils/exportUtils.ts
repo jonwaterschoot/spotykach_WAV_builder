@@ -123,10 +123,26 @@ const TEMP_WRITE_SUFFIX = '.wbtmp';
 // in the DOM lib, hence the local shape.
 type MovableFileHandle = FileSystemFileHandle & { move(newName: string): Promise<void> };
 
-// Feature-detected once so unsupported engines fall back to writing in place.
+// Whether `move()` *exists* and whether it *works here* are two different questions.
+// The method is on the prototype in every Chromium, because it shipped first for the
+// origin-private file system; on a user-picked folder it is a later, separate feature
+// and can still reject a plain same-directory rename with `InvalidModificationError:
+// The object can not be modified in this way`. Nothing observable distinguishes the
+// two in advance, so the first real attempt is the feature test, and its verdict is
+// latched: a 36-file card write must not pay for a doomed temp copy of every file.
+// A one-off rejection (a destination another app has locked, say) costs the rest of
+// the session its swap, which is the cheaper mistake of the two.
+let handleMoveRejected = false;
+
 const supportsHandleMove = (): boolean =>
+    !handleMoveRejected &&
     typeof (globalThis as { FileSystemFileHandle?: { prototype?: { move?: unknown } } })
         .FileSystemFileHandle?.prototype?.move === 'function';
+
+// A scratch file is never worth failing a write over.
+const discardTemp = async (dirHandle: FileSystemDirectoryHandle, tempName: string) => {
+    try { await dirHandle.removeEntry(tempName); } catch { /* already gone */ }
+};
 
 // Byte-compare two blobs of equal size in chunks, so we never hold two full
 // copies in memory. Used to decide whether a write can be skipped.
@@ -200,28 +216,53 @@ export const safeWriteBlob = async (
         }
     }
 
-    if (!supportsHandleMove()) {
-        // No swap available: in-place write, i.e. the old behaviour.
+    // The old behaviour: `createWritable()` truncates the target on open, so an
+    // interrupted write leaves it partial.
+    const writeInPlace = async () => {
         const target = await dirHandle.getFileHandle(fileName, { create: true });
         const w = await target.createWritable();
         await w.write(dataToWrite);
         await w.close();
+    };
+
+    if (!supportsHandleMove()) {
+        await writeInPlace();
         return true;
     }
 
     const tempName = `${fileName}${TEMP_WRITE_SUFFIX}`;
+    let tempHandle: MovableFileHandle;
     try {
-        const tempHandle = await dirHandle.getFileHandle(tempName, { create: true }) as MovableFileHandle;
+        tempHandle = await dirHandle.getFileHandle(tempName, { create: true }) as MovableFileHandle;
         const w = await tempHandle.createWritable();
         await w.write(dataToWrite);
         await w.close();
+    } catch (e) {
+        // Nothing has touched the target yet. Leave the original intact and take the
+        // scratch file with us.
+        await discardTemp(dirHandle, tempName);
+        throw e;
+    }
+
+    try {
         // Only now does the target change. move() replaces an existing destination.
         await tempHandle.move(fileName);
         return true; // Wrote
     } catch (e) {
-        // Leave the original intact and take the scratch file with us.
-        try { await dirHandle.removeEntry(tempName); } catch { /* already gone */ }
-        throw e;
+        // The swap is how the write is made safe, not the write itself. The bytes are
+        // already on the card and complete, so copy them onto the target the plain way
+        // rather than fail an operation this engine can perfectly well do. Still ahead
+        // of the plain path on durability: if *this* write is interrupted, the whole
+        // file is sitting in `<name>.wbtmp`, which is why the scratch file is only
+        // removed once the copy has closed cleanly.
+        handleMoveRejected = true;
+        console.info(
+            `[SafeWrite] move() rejected on this file system (${e instanceof Error ? e.name : String(e)}); ` +
+            `writing in place for the rest of the session.`,
+        );
+        await writeInPlace();
+        await discardTemp(dirHandle, tempName);
+        return true;
     }
 };
 

@@ -208,6 +208,8 @@ function App({ onExitToHub }: AppProps) {
   // Presets Panel State
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   const [presets, setPresets] = useState<PresetManifestEntry[]>([]);
+  /** Set when the panel was opened from a pack in the sample browser — that card gets ringed. */
+  const [focusPresetId, setFocusPresetId] = useState<string | null>(null);
   const [showLibrarySyncModal, setShowLibrarySyncModal] = useState(false);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
@@ -1239,7 +1241,7 @@ function App({ onExitToHub }: AppProps) {
 
     const missing = missingAssetCount(newState);
     showToast(
-      `Preset "${finalName}" loaded${missing ? ' (some samples missing — check internet connection)' : ' successfully'}`,
+      `Preset "${finalName}" loaded${missing ? ' (some samples missing, check internet connection)' : ' successfully'}`,
       missing ? 'warning' : 'success'
     );
   };
@@ -1265,7 +1267,11 @@ function App({ onExitToHub }: AppProps) {
    * already connected — no second picker when the SD handle is in hand. The current
    * project is left alone: nothing here touches `state`.
    */
-  const handleWritePresetToSD = async (entry: PresetManifestEntry, onProgress: PresetProgress) => {
+  const handleWritePresetToSD = async (
+    entry: PresetManifestEntry,
+    onProgress: PresetProgress,
+    destination?: FileSystemDirectoryHandle,
+  ) => {
     try {
       const { state: presetState, name } = await hydratePreset(entry, (msg, pct) => {
         onProgress(msg, pct * 0.55);
@@ -1274,7 +1280,9 @@ function App({ onExitToHub }: AppProps) {
 
       await writeToSD(
         presetState,
-        { projectName: name, destinationHandle: sdHandle ?? undefined },
+        // The panel asked for the card before any of this downloaded, so `destination`
+        // is normally set; `sdHandle` stays as the fallback for callers that didn't.
+        { projectName: name, destinationHandle: destination ?? sdHandle ?? undefined },
         (msg, pct) => {
           const scaled = 55 + ((pct ?? 0) * 0.45);
           onProgress(msg || 'Writing to card…', scaled);
@@ -1284,11 +1292,11 @@ function App({ onExitToHub }: AppProps) {
 
       const missing = missingAssetCount(presetState);
       showToast(
-        `"${name}" written to the SD card${missing ? ` — ${missing} sample(s) missing` : ''}`,
+        `"${name}" written to the SD card${missing ? `, ${missing} sample(s) missing` : ''}`,
         missing ? 'warning' : 'success'
       );
       if (missing > 0) {
-        return `${missing} sample${missing === 1 ? '' : 's'} could not be downloaded — ${missing === 1 ? 'that slot is' : 'those slots are'} empty.`;
+        return `${missing} sample${missing === 1 ? '' : 's'} could not be downloaded, so ${missing === 1 ? 'that slot is' : 'those slots are'} empty.`;
       }
     } catch (e: any) {
       if (e?.name !== 'AbortError') console.error('[handleWritePresetToSD]', e);
@@ -4416,7 +4424,8 @@ function App({ onExitToHub }: AppProps) {
                     {
                       label: 'Presets',
                       icon: <Package size={14} />,
-                      onClick: () => setShowPresetsPanel(true)
+                      // The whole list, so no card is singled out.
+                      onClick: () => { setFocusPresetId(null); setShowPresetsPanel(true); }
                     },
                     { type: 'divider' },
                     {
@@ -4947,12 +4956,14 @@ function App({ onExitToHub }: AppProps) {
             <Suspense fallback={null}>
               <PresetsPanel
                 isOpen={showPresetsPanel}
-                onClose={() => setShowPresetsPanel(false)}
+                onClose={() => { setShowPresetsPanel(false); setFocusPresetId(null); }}
                 presets={presets}
+                focusPresetId={focusPresetId}
                 onLoadPreset={handleLoadPreset}
                 onWriteToSD={handleWritePresetToSD}
+                knownCard={sdHandle}
                 writeHint={sdHandle
-                  ? 'Writes SK/ to the connected card · The open project is untouched'
+                  ? 'Confirms the card, then writes SK/ · The open project is untouched'
                   : 'Asks for your card, then writes SK/ · The open project is untouched'}
               />
             </Suspense>

@@ -2,6 +2,7 @@ import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, C
 import { version } from '../../package.json';
 import { useEffect, useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
+import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL, submissionEmail, submissionMailto } from '../data/links';
 
 interface AboutHelpModalProps {
     onClose: () => void;
@@ -357,7 +358,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                             </div>
                                             <p className="text-xs text-gray-400 mt-2">
                                                 The app writes these names in <strong>UPPERCASE</strong>. Recent firmware
-                                                accepts either case — <code className="bg-gray-800 px-1 rounded">B/1.WAV</code> and{' '}
+                                                accepts either case, so <code className="bg-gray-800 px-1 rounded">B/1.WAV</code> and{' '}
                                                 <code className="bg-gray-800 px-1 rounded">B/1.wav</code> both play.
                                             </p>
                                         </div>
@@ -631,9 +632,9 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         Send a direct link to the GitHub guide for anyone wishing to contribute their custom samples or presets.
                                     </p>
                                 </div>
-                                <a 
-                                    href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/docs/presets-samples/README.md" 
-                                    target="_blank" 
+                                <a
+                                    href={SUBMISSION_GUIDE_URL}
+                                    target="_blank"
                                     rel="noreferrer"
                                     className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-synthux-blue text-white rounded-lg hover:bg-synthux-blue/80 transition-colors text-xs font-bold uppercase tracking-wider no-underline"
                                 >
@@ -797,6 +798,39 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         )}
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* Where to send it — the one thing both guides never said */}
+                            <div className="space-y-4 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">📮</span> 4. Where to Send It
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-1">
+                                        <strong className="text-white text-sm block">Discord</strong>
+                                        <p className="text-xs text-gray-400">
+                                            <code className="text-synthux-blue">{DISCORD_HANDLE}</code> is the easiest
+                                            route, and the best one for questions before you start.
+                                        </p>
+                                    </div>
+                                    <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-1">
+                                        <strong className="text-white text-sm block">Email</strong>
+                                        <p className="text-xs text-gray-400">
+                                            <a
+                                                href={submissionMailto()}
+                                                className="text-synthux-blue hover:underline break-all"
+                                            >
+                                                {submissionEmail()}
+                                            </a>
+                                        </p>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-400 leading-relaxed">
+                                    Send the small files directly: the preset <code>.json</code>, the cover image,
+                                    the filled-in template. <strong className="text-gray-200">Audio goes by link</strong>:
+                                    WeTransfer, Drive, Dropbox, anything. A sample pack is far too big to attach, and
+                                    nothing is uploaded through this app.
+                                </p>
                             </div>
                         </div>
                     )}

@@ -19,7 +19,7 @@ const ModeLoading: React.FC = () => (
 
 interface ModeRouterProps {
   mode: AppMode;
-  setMode: (mode: AppMode) => void;
+  setMode: (mode: AppMode, params?: Record<string, string>) => void;
 }
 
 export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
