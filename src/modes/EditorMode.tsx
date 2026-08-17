@@ -1,16 +1,14 @@
 import React, { Suspense, useCallback, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, Download, FolderPlus, Loader, Music, Upload } from 'lucide-react';
+import { ChevronLeft, Download, Library, Loader, Music, Upload } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import { collapseFileVersions } from '../utils/versionHistory';
-import { getInitialState } from '../utils/initialState';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
-import { ProjectNameModal } from '../components/modals/ProjectNameModal';
-import { createProjectFromState } from '../utils/newProject';
-import type { AppState, AudioVersion, FileRecord, WavMetadata } from '../types';
+import { loadBrowsePoolFromDB, saveBrowsePoolToDB } from '../utils/persistence';
+import type { BrowsePoolEntry } from '../utils/persistence';
+import type { AudioVersion, FileRecord, WavMetadata } from '../types';
 import type { CommitLabels } from '../components/WaveformEditor';
 
 const WaveformEditor = React.lazy(() =>
@@ -28,8 +26,8 @@ const stripExtension = (name: string) => name.replace(/\.[^/.]+$/, '');
  * The transport button's wording without a project.
  *
  * The default speaks of assigning to a tape; there is no tape here. "Apply" is the
- * honest word: it bakes the pending edits into the current version, and the two
- * exits below it decide where that version ends up.
+ * honest word: it bakes the pending edits into the current version, and the two exits
+ * beside it — the download and the pool — decide where that version ends up.
  */
 const LOOSE_COMMIT_LABELS: CommitLabels = {
   clean: 'UP TO DATE',
@@ -124,8 +122,8 @@ interface LooseFileEditorProps {
   onEdited?: (edited: { blob: Blob; duration: number; name: string }) => void;
   /** Shown under the editor's title, e.g. which pack the sample came from. */
   subtitle?: string;
-  /** Offered after "Save as project". Absent when the shell gave no route there. */
-  onEnterStudio?: () => void;
+  /** Offered after "Add to pool". Absent when the shell gave no route there. */
+  onEnterBrowse?: () => void;
 }
 
 /**
@@ -142,14 +140,23 @@ interface LooseFileEditorProps {
  * every step is kept while the editor lives, `collapseFileVersions` runs at the
  * project exit, and the pool receives one blob against the original it already holds.
  */
-export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterStudio }) => {
+export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterBrowse }) => {
   const [record, setRecord] = useState<FileRecord>(() => recordFromLooseFile(file));
   const [isDirty, setIsDirty] = useState(false);
   const [hasEdited, setHasEdited] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [nameModalOpen, setNameModalOpen] = useState(false);
-  const [createdProject, setCreatedProject] = useState<string | null>(null);
+  const [pooledPrompt, setPooledPrompt] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+
+  /**
+   * The pool entry this file owns, once it has one.
+   *
+   * Pressing the button again after another edit updates that entry rather than
+   * adding a second copy of the same file under the same name, which is what a
+   * plain append would do and what the pool has no way to undo. State, not a ref:
+   * the button's own wording is the visible half of knowing this.
+   */
+  const [pooledId, setPooledId] = useState<string | null>(null);
 
   const { toasts, showToast, removeToast } = useToasts();
 
@@ -231,71 +238,111 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
   }, [record, showToast]);
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Exit 2 — the upgrade path out of editor mode (Phase 6, step 2)
+  // Exit 2 — the file joins Browse's pool
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * Writes a one-file project into a folder the user picks now.
+   * Puts this file in the temporary pool, where Browse's card builder can reach it.
    *
-   * The permission prompt happens here and only here, which is Appendix C.2's
-   * "permission follows intent". This does write the stored work handle — the only
-   * thing in editor mode that touches durable storage — because a project the user
-   * just asked for is useless if Studio can't find it. It still never writes the
-   * global app-state slot that locked decision 5 protects; Studio loads the project
-   * from disk like any other.
+   * This used to be "Save as project", which asked for a folder and left the user in
+   * Studio with a one-file project: the whole of Studio for a file that needs five
+   * more beside it before a card means anything. Browse is the surface that already
+   * collects loose files and turns a handful of them into an `SK/` folder, so an
+   * edited file goes *there* and the project exit stays where it belongs, on a pool
+   * with something in it.
+   *
+   * IndexedDB, not the drive: the pool is Browse's own store (R2-4), so this asks for
+   * no permission and still leaves the `app-state` slot locked decision 5 protects
+   * untouched.
    */
-  const saveAsProject = useCallback(async (rawName: string) => {
-    setBusy('Creating project…');
+  const addToPool = useCallback(async () => {
+    setBusy('Adding to the pool…');
     try {
-      const state: AppState = getInitialState();
       const saved = collapseFileVersions(record);
-      state.files[saved.id] = saved;
-      state.tapes.Blue.slots[0].fileId = saved.id;
+      const original = saved.versions[0];
+      const current = saved.versions.find(v => v.id === saved.currentVersionId) ?? original;
 
-      const created = await createProjectFromState(state, rawName, msg => setBusy(msg || null));
-      if (!created) return; // Picker dismissed.
+      const id = pooledId ?? newId();
+      const entry: BrowsePoolEntry = {
+        id,
+        name: saved.name,
+        fileName: saved.originalName,
+        duration: current.duration || 0,
+        originalDuration: original.duration || 0,
+        origin: saved.origin,
+        license: saved.license,
+        sourceSamplePath: saved.sourceSamplePath,
+        edited: current.id !== original.id,
+        original: original.blob!,
+        current: current.blob!,
+      };
 
-      setHasEdited(false);
-      setCreatedProject(created.projectName);
+      // Read-modify-write against the store rather than against anything held here:
+      // Browse may have been in the middle of its own session before this mode opened.
+      const entries = await loadBrowsePoolFromDB();
+      const existing = entries.findIndex(e => e.id === id);
+      await saveBrowsePoolToDB(
+        existing >= 0
+          ? entries.map((e, i) => (i === existing ? entry : e))
+          : [...entries, entry]
+      );
+
+      setPooledId(id);
+      setHasEdited(false); // The applied work is in the pool now, so closing loses nothing.
+      setPooledPrompt(true);
     } catch (e) {
       console.error(e);
-      showToast(e instanceof Error ? e.message : 'Could not create the project', 'error');
+      showToast(e instanceof Error ? e.message : 'Could not add this file to the pool', 'error');
     } finally {
       setBusy(null);
     }
-  }, [record, showToast]);
+  }, [record, pooledId, showToast]);
 
   /**
-   * A host pool means this file already has somewhere to land, and the pool has its
-   * own "Import into a project" that carries the whole selection rather than this one
-   * file. Offering "Save as project" here as well would be a second, narrower version
-   * of that exit — so the Browse-hosted editor shows one exit, the download, and the
-   * commit button names the other.
+   * The exits, and which of them is the obvious next click.
+   *
+   * `commitClean` is the editor's own answer to "is there anything left to bake". It
+   * decides the emphasis rather than just the wording: while edits are pending the
+   * commit button has to win, because the download writes the committed version and
+   * would quietly hand back the file *without* the edit that is still on screen. Once
+   * everything is applied the commit button has nothing left to say, and the download
+   * — the whole point of this mode — takes the filled treatment.
+   *
+   * A host pool means the file already has somewhere to land and the pool has its own
+   * exits, so the second button belongs to the standalone editor only.
    */
-  const transportActions = (
-    <>
-      <button
-        onClick={download}
-        className="flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
-          active:scale-95 shadow-lg border border-synthux-blue/50 bg-synthux-blue/15 text-synthux-blue hover:bg-synthux-blue/25"
-        title="Download this file as SK-ready WAV"
-      >
-        <Download size={16} /> DOWNLOAD
-      </button>
-      {!onEdited && (
+  const transportActions = ({ commitClean }: { commitClean: boolean }) => {
+    // Both exits take the committed version, so both say the same thing about edits
+    // that are still pending rather than letting the user find out afterwards.
+    const stale = commitClean ? '' : ' (applies to the last saved version, not the edits still pending)';
+
+    return (
+      <>
         <button
-          onClick={() => setNameModalOpen(true)}
-          disabled={busy !== null}
-          className="flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
-            active:scale-95 shadow-lg border border-synthux-yellow/50 bg-synthux-yellow/15 text-synthux-yellow
-            hover:bg-synthux-yellow/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-          title="Create a project on your drive from this file"
+          onClick={download}
+          className={`flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
+            active:scale-95 shadow-lg border ${commitClean
+              ? 'bg-synthux-blue border-synthux-blue text-white hover:bg-blue-500 shadow-synthux-blue/30'
+              : 'border-synthux-blue/50 bg-synthux-blue/15 text-synthux-blue hover:bg-synthux-blue/25'}`}
+          title={`Download this file as SK-ready WAV${stale}`}
         >
-          <FolderPlus size={16} /> SAVE AS PROJECT
+          <Download size={16} /> DOWNLOAD
         </button>
-      )}
-    </>
-  );
+        {!onEdited && (
+          <button
+            onClick={addToPool}
+            disabled={busy !== null}
+            className="flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
+              active:scale-95 shadow-lg border border-synthux-yellow/50 bg-synthux-yellow/15 text-synthux-yellow
+              hover:bg-synthux-yellow/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title={`Put this file in Browse's pool, where the card builder and the project exit pick it up${stale}`}
+          >
+            <Library size={16} /> {pooledId ? 'UPDATE IN POOL' : 'ADD TO POOL'}
+          </button>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-[80] bg-synthux-main flex flex-col">
@@ -317,6 +364,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
             activeVersionId={record.currentVersionId}
             metadata={record.metadata}
             commitLabels={onEdited ? POOL_COMMIT_LABELS : LOOSE_COMMIT_LABELS}
+            commitCleanTone={onEdited ? 'primary' : 'quiet'}
             transportActions={transportActions}
             onAssignVersion={handleAssignVersion}
             onRenameFile={handleRename}
@@ -336,20 +384,22 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
         </div>
       )}
 
-      <ProjectNameModal
-        isOpen={nameModalOpen}
-        onClose={() => setNameModalOpen(false)}
-        onConfirm={saveAsProject}
-        title="Save as new project"
-        initialValue={record.name}
-        placeholder="Project name…"
-        confirmLabel="Choose folder & create"
-      />
-
-      <ProjectCreatedModal
-        projectName={createdProject}
-        onDismiss={() => setCreatedProject(null)}
-        onEnterStudio={onEnterStudio}
+      <ConfirmModal
+        isOpen={pooledPrompt}
+        onClose={() => setPooledPrompt(false)}
+        onConfirm={() => { setPooledPrompt(false); onEnterBrowse?.(); }}
+        title="Added to the pool"
+        message={
+          <span>
+            <strong>{record.name}</strong> is in the temporary pool, alongside anything you collected
+            in Browse Samples.{onEnterBrowse
+              ? ' Open Browse to download the whole pool as a ready SK/ folder, or to keep adding to it.'
+              : ' Open Browse Samples from the hub to build a card from it.'}
+          </span>
+        }
+        confirmLabel={onEnterBrowse ? 'Open Browse' : 'Got it'}
+        cancelLabel="Keep editing"
+        showCancel={!!onEnterBrowse}
       />
 
       <ConfirmModal
@@ -360,7 +410,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
         message={
           onEdited
             ? 'Changes you have not saved to the temporary pool will be lost. Everything already saved to the pool stays there.'
-            : 'This file is only in memory. Anything you have not downloaded or saved as a project will be lost.'
+            : 'This file is only in memory. Anything you have not downloaded or added to the pool will be lost.'
         }
         confirmLabel="Leave"
         isDestructive
@@ -372,22 +422,23 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// The `#/editor` route: pick a file off the disk, edit it, download or upgrade.
+// The `#/editor` route: pick a file off the disk, edit it, download or pool it.
 // ────────────────────────────────────────────────────────────────────────────
 
 interface EditorModeProps {
   onExitToHub: () => void;
-  onEnterStudio?: () => void;
+  onEnterBrowse?: () => void;
 }
 
 /**
  * Tier 3-lite — the standalone editor at `#/editor`.
  *
  * A file input, not a folder handle: opening a file this way is permission-free and
- * gives back no write access, so the mode can do its whole job without a prompt. The
- * only prompt in it is the folder picker behind "Save as project".
+ * gives back no write access, so the mode can do its whole job without a single
+ * prompt. Neither exit changes that — the download goes to the browser's own
+ * downloads folder, and the pool is IndexedDB.
  */
-export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterStudio }) => {
+export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterBrowse }) => {
   const [file, setFile] = useState<LooseFile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -422,9 +473,9 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterStud
     return (
       <LooseFileEditor
         file={file}
-        subtitle={`Editing ${file.name} — nothing is written to your drive until you download or save a project.`}
+        subtitle={`Editing ${file.name}. Nothing is written to your drive until you download it.`}
         onClose={() => setFile(null)}
-        onEnterStudio={onEnterStudio}
+        onEnterBrowse={onEnterBrowse}
       />
     );
   }
@@ -442,7 +493,7 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterStud
         <div className="min-w-0 text-center">
           <span className="text-xs font-bold uppercase tracking-[0.2em] text-synthux-pink">Editor</span>
           <span className="hidden sm:inline text-[11px] text-gray-500 ml-3">
-            One file, no project. Trim, fade, normalise, slice — then download.
+            One file, no project. Trim, fade, normalise, EQ, pitch, then download.
           </span>
         </div>
         <span className="w-16" aria-hidden />
@@ -486,7 +537,7 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterStud
                 <Upload size={28} className="text-synthux-pink" />
                 <span className="text-base font-bold">Drop an audio file, or click to choose one</span>
                 <span className="text-xs text-gray-500 leading-relaxed max-w-sm">
-                  WAV, MP3, FLAC, AIFF — anything the browser can decode. It is converted to the
+                  WAV, MP3, FLAC, AIFF, anything the browser can decode. It is converted to the
                   48&nbsp;kHz stereo float WAV the Spotykach reads as it opens.
                 </span>
               </span>
@@ -500,7 +551,7 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterStud
           <p className="mt-6 flex items-start gap-2 text-[11px] text-gray-600 leading-relaxed">
             <Music size={13} className="shrink-0 mt-0.5" />
             Nothing is uploaded and nothing is written to your drive. When you are done, download the
-            file — or turn it into a project and carry on in Studio.
+            file, or add it to the pool in Browse Samples and build a card from a whole set.
           </p>
         </div>
       </div>

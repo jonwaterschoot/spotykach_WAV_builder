@@ -30,7 +30,13 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
   if (mode === 'browse') {
     return (
       <Suspense fallback={<ModeLoading />}>
-        <BrowseMode onExitToHub={() => setMode('hub')} onEnterStudio={() => setMode('studio')} />
+        <BrowseMode
+          onExitToHub={() => setMode('hub')}
+          onEnterStudio={() => setMode('studio')}
+          // A pack's "use the preset" link. The id rides along in the hash so the
+          // presets screen opens on that card instead of on the whole list.
+          onEnterPresets={(presetId) => setMode('presets', presetId ? { preset: presetId } : undefined)}
+        />
       </Suspense>
     );
   }
@@ -54,7 +60,7 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
   if (mode === 'editor') {
     return (
       <Suspense fallback={<ModeLoading />}>
-        <EditorMode onExitToHub={() => setMode('hub')} onEnterStudio={() => setMode('studio')} />
+        <EditorMode onExitToHub={() => setMode('hub')} onEnterBrowse={() => setMode('browse')} />
       </Suspense>
     );
   }

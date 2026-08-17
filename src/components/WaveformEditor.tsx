@@ -666,11 +666,27 @@ interface WaveformEditorProps {
     onDirtyStateChange?: (isDirty: boolean) => void;
     showToast: (message: string, type?: 'success' | 'error' | 'warning') => void;
     commitLabels?: CommitLabels;
-    /** Host-supplied buttons in the transport bar — the surface's own exits. */
-    transportActions?: React.ReactNode;
+    /**
+     * How loud the commit button is once there is nothing left to bake.
+     *
+     * `primary` (the default) is Studio's: committing is the point of opening the
+     * editor, so the settled state stays a filled green button. `quiet` is for a
+     * surface where the commit is a step rather than the destination — the loose
+     * editor, whose real exits sit in `transportActions` and should out-rank a
+     * button that now only says "there is nothing to do".
+     */
+    commitCleanTone?: 'primary' | 'quiet';
+    /**
+     * Host-supplied buttons in the transport bar — the surface's own exits.
+     *
+     * Given a function, it is called with `commitClean`: false while edits are still
+     * pending, which is exactly when an exit like "download" would write the *stale*
+     * version and must not present itself as the obvious next click.
+     */
+    transportActions?: React.ReactNode | ((state: { commitClean: boolean }) => React.ReactNode);
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, transportActions }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, commitCleanTone = 'primary', transportActions }: WaveformEditorProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -2677,6 +2693,16 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
+    /**
+     * Nothing left to bake *and* the loaded version is the one in use.
+     *
+     * The second half matters: stepping back to an older version in the sidebar leaves
+     * no pending edits, but the commit button is then an "assign this version" button,
+     * not a statement that the file is settled. Hosts styling their own exits around
+     * this need the same answer the button gives itself, so it is computed once.
+     */
+    const commitClean = !isDirty && loadedVersionId === activeVersionId;
+
     return (
         <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-6">
             <style>{`
@@ -4459,7 +4485,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {isPlaying ? <Pause fill="white" size={18} /> : <Play fill="white" size={18} />}
                                     {isPlaying ? 'PAUSE' : 'PLAY'}
                                 </button>
-                                <div title={!isDirty && loadedVersionId === activeVersionId ? "File is up to date" : commitLabels.hint}>
+                                <div title={commitClean ? "File is up to date" : commitLabels.hint}>
                                     <button
                                         onClick={() => {
                                             if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
@@ -4474,15 +4500,17 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         }}
                                         disabled={isProcessing}
                                         className={`flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg ${
-                                            isProcessing 
+                                            isProcessing
                                                 ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
-                                                : (!isDirty && loadedVersionId === activeVersionId)
-                                                    ? 'bg-green-600/90 hover:bg-green-600 text-white shadow-green-900/40'
-                                                    : 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
+                                                : !commitClean
+                                                    ? 'bg-synthux-blue hover:bg-blue-500 text-white hover:scale-105 active:scale-95 shadow-synthux-blue/20'
+                                                    : commitCleanTone === 'quiet'
+                                                        ? 'bg-transparent border border-green-700/50 text-green-500/80 hover:text-green-400 hover:border-green-600 shadow-none'
+                                                        : 'bg-green-600/90 hover:bg-green-600 text-white shadow-green-900/40'
                                         }`}
                                     >
-                                        {isProcessing ? <RefreshCw className="animate-spin" size={18} /> : (!isDirty && loadedVersionId === activeVersionId) ? <Check size={18} /> : <Save size={18} />}
-                                        {isProcessing ? 'SAVING...' : (!isDirty && loadedVersionId === activeVersionId) ? commitLabels.clean : commitLabels.dirty}
+                                        {isProcessing ? <RefreshCw className="animate-spin" size={18} /> : commitClean ? <Check size={18} /> : <Save size={18} />}
+                                        {isProcessing ? 'SAVING...' : commitClean ? commitLabels.clean : commitLabels.dirty}
                                     </button>
                                 </div>
 
@@ -4596,7 +4624,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     </button>
                                 )}
 
-                                {transportActions}
+                                {typeof transportActions === 'function'
+                                    ? transportActions({ commitClean })
+                                    : transportActions}
                             </div>
                         </div>
                     </div>

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, Layers, Menu } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, ChevronRight, Layers, Menu, Package } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
-import type { SamplePack } from '../data/samplePacks';
+import type { PresetManifestEntry, SamplePack } from '../data/samplePacks';
 import { resolveAssetPath } from '../utils/assetUtils';
+import { SAMPLE_DRAG_TYPE } from '../utils/dragTypes';
 import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../types';
 import { TAPE_COLORS, COLOR_MAP } from '../types';
 // dynamic utility imports
@@ -73,6 +74,31 @@ interface SampleBrowserProps {
      * editor is open, and that editor brings its own transport.
      */
     forceStop?: boolean;
+    /**
+     * "There is a ready-made card for this pack" — the link under a pack's ZIP.
+     *
+     * The two hosts mean two different things by it, which is why it is a callback
+     * and not a route: Browse leaves for `#/presets`, and Studio closes this window
+     * and opens its own presets modal (which sits *under* the browser's window, so
+     * it has to be got out of the way first). Absent means the host has no preset
+     * surface to send anyone to, and the link isn't drawn.
+     */
+    onOpenPreset?: (preset: PresetManifestEntry) => void;
+    /**
+     * A drag of one or more sample rows, from the moment it starts until it ends.
+     *
+     * The payload is a *thunk*, not a list, because a sample's audio is a blob in
+     * this component and `DataTransfer` carries strings. Minting object URLs at
+     * dragstart would leak every one the user dropped nowhere, and revoking them at
+     * dragend would race the host's import — so the URLs are minted inside `commit`,
+     * which the host calls if and when the drop lands. `null` means the drag ended,
+     * dropped or not.
+     *
+     * Absent means the host has no target for it, and the rows aren't draggable —
+     * Studio's browser is a floating window over a grid that takes project files,
+     * not pack samples, so it doesn't subscribe.
+     */
+    onSampleDrag?: (drag: { count: number; commit: () => Promise<void> } | null) => void;
 }
 
 /**
@@ -116,6 +142,8 @@ export const SampleBrowser = ({
     onPlaybackChange,
     onLocateInPool,
     forceStop,
+    onOpenPreset,
+    onSampleDrag,
 }: SampleBrowserProps) => {
 
     const isStandalone = mode === 'standalone';
@@ -129,6 +157,8 @@ export const SampleBrowser = ({
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
     const [selectedCustomFolderId, setSelectedCustomFolderId] = useState<string | null>(null);
     const [remotePacks, setRemotePacks] = useState<SamplePack[]>([]);
+    /** Read only to answer "is there a ready-made card built on this pack?". */
+    const [remotePresets, setRemotePresets] = useState<PresetManifestEntry[]>([]);
     const [isManifestLoading, setIsManifestLoading] = useState(true);
 
     const resetSelection = () => {
@@ -256,8 +286,9 @@ export const SampleBrowser = ({
         const loadFolders = async () => {
             try {
                 // Fetch remote manifest packs
-                const { packs } = await fetchSampleManifest();
+                const { packs, presets } = await fetchSampleManifest();
                 setRemotePacks(packs);
+                setRemotePresets(presets);
                 setIsManifestLoading(false);
 
                 // If no pack is selected yet and we have remote packs, select the first one
@@ -298,18 +329,25 @@ export const SampleBrowser = ({
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }, [selectedPackId, selectedProjectId, selectedCustomFolderId]);
 
-    const handleBulkActionWithTarget = async (target: 'pool' | 'slots' | TapeColor) => {
-        setShowActionMenu(false);
-        if (selectedSamplePaths.size === 0 || !onRemoteBulkImport) return;
+    /**
+     * Send these paths, in this order, to one target. Shared by the bulk action menu
+     * and by a drag onto the host's pool — a drop is the same import, asked for with
+     * the hand instead of the menu.
+     *
+     * Object URLs are minted here rather than by the caller, so a drag that ends
+     * nowhere has never made one. Returns what it actually sent.
+     */
+    const importPathsTo = async (paths: string[], target: 'pool' | 'slots' | TapeColor) => {
+        if (paths.length === 0 || !onRemoteBulkImport) return [];
 
         // Read from the resolved pack rather than re-finding it in the built-in list,
         // so the library, project sources and mounted folders bulk-import too — they
         // carry their blobs on `_blob` and only need an object URL.
         const pack = selectedPack;
-        if (!pack) return;
+        if (!pack) return [];
 
         const allSamples: any[] = pack.samples || [];
-        const samplesToImport = Array.from(selectedSamplePaths).map(path => {
+        const samplesToImport = paths.map(path => {
             const s = allSamples.find(sample => sample.path === path);
             if (!s) return null;
             let url = resolveAssetPath(s.path);
@@ -319,17 +357,81 @@ export const SampleBrowser = ({
             return { url, name: s.name, path: s.path };
         }).filter((s): s is { url: string, name: string, path: string } => s !== null);
 
-        if (samplesToImport.length > 0) {
-            await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
-            // The single-file path marks these; the bulk path used not to, so a bulk
-            // selection came back unmarked the moment you switched packs.
-            setAddedSamples(prev => {
-                const next = new Set(prev);
-                samplesToImport.forEach(s => next.add(s.path));
-                return next;
-            });
-            setSelectedSamplePaths(new Set());
-        }
+        if (samplesToImport.length === 0) return [];
+
+        await onRemoteBulkImport(samplesToImport, target, pack.id, pack.license);
+        // The single-file path marks these; the bulk path used not to, so a bulk
+        // selection came back unmarked the moment you switched packs.
+        setAddedSamples(prev => {
+            const next = new Set(prev);
+            samplesToImport.forEach(s => next.add(s.path));
+            return next;
+        });
+        return samplesToImport;
+    };
+
+    const handleBulkActionWithTarget = async (target: 'pool' | 'slots' | TapeColor) => {
+        setShowActionMenu(false);
+        const sent = await importPathsTo(Array.from(selectedSamplePaths), target);
+        if (sent.length > 0) setSelectedSamplePaths(new Set());
+    };
+
+    // --------------------------------------------------------------------------------
+    // Dragging rows out of the browser
+    //
+    // The row already had a button that does this. A drag is the same act performed
+    // where the user is looking: onto the pool, which is the thing the button's
+    // result lands in anyway. What crosses the boundary is a marker MIME type — the
+    // payload rides in the host's hands through `onSampleDrag`, since a blob can't
+    // be put on a DataTransfer.
+    // --------------------------------------------------------------------------------
+
+    /** Both halves have to be there: somewhere to drop it, and a way to import it. */
+    const canDragSamples = !!onSampleDrag && !!onRemoteBulkImport;
+
+    /** A drag started on a selected row carries the whole selection; otherwise, just that row. */
+    const dragPathsFor = (path: string) =>
+        (selectedSamplePaths.has(path) ? Array.from(selectedSamplePaths) : [path]);
+
+    /**
+     * The count under the cursor. Without it a five-file drag looks exactly like a
+     * one-file drag — the browser paints the row you happened to grab.
+     */
+    const setMultiDragImage = (e: React.DragEvent, count: number) => {
+        if (count < 2 || typeof document === 'undefined') return;
+        const chip = document.createElement('div');
+        chip.textContent = `${count} samples`;
+        chip.style.cssText = [
+            'position:fixed', 'top:-1000px', 'left:-1000px', 'padding:6px 12px',
+            'border-radius:8px', 'background:#f26522', 'color:#000',
+            'font:700 12px ui-monospace,monospace', 'white-space:nowrap',
+        ].join(';');
+        document.body.appendChild(chip);
+        e.dataTransfer.setDragImage(chip, 12, 12);
+        // The browser snapshots the element for the cursor; it doesn't need to stay.
+        setTimeout(() => chip.remove(), 0);
+    };
+
+    const handleSampleDragStart = (e: React.DragEvent, sample: BrowsableSample) => {
+        if (!onSampleDrag || !onRemoteBulkImport) return;
+        const paths = dragPathsFor(sample.path);
+
+        // A marker, not the cargo: `dragover` can read types but never data, so this
+        // is what lets the pool light up before the drop. `text/plain` is both the
+        // mobile-drag-drop polyfill's fallback and what a drag into a text field gets.
+        e.dataTransfer.setData(SAMPLE_DRAG_TYPE, String(paths.length));
+        e.dataTransfer.setData('text/plain', paths.length > 1 ? `${paths.length} samples` : sample.name);
+        e.dataTransfer.effectAllowed = 'copy';
+        setMultiDragImage(e, paths.length);
+
+        onSampleDrag({
+            count: paths.length,
+            commit: async () => {
+                const sent = await importPathsTo(paths, 'pool');
+                // Same ending as the bulk button: the selection has been spent.
+                if (sent.length > 0) setSelectedSamplePaths(new Set());
+            },
+        });
     };
 
 
@@ -586,6 +688,41 @@ export const SampleBrowser = ({
         }
     }
 
+
+    /**
+     * Ready-made cards built on the pack that is open.
+     *
+     * A preset names the packs it draws from, so the pack page can say so without
+     * anything new in the manifest. The library, a project's samples and a mounted
+     * folder can't match — no preset requires an id that only exists in this session.
+     */
+    const packPresets = selectedPack
+        ? remotePresets.filter(p => p.requiredPacks.includes(selectedPack.id))
+        : [];
+
+    /** Drawn only when the host has somewhere to send the click. */
+    const showPresetLink = packPresets.length > 0 && !!onOpenPreset;
+
+    // The pack's own links, split once. A "download" is an asset; everything else is
+    // a connection — and a pack with only a ZIP no longer gets an empty Connections heading.
+    const isAssetLink = (label: string) => {
+        const l = label.toLowerCase();
+        return l.includes('.zip') || l.includes('download');
+    };
+    const packLinks: { label: string; url: string }[] = selectedPack?.links || [];
+    const packZipLinks = packLinks.filter(l => isAssetLink(l.label));
+    const packOtherLinks = packLinks.filter(l => !isAssetLink(l.label));
+
+    /**
+     * What is actually inside the ZIP, read off the pack's own file list rather than
+     * written into the button — a pack that ships WAV shouldn't be labelled FLAC
+     * because today's three happen to be FLAC.
+     */
+    const packSampleFormats = Array.from(new Set(
+        ((selectedPack?.samples || []) as { path?: string }[])
+            .map(s => (s.path?.split('.').pop() || '').toLowerCase())
+            .filter(Boolean)
+    )).map(ext => ext.toUpperCase());
 
     // --------------------------------------------------------------------------------
     // 6. Filtering Logic
@@ -920,7 +1057,7 @@ export const SampleBrowser = ({
                             <p className="px-3 pt-1.5 text-[10px] text-gray-600 leading-relaxed">
                                 {isStandalone
                                     ? 'Sounds you saved to your own library in Studio, kept in this browser. Read-only here.'
-                                    : 'Sounds you saved to your own library, kept in this browser — add and tag them in the Library Manager.'}
+                                    : 'Sounds you saved to your own library, kept in this browser. Add and tag them in the Library Manager.'}
                             </p>
                             {isUserLibrarySelected && (
                                 <div className="mt-2 ml-2 pl-2 border-l border-gray-800">
@@ -1083,40 +1220,78 @@ export const SampleBrowser = ({
                                             )}
                                         </div>
 
-                                        {selectedPack.links && selectedPack.links.length > 0 && (
+                                        {((selectedPack.links && selectedPack.links.length > 0) || showPresetLink) && (
                                             <div className="space-y-10 border-t border-white/5 pt-8">
-                                                {/* ZIP DOWNLOADS */}
-                                                {selectedPack.links.some((l: any) => l.label.toLowerCase().includes('.zip') || l.label.toLowerCase().includes('download')) && (
+                                                {/* ZIP DOWNLOADS — and, beside them, the same pack already built for the card */}
+                                                {(packZipLinks.length > 0 || showPresetLink) && (
                                                     <div>
                                                         <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Available Assets</h4>
                                                         <div className="flex gap-4 flex-wrap">
-                                                            {selectedPack.links.filter((l: any) => l.label.toLowerCase().includes('.zip') || l.label.toLowerCase().includes('download')).map((link: any, i: number) => (
+                                                            {packZipLinks.map((link, i) => (
                                                                 <a
                                                                     key={i}
                                                                     href={link.url}
                                                                     target="_blank"
                                                                     rel="noreferrer"
-                                                                    className="group flex flex-1 min-w-full sm:min-w-[280px] max-w-full sm:max-w-[400px] items-center justify-between px-5 py-4 bg-synthux-blue/10 hover:bg-synthux-blue/20 text-synthux-blue rounded-xl border border-synthux-blue/30 transition-all active:scale-95"
+                                                                    className="group flex flex-1 min-w-full sm:min-w-[320px] max-w-full sm:max-w-[440px] items-center justify-between gap-4 px-5 py-4 bg-synthux-blue/10 hover:bg-synthux-blue/20 text-synthux-blue rounded-xl border border-synthux-blue/30 transition-all active:scale-95"
                                                                 >
-                                                                    <div className="flex items-center gap-4">
-                                                                        <Download size={20} className="group-hover:animate-bounce-subtle" />
-                                                                        <span className="font-bold text-sm tracking-tight">{link.label}</span>
+                                                                    <div className="flex items-center gap-4 min-w-0">
+                                                                        <Download size={20} className="shrink-0 group-hover:animate-bounce-subtle" />
+                                                                        {/*
+                                                                          * What the ZIP is, under what it's called. It is the pack as the
+                                                                          * artist sent it — one flat folder, nothing trimmed, nothing
+                                                                          * arranged — which is the difference between it and the preset
+                                                                          * below, and the button never said so.
+                                                                          */}
+                                                                        <span className="min-w-0">
+                                                                            <span className="block font-bold text-sm tracking-tight">{link.label}</span>
+                                                                            <span className="block text-[10px] opacity-60 leading-relaxed mt-0.5">
+                                                                                Dry file list · all {selectedPack.samples.length} files, one folder
+                                                                                {packSampleFormats.length > 0 && `, ${packSampleFormats.join('/')} format`}
+                                                                            </span>
+                                                                        </span>
                                                                     </div>
-                                                                    <span className="text-[10px] opacity-40 font-mono">.ZIP</span>
+                                                                    <span className="shrink-0 text-[10px] opacity-40 font-mono">.ZIP</span>
                                                                 </a>
                                                             ))}
                                                         </div>
+
+                                                        {/*
+                                                          * "This pack, already arranged" — the ZIP is the raw files, the preset
+                                                          * is the same pack laid out across the 6×6 grid. What the click does
+                                                          * differs by host, so the wording does too: Browse leaves for the
+                                                          * preset screen, Studio swaps this window for its presets panel.
+                                                          */}
+                                                        {showPresetLink && packPresets.map(preset => (
+                                                            <button
+                                                                key={preset.id}
+                                                                onClick={() => onOpenPreset!(preset)}
+                                                                className="group mt-4 w-full max-w-full sm:max-w-[620px] flex items-center gap-4 px-5 py-4 rounded-xl
+                                                                    border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 text-left transition-all active:scale-[0.99]"
+                                                            >
+                                                                <Package size={20} className="shrink-0 text-violet-300" />
+                                                                <span className="min-w-0 flex-1">
+                                                                    <span className="block text-sm font-bold text-violet-200 tracking-tight">
+                                                                        Want this pack in a ready-to-go format for SK? Use the preset.
+                                                                    </span>
+                                                                    <span className="block text-[11px] text-violet-300/60 leading-relaxed mt-0.5">
+                                                                        {isStandalone
+                                                                            ? <>“{preset.name}” is this pack already spread across the 6×6 grid. Opens the preset screen, which builds the whole <span className="font-mono">SK/</span> folder for your card. Your pool stays as it is.</>
+                                                                            : <>“{preset.name}” is this pack already spread across the 6×6 grid. Opens the presets panel — this browser closes, and nothing is loaded until you pick it there.</>}
+                                                                    </span>
+                                                                </span>
+                                                                <ChevronRight size={16} className="shrink-0 text-violet-300/60 group-hover:text-violet-200 group-hover:translate-x-0.5 transition-all" />
+                                                            </button>
+                                                        ))}
                                                     </div>
                                                 )}
 
                                                 {/* EXTERNAL LINKS */}
+                                                {packOtherLinks.length > 0 && (
                                                 <div>
                                                     <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Connections</h4>
                                                     <div className="flex flex-wrap gap-2">
-                                                        {selectedPack.links.filter((l: any) => 
-                                                            !l.label.toLowerCase().includes('.zip') && 
-                                                            !l.label.toLowerCase().includes('download')
-                                                        ).map((link: any, i: number) => {
+                                                        {packOtherLinks.map((link, i) => {
                                                             const isSynthux = link.label.toLowerCase().includes('synthux') || link.label.toLowerCase().includes('website');
                                                             return (
                                                                 <a
@@ -1136,6 +1311,7 @@ export const SampleBrowser = ({
                                                         })}
                                                     </div>
                                                 </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1226,6 +1402,16 @@ export const SampleBrowser = ({
                                                                     <div
                                                                         key={idx}
                                                                         data-sample-path={sample.path}
+                                                                        // Only where the host has somewhere to drop it. `title` says which
+                                                                        // rows will travel, since the answer depends on the selection.
+                                                                        draggable={canDragSamples}
+                                                                        onDragStart={(e) => handleSampleDragStart(e, sample)}
+                                                                        onDragEnd={() => onSampleDrag?.(null)}
+                                                                        title={canDragSamples
+                                                                            ? (isSelected && selectedSamplePaths.size > 1
+                                                                                ? `Drag to add all ${selectedSamplePaths.size} selected samples to the pool`
+                                                                                : 'Drag to the pool, or use the button on the right')
+                                                                            : undefined}
                                                                         onClick={(e) => {
                                                                             // Acknowledging the file is what dismisses the glow.
                                                                             if (isLocated) setLocatedSamplePath(null);
@@ -1269,7 +1455,7 @@ export const SampleBrowser = ({
                                                                                     disabled={editingSample === sample.path}
                                                                                     className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-bold text-gray-400 hover:text-synthux-yellow
                                                                                         hover:bg-synthux-yellow/10 transition-all disabled:opacity-70"
-                                                                                    title="Edit this file — it goes into the temporary pool and opens in the editor"
+                                                                                    title="Edit this file. It goes into the temporary pool and opens in the editor"
                                                                                 >
                                                                                     {editingSample === sample.path
                                                                                         ? <Loader size={14} className="animate-spin" />
@@ -1372,7 +1558,7 @@ export const SampleBrowser = ({
                                     onClick={handleLocatePlaying}
                                     className="shrink-0 p-1 text-gray-500 hover:text-synthux-orange hover:bg-white/10 rounded transition-colors"
                                     title={onLocateInPool
-                                        ? 'Show this file where it came from — and in the temporary pool if it is there'
+                                        ? 'Show this file where it came from, and in the temporary pool if it is there'
                                         : 'Locate playing file'}
                                 >
                                     <Crosshair size={12} />

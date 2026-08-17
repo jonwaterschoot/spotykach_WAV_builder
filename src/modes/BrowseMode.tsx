@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Check, ChevronLeft, Database, Download, FileStack, FolderPlus, GripVertical,
-  HardDrive, Layers, Loader, Pause, Play, Trash2, X,
+  AudioWaveform, Check, ChevronDown, ChevronLeft, ChevronUp, Database, Download, FilePlus,
+  FileStack, FolderPlus, GripVertical, HardDrive, Layers, Loader, Pause, Play, Trash2, Upload, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
@@ -14,11 +14,15 @@ import {
 } from '../utils/persistence';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
+import { Toast } from '../components/Toast';
+import { useToasts } from '../shell/useToasts';
+import { appStorage } from '../utils/storageNamespace';
 import { ProjectNameModal } from '../components/modals/ProjectNameModal';
 import { WorkspaceChoiceModal } from '../components/modals/WorkspaceChoiceModal';
 import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
 import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle } from '../utils/storageUtils';
+import { isSampleDrag } from '../utils/dragTypes';
 import { COLOR_MAP, TAPE_COLORS } from '../types';
 import type { AppState, UserLibrary } from '../types';
 
@@ -46,6 +50,31 @@ interface PoolItem extends DetachedSample {
 
 /** How long a change waits before the pool is written back. */
 const POOL_SAVE_DEBOUNCE_MS = 600;
+
+/** Whether the export block under the pool is unfolded. Remembered between visits. */
+const EXPORTS_OPEN_KEY = 'browse_exports_open';
+
+/**
+ * What the pool will try to decode off the desktop.
+ *
+ * The extension list is the fallback, not the test: a WAV dragged out of some file
+ * managers arrives with an empty `type`, and refusing it because the OS declined to
+ * guess would be the app's fault, not the file's. Anything that gets past this and
+ * still can't be decoded is counted and reported.
+ */
+const AUDIO_EXTENSIONS = /\.(wav|mp3|flac|aiff?|ogg|oga|m4a|aac|opus|webm)$/i;
+const isAudioFile = (file: File) => file.type.startsWith('audio/') || AUDIO_EXTENSIONS.test(file.name);
+
+/** True only for a drag carrying files from outside the page, not a pool row being reordered. */
+const isFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
+
+/**
+ * What the pool column will take from a drag it didn't start: files off the desktop,
+ * or sample rows out of the browser beside it. `null` is a pool row being reordered,
+ * which the rows handle themselves.
+ */
+const dropKind = (e: React.DragEvent): 'files' | 'samples' | null =>
+  isFileDrag(e) ? 'files' : isSampleDrag(e) ? 'samples' : null;
 
 const newId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -79,7 +108,7 @@ const fileNameFromSource = (url: string, fallback: string) => {
 const buildLooseReadme = (items: PoolItem[], sortedIntoTapes: boolean): string => {
   const date = new Date().toISOString().split('T')[0];
   const credits = items
-    .map(item => `- ${stripExtension(item.fileName || item.name)}.wav${item.origin ? `  —  ${item.origin}` : ''}`)
+    .map(item => `- ${stripExtension(item.fileName || item.name)}.wav${item.origin ? `  (${item.origin})` : ''}`)
     .join('\n');
 
   // Grouped by origin, not flattened into one set: a selection drawn from two packs
@@ -100,7 +129,7 @@ const buildLooseReadme = (items: PoolItem[], sortedIntoTapes: boolean): string =
       Array.from(licenses).map(license => `- [${origin}]  →  ${license}`).join('\n'))
     .join('\n');
 
-  return `# Spotykach — loose file export
+  return `# Spotykach loose file export
 
 Date: ${date}
 Files: ${items.length}
@@ -132,21 +161,26 @@ you want, and rename each one to its slot number. Recent firmware accepts both
 \`.WAV\` and \`.wav\`.
 
 ${sortedIntoTapes
-      ? 'This ZIP is already grouped into tape folders (B/G/P/R/T/Y, plus POOL for\nanything past the 36 slots) — the names inside them still need changing to\n1.WAV … 6.WAV.'
-      : 'This ZIP is a flat list — no tape folders. Tick "Sort this ZIP into tape\nfolders", under the "Download the files" button in Browse, if you would rather\nhave the grouping done for you.'}
+      ? 'This ZIP is already grouped into tape folders (B/G/P/R/T/Y, plus POOL for\nanything past the 36 slots). The names inside them still need changing to\n1.WAV … 6.WAV.'
+      : 'This ZIP is a flat list, with no tape folders. Tick "Sort this ZIP into tape\nfolders", under the "Download the files" button in Browse, if you would rather\nhave the grouping done for you.'}
 
 Want none of this by hand? Use **Download SD card 6×6** in Browse, which builds
 the whole \`SK/\` folder ready to copy, or open Studio for a full project.
 
 ## Files
 ${credits}
-${usageContext ? `\n## Usage context\n\nOne line per pack — each licence covers only the files credited to that pack above.\n\n${usageContext}\n` : ''}`;
+${usageContext ? `\n## Usage context\n\nOne line per pack. Each licence covers only the files credited to that pack above.\n\n${usageContext}\n` : ''}`;
 };
 
 interface BrowseModeProps {
   onExitToHub: () => void;
   /** Offered after the pool becomes a project. Absent when the shell gave no route. */
   onEnterStudio?: () => void;
+  /**
+   * The pack page's "use the preset" link. The id names the preset to open on;
+   * the pool survives the trip, so this is a plain route and not a warning.
+   */
+  onEnterPresets?: (presetId?: string) => void;
 }
 
 /**
@@ -158,7 +192,7 @@ interface BrowseModeProps {
  * here writes IndexedDB's app-state slot (locked decision 5) — the pool lives and
  * dies with the mode.
  */
-export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStudio }) => {
+export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStudio, onEnterPresets }) => {
   const [pool, setPool] = useState<PoolItem[]>([]);
   const [isPoolOpen, setIsPoolOpen] = useState(false);
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
@@ -195,6 +229,44 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   /** The pool row to scroll to and glow, when locate points here. */
   const [locatedPoolId, setLocatedPoolId] = useState<string | null>(null);
   const poolListRef = useRef<HTMLDivElement | null>(null);
+
+  // Files arriving straight from the desktop, by button or by drop.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAddingFiles, setIsAddingFiles] = useState(false);
+  /** What is currently hovering the column, if anything — it decides what the overlay says. */
+  const [dropOver, setDropOver] = useState<'files' | 'samples' | null>(null);
+  // `dragleave` fires for every child the pointer crosses, so the highlight is kept
+  // on a depth count rather than on the last event to arrive.
+  const dragDepth = useRef(0);
+
+  /**
+   * A drag of sample rows, in flight.
+   *
+   * The count is state because the overlay says it; the commit is a ref because the
+   * drop handler must read it in the same tick it fires, before `dragend` clears it.
+   * See `onSampleDrag` in `SampleBrowser` for why the payload is a thunk.
+   */
+  const [sampleDragCount, setSampleDragCount] = useState(0);
+  const sampleDragCommit = useRef<null | (() => Promise<void>)>(null);
+  const [isDroppingSamples, setIsDroppingSamples] = useState(false);
+
+  /**
+   * The export block is folded away by choice, and the choice is remembered.
+   *
+   * It is four buttons, a checkbox and three paragraphs at the foot of a column whose
+   * actual content is the list above it. Collapsing hands that space back without
+   * hiding anything the user hasn't chosen to hide.
+   */
+  const [exportsOpen, setExportsOpen] = useState(() => appStorage.getItem(EXPORTS_OPEN_KEY) !== '0');
+
+  const toggleExports = useCallback(() => {
+    setExportsOpen(prev => {
+      appStorage.setItem(EXPORTS_OPEN_KEY, prev ? '0' : '1');
+      return !prev;
+    });
+  }, []);
+
+  const { toasts, showToast, removeToast } = useToasts();
 
   const poolRef = useRef<PoolItem[]>(pool);
   poolRef.current = pool;
@@ -405,6 +477,162 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
       }
     }
   }, [addToPool]);
+
+  /**
+   * Files off the desktop, by the header's button or by a drop on the column.
+   *
+   * Mounting a folder through "Local folders" was the only way in for a file that
+   * isn't in a pack, which is a lot of ceremony for the three loops someone dragged
+   * out of their DAW. This asks for nothing: a file input and a drop target both hand
+   * back `File` objects, which `addToPool` already knows how to take through an object
+   * URL, and nothing about the folder they came from is retained or accessible.
+   *
+   * One summary at the end rather than a toast per file: adding eight files should
+   * not cost eight dismissals.
+   */
+  const addLocalFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+
+    const audio = files.filter(isAudioFile);
+    const skipped = files.length - audio.length;
+
+    if (audio.length === 0) {
+      showToast(
+        skipped === 1
+          ? 'That file is not audio this browser can read.'
+          : 'None of those files are audio this browser can read.',
+        'warning'
+      );
+      return;
+    }
+
+    setIsAddingFiles(true);
+    let added = 0;
+    let failed = 0;
+    for (const file of audio) {
+      const url = URL.createObjectURL(file);
+      try {
+        // 'Local file' rather than a path: this is the whole provenance there is, and
+        // it is what the loose export's credits will say beside the name.
+        await addToPool(url, file.name, 'Local file');
+        added += 1;
+      } catch {
+        failed += 1; // `addToPool` logged it and revoked the URL.
+      }
+    }
+    setIsAddingFiles(false);
+
+    const ignored = skipped + failed;
+    if (added === 0) {
+      showToast('Nothing could be decoded from those files.', 'error');
+      return;
+    }
+    showToast(
+      `Added ${added} file${added === 1 ? '' : 's'} to the pool${ignored > 0 ? `, ${ignored} skipped` : ''}.`,
+      ignored > 0 ? 'warning' : 'success'
+    );
+  }, [addToPool, showToast]);
+
+  const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    // Cleared so picking the same file twice in a row still fires a change event.
+    e.target.value = '';
+    void addLocalFiles(picked);
+  }, [addLocalFiles]);
+
+  /**
+   * Sample rows let go over the pool — the same import the row's button does, asked
+   * for with the hand. The browser kept the payload; all that crossed the boundary
+   * was a marker type, so this is where the object URLs are finally minted.
+   */
+  const commitSampleDrop = useCallback(async () => {
+    const commit = sampleDragCommit.current;
+    sampleDragCommit.current = null;
+    if (!commit) return;
+
+    setIsDroppingSamples(true);
+    try {
+      await commit();
+    } catch (e) {
+      console.error('Could not add the dropped samples', e);
+      showToast('Those samples could not be added to the pool.', 'error');
+    } finally {
+      setIsDroppingSamples(false);
+    }
+  }, [showToast]);
+
+  const handleColumnDrop = useCallback((e: React.DragEvent) => {
+    const kind = dropKind(e);
+    if (!kind) return; // A pool row being reordered; the list handles its own.
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDropOver(null);
+
+    if (kind === 'samples') {
+      void commitSampleDrop();
+      return;
+    }
+
+    // A dropped folder arrives as one entry with no type, so it would otherwise be
+    // reported as a file that isn't audio. Browse has a door for folders already.
+    const droppedFolder = Array.from(e.dataTransfer.items || [])
+      .some(item => item.kind === 'file' && item.webkitGetAsEntry?.()?.isDirectory);
+    const files = Array.from(e.dataTransfer.files || []);
+
+    if (droppedFolder) {
+      showToast('Folders are skipped here. Open one through “Local folders” on the left.', 'warning');
+      void addLocalFiles(files.filter(isAudioFile));
+      return;
+    }
+    void addLocalFiles(files);
+  }, [addLocalFiles, showToast, commitSampleDrop]);
+
+  /**
+   * The whole mode tolerates a sample drag, so the cursor never wears the "forbidden"
+   * sign on its way to the pool.
+   *
+   * There is no third state in HTML5 drag and drop: an element that doesn't
+   * `preventDefault` its `dragover` gets `no-drop` under the pointer, and a
+   * `dropEffect` of `'none'` draws the same thing. So the mode as a whole accepts the
+   * drag and does nothing with it, and the pool stays the only place that *looks*
+   * like a target — it is the thing that lights up green and counts what is coming.
+   *
+   * Deliberately narrowed to our own drag: a file dragged in from the desktop still
+   * gets the browser's default treatment everywhere except the pool column.
+   */
+  const tolerateSampleDrag = useCallback((e: React.DragEvent) => {
+    if (!isSampleDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  /**
+   * Let go short of the pool. Nothing is imported — `commitSampleDrop` has already
+   * taken the payload if the drop was over the column, and this only stops the event
+   * from reaching the page underneath.
+   */
+  const swallowStraySampleDrop = useCallback((e: React.DragEvent) => {
+    if (!isSampleDrag(e)) return;
+    e.preventDefault();
+  }, []);
+
+  /**
+   * A sample drag beginning or ending in the browser beside us.
+   *
+   * The pool is opened on the way in: it is the only target, and a drag towards a
+   * column that isn't on screen has nowhere to land.
+   */
+  const handleSampleDrag = useCallback((drag: { count: number; commit: () => Promise<void> } | null) => {
+    sampleDragCommit.current = drag?.commit ?? null;
+    setSampleDragCount(drag?.count ?? 0);
+    if (drag) {
+      setIsPoolOpen(true);
+      return;
+    }
+    // Dragend, dropped or not — the highlight must not outlive the drag.
+    dragDepth.current = 0;
+    setDropOver(null);
+  }, []);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Auditioning what's in the pool
@@ -721,7 +949,11 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   return (
     // `dvh` where it exists: a phone's address bar eats into `100vh`, which puts the
     // preview bar under it and leaves the page scrolling by exactly that much.
-    <div className="h-screen supports-[height:100dvh]:h-[100dvh] w-full flex flex-col bg-synthux-main text-white overflow-hidden">
+    <div
+      className="h-screen supports-[height:100dvh]:h-[100dvh] w-full flex flex-col bg-synthux-main text-white overflow-hidden"
+      onDragOver={tolerateSampleDrag}
+      onDrop={swallowStraySampleDrop}
+    >
 
       {/*
         * Mode bar. The border spans the window; its contents share the content
@@ -781,6 +1013,10 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               // browser only cares that the import resolved.
               onImport={async (...args) => { await addToPool(...args); }}
               onEditSample={editFromBrowser}
+              // Tier 1 → tier 2. Nothing to tear down: the pool is in IDB and the
+              // route is a hash, so coming back lands on the same pack.
+              onOpenPreset={onEnterPresets ? (preset) => onEnterPresets(preset.id) : undefined}
+              onSampleDrag={handleSampleDrag}
               hostPlayback={playRequest}
               onPlaybackChange={handlePlaybackChange}
               onLocateInPool={locateInPool}
@@ -809,16 +1045,62 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
           * it takes over — its own X and Escape are the ways back.
           */}
         {isPoolOpen && (
-          <aside className="fixed inset-0 z-40 w-full md:static md:z-auto md:w-[400px] xl:w-[440px]
-            shrink-0 border-l border-white/10 bg-synthux-panel flex flex-col">
+          <aside
+            // `md:relative` rather than `md:static`: the drop overlay below is absolute
+            // against this column, and a static ancestor would let it escape the page.
+            className={`fixed inset-0 z-40 w-full md:relative md:z-auto md:w-[400px] xl:w-[440px]
+              shrink-0 border-l bg-synthux-panel flex flex-col transition-colors
+              ${dropOver ? 'border-synthux-green' : 'border-white/10'}`}
+            onDragEnter={e => {
+              const kind = dropKind(e);
+              if (!kind) return;
+              e.preventDefault();
+              dragDepth.current += 1;
+              setDropOver(kind);
+            }}
+            onDragOver={e => {
+              if (!dropKind(e)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+            }}
+            onDragLeave={e => {
+              if (!dropKind(e)) return;
+              dragDepth.current -= 1;
+              if (dragDepth.current <= 0) {
+                dragDepth.current = 0;
+                setDropOver(null);
+              }
+            }}
+            onDrop={handleColumnDrop}
+          >
             <div className="shrink-0 flex items-start justify-between gap-2 p-4 border-b border-white/10">
               <div className="min-w-0">
                 <h2 className="text-sm font-bold flex items-center gap-2">
                   <Layers size={15} className="text-synthux-green" /> Temporary pool
                 </h2>
-                <p className="text-[11px] text-gray-500 mt-0.5">{poolSummary}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+                  {isDroppingSamples && <Loader size={10} className="animate-spin text-synthux-green" />}
+                  {isDroppingSamples ? 'Adding the dropped samples…' : poolSummary}
+                </p>
               </div>
               <div className="flex items-center gap-1">
+                {/*
+                  * Files straight off the desktop. Beside "Empty pool" because they are
+                  * the two things you can do to the pool as a whole, and the pool is the
+                  * one surface that has always been fillable only from somewhere else.
+                  */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isAddingFiles}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider
+                    text-synthux-green hover:bg-synthux-green/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Add audio files from your computer, or drop them anywhere on this column"
+                >
+                  {isAddingFiles
+                    ? <Loader size={12} className="animate-spin" />
+                    : <FilePlus size={12} />}
+                  Add files
+                </button>
                 {/*
                   * The way out. A refresh used to be it — the pool is now kept, so
                   * this is the only thing that empties it, and it says so.
@@ -842,12 +1124,38 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               </div>
             </div>
 
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*,.wav,.mp3,.flac,.aif,.aiff,.ogg,.m4a"
+              multiple
+              onChange={handleFilePick}
+              className="hidden"
+            />
+
+            {/* Only while a drag is actually over the column, so it never sits in the way. */}
+            {dropOver && (
+              <div className="absolute inset-2 z-50 rounded-xl border-2 border-dashed border-synthux-green
+                bg-synthux-green/10 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2
+                pointer-events-none text-synthux-green">
+                {dropOver === 'samples' ? <Layers size={26} /> : <Upload size={26} />}
+                <span className="text-xs font-bold">
+                  {dropOver === 'samples'
+                    ? `Drop to add ${sampleDragCount} ${sampleDragCount === 1 ? 'sample' : 'samples'} to the pool`
+                    : 'Drop to add to the pool'}
+                </span>
+                <span className="text-[10px] opacity-70">Converted to SK-ready WAV as they land</span>
+              </div>
+            )}
+
             <div ref={poolListRef} className="flex-1 overflow-y-auto p-2 min-h-0">
               {pool.length === 0 ? (
                 <p className="p-4 text-xs text-gray-500 leading-relaxed">
-                  Add samples from the browser and they collect here, ready to download or turn
-                  into a project. The first 36 spread across the 6&nbsp;×&nbsp;6 grid in this
-                  order — drag to rearrange.
+                  Add samples from the browser — the button on a row, or <span className="text-synthux-green font-bold">drag the rows
+                  over here</span>, a whole selection at once — and they collect here, ready to download or turn
+                  into a project. Files from your computer land here too: use <span className="text-synthux-green font-bold">Add files</span> above,
+                  or drop them anywhere on this column. The first 36 spread across the
+                  6&nbsp;×&nbsp;6 grid in this order, and you can drag to rearrange.
                 </p>
               ) : (
                 <ul className="space-y-1">
@@ -863,9 +1171,18 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                         style={isLocated ? { animation: 'locatePulse 2s ease-in-out infinite' } : undefined}
                         draggable
                         onDragStart={() => setDragIndex(index)}
-                        onDragOver={(e) => { e.preventDefault(); setDropIndex(index); }}
+                        // Files from the desktop, and samples from the browser, pass
+                        // straight through to the column's own drop target; marking a row
+                        // as the insertion point would promise a placement the drop
+                        // doesn't honour — both land at the end of the pool.
+                        onDragOver={(e) => {
+                          if (dropKind(e)) return;
+                          e.preventDefault();
+                          setDropIndex(index);
+                        }}
                         onDragEnd={() => { setDragIndex(null); setDropIndex(null); }}
                         onDrop={(e) => {
+                          if (dropKind(e)) return;
                           e.preventDefault();
                           if (dragIndex !== null) movePoolItem(dragIndex, index);
                           setDragIndex(null);
@@ -898,7 +1215,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                               ? 'bg-synthux-yellow border-synthux-yellow text-black scale-105'
                               : 'bg-black/50 border-white/10 text-gray-400 hover:text-white hover:border-white/30'
                           }`}
-                          title={isPlayingThis ? 'Pause' : 'Listen to this file as it stands — it plays in the bar below'}
+                          title={isPlayingThis ? 'Pause' : 'Listen to this file as it stands. It plays in the bar below'}
                         >
                           {isPlayingThis
                             ? <Pause size={11} fill="currentColor" />
@@ -919,8 +1236,8 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                               : 'text-gray-600 hover:text-synthux-pink hover:bg-synthux-pink/10'
                           }`}
                           title={item.edited
-                            ? 'Edited since it was pooled — open the editor again'
-                            : 'Edit this file — saved edits go straight back into the pool'}
+                            ? 'Edited since it was pooled. Open the editor again'
+                            : 'Edit this file. Saved edits go straight back into the pool'}
                         >
                           <AudioWaveform size={12} />
                         </button>
@@ -945,7 +1262,27 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               )}
             </div>
 
-            <div className="shrink-0 p-3 border-t border-white/10 space-y-2">
+            <div className="shrink-0 border-t border-white/10">
+              <button
+                onClick={toggleExports}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-[10px] font-bold
+                  uppercase tracking-widest text-gray-500 hover:text-gray-200 hover:bg-white/5 transition-colors"
+                title={exportsOpen ? 'Fold this away and give the list the room' : 'Show the downloads and the project exit'}
+              >
+                <span className="flex items-center gap-2">
+                  <Download size={12} /> Downloads &amp; export
+                </span>
+                <span className="flex items-center gap-2">
+                  {!exportsOpen && pool.length > 0 && (
+                    <span className="normal-case tracking-normal text-gray-600">{pool.length} ready</span>
+                  )}
+                  {exportsOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                </span>
+              </button>
+            </div>
+
+            {exportsOpen && (
+            <div className="shrink-0 p-3 pt-0 space-y-2">
               <button
                 onClick={downloadSDStructure}
                 disabled={pool.length === 0 || isExporting}
@@ -956,14 +1293,14 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                 <span className="min-w-0">
                   <span className="block text-xs font-bold">Download SD card 6×6</span>
                   <span className="block text-[10px] opacity-70">
-                    Full <span className="font-mono">SK/</span> folder, renamed to slots — copy and play
+                    Full <span className="font-mono">SK/</span> folder, renamed to slots, ready to copy and play
                   </span>
                 </span>
               </button>
 
               {overflowCount > 0 && (
                 <p className="text-[10px] text-synthux-yellow/80 leading-relaxed pl-1">
-                  The card build takes the first 36 — {overflowCount} more {overflowCount === 1 ? 'is' : 'are'} in
+                  The card build takes the first 36, so {overflowCount} more {overflowCount === 1 ? 'is' : 'are'} in
                   the loose download below.
                 </p>
               )}
@@ -1011,7 +1348,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
 
               <p className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed pt-1">
                 <Download size={11} className="shrink-0 mt-0.5" />
-                Both go to your browser's downloads folder — no permission, nothing written to your drive.
+                Both go to your browser's downloads folder. No permission, nothing written to your drive.
               </p>
 
               {canPickFolder() && (
@@ -1027,7 +1364,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                     <span className="min-w-0">
                       <span className="block text-xs font-bold">Import into a project</span>
                       <span className="block text-[10px] opacity-70">
-                        The whole pool, layout kept, on a folder you pick — then carry on in Studio
+                        The whole pool, layout kept, on a folder you pick, then carry on in Studio
                       </span>
                     </span>
                   </button>
@@ -1053,7 +1390,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                       </React.Fragment>
                     ))}
                     . <span className="text-gray-500">
-                      That copy and this pool are not linked — changes here don't reach the project,
+                      That copy and this pool are not linked, so changes here don't reach the project,
                       and saving again makes another new project.
                     </span>
                   </span>
@@ -1075,6 +1412,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                 </span>
               </p>
             </div>
+            )}
           </aside>
         )}
       </div>
@@ -1101,7 +1439,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               originalBlob: editingItem.originalBlob,
               originalDuration: editingItem.originalDuration,
             }}
-            subtitle={`Editing ${editingItem.name} — "Save to temporary pool" puts the edit back in the pool, where the downloads and "Import into a project" pick it up.`}
+            subtitle={`Editing ${editingItem.name}. "Save to temporary pool" puts the edit back in the pool, where the downloads and "Import into a project" pick it up.`}
             onEdited={({ blob, duration, name }) => applyEdit(editingItem.id, blob, duration, name)}
             onClose={() => setEditingId(null)}
           />
@@ -1163,6 +1501,8 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         confirmLabel="Empty it"
         isDestructive
       />
+
+      <Toast toasts={toasts} onRemove={removeToast} />
     </div>
   );
 };

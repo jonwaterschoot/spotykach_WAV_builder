@@ -5287,6 +5287,15 @@ function App({ onExitToHub }: AppProps) {
                   onImportToPool={(files) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), 'pool')}
                   onImportToTape={(files, color) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), color)}
                   onRemoteBulkImport={(samples, target) => handleBulkSampleImport(samples, target)}
+                  // The presets modal renders under this window (z-50 against the
+                  // browser's z-[70]), so the browser gets out of the way rather than
+                  // opening a panel nobody can see.
+                  onOpenPreset={(preset) => {
+                    setShowSampleBrowser(false);
+                    setTargetSlotForUpload(null);
+                    setFocusPresetId(preset.id);
+                    setShowPresetsPanel(true);
+                  }}
                   forceStop={showEditor}
                 />
               </Suspense>

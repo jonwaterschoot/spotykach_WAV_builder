@@ -12,10 +12,10 @@ interface ProjectCreatedModalProps {
 /**
  * What happens after a project-free mode makes a project.
  *
- * Both upgrade paths — Browse's "Import into project" and Editor's "Save as project"
- * — end the same way: the project is on disk and the mode has nothing more to offer
- * it. Studio is the answer, but going there is the user's call: it wants a folder
- * permission back and it is the heaviest surface in the app.
+ * Browse's "Import into a project" ends somewhere the mode cannot follow: the project
+ * is on disk and the pool has nothing more to offer it. Studio is the answer, but
+ * going there is the user's call: it wants a folder permission back and it is the
+ * heaviest surface in the app.
  */
 export const ProjectCreatedModal: React.FC<ProjectCreatedModalProps> = ({
   projectName,
@@ -34,7 +34,7 @@ export const ProjectCreatedModal: React.FC<ProjectCreatedModalProps> = ({
       <span>
         <strong>{projectName}</strong> is on your drive, in <span className="font-mono">Projects/</span>.
         {onEnterStudio
-          ? ' Open Studio to keep working on it — tapes, the full grid, and building the card.'
+          ? ' Open Studio to keep working on it: tapes, the full grid, and building the card.'
           : ' Open Studio from the hub to keep working on it.'}
       </span>
     }
