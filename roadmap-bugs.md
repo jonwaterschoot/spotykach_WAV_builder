@@ -25,7 +25,7 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 2 of 14 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 4 of 14 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
@@ -43,15 +43,16 @@ Legend as elsewhere in this file: 🐞 a fault · ✂️ wording · 🏗️ need
 
 ### The list
 
-Each row is meant to be a session on its own. **The three 🏗️ rows need an answer before code**, so don't
-start them cold; the rest are described well enough below to open the file and go.
+Each row is meant to be a session on its own. **The 🏗️ rows need an answer before code**, so don't
+start them cold; the rest are described well enough below to open the file and go. Of the three, S1-4 is
+answered and built — S1-11 and the auto-save question are what is left.
 
 | # | What | Where | Type |
 |---|---|---|---|
 | **S1-1** | A project opens on one tape, not all six | `App.tsx` | ✂️ ✅ |
 | **S1-2** | "Select All" never becomes "Deselect All" (two buttons) | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ ✅ |
-| **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ |
+| **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ ✅ |
 | **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ |
 | **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 |
 | **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ |
@@ -136,11 +137,44 @@ every other row keeps the border hover it had. Selection and the duplicate ring 
 side utilities are emitted after the all-side ones, and the duplicate's `!border-orange-500` is
 `!important` and still wins, which is what a duplicate should do.
 
-#### S1-4 — The pool has no sorting 🏗️
+#### S1-4 — The pool has no sorting 🏗️ ✅ *built and walked 2026-08-17*
 
-Wanted, and reversible: **alphabetical** (numbers first, then A–Z) and **by tape**. Two open points
-before it can be built — whether the chosen sort is remembered, and what it means for drag-reordering,
-since a sorted list and a hand-ordered one can't both be the truth at once.
+Three sorts, one control, both lists: **A–Z**, **By tape**, **As added** — each reversible
+([FileBrowser.tsx:536-556](src/components/FileBrowser.tsx#L536-L556)). The control is a `Dropdown` in
+the Registry header beside the compact toggle, wearing the sort it is in and lit blue whenever the lists
+are in anything other than the order the files arrived in
+([FileBrowser.tsx:445-452](src/components/FileBrowser.tsx#L445-L452)).
+
+**The two open points, answered.**
+
+*Drag-reordering* — there was never any to lose. The pool has no hand-ordering and never had: a row's
+drag carries it to a slot, and the list has always been `Object.values(state.files)`, the order files
+arrived in. So manual sorting isn't dropped so much as named — it is **As added**, the third mode, and
+the default, so no one's list reorders itself until they ask. A real drag-to-arrange order would be its
+own item, with its own persisted field; nothing here forecloses it.
+
+*Remembered* — yes, per browser, in `spotykach_registry_sort` through `appStorage`
+([FileBrowser.tsx:16-38](src/components/FileBrowser.tsx#L16-L38)). One choice that follows you across
+projects and survives reload. It stays out of `project.json` deliberately: a view setting shouldn't mark
+a project dirty or travel to someone else's machine with the files.
+
+**One order governs the whole Registry, not just the pool** — "by tape" means nothing in a list of
+unassigned files, so a pool-only control would have offered two modes where the ask was three. Assigned
+sorts by tape then slot; the pool, where every file ties at *no tape*, falls through to A–Z inside that
+same mode ([FileBrowser.tsx:134-150](src/components/FileBrowser.tsx#L134-L150)).
+
+**"Numbers first, then A–Z" is one call, not two passes.** `localeCompare` with `numeric: true` collates
+digits ahead of letters *and* puts `10` after `2` ([FileBrowser.tsx:42-44](src/components/FileBrowser.tsx#L42-L44)),
+which is both halves of the ask — a plain `<` would have filed `10.wav` before `2.wav`.
+
+**Selection had to follow the eye.** Shift-ranges and the arrow keys walk `getVisibleFiles`, which was
+building its own unsorted list; it now returns the two sorted lists concatenated
+([FileBrowser.tsx:165-171](src/components/FileBrowser.tsx#L165-L171)), so shift-clicking two rows selects
+what sits between them on screen rather than what sat between them before the sort.
+
+Fixed alongside: `getFileLocation` scanned all six tapes for every row on every render. Both the label
+and the tape rank now come from one `Map` built when the tapes change
+([FileBrowser.tsx:122-132](src/components/FileBrowser.tsx#L122-L132)).
 
 #### S1-5 — The way into the Sample Browser is just a folder ✂️
 

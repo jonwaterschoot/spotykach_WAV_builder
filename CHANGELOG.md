@@ -67,6 +67,11 @@ release whose premise is separating one muddled thing into clean tiers.*
   preset, and not remembered from wherever you were standing in the last one. Picking a tape is
   still how you get to a single one; renaming or saving-as the project you are already in leaves
   you where you were.
+- **The Registry sorts** — A–Z, by tape, or as added, each reversible, from one control in the
+  browser header. A–Z puts numbers first and reads `10` as ten, not as one-zero; by tape runs
+  tape then slot, and falls back to A–Z in the pool, where nothing has a tape yet. *As added* is
+  the order files arrived in and is still the default, so no list rearranges itself until you ask
+  it to. The choice is remembered on your machine, not in the project.
 
 ### Fixed
 - **"Write to SD card" in Preset → SD could never open the picker.** The preset's audio was

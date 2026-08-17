@@ -1,7 +1,46 @@
-import { useState, useRef, useEffect } from 'react';
-import { FileAudio, GripVertical, ChevronDown, ChevronRight, Play, Square, List, LayoutList, FolderOpen, Download, Trash2, X, Check, ArrowRightToLine } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { FileAudio, GripVertical, ChevronDown, ChevronRight, Play, Square, List, LayoutList, FolderOpen, Download, Trash2, X, Check, ArrowRightToLine, ArrowDownAZ, ArrowUpAZ, Palette, ListOrdered } from 'lucide-react';
 import type { FileRecord, AppState } from '../types';
+import { TAPE_COLORS } from '../types';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
+import { appStorage } from '../utils/storageNamespace';
+import { Dropdown } from './Dropdown';
+
+// ─── Registry sorting ─────────────────────────────────────────────────────────
+//
+// One order governs both lists. `custom` is the registry's own order — the order
+// files arrived in — and is the default, so nothing reorders itself until asked.
+type SortMode = 'abc' | 'tape' | 'custom';
+type SortDir = 'asc' | 'desc';
+
+const SORT_KEY = 'spotykach_registry_sort';
+
+const SORT_LABELS: Record<SortMode, string> = {
+    abc: 'A–Z',
+    tape: 'By tape',
+    custom: 'As added',
+};
+
+/** The remembered sort, or the default when nothing valid is stored. */
+const readStoredSort = (): { mode: SortMode; dir: SortDir } => {
+    const fallback = { mode: 'custom' as SortMode, dir: 'asc' as SortDir };
+    try {
+        const raw = appStorage.getItem(SORT_KEY);
+        if (!raw) return fallback;
+        const parsed = JSON.parse(raw);
+        return {
+            mode: parsed.mode in SORT_LABELS ? parsed.mode : fallback.mode,
+            dir: parsed.dir === 'desc' ? 'desc' : 'asc',
+        };
+    } catch {
+        return fallback;
+    }
+};
+
+// Digits collate before letters and `numeric` puts 10 after 2, so one call covers
+// both halves of "numbers first, then A–Z".
+const byName = (a: FileRecord, b: FileRecord) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
 interface FileBrowserProps {
     files: FileRecord[];
@@ -42,6 +81,7 @@ export const FileBrowser = ({
     const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null); // Focus/Last Interacted
     const [anchorId, setAnchorId] = useState<string | null>(null); // Start of Range Selection
+    const [sort, setSort] = useState(readStoredSort);
 
     const [width, setWidth] = useState(288);
     const isDraggingRef = useRef(false);
@@ -76,13 +116,61 @@ export const FileBrowser = ({
         e.preventDefault();
     };
 
+    // Where each assigned file sits, looked up once per tape change rather than
+    // once per row: the label the row shows, and the rank "By tape" sorts on.
+    // Slots run 1–6, so `tape * 10 + slot` orders tape-then-slot in one number.
+    const slotIndex = useMemo(() => {
+        const index = new Map<string, { label: string; rank: number }>();
+        TAPE_COLORS.forEach((color, i) => {
+            tapes[color]?.slots.forEach(slot => {
+                // First placement wins, as the old per-row scan did: a file sitting
+                // on two tapes keeps naming the earlier one.
+                if (slot.fileId && !index.has(slot.fileId)) {
+                    index.set(slot.fileId, { label: `${color} ${slot.id}`, rank: i * 10 + slot.id });
+                }
+            });
+        });
+        return index;
+    }, [tapes]);
+
+    const UNPLACED_RANK = TAPE_COLORS.length * 10 + 10; // Below every tape, above nothing.
+
+    const applySort = (list: FileRecord[]): FileRecord[] => {
+        // "As added" is the list exactly as the registry holds it — reversing is
+        // the only thing sorting does to it.
+        if (sort.mode === 'custom') return sort.dir === 'asc' ? list : [...list].reverse();
+
+        const sorted = [...list].sort((a, b) => {
+            if (sort.mode === 'tape') {
+                const ra = slotIndex.get(a.id)?.rank ?? UNPLACED_RANK;
+                const rb = slotIndex.get(b.id)?.rank ?? UNPLACED_RANK;
+                // Two files can't share a slot, so this only ties in the pool —
+                // where nothing has a tape and A–Z decides the whole list.
+                if (ra !== rb) return ra - rb;
+            }
+            return byName(a, b);
+        });
+        return sort.dir === 'asc' ? sorted : sorted.reverse();
+    };
+
+    const chooseSortMode = (mode: SortMode) => {
+        const next = { ...sort, mode };
+        setSort(next);
+        appStorage.setItem(SORT_KEY, JSON.stringify(next));
+    };
+
+    const toggleSortDir = () => {
+        const next = { ...sort, dir: sort.dir === 'asc' ? 'desc' as const : 'asc' as const };
+        setSort(next);
+        appStorage.setItem(SORT_KEY, JSON.stringify(next));
+    };
+
     // Helpers to get all visible files in order
     const getVisibleFiles = () => {
-        const unassigned = files.filter(f => f.isParked);
-        const assigned = files.filter(f => !f.isParked);
-
-        // Concatenate in the order sections appear: Assigned first, then Project Pool (Unassigned)
-        return [...assigned, ...unassigned];
+        // Shift-ranges and arrow keys have to follow what the eye sees, so this is
+        // the sorted lists concatenated in the order the sections appear:
+        // Assigned first, then Project Pool (Unassigned).
+        return [...assignedFiles, ...unassignedFiles];
     };
 
     const handleSelectionClick = (fileId: string, e: React.MouseEvent) => {
@@ -316,18 +404,10 @@ export const FileBrowser = ({
     };
 
     // Helper to find location
-    const getFileLocation = (fileId: string): string | null => {
-        for (const [color, tape] of Object.entries(tapes)) {
-            const slot = tape.slots.find(s => s.fileId === fileId);
-            if (slot) {
-                return `${color} ${slot.id}`;
-            }
-        }
-        return null;
-    };
+    const getFileLocation = (fileId: string): string | null => slotIndex.get(fileId)?.label ?? null;
 
-    const unassignedFiles = files.filter(f => f.isParked);
-    const assignedFiles = files.filter(f => !f.isParked);
+    const unassignedFiles = applySort(files.filter(f => f.isParked));
+    const assignedFiles = applySort(files.filter(f => !f.isParked));
 
     // An empty section is never "all selected" — there would be nothing to deselect.
     const allAssignedSelected = assignedFiles.length > 0 && assignedFiles.every(f => selectedFileIds.has(f.id));
@@ -363,6 +443,23 @@ export const FileBrowser = ({
 
     // Context
     const { play, stop, isPlaying, activeFileId } = useAudioPlayer();
+
+    // The control wears the sort it is in, and lights up whenever the lists are
+    // in anything other than the order the files arrived in.
+    const isSorted = sort.mode !== 'custom' || sort.dir !== 'asc';
+    const sortIcon = sort.mode === 'abc'
+        ? (sort.dir === 'asc' ? <ArrowDownAZ size={16} /> : <ArrowUpAZ size={16} />)
+        : sort.mode === 'tape'
+            ? <Palette size={16} />
+            : <ListOrdered size={16} />;
+    const sortTick = (on: boolean) => on
+        ? <Check size={12} className="text-synthux-yellow" />
+        : <span className="block w-3" />;
+    const sortModeItem = (mode: SortMode) => ({
+        label: SORT_LABELS[mode],
+        icon: sortTick(sort.mode === mode),
+        onClick: () => chooseSortMode(mode),
+    });
 
     return (
         <div
@@ -440,6 +537,28 @@ export const FileBrowser = ({
                 )}
 
                 <div className="flex items-center gap-2">
+                    {/* Sort — one order, both lists */}
+                    <div title={`Sort: ${SORT_LABELS[sort.mode]}${sort.dir === 'desc' ? ' (reversed)' : ''}`}>
+                        <Dropdown
+                            align="right"
+                            iconOnly
+                            label={sortIcon}
+                            buttonClassName={`!p-1.5 !rounded !border-transparent hover:!bg-gray-700 ${isSorted ? '!text-synthux-blue !bg-gray-800' : '!text-gray-400 hover:!text-white'}`}
+                            items={[
+                                { type: 'header', label: 'Sort registry' },
+                                sortModeItem('abc'),
+                                sortModeItem('tape'),
+                                sortModeItem('custom'),
+                                { type: 'divider' },
+                                {
+                                    label: 'Reversed',
+                                    icon: sortTick(sort.dir === 'desc'),
+                                    onClick: toggleSortDir,
+                                },
+                            ]}
+                        />
+                    </div>
+
                     {/* Sample Pack Browser Toggle */}
                     <button
                         onClick={onOpenSampleBrowser}
