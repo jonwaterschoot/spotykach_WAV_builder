@@ -634,7 +634,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         <div>
                             <h2 className="text-xl font-bold text-white leading-tight">
                                 SD card SK/ Build & Import
-                                {projectName && <span className="text-indigo-300 opacity-50 ml-2"> — {projectName}</span>}
+                                {projectName && <span className="text-indigo-300 opacity-50 ml-2"> · {projectName}</span>}
                             </h2>
                             <div className="flex items-center gap-1 mt-2 p-0.5 bg-black/40 rounded-lg border border-white/5 w-fit">
                                 <button 
@@ -910,7 +910,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                                 <SlotGrid6x6
                                     slots={sdSlots}
-                                    title="SD Card — SK (Before Sync)"
+                                    title="SD Card · SK (Before Sync)"
                                     prefix="SD"
                                     titleIcon={<RiSdCardMiniLine size={12} className="text-orange-400" />}
                                     actionBadges={sdBadges}
@@ -1396,7 +1396,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         <div>
                                             <p className="text-white text-[13px] font-bold">Snapshot card to project</p>
                                             <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider font-medium">
-                                                {skSnapshot ? 'Copies the whole SK folder — slower' : 'Off — builds write only SK/'}
+                                                {skSnapshot ? 'Copies the whole SK folder, slower' : 'Off, builds write only SK/'}
                                             </p>
                                         </div>
                                     </div>

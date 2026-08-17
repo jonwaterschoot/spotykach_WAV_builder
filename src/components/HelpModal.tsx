@@ -186,7 +186,7 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
                                             </div>
                                             <p className="text-xs text-gray-400 mt-2">
                                                 The app writes these names in <strong>UPPERCASE</strong>. Recent firmware
-                                                accepts either case — <code className="bg-gray-800 px-1 rounded">B/1.WAV</code> and{' '}
+                                                accepts either case, so <code className="bg-gray-800 px-1 rounded">B/1.WAV</code> and{' '}
                                                 <code className="bg-gray-800 px-1 rounded">B/1.wav</code> both play.
                                             </p>
                                         </div>

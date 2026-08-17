@@ -262,8 +262,8 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-2">Slice Mode</h3>
                 <div className="grid grid-cols-1 gap-3">
                     {([
-                        { key: 'slc_mn_a', label: 'Deck A — disable polyphony' },
-                        { key: 'slc_mn_b', label: 'Deck B — disable polyphony' },
+                        { key: 'slc_mn_a', label: 'Deck A: disable polyphony' },
+                        { key: 'slc_mn_b', label: 'Deck B: disable polyphony' },
                     ] as const).map(({ key, label }) => (
                         <button
                             key={key}
@@ -297,7 +297,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     </h3>
                     <p className="text-[10px] text-gray-500 leading-relaxed px-1">
                         {config.unknown.length === 1 ? 'One setting' : `${config.unknown.length} settings`} this version has no
-                        control for — newer firmware, most likely. {config.unknown.length === 1 ? 'It is' : 'They are'} written
+                        control for, newer firmware most likely. {config.unknown.length === 1 ? 'It is' : 'They are'} written
                         back exactly as read rather than dropped.
                     </p>
                     <div className="rounded-lg bg-black/40 border border-gray-800 divide-y divide-gray-800/60">

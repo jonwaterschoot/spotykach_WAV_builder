@@ -52,7 +52,7 @@ export const WorkspaceChoiceModal: React.FC<WorkspaceChoiceModalProps> = ({
             Where should <span className="font-mono text-synthux-yellow">{projectName}</span> live?
           </h3>
           <p className="text-xs text-gray-400 leading-relaxed mt-2">
-            Studio keeps every project inside one folder on your drive — your <strong>workspace</strong>.
+            Studio keeps every project inside one folder on your drive, your <strong>workspace</strong>.
             Projects go in <span className="font-mono text-gray-300">Projects/</span> inside it, next to
             your library. You pick it once and the app remembers it.
           </p>
@@ -73,7 +73,7 @@ export const WorkspaceChoiceModal: React.FC<WorkspaceChoiceModalProps> = ({
                 </span>
               </button>
               <p className="text-[10px] text-gray-600 leading-relaxed px-1">
-                Your browser may ask for permission to this folder again — it forgets between visits,
+                Your browser may ask for permission to this folder again. It forgets between visits,
                 the app does not.
               </p>
               <button
@@ -101,7 +101,7 @@ export const WorkspaceChoiceModal: React.FC<WorkspaceChoiceModalProps> = ({
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-synthux-yellow">Choose the folder</span>
                   <span className="block text-[11px] text-gray-400">
-                    An empty folder is the easiest start — this becomes your workspace.
+                    An empty folder is the easiest start. This becomes your workspace.
                   </span>
                 </span>
               </button>

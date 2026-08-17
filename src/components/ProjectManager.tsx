@@ -306,7 +306,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                             ) : (
                                 <div className="flex items-center gap-2 text-sm text-gray-500">
                                     <RiSdCardMiniLine size={16} />
-                                    <span>{sdHandle.name} — no project built onto it yet.</span>
+                                    <span>{sdHandle.name} has no project built onto it yet.</span>
                                 </div>
                             )}
                         </div>
@@ -474,7 +474,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                                 ? 'bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/20 text-indigo-400/70'
                                                 : 'bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-400'
                                                 }`}
-                                            title={hardware === 'current' ? 'The card is up to date — click to rebuild' : 'Build this project onto the SD card'}
+                                            title={hardware === 'current' ? 'The card is up to date. Click to rebuild' : 'Build this project onto the SD card'}
                                         >
                                             <HardDrive size={12} /> {hardware === 'current' ? 'Rebuild' : 'Build SD'}
                                         </button>
@@ -497,7 +497,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                             <div className="px-4 py-2 bg-[#141414] flex items-center gap-2">
                                 <RiSdCardMiniLine size={14} className="text-orange-400" />
                                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                    Found on the card — not in your workspace
+                                    Found on the card, not in your workspace
                                 </span>
                             </div>
                             {cardOnlyProjects.map(project => (

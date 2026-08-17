@@ -781,7 +781,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </p>
                                 <p className="text-[9px] text-gray-600 mt-0.5 leading-tight">
                                     So a closed tab or a crash doesn’t lose the open project. It does <em>not</em> write
-                                    to your workspace folder — saving still does that. Turning this off deletes the copy.
+                                    to your workspace folder, since saving still does that. Turning this off deletes the copy.
                                 </p>
                             </div>
                         </button>
@@ -793,7 +793,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <Shield size={12} /> Workspace backup
                         </h3>
                         <p className="text-[9px] text-gray-600 leading-tight">
-                            One copy of everything — projects, their assets and your sample library — into a
+                            One copy of everything (projects, their assets and your sample library) into a
                             folder you pick at the moment you back up. No remembered location, nothing written
                             until you choose one.
                         </p>
@@ -815,7 +815,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <p className="text-[9px] text-gray-600 leading-tight">
                             A saved project keeps exactly two versions of each file: the original and the current
                             one. Everything between is dropped on save, so history no longer piles up. Cleanup is
-                            for what that rule can’t reach — assets on disk nothing points at any more, unused
+                            for what that rule can’t reach: assets on disk nothing points at any more, unused
                             files, old SD snapshots.
                         </p>
                         {currentProjectName && onCleanupProject ? (
@@ -837,7 +837,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </h3>
                         <p className="text-[9px] text-gray-600 leading-tight">
                             The SD card is a build target, not a backup. Both copies below are off by
-                            default — a build writes only <span className="font-mono text-gray-500">SK/</span>.
+                            default, so a build writes only <span className="font-mono text-gray-500">SK/</span>.
                         </p>
 
                         {([

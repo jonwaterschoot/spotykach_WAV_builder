@@ -133,7 +133,7 @@ export const surveyWorkspace = async (options: SurveyOptions): Promise<Workspace
                 });
             }
         } catch {
-            warnings.push('No Projects folder found in the workspace — nothing to back up from it.');
+            warnings.push('No Projects folder found in the workspace, so there is nothing to back up from it.');
         }
 
         try {
@@ -175,7 +175,7 @@ export const surveyWorkspace = async (options: SurveyOptions): Promise<Workspace
                 id: 'card',
                 kind: 'card',
                 label: `What is on the card (${sdHandle.name})`,
-                detail: `The SK folder as it stands — ${files} ${files === 1 ? 'file' : 'files'}`,
+                detail: `The SK folder as it stands, ${files} ${files === 1 ? 'file' : 'files'}`,
                 bytes,
                 fileCount: files,
             });
@@ -214,18 +214,18 @@ const uniqueFolderName = async (parent: FileSystemDirectoryHandle, base: string)
 
 const manifestText = (survey: WorkspaceSurvey, folderName: string): string => {
     const lines = [
-        'Spotykach WAV.builder — workspace backup',
+        'Spotykach WAV.builder: workspace backup',
         `Written ${new Date().toISOString()}`,
         `Folder: ${folderName}`,
         '',
         'Contents:',
-        ...survey.items.map(i => `  - ${i.label} — ${i.fileCount} files, ${formatBytes(i.bytes)}`),
+        ...survey.items.map(i => `  - ${i.label}: ${i.fileCount} files, ${formatBytes(i.bytes)}`),
         '',
         `Total: ${survey.totalFiles} files, ${formatBytes(survey.totalBytes)}`,
         '',
-        'Projects/  — copy back into your workspace folder to restore them.',
-        'Library/   — your sample library, as plain WAVs. Re-import through the Library Manager.',
-        'Card_SK/   — the SK folder as it was on the card, if it was included.',
+        'Projects/  copy back into your workspace folder to restore them.',
+        'Library/   your sample library, as plain WAVs. Re-import through the Library Manager.',
+        'Card_SK/   the SK folder as it was on the card, if it was included.',
         '',
         'Nothing here is compressed or transformed; every file is a plain copy.',
     ];
@@ -329,7 +329,7 @@ export const runWorkspaceBackup = async (
             );
         }
         throw new Error(
-            `The backup failed after ${filesWritten} of ${total} files — the target may have run out of room. The partial copy has been removed. (${(e as Error).message})`
+            `The backup failed after ${filesWritten} of ${total} files. The target may have run out of room. The partial copy has been removed. (${(e as Error).message})`
         );
     }
 };

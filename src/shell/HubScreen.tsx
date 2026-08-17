@@ -55,7 +55,7 @@ const DOORS: Door[] = [
     mode: 'config',
     label: 'Device Config',
     tagline: 'MIDI & settings',
-    body: 'Read and write the config.txt on your card — MIDI channel, device options — without opening a project.',
+    body: 'Read and write the config.txt on your card (MIDI channel, device options) without opening a project.',
     icon: <Sliders size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-blue',
     accentBorder: 'hover:border-synthux-blue/60',
@@ -67,7 +67,7 @@ const DOORS: Door[] = [
     mode: 'editor',
     label: 'Edit One File',
     tagline: 'No project',
-    body: 'Open a single audio file, trim, fade and slice it, then download it — or turn it into a project.',
+    body: 'Open a single audio file, trim, fade, EQ and pitch it, then download it or send it to the Browse pool.',
     icon: <AudioWaveform size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-pink',
     accentBorder: 'hover:border-synthux-pink/60',
@@ -126,7 +126,7 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
           <p className="text-xs text-gray-400 leading-relaxed">
             <span className="text-gray-200 font-bold">On a phone, Browse Samples is the door that works.</span>{' '}
             Listen through the packs and download what you like. The other four need a desktop
-            browser — they open folders on your drive and lay out grids and waveforms that a phone
+            browser, because they open folders on your drive and lay out grids and waveforms that a phone
             screen can't hold.
           </p>
         </div>
@@ -167,7 +167,7 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
 
               {!door.ready && (
                 <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-gray-600">
-                  In progress — opens Studio for now
+                  In progress, opens Studio for now
                 </p>
               )}
             </button>

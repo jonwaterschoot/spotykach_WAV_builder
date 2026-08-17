@@ -529,8 +529,8 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                                     Intermediate history versions of both assigned and unused pool files are marked for removal to free up memory.
                                     <br/><br/>
                                     Saving a project now does this on its own, so there is usually nothing here to
-                                    reclaim. What is left over — orphaned assets on disk, files you no longer want,
-                                    old SD backups — is what this screen is for.
+                                    reclaim. What is left over (orphaned assets on disk, files you no longer want,
+                                    old SD backups) is what this screen is for.
                                 </p>
                             </div>
                         </div>

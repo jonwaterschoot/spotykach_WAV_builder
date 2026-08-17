@@ -70,7 +70,7 @@ export const createProjectFromState = async (
         workHandle = existingWorkspace;
     } else {
         if (!canPickFolder()) {
-            throw new Error('This browser cannot open a folder — use the download instead.');
+            throw new Error('This browser cannot open a folder, so use the download instead.');
         }
         try {
             // Same picker id Studio's wizard uses, so it opens where the user keeps

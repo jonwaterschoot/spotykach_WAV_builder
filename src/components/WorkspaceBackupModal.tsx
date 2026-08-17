@@ -197,7 +197,7 @@ export const WorkspaceBackupModal: React.FC<WorkspaceBackupModalProps> = ({
 
                             {survey.items.length === 0 ? (
                                 <p className="text-gray-500 text-sm py-6 text-center">
-                                    There is nothing to back up yet — no projects, no library.
+                                    There is nothing to back up yet: no projects, no library.
                                 </p>
                             ) : (
                                 <div className="rounded-lg border border-white/10 overflow-hidden">
@@ -234,7 +234,7 @@ export const WorkspaceBackupModal: React.FC<WorkspaceBackupModalProps> = ({
                                     <span>
                                         <span className="text-xs text-gray-300 font-medium">Also include what is on the card</span>
                                         <span className="block text-[10px] text-gray-600 mt-0.5">
-                                            The <span className="font-mono">SK/</span> folder as it stands on {sdHandle.name}. Off by default — a build can be made again from the project.
+                                            The <span className="font-mono">SK/</span> folder as it stands on {sdHandle.name}. Off by default, since a build can be made again from the project.
                                         </span>
                                     </span>
                                 </label>
@@ -242,7 +242,7 @@ export const WorkspaceBackupModal: React.FC<WorkspaceBackupModalProps> = ({
 
                             {/* The honest note about size. */}
                             <p className="text-[10px] text-gray-600 leading-relaxed">
-                                The browser cannot tell this app how much free space the folder you pick has — that
+                                The browser cannot tell this app how much free space the folder you pick has. That
                                 figure simply isn't available to a web page. Check the size above against the target
                                 yourself, especially if it is an SD card. If the write runs out of room part way, the
                                 partial folder is deleted rather than left looking like a backup.

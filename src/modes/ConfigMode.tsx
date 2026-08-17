@@ -65,7 +65,7 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
     const result = await readConfigFromCard(handle);
     if (!result) {
       setReadFrom(null);
-      say(`No config.txt on “${handle.name}”. The settings below are the defaults — write them to set the card up.`, 'warn');
+      say(`No config.txt on “${handle.name}”. The settings below are the defaults, so write them to set the card up.`, 'warn');
       return;
     }
     setConfig(result.config);
@@ -110,7 +110,7 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
 
   const handleDownload = async () => {
     await downloadConfig(config);
-    say('Downloaded config.txt — copy it into the SK folder on your card.');
+    say('Downloaded config.txt. Copy it into the SK folder on your card.');
   };
 
   return (
@@ -131,7 +131,7 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
           <span className="hidden sm:inline text-[11px] text-gray-500 ml-3">
             {hasPicker
               ? 'Your card is asked for when you read or write it, not before.'
-              : 'This browser can’t open a folder — load and save config.txt as a file instead.'}
+              : 'This browser can’t open a folder, so load and save config.txt as a file instead.'}
           </span>
         </div>
 
@@ -152,7 +152,7 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
                   {card
                     ? readFrom
                       ? `Settings below were read from ${readFrom === 'sk' ? 'SK/config.txt' : 'config.txt at the card root'}.`
-                      : 'Nothing read yet — the settings below are whatever is on screen.'
+                      : 'Nothing read yet, so the settings below are whatever is on screen.'
                     : 'These settings are the device defaults until you read a card or open a file.'}
                 </p>
               </div>
@@ -238,7 +238,7 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
 
           <p className="text-[11px] text-gray-600 leading-relaxed">
             The card is the device's truth: writing puts these settings in <span className="font-mono">SK/config.txt</span>,
-            leaving everything else on the card alone. Nothing is stored on this machine — reload and you're back to the
+            leaving everything else on the card alone. Nothing is stored on this machine, so reload and you're back to the
             defaults.
           </p>
         </div>

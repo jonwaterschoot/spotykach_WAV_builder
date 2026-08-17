@@ -76,10 +76,10 @@ const EXPLAINER_SLIDES: Slide[] = [
             <>
                 These are <strong className="text-white">two different operations</strong>:
                 <br /><br />
-                <span className="text-synthux-yellow font-semibold">Build for SD</span> — exports your project into
+                <span className="text-synthux-yellow font-semibold">Build for SD</span> exports your project into
                 the hardware-ready folder structure on the SD card.
                 <br /><br />
-                <span className="text-synthux-orange font-semibold">Sync</span> — copies or updates files between
+                <span className="text-synthux-orange font-semibold">Sync</span> copies or updates files between
                 your local work folder and the SD card. Don't confuse them!
             </>
         ),
