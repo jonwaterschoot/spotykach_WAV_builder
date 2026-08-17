@@ -23,26 +23,28 @@ that says what is **not** done; the phase briefs below say what is.*
 | # | Item | Source | Where it lands |
 |---|---|---|---|
 | A | ~~**Storage keys are not namespaced.**~~ ✅ **Done 2026-08-14.** `utils/storageNamespace.ts` is the one place every DB name and localStorage key passes through. Root derives `''` and stays byte-identical for existing users; `/next/` derives `next`. `build:next` / `deploy:next` added. Verified against both bundles. | Locked decision 9, Appendix F.3 | Done |
-| B | **Most of Phases 4–7 has not been verified in a browser.** Types, build and lint are clean. Browse is now the exception — see C. | Phase 4, 5, 6, 7 outcomes | Phase 7, step 6 — **the only work left** |
-| C | ◐ **The functional pass over the five doors is one-fifth done.** **Browse is verified on a desktop** across four rounds (2026-08-14 → 15), which raised and closed 15 numbered findings — logged in [roadmap-bugs.md](roadmap-bugs.md) ▸ *The v4 test pass*. **Presets, Config, `#/editor` and Studio have not been walked**, and the editor's known bugs are still unassessed. | New, this round | Phase 7, step 6 |
+| B | **What Phases 4–7 built has been verified in a browser everywhere except Studio.** Types, build and lint are clean; four of the five doors are now walked as well — see C. What is unverified is what only Studio does, plus the hardware paths listed under it. | Phase 4, 5, 6, 7 outcomes | Phase 7, step 6 — **the only work left** |
+| C | ◐ **The functional pass over the five doors is four-fifths done.** **Browse, Preset → SD, Device Config and Edit One File are each verified on a desktop** (2026-08-14 → 17), which raised and closed 18 numbered findings between them — 15 in Browse, plus P1-1, C1-1 and D1-1; Edit One File raised none — logged in [roadmap-bugs.md](roadmap-bugs.md) ▸ *The v4 test pass*. **Studio has not been walked**, it is the door the other four changed things inside, and the editor's known bugs are still unassessed — they are all project-shaped, so they surface there. | New, this round | Phase 7, step 6 |
 
 **Still unverified**, from the four outcomes plus what the Browse rounds added:
 
-- `move()`-based atomic swap on removable media · the per-build SK-snapshot toggle · Config mode's card
-  read/write and the file input · `#/editor`'s "Save as project" · the first Studio save after the
-  two-version collapse · **the auto-save loop under a real edit session** (bounded by the serialising
-  guard, not measured) · **a workspace backup onto a real card, including one that runs out of room
-  mid-write** — the cleanup path is the whole point of that surface and has never run · **the Project
-  Manager against a card that already carries projects** (the migration list) · any engine without
-  `showDirectoryPicker`.
-- **Added by the Browse rounds, and none of it walked in its own host:** the shared editor's close
-  button and header layout (Studio's tape editor is the same component) · **Studio's boot**, which now
+- `move()`-based atomic swap on removable media · the per-build SK-snapshot toggle · the first Studio
+  save after the two-version collapse · **the auto-save loop under a real edit session** (bounded by
+  the serialising guard, not measured) · **a workspace backup onto a real card, including one that runs
+  out of room mid-write** — the cleanup path is the whole point of that surface and has never run ·
+  **the Project Manager against a card that already carries projects** (the migration list) · any
+  engine without `showDirectoryPicker`.
+- **Added by the Browse rounds, and none of it walked in Studio:** the shared editor's close
+  button and header layout (Studio's tape editor is the same component — the standalone `#/editor`
+  door is now a confirmed second host, Studio is the third) · **Studio's boot**, which now
   restores a still-permitted session instead of showing the setup wizard — this changes how Studio opens
-  for every user, not just the Browse path · the Project Manager's temporary-pool row · the new optional
-  workspace parameter on `createProjectFromState`, which `#/editor` also calls.
+  for every user, not just the Browse path · the Project Manager's temporary-pool row.
 - **Browse on a phone.** The layout exists and all four rounds were walked on a desktop.
 
-**Verified and struck:** Browse's "Import into a project" · the pen on a browser row.
+**Verified and struck:** Browse's "Import into a project" · the pen on a browser row · Config mode's
+card read/write and its file input *(round 2)* · `#/editor`'s "Add to pool" *(round 3)* · the optional
+workspace parameter on `createProjectFromState`, whose second caller turned out not to exist —
+`BrowseMode` is the only one *(round 3)*.
 
 ### Open, not blocking
 
@@ -54,7 +56,7 @@ that says what is **not** done; the phase briefs below say what is.*
 | G | ~~**The editor can only be reached from the pool.**~~ ✅ **A pen on the sample row** pools the file and opens the editor on it in one step. | New, this round | Done |
 | H | **The mirror vocabulary survives in the types.** `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` are still there, because existing cards still carry projects that `scanProjects` merges. **Phase 7 took the recommended half:** the dead states are no longer *rendered* — the Project Manager reads only "in the workspace" vs "only on the card". Renaming the vocabulary is still open, as one mechanical commit. | D.3, deferred by Phase 4, 6 *and* 7 | A mechanical rename, whenever |
 | I | **The SD-import compare view was not built** — the `SyncDashboard`-derived per-slot view. `ProjectManager`'s import button covers the case for now. | Phase 4, "deliberately not built" | Only when SD import gets real use |
-| J | **Open question 6 — preset & pack authoring.** Who makes presets, and where. Needs a product decision. | Open questions | Decide before committing to anything past Phase 7 |
+| J | ~~**Open question 6 — preset & pack authoring.**~~ ✅ **Answered 2026-08-16.** The app guides the creation of presets and packs and hands back files; the submitter sends them over email or Discord; the maintainer commits them. No PRs, no CI, no backend, no authoring surface. Plan and findings: [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md) — step 0 built, **step 1 (make the preset export actually submittable) is the next piece.** | Open questions | Answered; step 1 is post-v4 work |
 | K | **Open question 7 — multiple projects per card (`SK1/`, `SK2/`).** Firmware question first. `'SK'` is hardcoded in 13 places across 6 files and would need to become a parameter before any feature work. | Open questions | Blocked on @Vlad |
 | L | **Does the device tolerate an unknown key/value pair?** The app now preserves them either way; writing the *project title* into `config.txt` waits on this answer. | Phase 5 notes | Blocked on the hardware developer |
 | M | **Non-destructive editing / op log.** `AudioVersion.processing[]` is a flat tag set and a real model is a different data model, not an extension. | Appendix E.3 | **Explicitly not a v4 goal.** Don't let it creep in |
@@ -99,16 +101,19 @@ document says something the codebase no longer agrees with.
 | 4 | ✅ | Backup & safety rework | SD card is a build target again |
 | 5 | ✅ | Config mode | MIDI setup without the studio |
 | 6 | ✅ | Editor mode + Studio extraction | Edit one file with no project; the session leaves `App.tsx` |
-| 7 | ◐ | Close-out | Settings owns the options, backup is one explicit act — **steps 1–5 and 7 in; step 6, the test pass, is one door of five through** |
+| 7 | ◐ | Close-out | Settings owns the options, backup is one explicit act — **steps 1–5 and 7 in; step 6, the test pass, is four doors of five through** |
 
 **The six build phases are in, and Phase 7's code is in.** Locked decision 9 is closed. What is
 left before v4 ships is **step 6 — the browser and hardware pass** — plus open questions 6 and 7,
 neither of which blocks a release. Of the items above only B and C still block.
 
-**Step 6, as of 2026-08-15:** Browse is walked and verified over four rounds; Preset → SD, Device
-Config, `#/editor` and Studio have not been opened. The rounds are logged in
-[roadmap-bugs.md](roadmap-bugs.md) under *The v4 test pass*, which is now the live record of that
-work — this file only says what is left.
+**Step 6, as of 2026-08-17:** four doors are walked and verified on a desktop — Browse over four
+rounds, then Preset → SD, Device Config and Edit One File over one each. The first two of those three
+each opened with a blocker and closed it; Edit One File raised nothing. **Studio is the last door**,
+and it is also where every deferred item now points: the shared editor shell, the boot change, the
+Project Manager's pool row, the first save after the two-version collapse, and the editor's own bug
+sweep. The rounds are logged in [roadmap-bugs.md](roadmap-bugs.md) under *The v4 test pass*, which is
+now the live record of that work — this file only says what is left.
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
 `importUtils`, `projectDescriptorUtils`, `lib/audio`) is already mode-agnostic, and every major panel
@@ -492,6 +497,11 @@ to swap with, so it needs the parent directory. All six call sites had it in sco
   .move()` only after the stream closes cleanly. An interrupted write can no longer destroy the file
   it was replacing. `move()` is feature-detected; engines without it fall back to today's in-place
   write, which costs nothing since they have no `showDirectoryPicker` either.
+  **Amended after Config round 2 (C1-1).** The feature test was not enough: `move()` is on the
+  prototype in every Chromium because it shipped for the OPFS first, and on a user-picked folder it
+  can still reject with `InvalidModificationError`, which is exactly what a real card write did. The
+  first attempt is now the test — a rejection latches for the session, and the write falls back to
+  copying the completed scratch file onto the target in place rather than failing.
 - **The size-equality bug is fixed, but not by always byte-comparing.** The fourth argument is now an
   explicit `WriteCompare`: `'content'` byte-compares when sizes match (the default, and the only safe
   choice for SD writes), `'size'` keeps the cheap check where the *filename determines the content*,
@@ -705,10 +715,11 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 every new file and no new error in the changed ones. Entry bundle 11.7 kB; `EditorMode` is a 9.0 kB
 lazy chunk that pulls the existing `WaveformEditor` chunk, `BrowseMode` 16.8 kB. All six steps landed.
 
-**Not verified in a browser.** Same standing caveat as Phases 4 and 5 — types, build and lint are
-clean and the pure functions were reasoned through, but no path here was exercised against real
-hardware or a real folder picker. The three worth a pass together: editor-mode "Save as project",
-Browse "Import into a project", and the first Studio save after this change (the collapse).
+**Verified in a browser, except the Studio half** *(updated 2026-08-17)*. The three paths this phase
+left open have been walked one by one: Browse's "Import into a project" in Browse round 4, and
+editor-mode "Add to pool" — which replaced "Save as project", see the note under Phase 6, step 2 — in
+the test pass's round 3, with no findings. **The first Studio save after this change (the collapse)
+is the one still standing**, and it waits on the Studio walk like everything else project-shaped.
 
 **Read first:** Appendix E, then Appendix C §state separation.
 
@@ -717,7 +728,8 @@ Browse "Import into a project", and the first Studio save after this change (the
 **Steps.**
 1. Decouple `WaveformEditor` (4722 lines) from the on-disk project — `EditorSlot`, the version
    sidebar and the cleanup panel all assume one. Props are already file-shaped, so this is viable.
-2. "Save as new project" as the upgrade path out of editor mode.
+2. ~~"Save as new project" as the upgrade path out of editor mode.~~ Built, then replaced by
+   "Add to pool" — see the note below.
 3. Implement the two-version rule (Appendix E) — collapse `versions[]` on save.
 4. Extract `App.tsx` state into `session/ProjectSession.tsx`.
 5. Cleanup becomes its own surface, out of the editor sidebar (per
@@ -731,6 +743,23 @@ Browse "Import into a project", and the first Studio save after this change (the
      only exit, plus a button to carry the edited file into a project.
 
 **Notes.**
+> **The editor's second exit is the pool, not a project (2026-08-16).** Step 2 shipped as "Save as
+> project": a folder picker, and the user landed in Studio with a one-file project — the heaviest
+> surface in the app for a file that needs thirty-five more beside it before a card means anything.
+> The door that already collects loose files and turns a handful of them into an `SK/` folder is
+> Browse, so the standalone editor now writes into Browse's pool store (R2-4) and offers to open
+> that door. Nothing about it needs a permission: the pool is IndexedDB, and the `app-state` slot
+> locked decision 5 protects is still untouched. Pressing it again updates the same entry rather
+> than pooling a second copy. The project exit is not gone, it moved to where the pool is: Browse's
+> "Import into a project" carries the whole selection.
+>
+> **The commit button yields to the exit that matters (same round).** In the loose editor the green
+> settled-state button dominated a screen whose actual point is the download. It now goes quiet
+> (`commitCleanTone="quiet"`) once there is nothing left to bake, and `transportActions` is handed
+> the editor's own `commitClean` so the download can take the filled treatment at exactly that
+> moment — and *not* before, because both exits write the committed version and would otherwise
+> invite a click that silently drops the edit still on screen. Studio's hosting is unchanged.
+>
 > **`WaveformEditor` was already 90% decoupled.** Every project-shaped prop bar one was optional
 > and already guarded at its use site — `onDeleteVersion`, `onAssignVersion`, `onMoveVersionToPool`,
 > `onSaveUnique`, `onRenameFile`, `tapeColor`. Only `onSaveAsCopy` was required, and only two things
@@ -986,7 +1015,9 @@ Two rounds, in this order:
    Studio, plus every path in the unverified list at the top of this file. Real SD card, real folder
    picker, Chromium *and* one engine without `showDirectoryPicker` — the ZIP and file-input fallbacks
    from Phases 3 and 5 have never been exercised.
-   **Browse: done** (four rounds, 2026-08-14 → 15, 20 findings raised and closed). Four doors left.
+   **Browse: done** (four rounds, 2026-08-14 → 15, 20 findings raised and closed). **Preset → SD and
+   Device Config: done** (2026-08-16, one blocker each — P1-1, C1-1). Editor and Studio left, plus the
+   engine without `showDirectoryPicker`.
 2. **The editor, deeply.** Starting points from roadmap-bugs: the cleanup confirm modal glitching out
    of sight, and stereo splitting.
    **Partly done:** every tool passed in the *Browse-hosted* editor in round 3. Neither starting point
@@ -1121,7 +1152,17 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
    or aim for the public manifest; and does authoring justify its own surface or ride on Studio's
    existing export?
    *Not blocking any current phase.* Decide before committing to a Phase 7.
-   → **Answer:**
+   → **Answer:** ✅ *(2026-08-16)* **The app guides the creation; the channel stays human; the
+   maintainer commits.** Neither of the two ambitious shapes: no pull requests from strangers with a CI
+   gate, and no backend or self-publishing. The app collects everything a submission needs — for a
+   preset *and* for a sample pack — and hands back files to download; the submitter sends them over
+   email or Discord, audio through WeTransfer or Drive; the maintainer implements them. Sized
+   deliberately to the expectation that neither presets nor packs arrive in volume.
+   **The consequence is that the app is the form**, so what it hands back has to be complete —
+   which today it is not: the settings-only export downloads an unmentioned ZIP, names every descriptor
+   `"Untitled Project"` and derives no `requiredPacks`. Findings and the staged plan are in
+   [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md); its
+   step 0, a signpost on the Preset door, is built. **No dedicated authoring surface** is planned.
 
 7. **Multiple projects on one card — `SK1/`, `SK2/`, …?** *(new, from the community thread, 2026-08-14)*
    Today a card holds exactly one set of 6×6 tapes, so swapping projects means rebuilding the card.
@@ -1375,7 +1416,8 @@ interrupted or crashed write leaves a zero-length or partial file — the origin
 Five SK snapshots don't help, because the file being destroyed is in `Assets/`, not `SK/`.
 *Fix:* write to a temp name, swap on successful close. Highest-value durability change in the
 codebase, and it's local to [`safeWriteBlob`](src/utils/exportUtils.ts#L93).
-✅ **Phase 4** — `.wbtmp` + `FileSystemFileHandle.move()`, feature-detected.
+✅ **Phase 4** — `.wbtmp` + `FileSystemFileHandle.move()`, feature-detected, with an in-place fallback
+for the engines that have the method and reject the call (C1-1).
 
 > Worth fixing while in there: `safeWriteBlob` skips the write when the existing file's **size**
 > matches the new blob's ([exportUtils.ts:98](src/utils/exportUtils.ts#L98)). Two different WAVs of

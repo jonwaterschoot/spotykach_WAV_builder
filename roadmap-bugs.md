@@ -8,7 +8,8 @@
 > [CHANGELOG.md](CHANGELOG.md) go back to being the only live documents** — see
 > [docs/README.md](docs/README.md).
 >
-> *Last reconciled against the code: 2026-08-15, after the Browse test rounds 1–4.*
+> *Last reconciled against the code: 2026-08-17, after the Studio round — every file reference in
+> **Round 4 — Studio, first pass** below was checked against the source that day.*
 
 ---
 
@@ -24,6 +25,233 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 1 of 14 built)*
+
+**The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
+stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
+below is written to be picked up on its own — what is wrong, where it lives, and what closing it means.
+
+**What this round did *not* cover.** Two things were deliberately left out and each wants a pass of its
+own, described under **Not this round** at the end of this section:
+
+- **the editor's remaining faults with a project behind them** — the [editor bug sweep](#editor-bug-sweep),
+  which needs every edit function walked one at a time (a play button that can stick after apply and
+  preview is the known example);
+- **auto-save replacing "save"**, which is a design question, not a fix.
+
+Legend as elsewhere in this file: 🐞 a fault · ✂️ wording · 🏗️ needs a decision before it can be built.
+
+### The list
+
+Each row is meant to be a session on its own. **The three 🏗️ rows need an answer before code**, so don't
+start them cold; the rest are described well enough below to open the file and go.
+
+| # | What | Where | Type |
+|---|---|---|---|
+| **S1-1** | A project opens on one tape, not all six | `App.tsx` | ✂️ ✅ |
+| **S1-2** | "Select All" never becomes "Deselect All" (two buttons) | `FileBrowser.tsx` | ✂️ |
+| **S1-3** | Compact rows are fully outlined; want a coloured left border | `FileBrowser.tsx` | ✂️ |
+| **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ |
+| **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ |
+| **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 |
+| **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ |
+| **S1-8** | Clean Mirror doesn't show what it deletes | `ExportPreviewModal.tsx` | 🐞 |
+| **S1-9** | Files and System explainers too small to read | `SettingsModal.tsx` | ✂️ |
+| **S1-10** | "Reset Visual Effects" lags the window, loses contrast | `SettingsModal.tsx` | 🐞 |
+| **S1-11** | Presets and Custom Stored split across the panel | `SettingsModal.tsx` | 🏗️ |
+| **S1-12** | Slider reset is double-click only, undiscoverable | `SettingsModal.tsx` | ✂️ |
+| **S1-13** | Brightness capped at 2× | `SettingsModal.tsx` | ✂️ |
+| **S1-14** | Texture 8 (the mp4) dead on Pages — **cause found** | `App.tsx` | 🐞 |
+
+**Cheapest first, if that matters:** S1-13 and S1-14 are one line each, S1-14 with the fix already
+identified. S1-2, S1-5 and S1-12 are small and local (S1-1 was, and is built). S1-8 is the largest piece
+of real work here and the only one that changes what a destructive action does.
+
+### The default view
+
+#### S1-1 — A project opens on one tape instead of all six ✂️ ✅ *built*
+
+Opening a project landed on the single-tape view, so the first thing seen was a sixth of the project.
+The all-tapes grid is the overview, and is now what a project opens on.
+
+**The open question is decided: always the entry, never remembered.** Remembering would have meant
+persisting the choice — Studio is lazy-mounted per hub visit, so nothing survives leaving the door
+anyway — and it would have bought a preference for something that is not one. The single-tape view is
+where you go to work on one of the six, and picking that tape is how you say so; there is no state worth
+carrying between projects, only a place you were left standing in the last one.
+
+So the default at [App.tsx:124](src/App.tsx#L124) is `'all'`, and every path that makes a *different*
+project the live one sets it back:
+
+- **`handleLoadProject`** — opening from the project manager, from a zip import, and the auto-restore on
+  entry, which all route through it;
+- **`handleCreateEmptyProject`** — six empty tapes are exactly what a new project has to show;
+- **`adoptPresetAsProject`** — a preset fills all six, so all six are shown;
+- **`handleRestoreAndSync`** — a restore replaces the whole project and lands like an open.
+
+**Renaming and Save-As deliberately don't.** Neither opens anything — you are still in the project you
+were working on — so throwing you out of your tape there would be the same rudeness in the other
+direction.
+
+### The left pool column — `FileBrowser.tsx`
+
+#### S1-2 — "Select All" doesn't become "Deselect All" ✂️
+
+Once everything is selected the control still says *Select All* and does nothing visible. It should flip
+to *Deselect All*, as the Library Manager's equivalent already does
+([LibraryManager.tsx:1499](src/components/LibraryManager.tsx#L1499) is the pattern to copy).
+
+**Two buttons, not one** — the assigned list ([FileBrowser.tsx:476](src/components/FileBrowser.tsx#L476))
+and the pool ([FileBrowser.tsx:535](src/components/FileBrowser.tsx#L535)) each have their own.
+
+#### S1-3 — Compact rows wear a full outline ✂️
+
+In the minified view every row is ringed by a thin coloured border, which at that density is noise. A
+coloured **left** border says the same thing and leaves the row quiet.
+
+`borderClass` at [FileBrowser.tsx:651](src/components/FileBrowser.tsx#L651), applied only when
+`isMinified && location`.
+
+#### S1-4 — The pool has no sorting 🏗️
+
+Wanted, and reversible: **alphabetical** (numbers first, then A–Z) and **by tape**. Two open points
+before it can be built — whether the chosen sort is remembered, and what it means for drag-reordering,
+since a sorted list and a hand-ordered one can't both be the truth at once.
+
+#### S1-5 — The way into the Sample Browser is just a folder ✂️
+
+The plain folder icon ([FileBrowser.tsx:445](src/components/FileBrowser.tsx#L445), `FolderOpen`) doesn't
+say that it *adds* anything. Wanted: a **Browse + icon** — a plus inside the folder — with the word
+beside it rather than an icon alone.
+
+### New project
+
+#### S1-6 — Creating a new project doesn't warn about unsaved changes 🐞
+
+A new project replaces the open one with no question asked. The import path already does this correctly
+— *"…has unsaved changes. Save before importing a new project?"*
+([App.tsx:387](src/App.tsx#L387)) — so the guard exists and the new-project path simply doesn't call it.
+
+Auto-save makes this less likely to lose anything, but not impossible (it is off by default for some,
+and the recovery copy is browser-local), so the warning is wanted regardless.
+
+### Import and build to SD — `ExportPreviewModal.tsx`
+
+#### S1-7 — The import presets don't say which of them touch the card ✂️
+
+Three import presets sit in one row ([ExportPreviewModal.tsx:705-713](src/components/ExportPreviewModal.tsx#L705-L713))
+and nothing distinguishes *reads the card* from *reads the card and then writes it*.
+
+- **"Standard Import" → "Import to pool"** — say the destination, not the tier.
+- Each preset states plainly whether it only brings files in (pool, or merged into the project) or
+  **also builds onto the card** — which is what *Merge into Project + Mirror* does and never announces.
+
+#### S1-8 — Clean Mirror doesn't show what it deletes 🐞
+
+The most destructive preset on the build side ([ExportPreviewModal.tsx:723](src/components/ExportPreviewModal.tsx#L723),
+`push_clean`) makes the card match the project exactly — and the preview doesn't list what that removes.
+
+- **The deletions have to appear in the preview**, named, before the write.
+- **Offer to import them into the project pool first**, so "clean" isn't the only way out. Note that
+  `push_clean` deliberately skips pooling today ([ExportPreviewModal.tsx:106](src/components/ExportPreviewModal.tsx#L106)),
+  so this is a change of behaviour and not just a change of wording.
+- **Count the moves.** Where clean mirror shifts a file between slots rather than deleting it, that is a
+  move and should be counted and shown as one.
+
+### Settings — `SettingsModal.tsx`
+
+#### S1-9 — The Files and System explainers are too small to read ✂️
+
+Every setting on the first and last tabs carries a small-text explainer that isn't readable at its size.
+Either shorten them and set them larger, or move the full text behind an info icon that expands it —
+possibly both, a short readable line with the long version on the icon.
+
+#### S1-10 — "Reset Visual Effects" lags the window and can lose contrast 🐞
+
+The button is portalled out of the panel to escape the render filters
+([SettingsModal.tsx:553-568](src/components/SettingsModal.tsx#L553-L568)) and positioned with `fixed` plus
+a measured `portalPos`. Two consequences:
+
+- **It travels slower than the window.** Dragging the panel disconnects it, and on first opening the Look
+  tab it visibly floats into place — the measurement is chasing the layout instead of following it.
+- **Its colours can become unreadable**, since the effects it resets are exactly what it sits over.
+
+Two questions to settle together: whether the button can genuinely be placed above the render effects,
+and — if not — whether hard black-and-white is the honest answer for a control that must stay legible
+whatever the filters are doing.
+
+#### S1-11 — Quick Presets and Custom Stored are one idea split across the panel 🏗️
+
+The named presets sit at the top and the `C1 C2 C3` store buttons at the bottom, so which slot is
+*saved* and which is merely *selected* is guesswork.
+
+- **Two labelled sections** — *Presets* and *Custom stored* — instead of two ends of the panel.
+- **Highlight the active preset.**
+- **Presets** get an icon marking that their settings have been altered, and a reset back to the preset.
+- **Custom** get a save icon, since saving is what they are for.
+
+*One note from the round is an unfinished sentence — "after changing a preset: clicking" — and is
+recorded here rather than guessed at. It needs a line from the test session before it can be built.*
+
+#### S1-12 — Sliders reset by double-click, which nothing says ✂️
+
+`onDoubleClick={() => resetValue(...)}` with the hint only in a `title` tooltip
+([SettingsModal.tsx:651-654](src/components/SettingsModal.tsx#L651-L654)). Wanted: a small circular reset
+icon next to each slider's title. The behaviour exists; only its affordance is missing.
+
+#### S1-13 — Brightness stops at 2× ✂️
+
+`max="2"` at [SettingsModal.tsx:648](src/components/SettingsModal.tsx#L648). Raise it — 3× was the
+suggestion. A one-line change; worth a look at whether the other filter ranges deserve the same question.
+
+#### S1-14 — Texture 8, the video, is dead on the Pages build 🐞 *(cause found)*
+
+The mp4 texture works locally and not on the deployed site, and the reason is a hardcoded path:
+
+```
+<source src="/vid/wavbuilderfullscreen_1.mp4" type="video/mp4" />
+```
+
+[App.tsx:5348](src/App.tsx#L5348). Every other asset goes through `resolveAssetPath`, including the
+`--master-texture-image` line eleven lines apart in the same feature
+([App.tsx:560](src/App.tsx#L560)) — so on Pages, where the app is served under a base path, this single
+absolute URL resolves off the site root and 404s. The file itself is committed
+(`public/vid/wavbuilderfullscreen_1.mp4`).
+
+**Fix: wrap it in `resolveAssetPath`.** Then check whether anything else hardcodes a leading `/` asset
+path the same way, since the local build hides this class of bug completely.
+
+### Not this round — two passes of their own
+
+#### Auto-save replacing "save" 🏗️ *decide before building*
+
+The wish is for auto-save to make **Save** obsolete. It can't do that on its own: taking the explicit
+save away removes the only point at which the user currently decides that a state is worth keeping, so
+it has to be replaced by a way back.
+
+- **Reversible actions (Ctrl-Z / Ctrl-Y) and a history panel** are the price of the feature, not a
+  follow-up to it.
+- **What gets recorded is the real question.** Same question the editor's history already raises, where
+  it is harder — **R3-1** below settled it there (in-session depth, collapsed to two versions on the way
+  out), and **Non-destructive editing** under [Under consideration](#under-consideration) is the op-log
+  shape that would make deep history affordable.
+- **What exists today is a recovery copy, not this.** Settings currently promises exactly that and no
+  more: *"Keep a recovery copy in this browser — so a closed tab or a crash doesn't lose the open
+  project. It does not write to your workspace folder, since saving still does that. Turning this off
+  deletes the copy."* That wording is accurate and should not change until the feature does.
+
+Related: **S1-6** stays wanted whatever is decided here, and **History & trashcan** under
+[Under consideration](#under-consideration) is the same territory.
+
+#### The editor, function by function 🐞 *next testing round*
+
+Not opened in this round. The [editor bug sweep](#editor-bug-sweep) is where it belongs: every edit
+function walked one at a time, with a project behind it, hunting the intermittent faults — the known one
+being **the play button becoming stuck after apply and preview**. Findings go there, or as a `Round 5`
+heading here if the round turns up more than the sweep covers.
+
+---
+
 ## The v4 test pass
 
 Phase 7, step 6 in [V4_PERVAK.md](V4_PERVAK.md) — the last thing blocking the release.
@@ -32,34 +260,247 @@ Phase 7, step 6 in [V4_PERVAK.md](V4_PERVAK.md) — the last thing blocking the 
 
 | Door | Rounds | Verdict |
 |---|---|---|
-| **Browse Samples** (`#/browse`) | 4 | ✅ **Verified on a desktop.** 15 numbered findings raised and closed. The phone layout is the one part never opened on a phone. |
-| **Preset → SD** (`#/presets`) | 0 | Not walked |
-| **Device Config** (`#/config`) | 0 | Not walked. The file-input and ZIP fallbacks have never run. |
-| **Edit One File** (`#/editor`) | 0 | Not walked *as a door*. The same editor passed inside Browse in round 3, but this route's own entry, "Save as project" and picker have not been opened. |
-| **Studio** | 0 | Not walked — and the Browse rounds changed five things inside it, listed below. |
+| **Browse Samples** (`#/browse`) | 4 | ✅ **Verified on a desktop.** 15 numbered findings raised and closed. The phone layout is the one part never opened on a phone. **Three Browse-side additions of 2026-08-16 are unwalked** — see *Between rounds — the pool became fillable*. The pack→preset link and the row drag were both walked. |
+| **Preset → SD** (`#/presets`) | 1 | ✅ **Verified on a desktop.** One blocker found and closed (P1-1 — the write could never open the picker). Card write with its warnings, and the ZIP download, both walked. |
+| **Device Config** (`#/config`) | 1 | ✅ **Verified on a desktop.** One blocker found and closed (C1-1 — the atomic swap rejected the write). All four buttons walked: read, write, open `config.txt`, download `config.txt`. There is no ZIP here and none is wanted — it is one text file. |
+| **Edit One File** (`#/editor`) | 1 | ✅ **Verified on a desktop.** No findings — the door's own entry, its DOWNLOAD exit and its ADD TO POOL exit all behave. Anything still wrong in the editor is a general editor matter, not this door's; it belongs to the [editor bug sweep](#editor-bug-sweep). |
+| **Studio** | 1 | 🔧 **Walked on a desktop, 2026-08-17. Fourteen findings, all open, none a blocker** — the list is **Round 4 — Studio, first pass**, at the top of this file. **The editor with a project behind it was not opened**, so the [editor bug sweep](#editor-bug-sweep) is still the rest of this door — and so are the four Browse-side changes listed below. |
 
-Plus, from [V4_PERVAK.md](V4_PERVAK.md)'s unverified list and untouched by rounds 1–4: the workspace
+Plus, from [V4_PERVAK.md](V4_PERVAK.md)'s unverified list and untouched by any round so far: the workspace
 backup's **failure path** (never run), the Project Manager against **a card that already has projects**,
 the atomic `move()` swap on removable media, the SK-snapshot toggle, the auto-save loop under a real
 session, and any engine without `showDirectoryPicker`.
 
 ### What the Browse rounds changed outside Browse
 
-Five surfaces were touched by findings that began in Browse. **None has been walked in its own host**,
-and each is a place where a Browse fix could have broken Studio:
+Five surfaces were touched by findings that began in Browse. **Four are still unwalked in Studio**,
+and each is a place where a Browse fix could have broken it:
 
 - **The editor's close button** (R2-3) — shared with Studio's tape editor.
 - **The editor's header and history layout** (R3-2) — same component, a structural change.
+
+  *Both were exercised a second time by round 3's Edit One File walk — `LooseFileEditor` renders the
+  same `WaveformEditor`, so the shell change is now confirmed in two hosts. Studio's is the third and
+  the only one with a project behind it.*
 - **Studio's boot** (R4-4) — a session whose folder permission is still live now restores itself
   instead of showing the setup wizard. This changes how Studio opens for *everyone*, not just the
   Browse path.
 - **The Project Manager** (R2-9) — one inert row when a temporary pool exists.
-- **`createProjectFromState`** (R4-2) — a new optional workspace parameter. `#/editor`'s "Save as
-  project" calls it and still gets the old behaviour, but has not been opened since.
+- ~~**`createProjectFromState`** (R4-2)~~ — **closed by round 3.** The worry was that `#/editor`
+  called it too and had not been opened since the parameter was added. It doesn't: the door's second
+  exit is ADD TO POOL, and `BrowseMode` is now the function's only caller
+  ([newProject.ts:54](src/utils/newProject.ts#L54)) — a path Browse round 4 walked.
+
+### Round 1 — Preset → SD ✅ *(2026-08-16)*
+
+One finding, raised and closed. **Re-walked after the fix and signed off**: the card write goes
+through with its warnings behaving, and the ZIP download works. The door is done for v4.
+
+Two things deliberately not held against it. **A second preset** — one mixing packs and leaving slots
+free — is still worth building and is *not* a release blocker; it stays on the list under
+[Onboarding, news and guides](#onboarding-for-newcomers). **An engine without `showDirectoryPicker`**
+is a different code path from the ZIP button and remains unwalked, as it was before this round.
+
+#### P1-1 — "Write to SD card" could never open the picker 🐞 ✅ *built*
+
+Clicking it showed *"Failed to execute 'showDirectoryPicker' on 'Window': Must be handling a user
+gesture to show a file picker."* — the whole tier's only exit, dead on the first click.
+
+The order was the bug. `handleWriteToSD` ran `hydratePreset` first — 36 files off the network — and
+only then called `writeToSD`, which is where `exportSDStructure` opens its picker. By that point the
+click's transient activation had expired (Chrome gives it about five seconds) and the browser
+refused the dialog. The same call worked in Studio only because a connected card meant no picker was
+ever opened.
+
+So the picker moved to the front, and since it now has to be its own deliberate step, it says what
+it is for:
+
+- **`SDCardWriteModal`** (`src/components/modals/SDCardWriteModal.tsx`) sits between the button and
+  the picker, saying the only two things that can go wrong: **pick the card itself, not a folder on
+  it** (`SK/` is written inside whatever is chosen), and an existing `SK/` is written through. A
+  first draft explained the download, the conversion, the `README.md` and the rename convention as
+  well — cut back, since this is a dialog and not the documentation.
+- **The picker is the first thing awaited** in the modal's click handler, so the activation is still
+  live. `PresetsPanel` owns it now, and hands the chosen root down to the runner as a third
+  argument — `PresetsMode` and `App` both pass it on as `destinationHandle`, so `exportSDStructure`
+  never opens a second one.
+- **An `SK/` already on the card gets a second question**, after the pick and before the write:
+  overwrite, or cancel and rename it (`SK_1`, `SK_myContent`) so the module stops reading it.
+- **A card the app already holds is offered, never used silently.** Studio's `sdHandle` appears as
+  "Use the connected card"; `ensureWritable` runs inside that click, since `requestPermission` needs
+  the gesture just as much as the picker does.
+- Browsers with no `showDirectoryPicker` are untouched — no card to pick, so the ZIP path runs
+  straight through as before. That engine is still unwalked (see the unverified list above).
+
+### Round 2 — Device Config ✅ *(2026-08-16)*
+
+One finding, raised and closed. **Re-walked after the fix and signed off**: all four buttons do what
+they say — read from card, write to card, open a `config.txt` from disk, download one. The door is
+done for v4.
+
+**No ZIP fallback exists for this door and none should** — `config.txt` is a single text file, so
+"Download config.txt" *is* the no-picker path, and it and the file input are now both walked. What
+that does **not** cover is an engine without `showDirectoryPicker`: these two buttons were exercised
+in Chromium, where the card buttons sit beside them. The layout that hides those two and promotes the
+download remains unwalked, as it was before this round.
+
+#### C1-1 — "Write to card" died on the atomic swap 🐞 ✅ *built*
+
+*"Failed to execute 'move' on 'FileSystemFileHandle': The object can not be modified in this way."* —
+the bytes were written, the swap onto `config.txt` was refused, and `safeWriteBlob` rethrew, so the
+whole write reported failure. The first real exercise of the Phase 4 swap, and it went straight to
+the case the feature test can't see.
+
+`move()` shipped for the origin-private file system first and for user-picked folders later, as a
+separate feature; the method is on `FileSystemFileHandle.prototype` either way, so
+`supportsHandleMove()` said yes and the runtime said no. Nothing observable tells the two apart in
+advance.
+
+- **The first real attempt is now the feature test.** A rejected `move()` latches
+  `handleMoveRejected` for the session, so a 36-file card write doesn't pay for a doomed temp copy of
+  every file. A one-off rejection — a destination locked by another app — costs the rest of the
+  session its swap, which is the cheaper of the two mistakes.
+- **A rejected swap no longer fails the write.** The bytes are already on the card and complete, so
+  they are copied onto the target in place and the scratch file is removed only once *that* has
+  closed cleanly. Still ahead of the plain path: if the copy is interrupted, the whole file is in
+  `<name>.wbtmp`.
+- **A failure *before* the swap still throws**, with the target untouched and the scratch file
+  removed, exactly as before.
+
+Two consequences for the unverified list: the swap is now known to be rejected somewhere real, so
+"the atomic `move()` swap on removable media" is worth walking on an actual card — and if the swap
+never runs there either, every SD write is back to the plain path, which is what the fallback is for.
+
+### Between rounds — the pool became fillable ✅ *(2026-08-16, mostly unwalked)*
+
+Not a finding; a change made while the editor's exits were being reworked, and it needs a pass of
+its own before Browse's ✅ still means what it says. **The first bullet was walked from the editor
+side in round 3; the three Browse-side ones below it still haven't been.**
+
+- **`#/editor`'s second exit is the pool, not a project.** "Save as project" landed the user in
+  Studio with a one-file project. It is now **ADD TO POOL**, writing Browse's own store, with a
+  modal offering to open Browse. Pressing it again updates the same entry. ✅ *walked 2026-08-17.*
+- **The pool takes files from the desktop.** "Add files" in the pool header opens a file input, and
+  the whole column is a drop target. Both go through `loadAndProcessAudio`, so what lands is the
+  48 kHz WAV the hardware reads. Dropped folders are refused with a pointer at "Local folders";
+  non-audio is counted and reported in one summary rather than a toast per file.
+- **The export block folds away**, remembered in namespaced localStorage, so a long pool gets the
+  column back.
+- **Browse has toasts now** (`useToasts`), which it had no need for until files could fail to decode.
+
+Worth walking: a drop of mixed formats, a drop of a folder, the same file twice, and whether row
+reordering still behaves while a file drag crosses the list.
+
+### Between rounds — a pack page points at its preset ✅ *(2026-08-16, walked in both hosts)*
+
+Also not a finding. The pack page offered the ZIP and nothing else, so the one pack that already
+exists as a finished card was reachable only by knowing the Presets door was there.
+
+- **"Want this pack in a ready-to-go format for SK? Use the preset."** sits under the ZIP, drawn only
+  when a preset's own `requiredPacks` names the open pack — no new manifest field, and it can never
+  appear for the library, a project's samples or a mounted folder.
+- **The two hosts mean different things by it**, so it is a callback and not a route. Browse leaves
+  for `#/presets?preset=<id>`; Studio closes the browser window first and opens its own presets
+  panel — which is not cosmetic, since that modal is `z-50` against the browser window's `z-[70]` and
+  would otherwise open underneath it. Either way the named card is scrolled to and ringed for six
+  seconds; nothing is run, and the card's own buttons are still the only way in.
+- **Mode hashes carry query params now** (`hashForMode` / `paramsFromHash`), which is how the id
+  survives the trip. `modeFromHash` already stopped at the `?`, so routing is unchanged.
+- **The ZIP button says what it is** — "Dry file list · all 36 files, one folder, FLAC format",
+  counted and typed from the pack's own sample list rather than written into the button. It is also
+  the plain statement of what the preset beside it does differently.
+- Fixed in passing: a pack whose links are all ZIPs used to render an empty "Connections" heading.
+
+**Walked in Browse and in Studio on 2026-08-16 — links and wording confirmed in both.** This does
+*not* promote Studio's row in the table above: one path through the sample browser was opened, not
+the door. Unwalked here: a pack with no preset (the link should be absent), and the phone layout,
+which shares Browse's standing exemption.
+
+### Between rounds — sample rows drag into the pool ✅ *(2026-08-17, walked)*
+
+Built after the pack→preset link. **Walked the same day**: the drag, the multi-selection and the
+pool opening itself all behave. One finding, raised and closed — the cursor, below.
+
+- **The rows are draggable**, one or many. A drag begun on a selected row carries the whole
+  selection, in the order it was selected — the same order and the same import the bulk menu
+  already produced; a drag begun on any other row carries just that row. Two or more get a count
+  chip under the cursor instead of the one row the browser happened to snapshot.
+- **The payload never touches the `DataTransfer`.** A sample's audio is a blob, and object URLs
+  minted at dragstart would leak on every drag that ended nowhere. What crosses is a marker MIME
+  type (`application/x-spotykach-samples`, new module `src/utils/dragTypes.ts`); the real payload is
+  a thunk handed to the host through `onSampleDrag`, and the URLs are minted inside it when a drop
+  actually lands.
+- **The pool opens itself** when a drag starts, since it is the only target, and the drop overlay
+  says how many are about to land. Dropping on a pool *row* is the same as dropping on the column —
+  both land at the end, and neither pretends to insert at that position.
+- `handleBulkActionWithTarget` was split: `importPathsTo(paths, target)` is now the one path both
+  the menu and the drop go through.
+
+Still worth walking, none of it covered by the pass above: a drag from the Curated Library and from
+a mounted folder (both are blob-backed, so they exercise the late object URL), a drag begun after
+switching packs (the selection resets, so it should carry one row), and whether pool-row reordering
+still behaves while a sample drag crosses the list.
+
+#### D1-1 — the cursor said "forbidden" all the way to the pool 🐞 ✅ *built*
+
+Everywhere except the pool column the pointer wore the `no-drop` sign, which reads as *this drag
+cannot work* for the whole width of the screen you have to cross to reach the target.
+
+HTML5 drag and drop has no third state: an element that doesn't `preventDefault` its `dragover`
+gets that cursor, and a `dropEffect` of `'none'` draws exactly the same thing. So the mode's root
+now accepts the drag and does nothing with it — the cursor stays a copy cursor throughout, and the
+pool remains the only thing that *looks* like a target, since it is the only one that lights up
+green and counts what is coming.
+
+Narrowed to our own drag type on purpose. A file dragged in from the desktop still gets the
+browser's default treatment outside the pool column — **including the old hazard that dropping one
+on the page navigates away from the app**. Left alone as a separate question, not folded into a
+cursor fix.
+
+**Not built, deliberately:** the same drag in Studio. Its browser is a floating window over a grid
+that takes project files (`application/x-spotykach-file-id`), not pack samples, so a drop there
+would have to import first and assign second — a different feature. Studio's browser simply doesn't
+subscribe, and its rows stay undraggable. **`LocalFolderBrowser` rows are also still undraggable** —
+mounted folders have their own list component, untouched by this.
+
+### Round 3 — Edit One File ✅ *(2026-08-17)*
+
+**No findings.** The door works as expected, first walk, nothing to fix — the only one of the three so
+far that didn't open with a blocker. The entry takes a file from disk, the editor comes up on it, and
+both exits do what they say: **DOWNLOAD** hands back the SK-ready WAV, **ADD TO POOL** writes Browse's
+store and offers the trip to Browse, with a second press updating the same entry rather than adding a
+duplicate. The door is done for v4.
+
+Two things this round settles beyond the door itself:
+
+- **`createProjectFromState`'s second caller doesn't exist.** Listed above as an unwalked consequence
+  of R4-2 on the assumption that `#/editor` still called it — it doesn't, and hasn't since the exit
+  became ADD TO POOL. Struck from that list.
+- **The shared editor shell has now been seen in two hosts.** R2-3's close button and R3-2's header
+  are the same `WaveformEditor` here as in Browse, and they behave the same. Studio's tape editor is
+  still the third host and still unwalked.
+
+**What this round can't stand in for:** anything the editor only does with a project behind it —
+version history across saves, assigning to a slot, "save unique", "save copy to pool", cleanup. Every
+outstanding editor complaint is one of those *general* editor matters rather than a fault of this
+door, and they belong to the [editor bug sweep](#editor-bug-sweep), to be walked when the test pass
+reaches Studio.
+
+### Round 4 — Studio 🔧 *(2026-08-17)*
+
+**Walked, and its fourteen findings are kept at the top of this file** rather than here — they are the
+only open work in the test pass, so they sit where they can be picked up rather than at the bottom of a
+history. See **Round 4 — Studio, first pass**.
+
+Nothing there is a blocker and nothing there disturbs a ✅ above. What it does *not* close is the door:
+the editor with a project behind it was never opened, which is the [editor bug sweep](#editor-bug-sweep)
+and the next round.
 
 ### Next round
 
-Whichever door you take next. Findings go under a new `### Round N` heading here.
+**The editor, function by function** — every edit tool walked with a project behind it, which is the one
+host the sweep has never had. Findings go to the sweep, or under a new `### Round 5` heading here if the
+round turns up more than the sweep covers.
 
 ---
 
@@ -93,8 +534,8 @@ still never been opened on a phone** — see [Onboarding, news and guides](#onbo
 - **One name for the pool.** It was "Selection pool", "Selection" and "APPLY EDIT" for the same
   thing; it is "temporary pool" everywhere now. Opened from Browse, the editor commits with
   **SAVE TO TEMPORARY POOL** and offers **DOWNLOAD** — "Save as project" is gone from that host,
-  because the pool's own "Import into a project" already carries the whole selection. The standalone
-  `#/editor` door is unchanged.
+  because the pool's own "Import into a project" already carries the whole selection. It has since
+  gone from the standalone `#/editor` door too, replaced by **ADD TO POOL**.
 - **The pool column is wider (400px)** and every row has a play button that auditions the blob as it
   currently stands — the only way to hear an edit without reopening the editor. The two players stop
   each other.
@@ -414,12 +855,21 @@ when this was logged.
 
 ### Editor bug sweep
 
-**Half done.** Round 3 walked every tool in the *Browse-hosted* editor — trim/fade, automation, loop,
-EQ, pitch, limiter, normalize, cutter, slicer, stereo — and all of them passed. What that round could
-not see is everything the editor only does with a project behind it: version history across saves,
-assignment to a slot, "save unique" and "save copy to pool", cleanup, and the two shared-component
-changes it made (R2-3, R3-2) as they land in Studio's tape editor. That is the rest of the sweep, and it
-belongs to the Studio walk. Findings go under **The v4 test pass** above as they are found.
+**Half done, and this is where the editor's remaining bugs live — it is now the next testing round.**
+The Studio walk of 2026-08-17 covered the door and not the editor inside it, so this is what is left of
+Studio and of the test pass. Browse round 3 walked every tool in the *Browse-hosted* editor — trim/fade, automation, loop, EQ, pitch, limiter, normalize, cutter,
+slicer, stereo — and all of them passed; the test pass's own round 3 then walked the same component
+in the standalone `#/editor` door and found nothing either. **Neither host has a project behind it**,
+which is the whole of what is left: version history across saves, assignment to a slot, "save unique"
+and "save copy to pool", cleanup, and the two shared-component changes (R2-3, R3-2) as they land in
+Studio's tape editor.
+
+**The known symptom to reproduce first:** the play button can become **stuck after apply and preview** —
+intermittent, which is why the round has to be every edit function one at a time rather than a sweep of
+the ones that look suspect. The cleanup confirm modal above is the second thing to reproduce, and it is
+now reached from a different place than when it was logged.
+
+Findings go under **The v4 test pass** above as they are found.
 
 ---
 
@@ -517,7 +967,8 @@ After "start new setup", show a welcome screen that says what the wizard is abou
 a first project, offer a blank project **or** a preset.
 
 *(Currently one preset ships — the Hainbach project, all 36 slots occupied. A second, mixing samples
-from several packs and deliberately leaving slots free for customisation, is worth building.)*
+from several packs and deliberately leaving slots free for customisation, is worth building.
+**Explicitly not a v4 blocker** — decided during the Preset → SD test round, 2026-08-16.)*
 
 An interactive walkthrough — not a video — that steps through the app and explains features.
 
@@ -537,11 +988,17 @@ Now renders inline on the hub beneath the doors. The covering auto-open modal is
 - **Project images** — attach an image to a project for visual identity, reused as the cover when the
   project is shared as a preset. Incorporating it in the sample manager up front would make it
   cheap later.
-- **Preset & pack authoring** — who makes presets and where. Three shapes floated: force authors
-  through the full app; a "export project as preset" path in Studio; or a dedicated authoring surface
-  with per-file metadata, tape names, notes and pack info. **Constraint:** `manifest.json` is generated
-  by a repo-side script, so without a backend, publishing is a commit, not an upload. Written up as
-  open question 6 in [V4_PERVAK.md](V4_PERVAK.md); needs a product decision.
+- **Preset & pack authoring** — ✅ **answered 2026-08-16**, and the plan is
+  [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md).
+  **The app guides the creation** of both presets and packs and hands back the files; the submitter
+  sends them over email or Discord (audio via WeTransfer or Drive); the maintainer commits them. No
+  pull requests from strangers, no CI gate, no backend — the volume doesn't justify any of it.
+  Closes open question 6 in [V4_PERVAK.md](V4_PERVAK.md).
+  **Step 0 is built** — the Presets door now says where presets come from and links the guide. **Step 1
+  is the next piece and the highest-value one:** the settings-only export downloads a ZIP the guides
+  don't mention, names every descriptor `"Untitled Project"`, derives no `requiredPacks` and checks
+  nothing — so what the app hands a submitter today is not yet a submission. Step 2 is the same
+  treatment for a sample pack, step 3 is naming a destination anywhere at all.
 - **History & trashcan** — a trashcan for deleted files with restore, plus undo/redo for editor
   actions. A set of three icons: undo, redo, and a list of all actions. *(Note: v4 caps persisted
   history at original + current, so this is about session memory and deletions, not version depth.)*

@@ -14,7 +14,10 @@ release whose premise is separating one muddled thing into clean tiers.*
   a folder until the moment of an actual write.
 - **Browse** — the sample packs, previewable, with a selection pool, and two downloads off it:
   SD-ready 6×6, or all the files under their original names. No permission prompt anywhere in
-  that path. Your own library appears too, read-only, when it isn't empty.
+  that path. Your own library appears too, read-only, when it isn't empty. **Files from your
+  own computer go in as well**, through "Add files" in the pool header or by dropping them on
+  the column, converted to SK-ready WAV as they land. The export block under the pool folds
+  away when the list needs the room, and stays folded until you unfold it.
 - **Preset → SD** — cold start to a curated project on the card: pick a preset, pick the card,
   done. No work folder, no project created. Browsers without a directory picker get a ZIP
   instead of a dead end.
@@ -22,15 +25,29 @@ release whose premise is separating one muddled thing into clean tiers.*
   settings the app never had (`slc_mn_a` / `slc_mn_b`, polyphony in Slice mode per deck) are
   now first-class, and **settings this build doesn't recognise survive a round-trip** instead
   of being silently stripped — shown in a "Kept from the file" section rather than hidden.
-- **Editor** — edit one file with no project at all, download it, or save it as a new project.
-  It also opens over Browse, from a pool row or straight from a sample row.
-- **Import into a project** from the Browse pool, and **Save as project** out of the editor —
-  both pick the folder at that moment and neither disturbs anything that already exists.
+- **Editor** — edit one file with no project at all, then download it or add it to the Browse
+  pool, where a whole set becomes a card. It also opens over Browse, from a pool row or
+  straight from a sample row.
+- **Import into a project** from the Browse pool: the folder is picked at that moment and
+  nothing that already exists is disturbed.
 - **Workspace backup** — one explicit act, to a folder you pick each time, showing exactly what
   it contains and what it weighs before writing anything.
 - **Auto-save**, which genuinely did not exist before: the function was there and nothing ever
   called it. A crash or a closed tab no longer costs the open project.
 - News moved onto the hub, beneath the doors, instead of a modal covering the app on start.
+- **The Preset door says where presets come from** — a line under the cards explaining that they are
+  projects built in Studio and shared, with a link to the submission guide.
+- **Sample rows drag into the pool.** The row's button still works; a drag is the same act
+  performed where you are looking. A drag begun on a selected row takes **the whole selection** and
+  says so under the cursor; one begun anywhere else takes that row. The pool opens itself when the
+  drag starts, so there is always somewhere to let go, and it says how many are about to land.
+- **A pack page points at its preset.** Under a pack's ZIP, "Want this pack in a ready-to-go format
+  for SK? Use the preset." — matched from the preset's own `requiredPacks`, so nothing new goes in
+  the manifest. Browse routes to `#/presets?preset=…` and Studio swaps the browser window for its
+  presets panel; either way the card it means is scrolled to and ringed on arrival.
+- **The pack ZIP says what it is** — "Dry file list · all N files, one folder, FLAC format", read off
+  the pack's own file list rather than written into the button, so it is also the plain statement of
+  what the preset beside it does differently.
 
 ### Changed
 - **The SD card is a build target, not a backup.** A build used to write three copies of the
@@ -45,10 +62,22 @@ release whose premise is separating one muddled thing into clean tiers.*
   between is dropped on save. Cleanup stops being a rescue operation and becomes housekeeping.
 - Cleanup moved out of the editor's version sidebar — a project-wide destructive action does
   not belong in one file's history panel.
+- **A project opens on all six tapes**, not on one of them. The grid is the overview, so it is
+  what you land on — every time a project is opened, created, restored or taken over from a
+  preset, and not remembered from wherever you were standing in the last one. Picking a tape is
+  still how you get to a single one; renaming or saving-as the project you are already in leaves
+  you where you were.
 
 ### Fixed
+- **"Write to SD card" in Preset → SD could never open the picker.** The preset's audio was
+  downloaded first and the card asked for afterwards, by which time the click that could open a
+  file picker had expired — Chrome refused it outright. The card is now chosen *before* anything
+  downloads, from a step that says the two things that matter: pick the card itself, not a folder
+  on it. Picking a card that already holds an `SK/` asks once more before overwriting it.
 - **Interrupted writes can no longer destroy the file they were replacing.** Writes go to a
-  temp name and are swapped in only after the stream closes cleanly.
+  temp name and are swapped in only after the stream closes cleanly. Where the browser refuses
+  the swap — it is a newer, separate feature for folders you pick, and no feature test can see
+  the difference — the file is written the plain way instead of the write failing.
 - **Two files of identical byte length are no longer assumed identical.** SD writes now compare
   content; the cheap size check is kept only where the filename determines the content.
 - **Hydrated preset audio could skip conversion entirely** — a bucket answering

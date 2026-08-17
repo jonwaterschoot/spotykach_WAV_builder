@@ -53,6 +53,7 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 |---|---|---|
 | [presets-samples/README.md](presets-samples/README.md) | ⚠️ 🟢 | Submission guide for guest artists and users sharing presets. **Linked from inside the app** (`AboutHelpModal`) and from the root README by absolute GitHub URL — moving it breaks both. Its `img/` folder holds the screenshots and videos the help modal embeds. |
 | [../public/presets/README.md](../public/presets/README.md) | 🟢 | The maintainer-side counterpart: manifest descriptors, R2 deployment, normalization scripts. |
+| [presets-samples/submission-workflow.md](presets-samples/submission-workflow.md) | 🟢 | Where the submission workflow stands, the seven things in its way, and the staged plan. **Holds the answer to `V4_PERVAK.md`'s open question 6:** the app guides creation, the submitter sends files over email or Discord, the maintainer commits them. |
 | [WAV-CUE/guide/videotutorial/videotutorialscript.md](WAV-CUE/guide/videotutorial/videotutorialscript.md) | 🔵 | Draft scripts for a long tutorial and a short reel. Starting point, not a commitment. |
 | [../scripts/normalize-audio.md](../scripts/normalize-audio.md) | 🔵 | How the normalization script is used. |
 

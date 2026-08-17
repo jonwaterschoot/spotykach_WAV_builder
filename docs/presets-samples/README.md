@@ -15,6 +15,7 @@ A comprehensive guide for **External Artists**, **Spotykach Users**, and **App M
 * [🎨 For External Artists (Contributing a Sample Pack)](#1-for-external-artists-contributing-a-sample-pack)
 * [🎛️ For Spotykach Users (Contributing a Preset/Layout)](#2-for-spotykach-users-contributing-a-presetlayout)
 * [📋 Submission Checklist & Template](#3-submission-checklist--template)
+* [📮 Where to Send It](#-4-where-to-send-it)
 
 ---
 
@@ -151,4 +152,24 @@ Copy and paste the template below to structure your submission:
 * [ ] Exported settings-only `.json` preset file attached.
 * [ ] (Optional) Exported Portable SK Folder `.zip` attached.
 ```
+
+---
+
+## 📮 4. Where to Send It
+
+There is no upload in the app and no submission form — a submission is a message with files attached.
+
+| Route | |
+| :--- | :--- |
+| **Discord** | `jonwtr` — the easiest route, and the best one for questions before you start. |
+| **Email** | `jon [at] synthux.academy` |
+
+**Send the small things directly**: the preset `.json`, the cover image, the filled-in template above.
+
+**Send audio as a link** — WeTransfer, Google Drive, Dropbox, whatever you already use. A sample pack
+is far too large to attach, and nothing is uploaded through the web app.
+
+Once it arrives, the maintainer normalizes the audio, deploys it, and adds the entry to the app's
+catalogue. Expect a reply rather than silence; if a submission is missing something, that is what the
+conversation is for.
 
