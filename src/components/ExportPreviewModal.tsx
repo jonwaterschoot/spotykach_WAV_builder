@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import type { SyncDiff, SyncSlotDiff, DuplicateGroup } from '../utils/importUtils';
+import type { SyncDiff, SyncSlotDiff, DuplicateGroup, DuplicateEntry } from '../utils/importUtils';
 import {
     Check, X, Play, AlertTriangle,
     ArrowRight, ArrowLeft, Trash2, Archive, Loader,
@@ -93,7 +93,13 @@ function defaultPrimary(status: SlotRow['status'], preset: QuickPreset, _mode: '
     }
 }
 
-function defaultToPool(status: SlotRow['status'], preset: QuickPreset, _mode: 'import' | 'push' = 'push'): boolean {
+function defaultToPool(
+    status: SlotRow['status'],
+    preset: QuickPreset,
+    _mode: 'import' | 'push' = 'push',
+    /** Clean Mirror only: the user took the offer to keep the doomed files. */
+    rescueBeforeClean = false,
+): boolean {
     if (preset === 'import_pool_only') {
         // "Standard Import" = Pool incoming SD files only (no slot changes)
         return status === 'REMOTE_ONLY' || status === 'CONFLICT';
@@ -102,29 +108,86 @@ function defaultToPool(status: SlotRow['status'], preset: QuickPreset, _mode: 'i
         // "Merge Import" & "Merge + Mirror" = Sync SD to Slots + Pool displaced PROJECT files
         return status === 'CONFLICT';
     }
-    // Preservation by default: if we are overwriting a slot in Push Sync, pool the old file. 
-    // Clean Mirror (push_clean) explicitly avoids pooling to match project exactly.
+    if (preset === 'push_clean') {
+        // Clean Mirror makes the card match the project, so it pools nothing by
+        // default — that is the whole point of it. The offer in the preview turns
+        // this on for exactly the slots the card is about to lose, so "clean" is
+        // not the only way out of it.
+        return rescueBeforeClean && (status === 'CONFLICT' || status === 'REMOTE_ONLY');
+    }
+    // Preservation by default: if we are overwriting a slot in Push Sync, pool the old file.
     return preset === 'push_sync' && status === 'CONFLICT';
 }
 
 /**
- * Files the card loses. `delete_sk` is the obvious one. The other is Clean
- * Mirror overwriting a conflicting slot: `defaultToPool` deliberately does not
- * pool the card's copy, so it is gone just as surely as a delete. The grid has
- * always flagged that with the red trash; the counts had not.
+ * Slots the card loses a file from. `delete_sk` is the obvious one. The other is
+ * a push over a conflicting slot: the write lands on top of the card's copy, so it
+ * leaves the card just as surely as a delete does.
+ *
+ * **It is no longer gated to `push_clean`.** It was, and `currentPreset` falls to
+ * `'custom'` the moment one row is hand-edited — so touching a single row in
+ * Advanced took the red wash off every *other* row while their actions stayed
+ * exactly as they were. A conflicting push is the same loss whichever button is lit.
+ *
+ * This says only that the file leaves that slot. Whether it survives — pooled, or
+ * written back to another slot — is `cardFate`, and every surface reads that one.
  */
-function isCardRemoval(r: SlotRow, preset: QuickPreset): boolean {
+function isCardRemoval(r: SlotRow): boolean {
+    if (!r.hardwareBlob) return false;
     if (r.primary === 'delete_sk') return true;
-    return preset === 'push_clean'
-        && r.primary === 'push_to_sk'
-        && r.status === 'CONFLICT'
-        && !r.toPool;
+    return r.primary === 'push_to_sk' && r.status === 'CONFLICT';
 }
 
-function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset): boolean {
+/** `Blue2` → `B2`, the short form the grids label cells with. */
+function shortSlot(slotId: string): string {
+    const { color, num } = parseTapeColor(slotId);
+    return `${TAPE_LETTER[color] ?? color}${num}`;
+}
+
+/**
+ * Where a removed card file's audio still is once the write finishes, by slot id.
+ * Clean Mirror often *shifts* a file rather than destroying it — what the card
+ * holds in B1 is what the project holds in C3 — and that is a move, not a loss.
+ *
+ * Content identity comes from `diff.duplicates`, already hashed for the duplicates
+ * banner, so this costs nothing extra. A slot holds the audio after the write if
+ * the project pushes it there, or if the card's own copy is left alone.
+ */
+function buildCardMoves(rows: SlotRow[], duplicates: DuplicateGroup[]): Record<string, string[]> {
+    const moves: Record<string, string[]> = {};
+    const removals = rows.filter(isCardRemoval);
+    if (removals.length === 0 || duplicates.length === 0) return moves;
+
+    const byId = new Map(rows.map(r => [r.id, r]));
+    const survivesOnCard = (e: DuplicateEntry) => {
+        const row = byId.get(e.slotId);
+        if (!row) return false;
+        return e.side === 'project' ? row.primary === 'push_to_sk' : !isCardRemoval(row);
+    };
+
+    removals.forEach(r => {
+        const group = duplicates.find(g => g.entries.some(e => e.slotId === r.id && e.side === 'sd'));
+        if (!group) return;
+        const dest = [...new Set(
+            group.entries.filter(e => e.slotId !== r.id && survivesOnCard(e)).map(e => e.slotId)
+        )];
+        if (dest.length) moves[r.id] = dest;
+    });
+    return moves;
+}
+
+/** What becomes of the card's copy. `null` when the card keeps it where it is. */
+type CardFate = 'destroyed' | 'moved' | 'pooled';
+function cardFate(r: SlotRow, moves: Record<string, string[]>): CardFate | null {
+    if (!isCardRemoval(r)) return null;
+    if (moves[r.id]) return 'moved';
+    return r.toPool ? 'pooled' : 'destroyed';
+}
+
+function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset, rescueBeforeClean = false): boolean {
     const slotsMatch = rows.every(r =>
         r.primary === defaultPrimary(r.status, preset) &&
-        r.toPool === defaultToPool(r.status, preset));
+        r.toPool === defaultToPool(r.status, preset, 'push', rescueBeforeClean));
     if (!configStatus) return slotsMatch;
     const configMatch = configDecision === defaultPrimary(configStatus, preset);
     return slotsMatch && configMatch;
@@ -319,6 +382,116 @@ const DuplicatesBanner: React.FC<{
 };
 
 
+// ─── CardLossPanel ────────────────────────────────────────────────────────────
+
+const LossList: React.FC<{
+    rows: SlotRow[];
+    tone: string;
+    suffix?: (r: SlotRow) => React.ReactNode;
+}> = ({ rows, tone, suffix }) => (
+    <ul className="flex flex-col gap-1 pl-6">
+        {rows.map(r => (
+            <li key={r.id} className={`text-[11px] font-medium flex items-center gap-2 min-w-0 ${tone}`}>
+                <span className="font-black opacity-60 shrink-0 min-w-[4.5rem]">{r.slot}</span>
+                <span className="truncate">{r.hardwareName || 'Unnamed file'}</span>
+                {suffix?.(r)}
+            </li>
+        ))}
+    </ul>
+);
+
+/**
+ * What the write takes off the card, named, for the simple view — which said it
+ * only with a red trash badge on a 6×6 grid cell, and said nothing at all about
+ * the files that merely change slot (S1-8).
+ */
+const CardLossPanel: React.FC<{
+    destroyed: SlotRow[];
+    moved: SlotRow[];
+    pooled: SlotRow[];
+    moves: Record<string, string[]>;
+    rescued: boolean;
+    onRescue: () => void;
+    onUndoRescue: () => void;
+}> = ({ destroyed, moved, pooled, moves, rescued, onRescue, onUndoRescue }) => {
+    const total = destroyed.length + moved.length + pooled.length;
+    if (total === 0) return null;
+
+    return (
+        <div className={[
+            'rounded-2xl border overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300',
+            destroyed.length ? 'border-red-500/30 bg-red-500/[0.04]' : 'border-white/10 bg-white/[0.02]',
+        ].join(' ')}>
+            <div className="px-5 py-3 flex items-center gap-3 border-b border-white/5">
+                <div className={`p-2 rounded-xl shrink-0 ${destroyed.length ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-gray-400'}`}>
+                    {destroyed.length ? <Trash2 size={16} /> : <ArrowRight size={16} />}
+                </div>
+                <div className="min-w-0">
+                    <p className="text-[12px] font-black text-white tracking-tight">
+                        {total} card file{total !== 1 ? 's' : ''} leave{total === 1 ? 's' : ''} {total === 1 ? 'its slot' : 'their slots'}
+                    </p>
+                    <p className="text-[10px] text-gray-500 font-medium mt-0.5">
+                        {destroyed.length > 0
+                            ? `${destroyed.length} of them ${destroyed.length === 1 ? 'is' : 'are'} kept nowhere — read this before you build`
+                            : 'All of them are kept — in the pool, or elsewhere on the card'}
+                    </p>
+                </div>
+            </div>
+
+            <div className="px-5 py-4 flex flex-col gap-4">
+                {destroyed.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-400 flex items-center gap-1.5">
+                            <Trash2 size={11} /> Gone for good — not kept anywhere
+                        </p>
+                        <LossList rows={destroyed} tone="text-red-200/80" />
+                        <button
+                            onClick={onRescue}
+                            className="ml-6 mt-1 w-fit flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-lg hover:-translate-y-0.5"
+                        >
+                            <Archive size={12} /> Import them to the pool first
+                        </button>
+                    </div>
+                )}
+
+                {moved.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                            <ArrowRight size={11} /> Moved — the same audio lands in another slot
+                        </p>
+                        <LossList
+                            rows={moved}
+                            tone="text-amber-200/80"
+                            suffix={r => (
+                                <span className="ml-auto pl-2 shrink-0 font-black text-amber-400/80">
+                                    → {(moves[r.id] ?? []).join(', ')}
+                                </span>
+                            )}
+                        />
+                    </div>
+                )}
+
+                {pooled.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-orange-400 flex items-center gap-1.5">
+                            <Archive size={11} /> Kept in the pool before the card is written
+                        </p>
+                        <LossList rows={pooled} tone="text-orange-200/80" />
+                        {rescued && (
+                            <button
+                                onClick={onUndoRescue}
+                                className="ml-6 w-fit text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
+                            >
+                                Undo — let them go
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
@@ -374,6 +547,10 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const [highlightedSlot, setHighlightedSlot] = useState<string | null>(null);
     const [hoveredSlotKey, setHoveredSlotKey] = useState<string | null>(null);
     const [showFuture, setShowFuture] = useState(false);
+    // The pool-first offer on Clean Mirror. Held as preset state rather than as a
+    // hand edit so that taking it does not knock the preset down to Custom —
+    // which would turn `skMode` back to 'overwrite' and stop it being a mirror.
+    const [rescueBeforeClean, setRescueBeforeClean] = useState(false);
 
     // Unified preview state
     const [activePreviewBlob, setActivePreviewBlob] = useState<Blob | null>(null);
@@ -459,6 +636,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
     const applyPreset = useCallback((preset: QuickPreset) => {
         setIsCustomOverride(preset === 'custom');
+        setRescueBeforeClean(false);
         if (preset === 'custom') {
             setRows(prev => prev.map(r => ({ ...r, primary: 'skip' as const, toPool: false })));
             setConfigDecision('skip');
@@ -467,7 +645,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         setRows(prev => prev.map(r => ({
             ...r,
             primary: defaultPrimary(r.status, preset, mode),
-            toPool: defaultToPool(r.status, preset, mode),
+            toPool: defaultToPool(r.status, preset, mode, false),
         })));
         if (diff.config) {
             setConfigDecision(defaultPrimary(diff.config.status as any, preset, mode));
@@ -479,8 +657,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         const presets: QuickPreset[] = mode === 'import' 
             ? ['import_pool_only', 'import_merge_project', 'import_sync_merge']
             : ['push_sync', 'push_clean'];
-        return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p)) ?? 'custom';
-    }, [rows, configDecision, diff.config, mode, isCustomOverride]);
+        return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p, rescueBeforeClean)) ?? 'custom';
+    }, [rows, configDecision, diff.config, mode, isCustomOverride, rescueBeforeClean]);
 
     const visibleRows = showAll ? rows : rows.filter(r => r.status !== 'MATCH' && r.status !== 'EMPTY');
 
@@ -490,8 +668,27 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     // Push/push counts for Simple view summary
     const pushCount = rows.filter(r => r.primary === 'push_to_sk').length;
     const pullCount = rows.filter(r => r.primary === 'pull_to_slot').length;
-    const cardRemovals = rows.filter(r => isCardRemoval(r, currentPreset));
+    // One classification, read by the grids, the slot list, the panel and the
+    // confirmation. Two of these disagreeing is what S1-8 was.
+    const cardMoves = useMemo(() => buildCardMoves(rows, diff.duplicates ?? []), [rows, diff.duplicates]);
+    const cardRemovals = rows.filter(isCardRemoval);
+    const destroyedRemovals = cardRemovals.filter(r => cardFate(r, cardMoves) === 'destroyed');
+    const movedRemovals = cardRemovals.filter(r => cardFate(r, cardMoves) === 'moved');
+    const pooledRemovals = cardRemovals.filter(r => cardFate(r, cardMoves) === 'pooled');
     const localDeleteCount = rows.filter(r => r.primary === 'delete_local').length;
+
+    /** The offer: keep the doomed files by pooling them before the card is written. */
+    const rescueDoomedToPool = useCallback(() => {
+        const doomed = new Set(rows.filter(r => cardFate(r, cardMoves) === 'destroyed').map(r => r.id));
+        setRescueBeforeClean(true);
+        setRows(prev => prev.map(r => doomed.has(r.id) ? { ...r, toPool: true } : r));
+    }, [rows, cardMoves]);
+
+    const undoRescue = useCallback(() => {
+        const rescued = new Set(rows.filter(r => cardFate(r, cardMoves) === 'pooled').map(r => r.id));
+        setRescueBeforeClean(false);
+        setRows(prev => prev.map(r => rescued.has(r.id) ? { ...r, toPool: false } : r));
+    }, [rows, cardMoves]);
 
     const handleTrashSlot = useCallback((slotId: string, side: 'project' | 'sd') => {
         setIsCustomOverride(true);
@@ -693,6 +890,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 sdBadges[key] = { label: 'POOL', bg: 'bg-orange-600' };
                 sdPoolFlags[key] = true;
                 sdIndicatorBorders[key] = { color: 'border-orange-500', variant: 'dashed' };
+            } else if (r.primary === 'delete_sk') {
+                // The pool-first offer's own case: the card's copy is read into the
+                // pool, then the slot is cleared. Without this the grid showed the
+                // rescue as a plain delete.
+                sdBadges[key] = { label: 'POOL', bg: 'bg-orange-600' };
+                sdPoolFlags[key] = true;
+                sdIndicatorBorders[key] = { color: 'border-orange-500', variant: 'dashed' };
             }
         }
 
@@ -703,10 +907,17 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             sdBadges[key] = { label: '→ PR', bg: 'bg-orange-600' };
         }
 
-        // 2. DELETE (Erased file gets icon, replacement gets red dashed border)
-        if (isCardRemoval(r, currentPreset)) {
+        // 2. LEAVING THE CARD — destroyed takes the trash icon, moved says where it
+        //    goes instead, pooled already wears the POOL badge from the block above.
+        const fate = cardFate(r, cardMoves);
+        if (fate === 'destroyed') {
             sdTrashFlags[key] = true;
             sdIndicatorBorders[key] = { color: 'border-red-500', variant: 'dashed' };
+        } else if (fate === 'moved') {
+            if (!sdBadges[key]) {
+                sdBadges[key] = { label: `→ ${(cardMoves[r.id] ?? []).map(shortSlot).join(' ')}`, bg: 'bg-amber-600' };
+            }
+            sdIndicatorBorders[key] = { color: 'border-amber-500', variant: 'dashed' };
         } else if (r.primary === 'delete_local') {
             prTrashFlags[key] = true;
             prIndicatorBorders[key] = { color: 'border-red-500', variant: 'dashed' };
@@ -873,6 +1084,20 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     Switch to Advanced
                                 </button>
                             </div>
+                        )}
+
+                        {/* WHAT THE CARD LOSES — named, not just badged. Quiet when
+                            everything is pooled by default, as Standard Build does. */}
+                        {(destroyedRemovals.length > 0 || movedRemovals.length > 0 || rescueBeforeClean) && (
+                        <CardLossPanel
+                            destroyed={destroyedRemovals}
+                            moved={movedRemovals}
+                            pooled={pooledRemovals}
+                            moves={cardMoves}
+                            rescued={rescueBeforeClean}
+                            onRescue={rescueDoomedToPool}
+                            onUndoRescue={undoRescue}
+                        />
                         )}
 
                         {/* BEFORE SYNC */}
@@ -1174,7 +1399,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 const canPullSlot = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canDeleteSK = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canToPool = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
-                                const cardFileRemoved = isCardRemoval(row, currentPreset);
+                                const fate = cardFate(row, cardMoves);
+                                const cardFileDestroyed = fate === 'destroyed';
+                                const cardFileMoved = fate === 'moved';
+                                const cardFilePooled = fate === 'pooled';
+                                const moveTargets = (cardMoves[row.id] ?? []).map(shortSlot).join(', ');
 
                                 const pBtn = (dec: SKPrimaryDecision, icon: React.ReactNode, enabled: boolean, activeColor: string) => {
                                     const isActive = row.primary === dec;
@@ -1199,7 +1428,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 // If PR is trashed AND we are pulling from SD
                                 if (row.primary === 'pull_to_slot' && row.status === 'CONFLICT') {
                                     parts.push('🗑️ Trashed & Imported');
-                                } else if (cardFileRemoved && row.primary === 'push_to_sk') {
+                                } else if (cardFileDestroyed && row.primary === 'push_to_sk') {
                                     // The card's copy is overwritten and not pooled
                                     parts.push('🗑️ Trashed & Pushed');
                                 } else if (row.primary !== 'skip') {
@@ -1212,7 +1441,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     <div key={row.id}
                                         className={[
                                             'grid grid-cols-[40px_1fr_80px_150px_1fr] gap-0 border-b border-white/5 transition-colors',
-                                            cardFileRemoved ? 'bg-red-500/[0.07] hover:bg-red-500/[0.11]' : 'hover:bg-white/[0.02]',
+                                            cardFileDestroyed ? 'bg-red-500/[0.07] hover:bg-red-500/[0.11]'
+                                                : cardFileMoved ? 'bg-amber-500/[0.06] hover:bg-amber-500/[0.10]'
+                                                    : 'hover:bg-white/[0.02]',
                                             isSame ? 'opacity-40' : '',
                                         ].join(' ')}>
 
@@ -1275,13 +1506,19 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                         </button>
                                                     )}
                                                     
-                                                    {cardFileRemoved && (
+                                                    {cardFileDestroyed && (
                                                         <span className="text-[8px] text-red-400 font-black uppercase tracking-tighter flex items-center gap-1">
                                                             <Trash2 size={9} /> SD file deleted
                                                         </span>
                                                     )}
 
-                                                    {!canToPool && !cardFileRemoved && (
+                                                    {cardFileMoved && (
+                                                        <span className="text-[8px] text-amber-400 font-black uppercase tracking-tighter flex items-center gap-1">
+                                                            <ArrowRight size={9} /> Moves to {moveTargets}
+                                                        </span>
+                                                    )}
+
+                                                    {!canToPool && !fate && (
                                                         <span className="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-1">
                                                             {activeLabel}
                                                         </span>
@@ -1301,12 +1538,20 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                             )}
                                             {row.hardwareName ? (
                                                 <div className="flex-1 min-w-0 text-right">
-                                                    <p className={`text-xs font-medium truncate ${cardFileRemoved ? 'text-red-200/70 line-through decoration-red-500/70' : 'text-white'}`}>
+                                                    <p className={`text-xs font-medium truncate ${cardFileDestroyed ? 'text-red-200/70 line-through decoration-red-500/70' : 'text-white'}`}>
                                                         {row.hardwareName}
                                                     </p>
-                                                    {cardFileRemoved ? (
+                                                    {cardFileDestroyed ? (
                                                         <p className="text-[10px] text-red-400 mt-0.5 font-bold flex items-center justify-end gap-1">
                                                             <Trash2 size={9} /> Deleted from card
+                                                        </p>
+                                                    ) : cardFileMoved ? (
+                                                        <p className="text-[10px] text-amber-400 mt-0.5 font-bold flex items-center justify-end gap-1">
+                                                            <ArrowRight size={9} /> Moves to {moveTargets}
+                                                        </p>
+                                                    ) : cardFilePooled ? (
+                                                        <p className="text-[10px] text-orange-400 mt-0.5 font-bold flex items-center justify-end gap-1">
+                                                            <Archive size={9} /> Into the pool, off the card
                                                         </p>
                                                     ) : (
                                                         <p className="text-[10px] text-gray-500 mt-0.5">on SK</p>
@@ -1458,7 +1703,19 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         </div>
                                         <div>
                                             <p className="text-white text-[13px] font-bold">Import to Pool</p>
-                                            <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider font-medium">Displaced files preserved</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider font-medium">
+                                                {pooledRemovals.length > 0
+                                                    ? `Displaced files preserved · ${pooledRemovals.length} rescued from the card`
+                                                    : 'Displaced files preserved'}
+                                            </p>
+                                            {rescueBeforeClean && pooledRemovals.length > 0 && (
+                                                <button
+                                                    onClick={undoRescue}
+                                                    className="text-[9px] font-black uppercase tracking-widest text-gray-600 hover:text-white transition-colors mt-1"
+                                                >
+                                                    Undo — let them go
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     <span className="text-2xl font-black text-white group-hover:text-teal-400 transition-colors">
@@ -1466,7 +1723,39 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     </span>
                                 </div>
 
-                                {cardRemovals.length > 0 && (
+                                {movedRemovals.length > 0 && (
+                                    <div className="p-5 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-400">
+                                                    <ArrowRight size={18} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-white text-[13px] font-bold">
+                                                        {movedRemovals.length} file{movedRemovals.length !== 1 ? 's' : ''} move{movedRemovals.length === 1 ? 's' : ''} to another slot
+                                                    </p>
+                                                    <p className="text-[10px] text-amber-500/70 mt-0.5 uppercase tracking-wider font-medium">
+                                                        Same audio, new slot — the card keeps it
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="text-2xl font-black text-amber-400">{movedRemovals.length}</span>
+                                        </div>
+                                        <ul className="flex flex-col gap-1 pl-[3.75rem] -mt-1">
+                                            {movedRemovals.map(r => (
+                                                <li key={r.id} className="text-[11px] text-amber-200/80 font-medium flex items-center gap-2 min-w-0">
+                                                    <span className="text-amber-500/50 font-black shrink-0">{r.slot}</span>
+                                                    <span className="truncate">{r.hardwareName || 'Unnamed file'}</span>
+                                                    <span className="ml-auto pl-2 shrink-0 font-black text-amber-400/80">
+                                                        → {(cardMoves[r.id] ?? []).join(', ')}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {destroyedRemovals.length > 0 && (
                                     <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/20 flex flex-col gap-3">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-4">
@@ -1475,23 +1764,29 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                 </div>
                                                 <div>
                                                     <p className="text-white text-[13px] font-bold">
-                                                        {cardRemovals.length} file{cardRemovals.length !== 1 ? 's' : ''} removed from the card
+                                                        {destroyedRemovals.length} file{destroyedRemovals.length !== 1 ? 's' : ''} removed from the card
                                                     </p>
                                                     <p className="text-[10px] text-red-500/70 mt-0.5 uppercase tracking-wider font-medium">
                                                         Not kept in the pool — gone for good
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="text-2xl font-black text-red-500">{cardRemovals.length}</span>
+                                            <span className="text-2xl font-black text-red-500">{destroyedRemovals.length}</span>
                                         </div>
                                         <ul className="flex flex-col gap-1 pl-[3.75rem] -mt-1">
-                                            {cardRemovals.map(r => (
+                                            {destroyedRemovals.map(r => (
                                                 <li key={r.id} className="text-[11px] text-red-200/80 font-medium flex items-center gap-2 min-w-0">
                                                     <span className="text-red-500/50 font-black shrink-0">{r.slot}</span>
                                                     <span className="truncate">{r.hardwareName || 'Unnamed file'}</span>
                                                 </li>
                                             ))}
                                         </ul>
+                                        <button
+                                            onClick={rescueDoomedToPool}
+                                            className="ml-[3.75rem] w-fit flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-lg hover:-translate-y-0.5"
+                                        >
+                                            <Archive size={12} /> Import them to the pool first
+                                        </button>
                                     </div>
                                 )}
 

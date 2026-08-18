@@ -95,6 +95,14 @@ release whose premise is separating one muddled thing into clean tiers.*
   on a bright screen.
 
 ### Fixed
+- **The build preview says what leaves the SD card, and offers to keep it.** Clean Mirror makes the
+  card match the project exactly, and what that removed was said only with a red trash badge on a grid
+  cell: the confirmation counted none of it, and a card file being *overwritten* — destroyed just as
+  surely as a deleted one — was counted nowhere at all. Every file leaving the card is now named
+  before the write, in the plain view as well as the slot list and the final confirmation, and **one
+  button imports them into the pool first**, so "clean" is no longer the only way out of it. A file
+  the project simply moves to another slot is shown as a move: the card keeps that audio, and the
+  preview no longer calls it a loss.
 - **"Reset Visual Effects" trailed the panel and could become unreadable.** The button has to be drawn
   outside the app's visual filters — it is what turns them off, and a CSS filter traps everything
   inside it — so it is drawn separately and told where to sit. It was also set to animate any
