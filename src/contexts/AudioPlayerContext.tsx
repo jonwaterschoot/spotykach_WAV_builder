@@ -4,6 +4,13 @@ import type { FileRecord } from '../types';
 interface AudioPlayerContextType {
     isPlaying: boolean;
     activeFileId: string | null;
+    /**
+     * The last file the transport loaded, kept after `stop()` clears `activeFileId`.
+     * The player bar shows it so the bar does not empty out between plays, and it lives
+     * here rather than in a bar so that both bars — the one in All Tapes and the one in
+     * a single tape — still name the same file after a view switch.
+     */
+    lastActiveFileId: string | null;
     play: (file: FileRecord, versionId?: string) => void;
     stop: () => void;
     pause: () => void;
@@ -20,34 +27,125 @@ export const useAudioPlayer = () => {
     return context;
 };
 
+// Long enough to take the click off a hard cut, short enough that nobody waits for it.
+const FADE_MS = 15;
+
 export const AudioPlayerProvider = ({ children }: { children: React.ReactNode }) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
+    const [lastActiveFileId, setLastActiveFileId] = useState<string | null>(null);
     const [duration, setDuration] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const currentUrlRef = useRef<string | null>(null);
 
+    // The volume ramp runs on frames, but whatever waits at the end of it — the pause,
+    // the return to full volume — runs on a timer. Frames stop landing whenever the main
+    // thread is busy (decoding a waveform, encoding a WAV) and stop altogether when the
+    // tab is hidden, so nothing that has to happen may be left sitting inside the ramp.
+    const fadeRafRef = useRef<number | null>(null);
+    const haltTimerRef = useRef<number | null>(null);
+
+    const clearFade = () => {
+        if (fadeRafRef.current) {
+            cancelAnimationFrame(fadeRafRef.current);
+            fadeRafRef.current = null;
+        }
+        if (haltTimerRef.current) {
+            clearTimeout(haltTimerRef.current);
+            haltTimerRef.current = null;
+        }
+    };
+
+    // Ramps down, then pauses and runs `halt`. `halt` belongs to the timer, so a ramp
+    // that never gets a frame costs the fade and nothing else.
+    const fadeOutThen = (halt: () => void) => {
+        clearFade();
+
+        const audio = audioRef.current;
+        if (!audio || audio.paused) {
+            halt();
+            return;
+        }
+
+        const startVolume = audio.volume;
+        const startTime = performance.now();
+
+        const step = (now: number) => {
+            const progress = Math.min((now - startTime) / FADE_MS, 1);
+            if (audioRef.current) audioRef.current.volume = startVolume * (1 - progress);
+            fadeRafRef.current = progress < 1 ? requestAnimationFrame(step) : null;
+        };
+        fadeRafRef.current = requestAnimationFrame(step);
+
+        haltTimerRef.current = window.setTimeout(() => {
+            haltTimerRef.current = null;
+            if (fadeRafRef.current) {
+                cancelAnimationFrame(fadeRafRef.current);
+                fadeRafRef.current = null;
+            }
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.volume = 1;
+            }
+            halt();
+        }, FADE_MS);
+    };
+
+    // The mirror of the above, for a start or a resume. Expects the element to be at
+    // zero already so the first frame does not jump.
+    const fadeIn = () => {
+        clearFade();
+
+        const audio = audioRef.current;
+        if (!audio) return;
+
+        audio.volume = 0;
+        const startTime = performance.now();
+
+        const step = (now: number) => {
+            const progress = Math.min((now - startTime) / FADE_MS, 1);
+            if (audioRef.current) audioRef.current.volume = progress;
+            fadeRafRef.current = progress < 1 ? requestAnimationFrame(step) : null;
+        };
+        fadeRafRef.current = requestAnimationFrame(step);
+
+        haltTimerRef.current = window.setTimeout(() => {
+            haltTimerRef.current = null;
+            if (fadeRafRef.current) {
+                cancelAnimationFrame(fadeRafRef.current);
+                fadeRafRef.current = null;
+            }
+            if (audioRef.current) audioRef.current.volume = 1;
+        }, FADE_MS);
+    };
+
     useEffect(() => {
-        audioRef.current = new Audio();
-        audioRef.current.onended = () => {
+        const audio = new Audio();
+        audioRef.current = audio;
+
+        audio.onended = () => {
             setIsPlaying(false);
             setActiveFileId(null);
             setCurrentTime(0);
         };
-        audioRef.current.ontimeupdate = () => {
-            if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+        audio.ontimeupdate = () => {
+            setCurrentTime(audio.currentTime);
         };
-        audioRef.current.onloadedmetadata = () => {
-            if (audioRef.current) setDuration(audioRef.current.duration);
+        audio.onloadedmetadata = () => {
+            setDuration(audio.duration);
         };
-        audioRef.current.onerror = (e) => {
+        audio.onerror = (e) => {
             console.error("Audio Playback Error", e);
+            clearFade();
+            audio.volume = 1;
             setIsPlaying(false);
             setActiveFileId(null);
         };
 
         return () => {
+            clearFade();
+            audio.pause();
             if (currentUrlRef.current) {
                 URL.revokeObjectURL(currentUrlRef.current);
             }
@@ -76,70 +174,20 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         };
     }, [isPlaying]);
 
-
-    const fadeIntervalRef = useRef<number | null>(null);
-    const pendingActionRef = useRef<(() => void) | null>(null);
-
-    const clearFade = () => {
-        if (fadeIntervalRef.current) {
-            cancelAnimationFrame(fadeIntervalRef.current);
-            fadeIntervalRef.current = null;
-        }
-        pendingActionRef.current = null;
-    };
-
-    const fadeOut = (callback: () => void) => {
-        clearFade(); // Cancel any existing fade/action
-
-        if (!audioRef.current || audioRef.current.paused) {
-            callback();
-            return;
-        }
-
-        const audio = audioRef.current;
-        const startVolume = 1.0;
-        const fadeTime = 15; // Shorter fade (15ms)
-        const startTime = performance.now();
-        pendingActionRef.current = callback;
-
-        const animate = (now: number) => {
-            const elapsed = now - startTime;
-            const progress = Math.min(elapsed / fadeTime, 1);
-
-            if (audioRef.current) {
-                audio.volume = startVolume * (1 - progress);
-            }
-
-            if (progress < 1) {
-                fadeIntervalRef.current = requestAnimationFrame(animate);
-            } else {
-                audio.pause();
-                audio.volume = startVolume;
-                const action = pendingActionRef.current;
-                fadeIntervalRef.current = null;
-                pendingActionRef.current = null;
-                if (action) action();
-            }
-        };
-        fadeIntervalRef.current = requestAnimationFrame(animate);
-    };
-
+    // Stop and pause report themselves before they fade. The button has to answer the
+    // click now, not once the ramp is finished with it.
     const stop = () => {
-        fadeOut(() => {
-            if (audioRef.current) {
-                audioRef.current.pause();
-                audioRef.current.currentTime = 0;
-            }
-            setIsPlaying(false);
-            setActiveFileId(null);
-            setCurrentTime(0);
+        setIsPlaying(false);
+        setActiveFileId(null);
+        setCurrentTime(0);
+        fadeOutThen(() => {
+            if (audioRef.current) audioRef.current.currentTime = 0;
         });
     };
 
     const pause = () => {
-        fadeOut(() => {
-            setIsPlaying(false);
-        });
+        setIsPlaying(false);
+        fadeOutThen(() => { });
     };
 
     const seek = (time: number) => {
@@ -166,17 +214,12 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
                 audioRef.current.play()
                     .then(() => {
                         setIsPlaying(true);
-                        const startTime = performance.now();
-                        const fadeIn = (now: number) => {
-                            const elapsed = now - startTime;
-                            const progress = Math.min(elapsed / 15, 1);
-                            if (audioRef.current) audioRef.current.volume = progress;
-                            if (progress < 1) fadeIntervalRef.current = requestAnimationFrame(fadeIn);
-                            else fadeIntervalRef.current = null;
-                        };
-                        fadeIntervalRef.current = requestAnimationFrame(fadeIn);
+                        fadeIn();
                     })
-                    .catch(e => console.error("Resume failed", e));
+                    .catch(e => {
+                        console.error("Resume failed", e);
+                        if (audioRef.current) audioRef.current.volume = 1;
+                    });
             }
             return;
         }
@@ -185,7 +228,15 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
             const version = file.versions.find(v => v.id === targetVersionId);
 
             if (!version || !version.blob) {
+                // The fade-out has already stopped whatever was running, so the transport
+                // has to be told it is idle. Left alone it keeps reporting the previous
+                // file as playing, and the card that file sits in keeps offering a STOP
+                // for audio that is no longer there.
                 console.warn("AudioPlayer: No valid blob found for file", file.name);
+                setIsPlaying(false);
+                setActiveFileId(null);
+                setCurrentTime(0);
+                alert(`"${file.name}" has no audio to play. The file is missing or unreadable.`);
                 return;
             }
 
@@ -204,32 +255,28 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
                     .then(() => {
                         setIsPlaying(true);
                         setActiveFileId(file.id);
-                        const startTime = performance.now();
-                        const fadeIn = (now: number) => {
-                            const elapsed = now - startTime;
-                            const progress = Math.min(elapsed / 15, 1);
-                            if (audioRef.current) audioRef.current.volume = progress;
-                            if (progress < 1) fadeIntervalRef.current = requestAnimationFrame(fadeIn);
-                            else fadeIntervalRef.current = null;
-                        };
-                        fadeIntervalRef.current = requestAnimationFrame(fadeIn);
+                        setLastActiveFileId(file.id);
+                        fadeIn();
                     })
                     .catch(e => {
                         console.error("Play failed", e);
+                        if (audioRef.current) audioRef.current.volume = 1;
+                        setIsPlaying(false);
+                        setActiveFileId(null);
                         alert("Playback failed. See console.");
                     });
             }
         };
 
-        if (isPlaying || fadeIntervalRef.current) {
-            fadeOut(proceedToPlay);
+        if (isPlaying || fadeRafRef.current || haltTimerRef.current) {
+            fadeOutThen(proceedToPlay);
         } else {
             proceedToPlay();
         }
     };
 
     return (
-        <AudioPlayerContext.Provider value={{ isPlaying, activeFileId, play, stop, pause, seek, duration, currentTime }}>
+        <AudioPlayerContext.Provider value={{ isPlaying, activeFileId, lastActiveFileId, play, stop, pause, seek, duration, currentTime }}>
             {children}
         </AudioPlayerContext.Provider>
     );

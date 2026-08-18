@@ -39,15 +39,15 @@ everything still unassessed is project-shaped.
 
 **What only a project exercises:**
 
-- version history across saves — the first Studio save after the two-version collapse (locked decision 7);
-- assigning an edited file to a slot;
-- **save unique** and **save copy to pool**;
-- **cleanup** — a project-wide action, and the reason the modal below was never reachable;
-- the two shared-component changes from the Browse rounds as they land in Studio's tape editor: the
+- [x] version history across saves — the first Studio save after the two-version collapse (locked decision 7);
+- [x] assigning an edited file to a slot;
+- [x] **save unique** and **save copy to pool**;
+- [] **cleanup** — a project-wide action, and the reason the modal below was never reachable;
+- [] the two shared-component changes from the Browse rounds as they land in Studio's tape editor: the
   editor's close button (R2-3) and its header/history layout (R3-2). `LooseFileEditor` renders the same
   `WaveformEditor`, so the shell change is confirmed in two hosts already — Studio is the third and the
   only one with a project;
-- **how the two editor hosts should differ.** `#/editor` is a loose file that exits to the hub; Studio's
+- [] **how the two editor hosts should differ.** `#/editor` is a loose file that exits to the hub; Studio's
   tape editor is a slot that exits back to the grid. UX_Overhaul asked for a sketch of that split and
   never got one — the box is closed as a wireframe (2026-08-18), because the answer comes from walking
   the component with a project behind it, which is this round. **If anything about the split still feels
@@ -67,6 +67,57 @@ explicitly not a v4 goal.
 
 **Where findings go:** here, under a `### Round 5` heading, and into
 [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md) once they close.
+
+### Round 5
+
+#### Main view
+
+- [x] **Player bug in main view** — playing a file from a tape slot or from the left column did not start
+  playback; once it did start it answered neither the spacebar, nor the pause button on the playbar, nor
+  the stop button in the left browser panel. **Fixed 2026-08-18 in
+  [`src/contexts/AudioPlayerContext.tsx`](src/contexts/AudioPlayerContext.tsx), and walked in every
+  situation the same day — play, pause, stop and the spacebar, from the tape slots, the left column and
+  both player bars, in All Tapes and in a single tape. All correct; closed.** Three causes, all in the
+  one file:
+  - **The transport was gated behind a frame.** `stop()` and `pause()` never touched the audio element
+    themselves — they handed a callback to `fadeOut`, and the actual `audio.pause()` only ran on the
+    final frame of a 15 ms `requestAnimationFrame` chain. Frames stop landing whenever the main thread is
+    busy (decoding a waveform, encoding a WAV) and stop altogether when the tab is hidden, so the pause
+    could simply never arrive. Worse, every fresh call began with `clearFade()`, which **discarded the
+    pending `audio.pause()`** — so pressing the button again actively kept the audio alive. The ramp is
+    now cosmetic and the halt belongs to a `setTimeout`; `stop()`/`pause()` also set their state
+    synchronously, so the button answers the click rather than the ramp.
+  - **A missing blob failed silently.** `AudioVersion.blob` is `Blob | null` by design (missing or
+    unreadable files), and `play()` returned on null with only a `console.warn` — after the fade-out had
+    already stopped the previous file. Nothing played, and `isPlaying`/`activeFileId` were left pointing
+    at the old file, so its card kept offering a STOP for audio that was no longer there. It now resets
+    the transport and says what happened.
+  - **Two `.catch` paths left `volume` at 0**, which would have made the *next* successful play silent.
+- [x] **No player bar in a single tape view.** Added 2026-08-18. The bar was inline in `AllViewGrid`; it
+  is now [`src/components/GlobalPlayerBar.tsx`](src/components/GlobalPlayerBar.tsx), used by both views.
+  It is placed with `sticky bottom-4`, not `fixed`, so it rides the foot of the scroll column and
+  inherits that column's width and left offset — which matters because the browser panel on the left is
+  resizable and a `fixed` bar would have had to guess its width. "Last played file" moved into the
+  player context (`lastActiveFileId`) so both bars still name the same file across a view switch.
+- **On the spacebar:** there is no key handler for it and there should not be — the playbar's play/pause
+  control is a real `<button>`, so once clicked it holds focus and the browser fires a click on Space.
+  That is why it worked in All Tapes and not in a single tape: the behaviour follows the bar, and the
+  single tape view had no bar. It should work in both now, but it is **focus-dependent by nature** — it
+  acts on the last thing clicked. If a genuinely global "space always toggles the player" is wanted,
+  that is a separate change and it would need to be reconciled with the editor's own Space handler in
+  [`WaveformEditor.tsx`](src/components/WaveformEditor.tsx), which grabs and `preventDefault`s every
+  Space while it is mounted.
+
+#### Editor in Studio:
+- I make a trim, not applied yet, I click "save copy to pool": 
+  - What I expect: modal asks "Apply Trim?" - trim / fade is, or is not applied and the original un-applied file remains open, while a copy gets saved in the pool. (a note in e.g. history can show that step)
+  - What happens currently: Trim / fade is applied to current file + a trimmed copy is saved in the pool   
+
+- **Loop**
+  - after clicking preview and auditioning the result, i want to apply; but a warning modal is shown asking me if i really want to switch tools or discard ... This is buggy behaviour. 
+  - What I expect to happen: the loop as set and checked after auditioning with preview is applied
+
+  
 
 ### 2. Paths no round has ever exercised
 

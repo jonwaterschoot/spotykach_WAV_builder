@@ -5,6 +5,7 @@ import logoImg from './assets/img/Spotykach_Logo.webp?url';
 import tapeIcon from './assets/img/spotykachtapeicon.svg?url';
 import { SlotGrid } from './components/SlotGrid';
 import { AllViewGrid } from './components/AllViewGrid';
+import { GlobalPlayerBar } from './components/GlobalPlayerBar';
 import { FileBrowser } from './components/FileBrowser';
 import type { AppState, TapeColor, FileRecord, AudioVersion, ExportOptions } from './types';
 import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from './types';
@@ -4737,6 +4738,15 @@ function App({ onExitToHub }: AppProps) {
                           minHeight="150px"
                         />
                       </div>
+
+                      {/* Global Player Bar - All Tapes keeps its own inside the grid card.
+                          Here it rides the bottom of the scroll column, which pins it to the
+                          foot of the window without having to know how wide the browser panel
+                          has been dragged. */}
+                      <GlobalPlayerBar
+                        files={state.files}
+                        className="sticky bottom-4 md:bottom-6 z-[60] mt-8"
+                      />
                     </>
                   ) : (
                     <div className="bg-black/40 rounded-3xl p-4 border border-white/5 backdrop-blur-md">
