@@ -107,6 +107,20 @@ function defaultToPool(status: SlotRow['status'], preset: QuickPreset, _mode: 'i
     return preset === 'push_sync' && status === 'CONFLICT';
 }
 
+/**
+ * Files the card loses. `delete_sk` is the obvious one. The other is Clean
+ * Mirror overwriting a conflicting slot: `defaultToPool` deliberately does not
+ * pool the card's copy, so it is gone just as surely as a delete. The grid has
+ * always flagged that with the red trash; the counts had not.
+ */
+function isCardRemoval(r: SlotRow, preset: QuickPreset): boolean {
+    if (r.primary === 'delete_sk') return true;
+    return preset === 'push_clean'
+        && r.primary === 'push_to_sk'
+        && r.status === 'CONFLICT'
+        && !r.toPool;
+}
+
 function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset): boolean {
     const slotsMatch = rows.every(r =>
         r.primary === defaultPrimary(r.status, preset) &&
@@ -476,7 +490,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     // Push/push counts for Simple view summary
     const pushCount = rows.filter(r => r.primary === 'push_to_sk').length;
     const pullCount = rows.filter(r => r.primary === 'pull_to_slot').length;
-    const deleteCount = rows.filter(r => r.primary === 'delete_sk' || r.primary === 'delete_local').length;
+    const cardRemovals = rows.filter(r => isCardRemoval(r, currentPreset));
+    const localDeleteCount = rows.filter(r => r.primary === 'delete_local').length;
 
     const handleTrashSlot = useCallback((slotId: string, side: 'project' | 'sd') => {
         setIsCustomOverride(true);
@@ -689,7 +704,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         }
 
         // 2. DELETE (Erased file gets icon, replacement gets red dashed border)
-        if (r.primary === 'delete_sk' || (currentPreset === 'push_clean' && r.primary === 'push_to_sk' && r.status === 'CONFLICT')) {
+        if (isCardRemoval(r, currentPreset)) {
             sdTrashFlags[key] = true;
             sdIndicatorBorders[key] = { color: 'border-red-500', variant: 'dashed' };
         } else if (r.primary === 'delete_local') {
@@ -1159,6 +1174,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 const canPullSlot = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canDeleteSK = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canToPool = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
+                                const cardFileRemoved = isCardRemoval(row, currentPreset);
 
                                 const pBtn = (dec: SKPrimaryDecision, icon: React.ReactNode, enabled: boolean, activeColor: string) => {
                                     const isActive = row.primary === dec;
@@ -1183,8 +1199,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 // If PR is trashed AND we are pulling from SD
                                 if (row.primary === 'pull_to_slot' && row.status === 'CONFLICT') {
                                     parts.push('🗑️ Trashed & Imported');
-                                } else if (row.primary === 'push_to_sk' && row.status === 'CONFLICT') {
-                                    // If SD is trashed AND we are pushing from PR
+                                } else if (cardFileRemoved && row.primary === 'push_to_sk') {
+                                    // The card's copy is overwritten and not pooled
                                     parts.push('🗑️ Trashed & Pushed');
                                 } else if (row.primary !== 'skip') {
                                     parts.push(PRIMARY_LABEL[row.primary]);
@@ -1194,7 +1210,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
                                 return (
                                     <div key={row.id}
-                                        className={`grid grid-cols-[40px_1fr_80px_150px_1fr] gap-0 border-b border-white/5 hover:bg-white/[0.02] transition-colors ${isSame ? 'opacity-40' : ''}`}>
+                                        className={[
+                                            'grid grid-cols-[40px_1fr_80px_150px_1fr] gap-0 border-b border-white/5 transition-colors',
+                                            cardFileRemoved ? 'bg-red-500/[0.07] hover:bg-red-500/[0.11]' : 'hover:bg-white/[0.02]',
+                                            isSame ? 'opacity-40' : '',
+                                        ].join(' ')}>
 
                                         <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-white/5">
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: dotColor }} />
@@ -1255,7 +1275,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                         </button>
                                                     )}
                                                     
-                                                    {!canToPool && (
+                                                    {cardFileRemoved && (
+                                                        <span className="text-[8px] text-red-400 font-black uppercase tracking-tighter flex items-center gap-1">
+                                                            <Trash2 size={9} /> SD file deleted
+                                                        </span>
+                                                    )}
+
+                                                    {!canToPool && !cardFileRemoved && (
                                                         <span className="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-1">
                                                             {activeLabel}
                                                         </span>
@@ -1275,8 +1301,16 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                             )}
                                             {row.hardwareName ? (
                                                 <div className="flex-1 min-w-0 text-right">
-                                                    <p className="text-xs text-white font-medium truncate">{row.hardwareName}</p>
-                                                    <p className="text-[10px] text-gray-500 mt-0.5">on SK</p>
+                                                    <p className={`text-xs font-medium truncate ${cardFileRemoved ? 'text-red-200/70 line-through decoration-red-500/70' : 'text-white'}`}>
+                                                        {row.hardwareName}
+                                                    </p>
+                                                    {cardFileRemoved ? (
+                                                        <p className="text-[10px] text-red-400 mt-0.5 font-bold flex items-center justify-end gap-1">
+                                                            <Trash2 size={9} /> Deleted from card
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-[10px] text-gray-500 mt-0.5">on SK</p>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <p className="text-xs text-gray-600 italic text-right flex-1">—</p>
@@ -1432,18 +1466,47 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     </span>
                                 </div>
 
-                                {deleteCount > 0 && currentPreset === 'push_clean' && (
-                                    <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/10 flex items-center justify-between group">
+                                {cardRemovals.length > 0 && (
+                                    <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/20 flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-2.5 bg-red-500/20 rounded-xl text-red-500">
+                                                    <Trash2 size={18} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-white text-[13px] font-bold">
+                                                        {cardRemovals.length} file{cardRemovals.length !== 1 ? 's' : ''} removed from the card
+                                                    </p>
+                                                    <p className="text-[10px] text-red-500/70 mt-0.5 uppercase tracking-wider font-medium">
+                                                        Not kept in the pool — gone for good
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="text-2xl font-black text-red-500">{cardRemovals.length}</span>
+                                        </div>
+                                        <ul className="flex flex-col gap-1 pl-[3.75rem] -mt-1">
+                                            {cardRemovals.map(r => (
+                                                <li key={r.id} className="text-[11px] text-red-200/80 font-medium flex items-center gap-2 min-w-0">
+                                                    <span className="text-red-500/50 font-black shrink-0">{r.slot}</span>
+                                                    <span className="truncate">{r.hardwareName || 'Unnamed file'}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {localDeleteCount > 0 && (
+                                    <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/10 flex items-center justify-between">
                                         <div className="flex items-center gap-4">
                                             <div className="p-2.5 bg-red-500/20 rounded-xl text-red-500">
                                                 <Trash2 size={18} />
                                             </div>
                                             <div>
-                                                <p className="text-white text-[13px] font-bold">Permanent Removal</p>
-                                                <p className="text-[10px] text-red-500/70 mt-0.5 uppercase tracking-wider font-medium">Files to be erased</p>
+                                                <p className="text-white text-[13px] font-bold">Removed from the project</p>
+                                                <p className="text-[10px] text-red-500/70 mt-0.5 uppercase tracking-wider font-medium">Slots to be cleared</p>
                                             </div>
                                         </div>
-                                        <span className="text-2xl font-black text-red-500 transition-colors">{deleteCount}</span>
+                                        <span className="text-2xl font-black text-red-500">{localDeleteCount}</span>
                                     </div>
                                 )}
 

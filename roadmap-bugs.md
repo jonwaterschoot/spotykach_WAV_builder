@@ -258,7 +258,7 @@ that proceeds whichever way it is answered. Both are outside this item.
 
 ### Import and build to SD — `ExportPreviewModal.tsx`
 
-#### S1-7 — The import presets don't say which of them touch the card ✂️ ✅ *built and walked 2026-08-18*
+#### S1-7 — The import presets don't say which of them touch the card ✂️ ✅ *built 2026-08-18, not yet walked*
 
 Three import presets sat in one row as label-only buttons, and nothing distinguished *reads the card*
 from *reads the card and then writes it*. The behaviour lived entirely in two switch statements,
@@ -269,9 +269,9 @@ from *reads the card and then writes it*. The behaviour lived entirely in two sw
 Project + Mirror* pushes every slot-only project file to the card, and the word *Mirror* was the only
 warning, on a button under an **Import SD** tab with a left-pointing arrow and indigo styling.
 
-**It reached further than the item said.** `applyPreset` runs the same function over `diff.config`, so
-with a `config.txt` that exists only in the project, that preset writes the firmware config to the card
-too.
+**It reached further than the item said.** `applyPreset` runs the same function over `diff.config`
+([:374-376](src/components/ExportPreviewModal.tsx#L374-L376)), so with a `config.txt` that exists only in
+the project, that preset writes the firmware config to the card too.
 
 **Every preset now carries its own line, and a badge marks the one that writes.** A `PRESET_META` table
 holds the name, the sentence under it, and a `writesToCard` flag; a small `PresetButton` renders all of
@@ -290,8 +290,8 @@ every button would be noise — it exists because in import mode the write is th
 side reads as broken. Their names are unchanged; *Clean Mirror*'s line says card-only files are deleted,
 which is wording only and does not close **S1-8**.
 
-**The names were duplicated as literals in the confirm button**, so a rename could have left the two
-disagreeing. Both now read `PRESET_META`.
+**The names were duplicated as literals in the confirm button** ([:1276-1283](src/components/ExportPreviewModal.tsx#L1276-L1283)),
+so a rename could have left the two disagreeing. Both now read `PRESET_META`.
 
 **`import_slots_pool` is gone.** It was in the type and in the list `currentPreset` scans, but had no
 button and no case in either switch, so it computed to "everything skipped, nothing pooled". Since
@@ -299,17 +299,70 @@ button and no case in either switch, so it computed to "everything skipped, noth
 preset button lit, and the confirm button falling through to `'Standard Import & Sync'`, a name that
 existed nowhere else in the app.
 
-#### S1-8 — Clean Mirror doesn't show what it deletes 🐞
+**Not walked.** `tsc`, `eslint` (the file's seven errors are all pre-existing and untouched) and the
+production build are clean, but no browser was driven for this one. The layout — four 210px buttons in
+import mode inside a `max-w-6xl` modal — is the part that wants eyes.
 
-The most destructive preset on the build side ([ExportPreviewModal.tsx:723](src/components/ExportPreviewModal.tsx#L723),
-`push_clean`) makes the card match the project exactly — and the preview doesn't list what that removes.
+#### S1-8 — Clean Mirror doesn't show what it deletes 🐞 *(the count is fixed, 2026-08-18 — the rest is open)*
 
-- **The deletions have to appear in the preview**, named, before the write.
+The most destructive preset on the build side (`push_clean`) makes the card match the project exactly
+— and the preview doesn't list what that removes.
+
+- **The deletions have to appear in the preview**, named, before the write. *Done for the slot list and
+  the final confirmation — see below. The simple view's grids still only carry the red trash badge.*
 - **Offer to import them into the project pool first**, so "clean" isn't the only way out. Note that
   `push_clean` deliberately skips pooling today ([ExportPreviewModal.tsx:106](src/components/ExportPreviewModal.tsx#L106)),
-  so this is a change of behaviour and not just a change of wording.
+  so this is a change of behaviour and not just a change of wording. *Open.*
 - **Count the moves.** Where clean mirror shifts a file between slots rather than deleting it, that is a
-  move and should be counted and shown as one.
+  move and should be counted and shown as one. *Open.*
+
+##### The confirmation counted nothing ✅ *built 2026-08-18, found while walking S1-7*
+
+**Walking S1-7 in Build SD turned up a worse case than "doesn't list them": it didn't count them
+either.** A card holding `1.WAV` in B1 against a project holding `DRAINPIPE-UZ` there is a `CONFLICT`,
+so Clean Mirror pushes the project file over it — and `defaultToPool` returns false for `push_clean` on
+purpose, so the card's copy is not pooled. It is destroyed. The confirmation modal said **Push to SD 3,
+Import to Pool 0** and showed no removal panel at all.
+
+**Two rules had drifted apart.** The grid badge already treated that overwrite as a removal and drew the
+red trash on SD B1, but `deleteCount` only matched `delete_sk` — so the grid said "this file dies" and
+the dialog said nothing. There is now one `isCardRemoval(row, preset)` and both read it.
+
+- **It checks `!r.toPool`**, which the badge rule never did. `toPool` carries `file: r.hardwareBlob`
+  ([ExportPreviewModal.tsx:567](src/components/ExportPreviewModal.tsx#L567)) — it is the *card's* copy
+  that gets preserved — so a pooled conflict is not a loss and should not be counted as one.
+- **The panel names the files**, slot and filename, under a heading that counts them: *"1 file removed
+  from the card / not kept in the pool — gone for good"*.
+- **It is no longer gated to `push_clean`.** A `delete_sk` set by hand in Advanced view is the same
+  loss, and used to be invisible for the same reason.
+- **Project-side deletes got their own panel.** `delete_local` was being added into the same number as
+  card deletions, which are not the same event.
+
+##### The slot list didn't say it either ✅ *built 2026-08-18*
+
+**The same row in Advanced view gave no sign the card's file was going.** `1.WAV` sat under **SK
+Hardware** in plain white with *on SK* beneath it, next to a blue push arrow — the same as any other
+push.
+
+**The wording existed and was unreachable.** `activeLabel` has said `🗑️ Trashed & Pushed` for a
+conflicting push all along, but it only renders in the `!canToPool` branch, and `canToPool` is true for
+exactly the rows that can be trashed — `REMOTE_ONLY` and `CONFLICT`. The pool button took its place, so
+the one label that named the deletion could never appear on a row that had one. It was also wrong when
+it did: any conflicting push claimed "Trashed", including one whose card copy was being pooled. Both now
+read `isCardRemoval`.
+
+A removal is marked three ways in the list, so it survives a scan:
+
+- **the row carries a red wash**, which is what makes it findable without reading;
+- **the filename is struck through** and *on SK* becomes a red **Deleted from card**;
+- **the decision column adds `🗑 SD file deleted`** under the buttons, next to the *Move SD → Pool*
+  button that avoids it.
+
+**Pooling the file clears all three at once**, since `isCardRemoval` checks `!r.toPool` — so the row
+answers the question the pool button asks.
+
+What is left of S1-8: the simple view's before/after grids still say it only with the red trash badge,
+the pool-first offer isn't built, and moves aren't counted as moves.
 
 ### Settings — `SettingsModal.tsx`
 
