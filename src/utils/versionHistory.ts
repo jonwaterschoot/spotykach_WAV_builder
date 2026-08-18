@@ -1,4 +1,5 @@
 import type { AppState, FileRecord } from '../types';
+import { getDurabilityPref } from './durabilityPrefs';
 
 /**
  * The two-version rule — V4_PERVAK.md, Appendix E.2.
@@ -74,6 +75,22 @@ export const collapseVersionHistory = (state: AppState): AppState => {
 
     return changed ? { ...state, files } : state;
 };
+
+/**
+ * What the save path calls, and the only thing in this file that reads anything: the
+ * two-version rule is a preference now (`collapseHistoryOnSave`, default on), so a
+ * save made with it off writes the whole history it was handed.
+ *
+ * Read at the moment it matters rather than from a snapshot taken at mount, for the
+ * same reason the autosave loop does it that way — flipping the switch in Settings has
+ * to change the next save, not the next reload.
+ *
+ * The pure `collapseVersionHistory` above stays available for callers that mean the
+ * rule itself rather than the save path; `LooseFileEditor` handing one blob to the
+ * Browse pool is one, since the pool's shape only ever holds original and current.
+ */
+export const collapseVersionHistoryOnSave = (state: AppState): AppState =>
+    getDurabilityPref('collapseHistoryOnSave') ? collapseVersionHistory(state) : state;
 
 /** Total versions a collapse would drop across the project. */
 export const totalDroppedVersions = (state: AppState): number =>

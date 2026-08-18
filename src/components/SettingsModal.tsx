@@ -1026,9 +1026,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                             <History size={12} /> History &amp; cleanup
                         </h3>
+                        {/* The two-version rule was stated here as a fact of the app. It is a
+                            preference now, so the sentence that described it became the switch
+                            that controls it, in the same shape as the other durability toggles. */}
+                        <div className={`rounded-lg border transition-colors ${durability.collapseHistoryOnSave
+                            ? 'bg-teal-500/10 border-teal-500/30'
+                            : 'bg-white/[0.02] border-white/5'
+                            }`}>
+                            <button
+                                type="button"
+                                onClick={() => toggleDurability('collapseHistoryOnSave')}
+                                className="w-full px-3 pt-3 pb-1.5 text-left flex items-center gap-3"
+                            >
+                                <div className={`w-8 h-[18px] rounded-full p-0.5 shrink-0 transition-colors ${durability.collapseHistoryOnSave ? 'bg-teal-500' : 'bg-white/10'}`}>
+                                    <div className={`w-[14px] h-[14px] rounded-full bg-white transition-transform ${durability.collapseHistoryOnSave ? 'translate-x-[14px]' : 'translate-x-0'}`} />
+                                </div>
+                                <p className={`text-[12px] font-bold ${durability.collapseHistoryOnSave ? 'text-teal-300' : 'text-gray-400'}`}>
+                                    Saving keeps only the original and the current version
+                                </p>
+                            </button>
+                            <Explainer
+                                className="pr-3 pb-3 pl-[56px]"
+                                short={durability.collapseHistoryOnSave
+                                    ? 'The steps in between are dropped, so history never piles up.'
+                                    : 'Every step you commit is written and kept, so history piles up.'}
+                                more={<>The editor keeps full undo while it is open either way – this is
+                                    only about what reaches the disk. On, a saved project holds two versions
+                                    of each file and cleanup is left with the leftovers. Off, nothing is
+                                    dropped on your behalf and cleanup is how history comes back down.</>}
+                            />
+                        </div>
                         <Explainer
                             short="Cleanup is for what saving can’t reach: assets nothing points at any more, unused files, old SD snapshots."
-                            more="A saved project keeps exactly two versions of each file: the original and the current one. Everything between is dropped on save, so history no longer piles up on its own – which is why cleanup is only ever about the leftovers."
+                            more="Saving never removes a file or an asset from disk – only history. A version that was dropped leaves its asset behind, and pool files you no longer want and old SD snapshots were never saving’s to touch, so all of it is swept from here."
                         />
                         {currentProjectName && onCleanupProject ? (
                             <button

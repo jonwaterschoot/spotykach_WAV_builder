@@ -65,7 +65,7 @@ import { saveDirectoryHandle } from './utils/storageUtils';
 import { getDurabilityPrefs, getDurabilityPref } from './utils/durabilityPrefs';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
 import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
-import { collapseVersionHistory } from './utils/versionHistory';
+import { collapseVersionHistoryOnSave } from './utils/versionHistory';
 import { useProjectSession } from './session/ProjectSession';
 import { useEscapeLayer } from './shell/escapeStack';
 import { appStorage } from './utils/storageNamespace';
@@ -1006,7 +1006,7 @@ function App({ onExitToHub }: AppProps) {
       await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
 
       // Match the live state to what went to disk — see executeSaveProject.
-      setState(prev => collapseVersionHistory(prev));
+      setState(prev => collapseVersionHistoryOnSave(prev));
 
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
@@ -1196,7 +1196,7 @@ function App({ onExitToHub }: AppProps) {
           (msg) => setProgressMsg(msg || ''),
           currentProjectName
         );
-        setState(prev => collapseVersionHistory(prev));
+        setState(prev => collapseVersionHistoryOnSave(prev));
         setHasUnsavedChanges(false);
       }
 
@@ -2765,7 +2765,7 @@ function App({ onExitToHub }: AppProps) {
         // collapse the live state to match, or memory and the IDB autosave keep the
         // versions the disk no longer has. Applied to `prev` rather than to the
         // returned state so an edit made mid-save isn't rolled back. Appendix E.2.
-        setState(prev => collapseVersionHistory(prev));
+        setState(prev => collapseVersionHistoryOnSave(prev));
 
         showToast("Project Saved Successfully", 'success');
         setHasUnsavedChanges(false);
@@ -5671,6 +5671,9 @@ function App({ onExitToHub }: AppProps) {
         skBackups={skBackups}
         onDeleteSKBackup={handleDeleteSKBackup}
         skBackupLimit={SK_BACKUP_LIMIT}
+        // Read at render rather than held in state: opening the modal is a render, so
+        // a toggle flipped in Settings beforehand is always the one shown here.
+        collapseHistoryOnSave={getDurabilityPref('collapseHistoryOnSave')}
       />
 
       <Toast

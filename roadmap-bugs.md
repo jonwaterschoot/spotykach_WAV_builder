@@ -58,8 +58,13 @@ everything still unassessed is project-shaped.
 1. ~~**The play button can stick after apply and preview.**~~ **Found, fixed and walked 2026-08-18** —
    cause A under [Round 5](#round-5). Intermittent because it needed a preview playing when a new
    version landed, which is why the round had to be every edit function one at a time.
-2. **The cleanup confirm modal renders off-screen.** Logged before cleanup moved; it is now reached from
-   Project ▸ Advanced rather than the editor sidebar, so reproduce it from there.
+2. ~~**The cleanup confirm modal renders off-screen.**~~ **Found and fixed 2026-08-18** — it was never
+   off-screen. `CleanupModal`'s reset and its Escape handler shared one effect that listed
+   `confirmAction` in its deps, so pressing a cleanup button set the confirmation, re-ran the effect,
+   and the effect's own `setConfirmAction(null)` closed it a frame later. That is the flash, and why
+   you were left back on the list. Split into two effects: the reset belongs to the modal opening,
+   the key handler is the only part that needs to know which layer is on top. **Still to walk with a
+   project behind it** — the fix is verified by reading, not by running.
 
 **On the "possible overhaul" question.** Walk it before deciding. Two open items already point at the
 editor and neither should be started ahead of the round: **auto-save replacing Save** (below) and
@@ -318,7 +323,20 @@ Open:
 - **A restore path.** The backup describes its contents and not how to put them back. Wanted: an "import
   workspace / restore" action in the app, and a new-computer setup section written into the `.txt` that
   ships inside the backup.
+- ~~**The two-version rule is unconditional.**~~ **Done 2026-08-19** — saving collapsing history to
+  `[original, current]` was behaviour with no switch, which left Cleanup describing a world the user
+  had never agreed to. It is `collapseHistoryOnSave` now, default on, under Settings ▸ Files ▸ History
+  &amp; cleanup, and the Cleanup modal mirrors the setting read-only instead of asserting the rule.
+  **Not yet walked with a project behind it.**
 - **Suggest a backup now and then**, with an opt-out of the reminder.
+- **Cleanup should read as three named presets, not three verbs.** The footer's three buttons —
+  *Clean Custom* / *History Only* / *Clean All* — now each carry what they keep and what they cost
+  (`4 steps · 43.3 MB`), which is the right information still in the wrong shape: three buttons side
+  by side means reading all three and comparing before you can pick one. Wanted instead: a preset
+  list you choose from, each row naming what it keeps and what it frees, with the manual selection
+  as the escape hatch rather than a peer. **Not started** — the copy, the per-option counters and the
+  confirmation were done on 2026-08-19 within the existing shape, and the preset control is the next
+  step on top of that.
 - **One sync entry point survived.** The library → SD sync still has a button in `LibraryManager`
   (`onOpenLibrarySync`). Phase 7's table only covered the Project Manager, and workspace backup now
   covers the need — worth removing next time someone touches that file.

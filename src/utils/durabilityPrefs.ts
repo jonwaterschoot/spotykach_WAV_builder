@@ -27,18 +27,29 @@ export interface DurabilityPrefs {
      * Explicit save is still what writes the project folder.
      */
     autoSave: boolean;
+    /**
+     * Collapse each file's history to `[original, current]` when the project is
+     * saved — the two-version rule, Appendix E.2. Default ON, which is what the app
+     * did unconditionally before this was a preference.
+     *
+     * Turning it off means a save writes every step the editor committed, and the
+     * history that used to be swept on the way to disk becomes Cleanup's job again.
+     */
+    collapseHistoryOnSave: boolean;
 }
 
 const KEYS: Record<keyof DurabilityPrefs, string> = {
     skSnapshots: 'spotykach_sk_snapshots',
     mirrorProjectsToSD: 'spotykach_sd_project_mirror',
     autoSave: 'spotykach_autosave',
+    collapseHistoryOnSave: 'spotykach_collapse_history_on_save',
 };
 
 export const DURABILITY_DEFAULTS: DurabilityPrefs = {
     skSnapshots: false,
     mirrorProjectsToSD: false,
     autoSave: true,
+    collapseHistoryOnSave: true,
 };
 
 const readFlag = (key: keyof DurabilityPrefs): boolean => {
@@ -51,6 +62,7 @@ export const getDurabilityPrefs = (): DurabilityPrefs => ({
     skSnapshots: readFlag('skSnapshots'),
     mirrorProjectsToSD: readFlag('mirrorProjectsToSD'),
     autoSave: readFlag('autoSave'),
+    collapseHistoryOnSave: readFlag('collapseHistoryOnSave'),
 });
 
 /**

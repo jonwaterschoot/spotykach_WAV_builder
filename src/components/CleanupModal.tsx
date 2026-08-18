@@ -13,6 +13,12 @@ interface CleanupModalProps {
     skBackups?: { timestamp: string; sizeBytes: number }[];
     onDeleteSKBackup?: (timestamp: string) => void;
     skBackupLimit?: number;
+    /**
+     * The `collapseHistoryOnSave` preference, mirrored read-only. What this screen has
+     * left to do depends entirely on it, so it says which way it is set rather than
+     * describing one of the two worlds and hoping you are in it.
+     */
+    collapseHistoryOnSave?: boolean;
 }
 
 const formatSize = (bytes: number) => {
@@ -21,6 +27,14 @@ const formatSize = (bytes: number) => {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+/** "9 files · 12 steps", naming only the halves that are not zero. */
+const previewCount = (p: { files: number; versions: number }) => {
+    const parts: string[] = [];
+    if (p.files) parts.push(`${p.files} file${p.files === 1 ? '' : 's'}`);
+    if (p.versions) parts.push(`${p.versions} step${p.versions === 1 ? '' : 's'}`);
+    return parts.join(' · ') || 'nothing';
 };
 
 const formatDuration = (seconds: number) => {
@@ -35,6 +49,58 @@ const parseBackupTimestamp = (ts: string) => {
     const iso = ts.replace(/(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, '$1:$2:$3.$4Z');
     const date = new Date(iso);
     return isNaN(date.getTime()) ? null : date;
+};
+
+const EXPLAINER_TONES = {
+    blue: {
+        on: 'bg-synthux-blue/20 border-synthux-blue/50 text-synthux-blue',
+        off: 'border-white/15 text-gray-500 hover:border-synthux-blue/60 hover:text-synthux-blue',
+        rule: 'border-synthux-blue/30',
+    },
+    red: {
+        on: 'bg-red-500/20 border-red-500/50 text-red-300',
+        off: 'border-white/15 text-gray-500 hover:border-red-400/60 hover:text-red-300',
+        rule: 'border-red-500/30',
+    },
+} as const;
+
+/**
+ * Borrowed wholesale from the Settings panel: the one line that answers the question stays
+ * on screen at a size that can be read, and the rest waits behind the info dot. Cleanup was
+ * carrying several paragraphs of 10px grey that nobody was going to get through. None of the
+ * wording is gone - what the dot opens is the text that used to be sitting there uninvited.
+ */
+const Explainer: React.FC<{
+    short: React.ReactNode;
+    more?: React.ReactNode;
+    tone?: keyof typeof EXPLAINER_TONES;
+    className?: string;
+}> = ({ short, more, tone = 'blue', className = '' }) => {
+    const [open, setOpen] = useState(false);
+    const t = EXPLAINER_TONES[tone];
+    return (
+        <div className={className}>
+            <p className="text-[11px] text-gray-400 leading-snug">
+                {short}
+                {more && (
+                    <button
+                        type="button"
+                        onClick={() => setOpen(o => !o)}
+                        aria-expanded={open}
+                        title={open ? 'Hide the detail' : 'More about this'}
+                        className={`ml-1.5 inline-flex align-[-3px] w-[15px] h-[15px] items-center justify-center rounded-full border transition-colors ${open ? t.on : t.off}`}
+                    >
+                        <Info size={9} />
+                    </button>
+                )}
+            </p>
+            {more && open && (
+                <p className={`text-[11px] text-gray-400 leading-snug mt-2 pl-2 border-l-2 ${t.rule}`}>
+                    {more}
+                </p>
+            )}
+        </div>
+    );
 };
 
 interface SelectionDotProps {
@@ -102,7 +168,7 @@ const FloatingPlayer: React.FC<GlobalPlayerProps> = ({ playingVersion, isPlaying
     if (!playingVersion) return null;
 
     return (
-        <div className="bg-[#1a1a1e] border border-white/10 p-3 rounded-2xl flex items-center gap-4 animate-in slide-in-from-bottom-2 duration-300 shadow-2xl">
+        <div className="bg-[#1a1a1e] border border-white/10 p-3 rounded-xl flex items-center gap-4 animate-in slide-in-from-bottom-2 duration-300 shadow-2xl">
             <button 
                 onClick={togglePlay}
                 className="w-10 h-10 rounded-xl bg-synthux-yellow text-black flex items-center justify-center shrink-0 shadow-lg shadow-synthux-yellow/10"
@@ -146,17 +212,9 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
     skBackups = [],
     onDeleteSKBackup,
     skBackupLimit = 5,
+    collapseHistoryOnSave,
 }) => {
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
 
     const [selectedFilesForDeletion, setSelectedFilesForDeletion] = useState<Set<string>>(new Set());
     const [selectedVersionsForDeletion, setSelectedVersionsForDeletion] = useState<Record<string, Set<string>>>({});
@@ -211,78 +269,116 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
         setSelectedVersionsForDeletion(vMap);
     };
 
+    /**
+     * The reset and the Escape handler used to share one effect that listed `confirmAction`
+     * in its deps - so pressing a cleanup button set the confirmation, re-ran the effect,
+     * and the effect's own `setConfirmAction(null)` closed it again a frame later. That is
+     * the flash: the overlay mounted, unmounted, and left you back on the list. The reset
+     * belongs to the modal opening and to nothing else, so it gets its own effect; only the
+     * key handler needs to know which layer is on top.
+     */
     useEffect(() => {
-        if (isOpen) {
-            resetToDefault();
-            setConfirmAction(null);
+        if (!isOpen) return;
+        resetToDefault();
+        setConfirmAction(null);
+    }, [isOpen]);
 
-            const handleKeyDown = (e: KeyboardEvent) => {
-                if (e.key === 'Escape') {
-                    if (confirmAction) setConfirmAction(null);
-                    else onClose();
-                }
-            };
-            window.addEventListener('keydown', handleKeyDown);
-            return () => window.removeEventListener('keydown', handleKeyDown);
-        }
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            // App keeps a global Escape stack that would close the whole modal underneath
+            // us, so the confirmation swallows the key rather than letting it through.
+            if (confirmAction) {
+                e.stopPropagation();
+                setConfirmAction(null);
+            } else {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, [isOpen, confirmAction, onClose]);
 
-    const { totalSavings, totalFilesToDelete, totalVersionsToDelete } = useMemo(() => {
-        let savings = 0;
-        let filesToDelete = 0;
-        let versionsToDelete = 0;
+    /**
+     * What each of the three buttons would take, all three costed at once.
+     *
+     * This used to compute only the option being confirmed, which meant the footer could
+     * not say what any of them cost until after you had already pressed one — you chose
+     * first and found out second. Costing all three is the same walk over the same files.
+     */
+    const previews = useMemo(() => {
+        const everyFile = [...assignedFiles, ...unassignedPool];
+        const blank = () => ({ files: 0, versions: 0, bytes: 0 });
 
-        if (confirmAction === 'history') {
-            [...assignedFiles, ...unassignedPool].forEach(f => {
-                const sorted = [...f.versions].sort((a, b) => a.timestamp - b.timestamp);
-                const originalId = sorted[0]?.id;
-                const toClean = f.versions.filter(v => v.id !== f.currentVersionId && v.id !== originalId);
-                toClean.forEach(v => {
-                    savings += (v.blob?.size || 0);
-                    versionsToDelete++;
-                });
-            });
-        } else if (confirmAction === 'all') {
-            unassignedPool.forEach(f => {
-                savings += f.totalSize;
-                filesToDelete++;
-            });
-            assignedFiles.forEach(f => {
-                const toClean = f.versions.filter(v => v.id !== f.currentVersionId);
-                toClean.forEach(v => {
-                    savings += (v.blob?.size || 0);
-                    versionsToDelete++;
-                });
-            });
-        } else {
-            // Custom or preview mode
-            [...assignedFiles, ...unassignedPool].forEach(f => {
-                if (selectedFilesForDeletion.has(f.id)) {
-                    savings += f.totalSize;
-                    filesToDelete++;
-                } else {
-                    const selected = selectedVersionsForDeletion[f.id];
-                    if (selected) {
-                        f.versions.forEach(v => {
-                            if (selected.has(v.id)) {
-                                savings += (v.blob?.size || 0);
-                                versionsToDelete++;
-                            }
-                        });
-                    }
+        const custom = blank();
+        everyFile.forEach(f => {
+            if (selectedFilesForDeletion.has(f.id)) {
+                custom.files++;
+                custom.bytes += f.totalSize;
+            } else {
+                const selected = selectedVersionsForDeletion[f.id];
+                if (selected) {
+                    f.versions.forEach(v => {
+                        if (selected.has(v.id)) {
+                            custom.versions++;
+                            custom.bytes += (v.blob?.size || 0);
+                        }
+                    });
                 }
-            });
-        }
-        
-        // Add orphaned assets to savings
-        if (orphanedAssets) {
-            orphanedAssets.forEach((o: { name: string, size: number }) => {
-                savings += o.size;
-            });
-        }
+            }
+        });
 
+        const history = blank();
+        everyFile.forEach(f => {
+            const sorted = [...f.versions].sort((a, b) => a.timestamp - b.timestamp);
+            const originalId = sorted[0]?.id;
+            f.versions
+                .filter(v => v.id !== f.currentVersionId && v.id !== originalId)
+                .forEach(v => {
+                    history.versions++;
+                    history.bytes += (v.blob?.size || 0);
+                });
+        });
+
+        const all = blank();
+        unassignedPool.forEach(f => {
+            all.files++;
+            all.bytes += f.totalSize;
+        });
+        assignedFiles.forEach(f => {
+            f.versions
+                .filter(v => v.id !== f.currentVersionId)
+                .forEach(v => {
+                    all.versions++;
+                    all.bytes += (v.blob?.size || 0);
+                });
+        });
+
+        // Orphans are swept by `cleanOrphanedAssets` on every confirm, whichever button
+        // you pressed, so they are part of all three figures. Their *count* used to be
+        // left out while their bytes were counted, which is how a confirmation could read
+        // "0 files" and still free megabytes.
+        (orphanedAssets ?? []).forEach(o => {
+            [custom, history, all].forEach(p => {
+                p.files++;
+                p.bytes += o.size;
+            });
+        });
+
+        return { custom, history, all };
+    }, [assignedFiles, unassignedPool, selectedFilesForDeletion, selectedVersionsForDeletion, orphanedAssets]);
+
+    const { totalSavings, totalFilesToDelete, totalVersionsToDelete } = useMemo(() => {
+        // No confirmation open means the footer is previewing the custom selection, which
+        // is what the Est. Saving card has always shown.
+        const active = previews[confirmAction ?? 'custom'];
+        const savings = active.bytes;
+        const filesToDelete = active.files;
+        const versionsToDelete = active.versions;
+        
         return { totalSavings: savings, totalFilesToDelete: filesToDelete, totalVersionsToDelete: versionsToDelete };
-    }, [confirmAction, selectedFilesForDeletion, selectedVersionsForDeletion, assignedFiles, unassignedPool]);
+    }, [previews, confirmAction]);
 
     const toggleFileDeletion = (fileId: string) => {
         const next = new Set(selectedFilesForDeletion);
@@ -334,6 +430,16 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
         }
     };
 
+    /**
+     * All three buttons opened an identical "are you sure", which gave you the counts but
+     * never said which of the three you had pressed - the one thing worth confirming.
+     */
+    const CONFIRM_COPY = {
+        custom: 'Deletes exactly what you ticked in the lists above.',
+        history: 'Keeps the original and the current step of every file; everything in between goes.',
+        all: 'Keeps only the current step of files on a tape, and deletes the unused pool outright.',
+    } as const;
+
     const handleExecuteCleanup = () => {
         if (!confirmAction) return;
 
@@ -377,7 +483,7 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
         }, [isFileSelected, file, selectedVersionsForDeletion]);
         
         return (
-            <div className={`bg-white/5 border border-white/5 rounded-2xl overflow-hidden transition-all hover:bg-white/[0.08] ${isFileSelected ? 'ring-1 ring-red-500/30' : ''}`}>
+            <div className={`bg-white/5 border border-white/5 rounded-lg overflow-hidden transition-all hover:bg-white/[0.08] ${isFileSelected ? 'ring-1 ring-red-500/30' : ''}`}>
                 <div className="p-3 flex items-center justify-between cursor-pointer" onClick={() => {
                     const next = new Set(expandedFiles);
                     if (next.has(file.id)) next.delete(file.id);
@@ -490,12 +596,12 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-synthux-panel border border-gray-700 rounded-[24px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col h-[80vh] min-h-[600px] max-h-[95vh] relative">
+            <div className="bg-synthux-panel border border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col h-[80vh] min-h-[600px] max-h-[95vh] relative">
                 
                 {/* Header */}
                 <div className="px-8 py-6 border-b border-gray-800 flex items-center justify-between bg-synthux-panel shrink-0">
                     <div className="flex items-center gap-5">
-                        <div className="p-4 bg-red-500/20 text-red-500 rounded-3xl shadow-lg ring-1 ring-red-500/20">
+                        <div className="p-4 bg-red-500/20 text-red-500 rounded-xl shadow-lg ring-1 ring-red-500/20">
                             <Trash2 size={32} strokeWidth={2.5} />
                         </div>
                         <div>
@@ -505,7 +611,7 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                             </p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="w-12 h-12 flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/5 rounded-2xl transition-all">
+                    <button onClick={onClose} className="w-12 h-12 flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/5 rounded-lg transition-all">
                         <X size={28} />
                     </button>
                 </div>
@@ -517,35 +623,50 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                         {/* Explainer and lists follow... */}
 
                         {/* Prominent Explainer */}
-                        <div className="bg-synthux-blue/5 border border-synthux-blue/20 rounded-[24px] p-7 flex gap-5 shadow-2xl shadow-synthux-blue/5">
-                            <div className="p-4 bg-synthux-blue/20 text-synthux-blue rounded-2xl shrink-0 h-fit">
-                                <Info size={32} />
+                        <div className="bg-synthux-blue/5 border border-synthux-blue/20 rounded-xl p-6 flex gap-5 shadow-2xl shadow-synthux-blue/5">
+                            {/* Was a large Info glyph, which now collides with the info dot the
+                                explainer carries - the panel keeps its mark, not a second one. */}
+                            <div className="p-3.5 bg-synthux-blue/20 text-synthux-blue rounded-lg shrink-0 h-fit">
+                                <Trash2 size={28} />
                             </div>
-                            <div className="space-y-2">
-                                <h4 className="text-sm font-black uppercase text-synthux-blue italic tracking-widest">Standard Protocol</h4>
-                                <p className="text-xs text-gray-400 leading-relaxed font-medium">
-                                    Standard cleanup preserves the <span className="text-white font-black underline decoration-synthux-blue decoration-4 underline-offset-4">Original</span> file and the <span className="text-white font-black underline decoration-synthux-blue decoration-4 underline-offset-4">Latest Saved Step</span> for every file. 
-                                    <br/><br/>
-                                    Intermediate history versions of both assigned and unused pool files are marked for removal to free up memory.
-                                    <br/><br/>
-                                    Saving a project now does this on its own, so there is usually nothing here to
-                                    reclaim. What is left over (orphaned assets on disk, files you no longer want,
-                                    old SD backups) is what this screen is for.
-                                </p>
+                            <div className="space-y-2 min-w-0">
+                                <h4 className="text-sm font-black uppercase text-synthux-blue italic tracking-widest">What cleanup does</h4>
+                                <Explainer
+                                    short={<>Every file keeps its <span className="text-white font-black">original</span> and its <span className="text-white font-black">latest saved step</span>. The steps in between are what gets freed.</>}
+                                    more={<>This applies to files on a tape and to files sitting in the unused pool alike. Beyond history, this screen is also the only way to reach the leftovers: orphaned assets on disk, pool files you no longer want, and old SK backups.</>}
+                                />
+                                {typeof collapseHistoryOnSave === 'boolean' && (
+                                    <div className={`mt-3 flex items-start gap-3 rounded-lg border px-3.5 py-2.5 ${collapseHistoryOnSave
+                                        ? 'border-teal-500/25 bg-teal-500/[0.07]'
+                                        : 'border-amber-500/25 bg-amber-500/[0.07]'
+                                        }`}>
+                                        <div className={`mt-0.5 w-8 h-[18px] rounded-full p-0.5 shrink-0 ${collapseHistoryOnSave ? 'bg-teal-500' : 'bg-white/15'}`}>
+                                            <div className={`w-[14px] h-[14px] rounded-full bg-white ${collapseHistoryOnSave ? 'translate-x-[14px]' : 'translate-x-0'}`} />
+                                        </div>
+                                        <p className={`text-[11px] leading-snug min-w-0 ${collapseHistoryOnSave ? 'text-teal-200/90' : 'text-amber-200/90'}`}>
+                                            {collapseHistoryOnSave ? (
+                                                <><span className="font-black">Saving already does this.</span> There is usually little history left to reclaim here — the leftovers below are the point.</>
+                                            ) : (
+                                                <><span className="font-black">Saving is keeping every step.</span> History piles up until you clear it here.</>
+                                            )}
+                                            <span className="block text-[10px] opacity-60 mt-1">Settings ▸ Files ▸ History &amp; cleanup</span>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         {/* Stats */}
                         <div className="grid grid-cols-3 gap-6">
-                            <div className="bg-white/5 border border-white/5 p-6 rounded-[32px] text-center group">
+                            <div className="bg-white/5 border border-white/5 p-5 rounded-xl text-center group">
                                 <div className="text-3xl font-black text-white tracking-tighter leading-none">{unassignedPool.length}</div>
                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-2 opacity-60">Unassigned</div>
                             </div>
-                            <div className="bg-white/5 border border-white/5 p-6 rounded-[32px] text-center group">
+                            <div className="bg-white/5 border border-white/5 p-5 rounded-xl text-center group">
                                 <div className="text-3xl font-black text-white tracking-tighter leading-none">{assignedFiles.length}</div>
                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-2 opacity-60">Modified</div>
                             </div>
-                            <div className="bg-red-500/5 border border-red-500/10 p-6 rounded-[32px] text-center ring-1 ring-red-500/20 shadow-lg shadow-red-500/5">
+                            <div className="bg-red-500/5 border border-red-500/10 p-5 rounded-xl text-center ring-1 ring-red-500/20 shadow-lg shadow-red-500/5">
                                 <div className="text-3xl font-black text-red-500 tracking-tighter leading-none">{formatSize(totalSavings)}</div>
                                 <div className="text-[10px] font-bold text-red-500/60 uppercase tracking-widest mt-2">Est. Saving</div>
                             </div>
@@ -593,15 +714,17 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                                     </div>
                                 </div>
                                 
-                                <div className="bg-red-500/5 border border-red-500/10 rounded-[24px] p-5 flex gap-4">
+                                <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-5 flex gap-4">
                                     <div className="p-3 bg-red-500/20 text-red-500 rounded-xl shrink-0 h-fit">
                                         <Skull size={20} />
                                     </div>
-                                    <div className="space-y-1">
-                                        <h4 className="text-[11px] font-black uppercase text-red-500 tracking-wider">Lingering Data Detected</h4>
-                                        <p className="text-[10px] text-gray-500 leading-relaxed font-medium">
-                                            The following files exist in the project folder but are no longer referenced by any project record. They will be deleted upon confirmation.
-                                        </p>
+                                    <div className="space-y-1 min-w-0">
+                                        <h4 className="text-[11px] font-black uppercase text-red-500 tracking-wider">Left behind on disk</h4>
+                                        <Explainer
+                                            tone="red"
+                                            short={<>These files sit in the project folder, but nothing in the project points at them any more.</>}
+                                            more={<>They go with whichever button you confirm below - there is no way to keep them from this screen. Nothing the project is still using can appear in this list.</>}
+                                        />
                                     </div>
                                 </div>
 
@@ -638,14 +761,15 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                                 </div>
 
                                 {/* Explainer for Backups */}
-                                <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex gap-4">
+                                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 flex gap-4">
                                     <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
                                         <RotateCcw size={16} className="text-gray-500" />
                                     </div>
-                                    <div className="text-[11px] text-gray-500 leading-relaxed italic">
-                                        These are full project snapshots automatically saved to the <span className="text-gray-400 font-mono">_sk_backups</span> folder in your project directory. 
-                                        They act as safety nets for complete project restoration.
-                                    </div>
+                                    <Explainer
+                                        className="min-w-0"
+                                        short={<>Whole-project snapshots, written automatically to <span className="text-gray-300 font-mono">_sk_backups</span> in your project folder.</>}
+                                        more={<>They are the safety net for restoring a project outright, and the three cleanup buttons below never touch them. Delete them one at a time here; the oldest drops off on its own once the kept count is reached.</>}
+                                    />
                                 </div>
 
                                 {skBackups.length === 0 ? (
@@ -708,19 +832,30 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
                 {/* Footer */}
                 <div className="p-8 border-t border-gray-800 bg-synthux-panel flex items-center justify-between shrink-0 gap-4 z-50">
                     <button onClick={onClose} className="px-6 py-4 text-xs font-black text-gray-500 hover:text-white uppercase tracking-[0.2em] transition-all">Cancel</button>
-                    <div className="flex gap-3">
-                        <button onClick={() => setConfirmAction('custom')} disabled={totalSavings === 0} className="px-6 py-4 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black rounded-2xl border border-white/10 disabled:opacity-20 transition-all uppercase tracking-widest">
-                            <span className="block opacity-40 text-[9px] mb-0.5 tracking-tight">Manual Selection</span>
+                    <div className="flex gap-3 flex-1 min-w-0">
+                        {/* Each button now carries what it costs, so the three can be compared
+                            before one is pressed rather than after. */}
+                        <button onClick={() => setConfirmAction('custom')} disabled={previews.custom.bytes === 0} className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black rounded-lg border border-white/10 disabled:opacity-20 transition-all uppercase tracking-widest">
+                            <span className="block opacity-50 text-[10px] mb-0.5 tracking-tight normal-case">What you ticked</span>
                             Clean Custom
+                            <span className="block mt-1 text-[10px] font-bold normal-case tracking-normal text-white/50">
+                                {previewCount(previews.custom)} · {formatSize(previews.custom.bytes)}
+                            </span>
                         </button>
-                        <button onClick={() => setConfirmAction('history')} className="px-10 py-4 bg-red-600 hover:bg-red-500 text-white text-[11px] font-black rounded-2xl shadow-xl shadow-red-600/20 transition-all uppercase tracking-widest group">
-                            <span className="block opacity-70 text-[9px] mb-0.5 tracking-tight group-hover:opacity-100 transition-opacity">Keep original + current verison</span>
+                        <button onClick={() => setConfirmAction('history')} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-500 text-white text-[11px] font-black rounded-lg shadow-xl shadow-red-600/20 transition-all uppercase tracking-widest group">
+                            <span className="block opacity-70 text-[10px] mb-0.5 tracking-tight normal-case group-hover:opacity-100 transition-opacity">Keeps original + current</span>
                             History Only
+                            <span className="block mt-1 text-[10px] font-bold normal-case tracking-normal text-white/70">
+                                {previewCount(previews.history)} · {formatSize(previews.history.bytes)}
+                            </span>
                         </button>
-                        <button onClick={() => setConfirmAction('all')} className="px-8 py-4 bg-white/5 hover:bg-red-900/40 text-red-500 text-[11px] font-black rounded-2xl border border-red-500/20 transition-all uppercase tracking-widest group">
-                            <span className="block opacity-60 text-[9px] mb-0.5 tracking-tight group-hover:opacity-100 transition-opacity">Delete history + original</span>
+                        <button onClick={() => setConfirmAction('all')} className="flex-1 px-4 py-3 bg-white/5 hover:bg-red-900/40 text-red-500 text-[11px] font-black rounded-lg border border-red-500/20 transition-all uppercase tracking-widest group">
+                            <span className="block opacity-60 text-[10px] mb-0.5 tracking-tight normal-case group-hover:opacity-100 transition-opacity">Keeps current only</span>
                             <span className="flex items-center gap-2 justify-center">
                                 <Trash2 size={14} className="group-hover:scale-110 transition-transform" /> Clean All
+                            </span>
+                            <span className="block mt-1 text-[10px] font-bold normal-case tracking-normal text-red-500/60">
+                                {previewCount(previews.all)} · {formatSize(previews.all.bytes)}
                             </span>
                         </button>
                     </div>
@@ -728,30 +863,45 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
 
                 {/* Confirmation Overlay at Modal Level */}
                 {confirmAction && (
-                    <div className="absolute inset-0 z-[110] bg-[#0c0c0e]/95 flex flex-col items-center justify-center p-8 text-center animate-in zoom-in-95 duration-200 backdrop-blur-sm">
+                    <div className="absolute inset-0 z-[110] bg-[#0c0c0e]/95 flex flex-col items-center justify-center p-8 text-center animate-in zoom-in-95 duration-200 backdrop-blur-sm overflow-y-auto custom-scrollbar">
                         <div className="w-24 h-24 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center mb-6 ring-2 ring-red-500/30 shadow-2xl shadow-red-500/10">
                             <Skull size={48} />
                         </div>
-                        <h3 className="text-3xl font-black text-white uppercase italic tracking-tight mb-4">Are you sure?</h3>
-                        <div className="max-w-md space-y-4 mb-10">
-                            <p className="text-gray-400 text-sm leading-relaxed text-center">
-                                You are about to permanently destroy <span className="text-red-500 font-bold">{totalFilesToDelete} files</span> and <span className="text-red-500 font-bold">{totalVersionsToDelete} history steps</span>.
-                            </p>
-                            <div className="p-6 bg-red-500/5 border border-red-500/20 rounded-[32px] text-[11px] text-red-300 text-left font-medium leading-relaxed">
-                                <div className="flex gap-4">
-                                    <AlertTriangle size={20} className="shrink-0 text-red-500" />
-                                    <div>
-                                        This action is <span className="text-white font-bold underline decoration-red-500/50 decoration-2 underline-offset-4">unrecoverable</span> within the project database. 
-                                        <br/><br/>
-                                        While files may still exist in your OS Trash, the project will no longer recognize or link them.
+                        <h3 className="text-3xl font-black text-white uppercase italic tracking-tight mb-3">Are you sure?</h3>
+                        <p className="text-[15px] text-red-300 font-bold leading-snug mb-6 max-w-lg">{CONFIRM_COPY[confirmAction]}</p>
+                        <div className="max-w-lg w-full space-y-5 mb-10">
+                            {/* The counts were a 14px sentence with the numbers set inline, which
+                                put the one thing worth checking at the size of everything else.
+                                They read as figures now, in the same language as the modal's own
+                                stat cards. */}
+                            <div className="grid grid-cols-3 gap-3">
+                                {([
+                                    [String(totalFilesToDelete), 'Files'],
+                                    [String(totalVersionsToDelete), 'History steps'],
+                                    [formatSize(totalSavings), 'Freed'],
+                                ] as const).map(([value, label]) => (
+                                    <div key={label} className="bg-red-500/[0.07] border border-red-500/20 rounded-xl px-2 py-4">
+                                        <div className="text-2xl font-black text-red-500 tracking-tighter leading-none tabular-nums whitespace-nowrap">{value}</div>
+                                        <div className="text-[10px] font-bold text-red-500/60 uppercase tracking-widest mt-2">{label}</div>
                                     </div>
+                                ))}
+                            </div>
+                            <div className="p-5 bg-red-500/5 border border-red-500/20 rounded-xl text-left">
+                                <div className="flex gap-4">
+                                    <AlertTriangle size={20} className="shrink-0 text-red-500 mt-px" />
+                                    <Explainer
+                                        tone="red"
+                                        className="min-w-0"
+                                        short={<span className="text-[13px] text-red-100 font-bold">The project cannot undo this.</span>}
+                                        more={<>The project database keeps no record of what was removed. The files may still turn up in your OS Trash, but the project will not recognise or re-link them.</>}
+                                    />
                                 </div>
                             </div>
                         </div>
                         <div className="flex flex-col gap-3 w-full max-w-[320px]">
                             <button 
                                 onClick={handleExecuteCleanup}
-                                className="w-full py-6 bg-red-600 hover:bg-red-400 text-white font-black rounded-2xl shadow-2xl shadow-red-600/30 uppercase tracking-[0.2em] transition-all text-sm active:scale-95"
+                                className="w-full py-5 bg-red-600 hover:bg-red-400 text-white font-black rounded-lg shadow-2xl shadow-red-600/30 uppercase tracking-[0.2em] transition-all text-sm active:scale-95"
                             >
                                 Destroy Permanently
                             </button>
