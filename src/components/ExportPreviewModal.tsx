@@ -13,7 +13,7 @@ import { getDurabilityPrefs } from '../utils/durabilityPrefs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type QuickPreset = 'import_pool_only' | 'import_slots_pool' | 'import_merge_project' | 'import_sync_merge' | 'push_sync' | 'push_clean' | 'custom';
+export type QuickPreset = 'import_pool_only' | 'import_merge_project' | 'import_sync_merge' | 'push_sync' | 'push_clean' | 'custom';
 
 // Keep old shape for backward compat with exportSDStructure
 export type LegacyDecision = 'export' | 'skip' | 'delete';
@@ -115,6 +115,90 @@ function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | unde
     const configMatch = configDecision === defaultPrimary(configStatus, preset);
     return slotsMatch && configMatch;
 }
+
+interface PresetMeta {
+    label: string;
+    /** One line under the name saying where the files end up. */
+    line: string;
+    /** True when applying the preset writes to the SD card. */
+    writesToCard: boolean;
+}
+
+const PRESET_META: Record<QuickPreset, PresetMeta> = {
+    import_pool_only: {
+        label: 'Import to pool',
+        line: 'SD files land in the pool. Slots and card unchanged.',
+        writesToCard: false,
+    },
+    import_merge_project: {
+        label: 'Merge into project',
+        line: 'SD files fill the slots; anything they displace goes to the pool. Card unchanged.',
+        writesToCard: false,
+    },
+    import_sync_merge: {
+        label: 'Merge into project + mirror',
+        line: 'Same, then writes your slot-only files back to the card.',
+        writesToCard: true,
+    },
+    push_sync: {
+        label: 'Standard Build',
+        line: 'Project files go to the card; card-only files come into your slots.',
+        writesToCard: true,
+    },
+    push_clean: {
+        label: 'Clean Mirror',
+        line: 'Makes the card match the project exactly — card-only files are deleted.',
+        writesToCard: true,
+    },
+    custom: {
+        label: 'Custom',
+        line: 'Pick every slot yourself in Advanced view.',
+        writesToCard: false,
+    },
+};
+
+const ACTIVE_ACCENT: Record<'indigo' | 'orange' | 'gray', string> = {
+    indigo: 'bg-indigo-600 text-white border-transparent shadow-lg',
+    orange: 'bg-orange-600 text-white border-transparent shadow-lg',
+    gray: 'bg-gray-700 text-white border-transparent',
+};
+
+const PresetButton: React.FC<{
+    preset: QuickPreset;
+    active: boolean;
+    accent: 'indigo' | 'orange' | 'gray';
+    /** Only set in import mode, where writing to the card is the surprise. */
+    warnCardWrite?: boolean;
+    onClick: () => void;
+}> = ({ preset, active, accent, warnCardWrite, onClick }) => {
+    const meta = PRESET_META[preset];
+    return (
+        <button
+            onClick={onClick}
+            className={[
+                'group w-[210px] flex flex-col gap-1 px-4 py-2.5 rounded-xl border text-left transition-all',
+                active ? ACTIVE_ACCENT[accent] : 'border-white/5 text-gray-500 hover:border-white/20',
+            ].join(' ')}
+        >
+            <span className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-black uppercase tracking-widest">{meta.label}</span>
+                {warnCardWrite && meta.writesToCard && (
+                    <span className={[
+                        'flex items-center gap-1 px-1.5 py-0.5 rounded border text-[8px] font-black uppercase tracking-wider whitespace-nowrap',
+                        active
+                            ? 'bg-black/30 border-white/20 text-orange-200'
+                            : 'bg-orange-500/10 border-orange-500/30 text-orange-400',
+                    ].join(' ')}>
+                        <RiSdCardMiniLine size={9} /> Writes to card
+                    </span>
+                )}
+            </span>
+            <span className={`text-[10px] leading-snug font-medium ${active ? 'text-white/70' : 'text-gray-600 group-hover:text-gray-400'}`}>
+                {meta.line}
+            </span>
+        </button>
+    );
+};
 
 const PRIMARY_LABEL: Record<SKPrimaryDecision, string> = {
     delete_local: 'Delete local',
@@ -379,7 +463,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const currentPreset: QuickPreset = useMemo(() => {
         if (isCustomOverride) return 'custom';
         const presets: QuickPreset[] = mode === 'import' 
-            ? ['import_pool_only', 'import_slots_pool', 'import_merge_project', 'import_sync_merge']
+            ? ['import_pool_only', 'import_merge_project', 'import_sync_merge']
             : ['push_sync', 'push_clean'];
         return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p)) ?? 'custom';
     }, [rows, configDecision, diff.config, mode, isCustomOverride]);
@@ -698,36 +782,21 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                     </div>
                 </div>
                 {/* ════ SHARED PRESETS HEADER ══════════════════════════════════ */}
-                <div className="px-6 py-4 bg-[#111] border-b border-white/5 flex items-center justify-between gap-4 flex-wrap shrink-0">
-                    <div className="flex items-center gap-2">
-                        {mode === 'import' ? (
-                            <>
-                                <button onClick={() => applyPreset('import_pool_only')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'import_pool_only' ? 'bg-indigo-600 text-white border-transparent shadow-lg' : 'border-white/5 text-gray-500 hover:border-white/20'}`}>
-                                    Standard Import
-                                </button>
-                                <button onClick={() => applyPreset('import_merge_project')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'import_merge_project' ? 'bg-indigo-600 text-white border-transparent shadow-lg' : 'border-white/5 text-gray-500 hover:border-white/20'}`}>
-                                    Merge into Project
-                                </button>
-                                <button onClick={() => applyPreset('import_sync_merge')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'import_sync_merge' ? 'bg-indigo-600 text-white border-transparent shadow-lg' : 'border-white/5 text-gray-500 hover:border-white/20'}`}>
-                                    Merge into Project + Mirror
-                                </button>
-                                <button onClick={() => applyPreset('custom')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'custom' ? 'bg-gray-700 text-white border-transparent' : 'border-white/5 text-gray-400 hover:border-white/10'}`}>
-                                    Custom
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <button onClick={() => applyPreset('push_sync')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'push_sync' ? 'bg-orange-600 text-white border-transparent shadow-lg' : 'border-white/5 text-gray-500 hover:border-white/20'}`}>
-                                    Standard Build
-                                </button>
-                                <button onClick={() => applyPreset('push_clean')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'push_clean' ? 'bg-orange-600 text-white border-transparent shadow-lg' : 'border-white/5 text-gray-500 hover:border-white/20'}`}>
-                                    Clean Mirror
-                                </button>
-                                <button onClick={() => applyPreset('custom')} className={`px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${currentPreset === 'custom' ? 'bg-gray-700 text-white border-transparent' : 'border-white/5 text-gray-400 hover:border-white/10'}`}>
-                                    Custom
-                                </button>
-                            </>
-                        )}
+                <div className="px-6 py-4 bg-[#111] border-b border-white/5 flex items-start justify-between gap-4 flex-wrap shrink-0">
+                    <div className="flex items-stretch gap-2 flex-wrap">
+                        {(mode === 'import'
+                            ? (['import_pool_only', 'import_merge_project', 'import_sync_merge', 'custom'] as QuickPreset[])
+                            : (['push_sync', 'push_clean', 'custom'] as QuickPreset[])
+                        ).map(preset => (
+                            <PresetButton
+                                key={preset}
+                                preset={preset}
+                                active={currentPreset === preset}
+                                accent={preset === 'custom' ? 'gray' : mode === 'import' ? 'indigo' : 'orange'}
+                                warnCardWrite={mode === 'import'}
+                                onClick={() => applyPreset(preset)}
+                            />
+                        ))}
                     </div>
                     {isAdvanced && (
                         <div className="flex items-center gap-4 ml-auto">
@@ -1272,14 +1341,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             <div className="flex flex-col items-start leading-tight">
                                 <span className="text-[13px] uppercase tracking-wider">
                                     {isApplying ? 'Processing…' : (
-                                        mode === 'push' 
-                                            ? (currentPreset === 'push_clean' ? 'Clean Mirror to SD' : 'Standard Build to SD')
-                                            : (
-                                                currentPreset === 'import_pool_only' ? 'Standard Import' :
-                                                currentPreset === 'import_merge_project' ? 'Merge into Project' :
-                                                currentPreset === 'import_sync_merge' ? 'Merge into Project + Mirror' :
-                                                'Standard Import & Sync'
-                                            )
+                                        currentPreset === 'custom'
+                                            ? PRESET_META.custom.label
+                                            : mode === 'push'
+                                                ? `${PRESET_META[currentPreset].label} to SD`
+                                                : PRESET_META[currentPreset].label
                                     )}
                                 </span>
                                 {!isApplying && (

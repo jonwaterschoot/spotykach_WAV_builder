@@ -25,7 +25,7 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 7 of 15 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 8 of 15 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
@@ -59,7 +59,7 @@ answered and built — S1-11 and the auto-save question are what is left.
 | **S1-4** | The pool has no sorting — alphabetical / by tape, reversible | `FileBrowser.tsx` | 🏗️ ✅ |
 | **S1-5** | The Sample Browser entry is a bare folder icon; want "Browse +" | `FileBrowser.tsx` | ✂️ ✅ |
 | **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 ✅ |
-| **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ |
+| **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ ✅ |
 | **S1-8** | Clean Mirror doesn't show what it deletes | `ExportPreviewModal.tsx` | 🐞 |
 | **S1-9** | Files and System explainers too small to read | `SettingsModal.tsx` | ✂️ |
 | **S1-10** | "Reset Visual Effects" lags the window, loses contrast | `SettingsModal.tsx` | 🐞 |
@@ -258,14 +258,46 @@ that proceeds whichever way it is answered. Both are outside this item.
 
 ### Import and build to SD — `ExportPreviewModal.tsx`
 
-#### S1-7 — The import presets don't say which of them touch the card ✂️
+#### S1-7 — The import presets don't say which of them touch the card ✂️ ✅ *built and walked 2026-08-18*
 
-Three import presets sit in one row ([ExportPreviewModal.tsx:705-713](src/components/ExportPreviewModal.tsx#L705-L713))
-and nothing distinguishes *reads the card* from *reads the card and then writes it*.
+Three import presets sat in one row as label-only buttons, and nothing distinguished *reads the card*
+from *reads the card and then writes it*. The behaviour lived entirely in two switch statements,
+`defaultPrimary` ([ExportPreviewModal.tsx:69-91](src/components/ExportPreviewModal.tsx#L69-L91)) and
+`defaultToPool` ([:93-107](src/components/ExportPreviewModal.tsx#L93-L107)).
 
-- **"Standard Import" → "Import to pool"** — say the destination, not the tier.
-- Each preset states plainly whether it only brings files in (pool, or merged into the project) or
-  **also builds onto the card** — which is what *Merge into Project + Mirror* does and never announces.
+**The whole difference was one line** — `if (status === 'LOCAL_ONLY') return 'push_to_sk';`. *Merge into
+Project + Mirror* pushes every slot-only project file to the card, and the word *Mirror* was the only
+warning, on a button under an **Import SD** tab with a left-pointing arrow and indigo styling.
+
+**It reached further than the item said.** `applyPreset` runs the same function over `diff.config`, so
+with a `config.txt` that exists only in the project, that preset writes the firmware config to the card
+too.
+
+**Every preset now carries its own line, and a badge marks the one that writes.** A `PRESET_META` table
+holds the name, the sentence under it, and a `writesToCard` flag; a small `PresetButton` renders all of
+them in both modes:
+
+- **Import to pool** — *SD files land in the pool. Slots and card unchanged.*
+- **Merge into project** — *SD files fill the slots; anything they displace goes to the pool. Card
+  unchanged.*
+- **Merge into project + mirror** — *Same, then writes your slot-only files back to the card.*, with an
+  orange **Writes to card** badge.
+
+The badge is rendered only in import mode. In **Build SD** writing is the whole point and a badge on
+every button would be noise — it exists because in import mode the write is the surprise.
+
+**The push presets got the descriptive line too**, since a row of two-line and one-line buttons side by
+side reads as broken. Their names are unchanged; *Clean Mirror*'s line says card-only files are deleted,
+which is wording only and does not close **S1-8**.
+
+**The names were duplicated as literals in the confirm button**, so a rename could have left the two
+disagreeing. Both now read `PRESET_META`.
+
+**`import_slots_pool` is gone.** It was in the type and in the list `currentPreset` scans, but had no
+button and no case in either switch, so it computed to "everything skipped, nothing pooled". Since
+`setPrimary` clears `isCustomOverride`, hand-editing decisions back to nothing could settle on it — no
+preset button lit, and the confirm button falling through to `'Standard Import & Sync'`, a name that
+existed nowhere else in the app.
 
 #### S1-8 — Clean Mirror doesn't show what it deletes 🐞
 
