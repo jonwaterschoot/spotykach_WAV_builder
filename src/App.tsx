@@ -2207,29 +2207,44 @@ function App({ onExitToHub }: AppProps) {
       isParked: true
     };
 
-    // ALSO record this action in the source file's history
-    const sourceVersionId = generateId();
-    const sourceVersion: AudioVersion = {
-      id: sourceVersionId,
-      timestamp: Date.now(),
-      description: 'Saved to Pool',
-      blob: newBlob,
-      duration
-    };
+    /*
+     * Note the copy in the source's history without changing the source.
+     *
+     * This used to push `newBlob` - the *copy*, trim and fades baked in - onto the
+     * open file as its new current version, so asking for a copy silently applied the
+     * pending edit to the file you were still editing. The note carries the source's
+     * own current audio, so the history says what happened and the file is untouched.
+     */
+    setState(prev => {
+      const source = prev.files[activeFileId];
+      if (!source) return prev;
 
-    setState(prev => ({
-      ...prev,
-      files: {
-        ...prev.files,
-        [fileId]: newFile,
-        // Update active file history
-        [activeFileId]: {
-          ...prev.files[activeFileId],
-          versions: [sourceVersion, ...prev.files[activeFileId].versions],
-          currentVersionId: sourceVersionId
+      const sourceCurrent = source.versions.find(v => v.id === source.currentVersionId);
+      const sourceNote: AudioVersion = {
+        id: generateId(),
+        timestamp: Date.now(),
+        description: 'Copied to pool',
+        blob: sourceCurrent?.blob ?? null,
+        duration: sourceCurrent?.duration ?? 0
+      };
+
+      return {
+        ...prev,
+        files: {
+          ...prev.files,
+          [fileId]: newFile,
+          [activeFileId]: {
+            ...source,
+            // Appended, not prepended: `versions[0]` is the original by contract
+            // (see utils/versionHistory.ts), and the sidebar sorts by timestamp
+            // anyway. Prepending here used to make the note the file's "original",
+            // which is what the next save would have persisted.
+            versions: [...source.versions, sourceNote],
+            // currentVersionId stays where it was: nothing about this file changed.
+          }
         }
-      }
-    }));
+      };
+    });
     console.log(`[handleSaveAsCopy] Setting hasUnsavedChanges=true`);
     setHasUnsavedChanges(true);
     showToast("Saved copy to pool", 'success');

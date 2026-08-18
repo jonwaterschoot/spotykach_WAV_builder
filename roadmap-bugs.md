@@ -55,8 +55,9 @@ everything still unassessed is project-shaped.
 
 **Two known symptoms to reproduce first, in this order:**
 
-1. **The play button can stick after apply and preview.** Intermittent, which is exactly why the round
-   has to be every edit function one at a time rather than a sweep of the ones that look suspect.
+1. ~~**The play button can stick after apply and preview.**~~ **Found, fixed and walked 2026-08-18** —
+   cause A under [Round 5](#round-5). Intermittent because it needed a preview playing when a new
+   version landed, which is why the round had to be every edit function one at a time.
 2. **The cleanup confirm modal renders off-screen.** Logged before cleanup moved; it is now reached from
    Project ▸ Advanced rather than the editor sidebar, so reproduce it from there.
 
@@ -109,15 +110,64 @@ explicitly not a v4 goal.
   Space while it is mounted.
 
 #### Editor in Studio:
-- I make a trim, not applied yet, I click "save copy to pool": 
+- 1. I make a trim, not applied yet, I click "save copy to pool": 
   - What I expect: modal asks "Apply Trim?" - trim / fade is, or is not applied and the original un-applied file remains open, while a copy gets saved in the pool. (a note in e.g. history can show that step)
   - What happens currently: Trim / fade is applied to current file + a trimmed copy is saved in the pool   
 
-- **Loop**
+- 2. **Loop**
   - after clicking preview and auditioning the result, i want to apply; but a warning modal is shown asking me if i really want to switch tools or discard ... This is buggy behaviour. 
   - What I expect to happen: the loop as set and checked after auditioning with preview is applied
 
-  
+- 3. **EQ** 
+  - ran into the not playing bug after doing this:
+    - edit eq, click preview; without applying go to new tool, get the question do you want to discard or apply and switch; I chose apply and switch and in the new tool (pitch) the play button wa unavailable, still marked as pause. 
+      - returning to EQ also showed the pre-applied window still in preview, with EQ having the marker in the tool slector headers.
+     - I would expect since i had applied, that it wouldn't be in preview mode anymore, and that the applied step would just sit in the history as the last step, it did not really apply and the sound was back to pre-EQ in the Pitch window 
+
+
+**All three built and walked 2026-08-18 — every edit tool exercised, no bugs or unexpected behaviour
+left; closed.** The three reports share their plumbing: two of the causes are the shape the main-view
+player bug had, a flag whose only reset path is an event that never arrives. In
+[`WaveformEditor.tsx`](src/components/WaveformEditor.tsx) unless said otherwise.
+
+- **A — the transport flag survived a reload, and nothing could clear it.** `isPlaying` was reset only
+  by WaveSurfer's `'pause'` event, and that event does not come on either path that matters: the
+  teardown clears `isMounted` *before* `destroy()`, and the handler is behind that guard; and
+  `pause()` on an already-paused instance returns before emitting in both backends. `initEditor`'s own
+  `setIsPlaying(false)` sat inside `if (wavesurfer.current)`, which the effect cleanup had already
+  nulled — skipped exactly when it mattered. So the reload after an apply came up stuck: the button read
+  PAUSE, and pressing it only re-ran the fade-out on an idle instance, which emitted nothing, for the
+  rest of the session. There is one `resetTransportState()` now, called by everything that destroys or
+  replaces the instance, and `handlePlayPause`/`triggerSafePause` ask the instance rather than the flag.
+- **B — "Apply & Switch" ran the trim apply, whatever tool you were in.** The modal called
+  `handleSave()`, which bakes region, fades and automation and nothing else — so answering it out of EQ
+  wrote a version tagged `trimmed` with the EQ dropped, while the EQ controls stayed dirty behind it
+  (hence the marker in the tool header and the preview still showing). Each tool has had its own apply
+  all along; `applyActiveTool()` is the map to them, and `resetToolState()` puts the tool's controls
+  back afterwards. That is item 3.
+- **C — every preview `loadBlob` destroyed the trim region.** `'ready'` fires on each load and used to
+  `clearRegions()` and hang a fresh full-width region across the *preview's* duration, so save, apply
+  loop, save copy and save unique were all measuring the preview instead of the file — applying a loop
+  after auditioning it trimmed a second time. The selection lives in a ref now and `getEditRegion()` is
+  the only reader; a preview shows no region rather than a wrong one.
+- **Item 2** — `handleApplyLoop` ended with `toggleTool(null)`, which re-ran the dirty check on the
+  settings it had just applied and raised the "unsaved changes" modal *after* the work was done. It uses
+  `executeToolSwitch(null)` now, like every other apply handler, and resets the loop's own params.
+  `handleApplyStereoSplit` had the same line.
+- **Item 1** — two separate faults. The button baked the pending trim/fade into the copy without asking;
+  it now offers *Copy with edits* / *Copy original* / Cancel, and the open file is untouched either way.
+  And [`handleSaveAsCopy`](src/App.tsx) pushed the copy's blob onto the **source** file as its new
+  current version — asking for a copy silently applied the pending edit to the file you were editing.
+  The history note now carries the source's own current audio, `currentVersionId` does not move, and the
+  note is appended rather than prepended, because `versions[0]` is the original by contract
+  ([utils/versionHistory.ts](src/utils/versionHistory.ts)) and prepending made the note *be* the
+  original.
+- **Also seen, not reported:** the pitch tool opened with no region when the switch rode on an apply
+  (the blob-change reset clears what `executeToolSwitch` had just seeded); it re-seeds now.
+- **Still true and worth a decision:** **ASSIGN TO TAPE** is `handleSave`, so pressing it while an EQ,
+  limiter, pitch or cutter setting is pending writes a version without that setting and leaves the tool
+  dirty. That is the same trap as B through a different button, and changing what ASSIGN bakes is a
+  design call rather than a bug fix.
 
 ### 2. Paths no round has ever exercised
 

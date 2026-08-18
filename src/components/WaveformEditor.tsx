@@ -640,6 +640,20 @@ export interface CommitLabels {
     cleanToast: string;
 }
 
+/** The tool names as the selector spells them, for the messages that name one. */
+const TOOL_LABELS: Record<string, string> = {
+    trim: 'Trim/Fade',
+    automation: 'Automation',
+    loop: 'Loop',
+    eq: 'EQ',
+    pitch: 'Pitch',
+    limiter: 'Limiter',
+    normalize: 'Normalize',
+    cutter: 'Cutter',
+    slicer: 'Slicer',
+    stereo: 'Stereo',
+};
+
 export const TAPE_COMMIT_LABELS: CommitLabels = {
     clean: 'ASSIGNED',
     dirty: 'ASSIGN TO TAPE',
@@ -728,6 +742,52 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [minZoom, setMinZoom] = useState(0.1); // Default low value until loaded
     const [regionState, setRegionState] = useState<{ start: number, end: number }>({ start: 0, end: 0 });
     const rafRef = useRef<number | null>(null);
+
+    /*
+     * The selection, in the loaded file's own time — and the fact that the waveform
+     * currently shows something else.
+     *
+     * Every preview calls `loadBlob` with a *processed* copy, and WaveSurfer emits
+     * 'ready' on each load, so the handler below used to clear the regions and hang a
+     * fresh full-width one across the preview's duration. Everything that computed
+     * from `regions.current` afterwards — save, apply loop, save copy, save unique —
+     * was then measuring the preview instead of the file: applying a loop after
+     * auditioning it trimmed a second time. The region lives here now, and
+     * `getEditRegion()` is the only thing anyone reads.
+     */
+    const editRegionRef = useRef<{ start: number, end: number } | null>(null);
+    const isPreviewLoadedRef = useRef(false);
+
+    // Imperative on purpose: 'ready' can fire before a state update has committed, so
+    // the preview flag cannot be derived from the isPreviewing* states.
+    const setPreviewLoaded = (loaded: boolean) => { isPreviewLoadedRef.current = loaded; };
+
+    /*
+     * The two ways a blob reaches the waveform. Going through these rather than
+     * calling `loadBlob` directly is what keeps `isPreviewLoadedRef` honest — and it
+     * is set *before* the load, because 'ready' can fire before React has committed
+     * anything.
+     */
+    const loadPreviewBlob = async (blob: Blob) => {
+        if (!wavesurfer.current) return;
+        setPreviewLoaded(true);
+        await wavesurfer.current.loadBlob(blob);
+    };
+
+    const loadSourceBlob = async (blob: Blob) => {
+        if (!wavesurfer.current) return;
+        setPreviewLoaded(false);
+        await wavesurfer.current.loadBlob(blob);
+    };
+
+    const getEditRegion = (): { start: number, end: number } => {
+        const whole = { start: 0, end: originalBuffer?.duration || 0 };
+        if (isPreviewLoadedRef.current) return editRegionRef.current || whole;
+        const list = regions.current?.getRegions?.();
+        const r = list?.find((reg: { id?: string, start: number, end: number }) => reg.id === 'trim-region') || list?.[0];
+        if (r) return { start: r.start, end: r.end };
+        return editRegionRef.current || whole;
+    };
 
     // Normalization & Processing State
     const [hasNormalized, setHasNormalized] = useState(false);
@@ -902,6 +962,67 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
+    /*
+     * Nothing is being auditioned any more. Every tool that previews loads a processed
+     * copy under the wave and raises its own flag; if the flag survives the edit that
+     * ends the preview, the tool re-opens still claiming to be in preview — which is
+     * what the EQ walk saw after "Apply & Switch".
+     */
+    const clearPreviewFlags = () => {
+        setIsPreviewing(false);
+        setIsPreviewingEQ(false);
+        setIsPreviewingLimiter(false);
+        setIsPreviewingCut(false);
+        setIsPreviewingLoop(false);
+        setPreviewPitchRegions([]);
+        setPreviewDuration(null);
+        setPreviewLoaded(false);
+    };
+
+    /*
+     * Put one tool's controls back to their defaults. Called after an apply: the
+     * settings have become audio, so leaving them on screen would both re-offer work
+     * that is already done and keep the tool's dot lit in the selector.
+     */
+    const resetToolState = (tool: ToolId) => {
+        switch (tool) {
+            case 'trim':
+                setFadeIn(0);
+                setFadeOut(0);
+                setHasTrimInteracted(false);
+                break;
+            case 'automation':
+                setAutomationPoints([]);
+                break;
+            case 'eq':
+                setEqLow(0); setEqMid(0); setEqHigh(0);
+                setAdvancedEQBands(new Array(10).fill(0));
+                break;
+            case 'limiter':
+                setLimiterThreshold(-6);
+                setLimiterCeiling(-0.3);
+                break;
+            case 'pitch':
+                setPitchSemitones(0);
+                setDetectedPitch(null);
+                setPitchRegions([]);
+                break;
+            case 'cutter':
+                setCutRegions([]);
+                break;
+            case 'loop':
+                // The trim is inside the loop now, so the trim flag goes with it.
+                setLoopCrossfade(0.2);
+                setLoopFitTo42(false);
+                setHasLoopInteracted(false);
+                setHasTrimInteracted(false);
+                break;
+            default:
+                break;
+        }
+        clearPreviewFlags();
+    };
+
     const handleDiscardChanges = async () => {
         setFadeIn(0);
         setFadeOut(0);
@@ -931,7 +1052,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
         if (currentBlob && wavesurfer.current) {
             setIsPlaying(false);
-            await wavesurfer.current.loadBlob(currentBlob);
+            await loadSourceBlob(currentBlob);
         }
 
         if (pendingTool !== undefined) {
@@ -953,6 +1074,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [selectedVersionIds, setSelectedVersionIds] = useState<Set<string>>(new Set());
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showMoveConfirm, setShowMoveConfirm] = useState(false);
+    // "Save copy to pool" with an unapplied trim/fade: the copy can carry it or not,
+    // and the file on screen is not touched either way.
+    const [showPoolCopyPrompt, setShowPoolCopyPrompt] = useState(false);
     const [isPreviewing, setIsPreviewing] = useState(false);
     const [isPreviewingLoop, setIsPreviewingLoop] = useState(false);
 
@@ -963,6 +1087,28 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const pauseTimeRef = useRef(0);
     const pauseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [isPausing, setIsPausing] = useState(false);
+
+    /*
+     * The transport flags are cleared here and nowhere else.
+     *
+     * `isPlaying` used to be reset only by WaveSurfer's 'pause' event, and that
+     * event does not arrive on the two paths that matter: a teardown (the handler
+     * sits behind `isMounted`, which the cleanup clears first) and a `pause()` on an
+     * instance that is already paused (both backends return before emitting). So the
+     * reload that follows an apply came up with `isPlaying` stuck true — the button
+     * read PAUSE, and pressing it only re-ran the fade-out on an idle instance, which
+     * emitted nothing. The editor could not be played again for the rest of the
+     * session. Anything that destroys or replaces the instance calls this.
+     */
+    const resetTransportState = useCallback(() => {
+        if (pauseTimeoutRef.current) {
+            clearTimeout(pauseTimeoutRef.current);
+            pauseTimeoutRef.current = null;
+        }
+        isPausingRef.current = false;
+        setIsPausing(false);
+        setIsPlaying(false);
+    }, []);
 
     // Mark dirty on changes (deprecated logic, isDirty is now dynamic)
     const handleDirtyChange = () => {
@@ -987,6 +1133,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     // Re-initialize when currentBlob changes (e.g. loading a version)
     useEffect(() => {
         isMounted.current = true;
+        // Whatever was being auditioned, this blob is not it.
+        clearPreviewFlags();
 
         if (initTimeout.current) clearTimeout(initTimeout.current);
         initTimeout.current = setTimeout(() => {
@@ -1000,6 +1148,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 try { wavesurfer.current.destroy(); } catch (e) { console.warn(e); }
                 wavesurfer.current = null;
             }
+            resetTransportState();
             if (previewAudio) {
                 try { 
                     previewAudio.pause(); 
@@ -1181,8 +1330,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (wavesurfer.current) {
             wavesurfer.current.destroy();
             wavesurfer.current = null;
-            setIsPlaying(false);
         }
+        // Unconditional: the instance about to be built is not playing, whatever the
+        // last one was doing when it went away. This used to sit inside the branch
+        // above, so it was skipped exactly when it mattered — the effect cleanup has
+        // already nulled the ref by the time this runs.
+        resetTransportState();
+
+        // A new blob is new audio: the previous selection means nothing against it.
+        // (A preview round-trip does not come through here, which is what lets the
+        // 'ready' handler tell the two cases apart.)
+        editRegionRef.current = null;
+        setPreviewLoaded(false);
 
         try {
             const blobUrl = URL.createObjectURL(currentBlob);
@@ -1238,6 +1397,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     ws.zoom(fitZoom);
                 }
 
+                // A preview is loaded: this wave is a processed copy and its duration
+                // is not the file's. Show no region rather than a wrong one, and leave
+                // the selection and `regionState` exactly as the user left them.
+                if (isPreviewLoadedRef.current) {
+                    wsRegions.clearRegions();
+                    return;
+                }
+
                 // Calculate Initial Region (Max 42s)
                 let rStart = 0;
                 let rEnd = duration;
@@ -1246,6 +1413,15 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     const mid = duration / 2;
                     rStart = mid - 21;
                     rEnd = mid + 21;
+                }
+
+                // Coming back from a preview, the file has not changed — re-hang the
+                // selection the user made. `editRegionRef` is nulled by initEditor, so
+                // a genuinely new blob still gets the default region above.
+                const saved = editRegionRef.current;
+                if (saved && saved.end <= duration + 0.01 && saved.end > saved.start) {
+                    rStart = Math.max(0, saved.start);
+                    rEnd = Math.min(saved.end, duration);
                 }
 
                 // Clear any existing regions before adding default
@@ -1261,6 +1437,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     resize: true // Keep resize enabled for the main trim tool
                 });
                 setRegionState({ start: rStart, end: rEnd });
+                editRegionRef.current = { start: rStart, end: rEnd };
             });
 
 
@@ -1269,12 +1446,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             wsRegions.on('region-update', (r: any) => {
                 if (r.id === 'trim-region') {
                     setRegionState({ start: r.start, end: r.end });
+                    editRegionRef.current = { start: r.start, end: r.end };
                 }
             });
 
             wsRegions.on('region-updated', (r: any) => {
                 if (r.id === 'trim-region') {
                     setRegionState({ start: r.start, end: r.end });
+                    editRegionRef.current = { start: r.start, end: r.end };
                     setHasTrimInteracted(true);
                     if (isMounted.current) handleDirtyChange();
                 } else {
@@ -1368,7 +1547,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     }, []);
 
     const updateVolume = () => {
-        if (!wavesurfer.current) return;
+        if (!wavesurfer.current) {
+            // No instance left to fade. Drop the flags rather than leave the ramp
+            // half-run — this is the frame on which the stuck PAUSE used to be born.
+            if (isPausingRef.current) resetTransportState();
+            return;
+        }
 
         const currentTime = wavesurfer.current.getCurrentTime();
         // Fades are relative to region start
@@ -1590,7 +1774,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             return;
         }
 
-        if (isPlaying) {
+        if (wavesurfer.current.isPlaying()) {
             if (isPausingRef.current) return;
             setIsPausing(true);
             isPausingRef.current = true;
@@ -1603,7 +1787,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         } else {
             if (callback) callback();
         }
-    }, [isPlaying]);
+    }, []);
 
     const handleWheel = (e: React.WheelEvent) => {
         if (e.ctrlKey) {
@@ -1629,7 +1813,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const handlePlayPause = async () => {
         if (!wavesurfer.current) return;
 
-        if (isPlaying) {
+        // Ask the instance, don't trust the flag. If the two disagree the flag is the
+        // wrong one, and a stale `true` must not be allowed to swallow the click.
+        const reallyPlaying = wavesurfer.current.isPlaying();
+        if (reallyPlaying !== isPlaying) setIsPlaying(reallyPlaying);
+
+        if (reallyPlaying) {
             if (isPausingRef.current) return;
             setIsPausing(true);
             isPausingRef.current = true;
@@ -1717,7 +1906,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (isPreviewing && currentBlob && wavesurfer.current) {
             setIsPlaying(false);
             setIsPreviewing(false);
-            await wavesurfer.current.loadBlob(currentBlob);
+            await loadSourceBlob(currentBlob);
         }
         handleDirtyChange();
         showToast("Automation Reset", "success");
@@ -1744,7 +1933,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         previewAudio.pause();
                         setPreviewingVersionId(null);
                     }
-                    await wavesurfer.current.loadBlob(newBlob);
+                    await loadPreviewBlob(newBlob);
                     wavesurfer.current.play();
                 }
             });
@@ -1836,7 +2025,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setIsPreviewingEQ(false);
         if (isPreviewingEQ && currentBlob && wavesurfer.current) {
             setIsPlaying(false);
-            wavesurfer.current.loadBlob(currentBlob);
+            loadSourceBlob(currentBlob);
         }
     };
 
@@ -1853,7 +2042,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const newBlob = await audioProcessor.toWav(processed, meta);
             triggerSafePause(async () => {
                 if (wavesurfer.current) {
-                    await wavesurfer.current.loadBlob(newBlob);
+                    await loadPreviewBlob(newBlob);
                     wavesurfer.current.play();
                 }
             });
@@ -1936,7 +2125,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const newBlob = await audioProcessor.toWav(processed, meta);
             triggerSafePause(async () => {
                 if (wavesurfer.current) {
-                    await wavesurfer.current.loadBlob(newBlob);
+                    await loadPreviewBlob(newBlob);
                     wavesurfer.current.play();
                 }
             });
@@ -2177,6 +2366,24 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         handleDirtyChange();
     };
 
+    /*
+     * The pitch tool is unusable without a region. `executeToolSwitch` seeds one when
+     * the tool opens, but a switch that rides on an apply is followed by the
+     * blob-change reset, which clears it again — so the tool would open empty exactly
+     * on the "Apply & Switch into Pitch" path. Seed here too, once a duration is known.
+     */
+    useEffect(() => {
+        if (activeTool !== 'pitch' || isPreviewing) return;
+        if (pitchRegions.length > 0 || editorDuration <= 0) return;
+        setPitchRegions([{
+            id: `pitch-init`,
+            start: editorDuration * 0.425, // Middle 15%
+            end: editorDuration * 0.575,
+            semitones: 0,
+            selected: true
+        }]);
+    }, [activeTool, isPreviewing, pitchRegions.length, editorDuration]);
+
     // Sync pitchSemitones with selected region
     useEffect(() => {
         if (activeTool === 'pitch' && !isPreviewing) {
@@ -2273,7 +2480,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     setPreviewingVersionId(null);
                 }
                 wavesurfer.current.pause();
-                await wavesurfer.current.loadBlob(blob);
+                await loadPreviewBlob(blob);
                 wavesurfer.current.play();
             }
             setPreviewPitchRegions(previewRegions.map(r => ({ ...r, selected: false })));
@@ -2325,7 +2532,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (isPreviewing) {
             const blob = await audioProcessor.toWav(originalBuffer, metadata);
             setIsPlaying(false);
-            await wavesurfer.current.loadBlob(blob);
+            await loadSourceBlob(blob);
             setIsPreviewing(false);
             setPreviewPitchRegions([]);
             setPreviewDuration(null);
@@ -2362,7 +2569,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4() };
             const newBlob = await audioProcessor.toWav(processed, meta);
 
-            await wavesurfer.current.loadBlob(newBlob);
+            await loadPreviewBlob(newBlob);
             wavesurfer.current.play();
             setIsPreviewing(true);
             showToast("Previewing changes... (Click again to stop)", "success");
@@ -2388,7 +2595,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 onSave(blob, right.duration, "Channel Right", true, ['normalized' as any]);
             }
             showToast("Channels saved to pool", "success");
-            toggleTool(null);
+            executeToolSwitch(null);
         } catch (e) {
             console.error(e);
             showToast("Failed to split channels", "error");
@@ -2402,7 +2609,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
         // Toggle: If already previewing, stop and return to edit mode
         if (isPreviewingLoop) {
-            if (currentBlob) await wavesurfer.current.loadBlob(currentBlob);
+            if (currentBlob) await loadSourceBlob(currentBlob);
             // Disable Loop
             const media = wavesurfer.current.getMediaElement();
             if (media) media.loop = false;
@@ -2412,22 +2619,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
         setIsProcessing(true);
         try {
-            let start = 0;
-            let end = originalBuffer.duration;
-            if (regions.current) {
-                const list = regions.current.getRegions();
-                if (list.length > 0) {
-                    start = list[0].start;
-                    end = list[0].end;
-                }
-            }
+            const { start, end } = getEditRegion();
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
 
             let looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = await audioProcessor.toWav(looped, meta);
 
-            await wavesurfer.current.loadBlob(newBlob);
+            await loadPreviewBlob(newBlob);
 
             // Enable Gapless Loop
             const media = wavesurfer.current.getMediaElement();
@@ -2452,15 +2651,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (!originalBuffer || !wavesurfer.current) return;
         setIsProcessing(true);
         try {
-            let start = 0;
-            let end = originalBuffer.duration;
-            if (regions.current) {
-                const list = regions.current.getRegions();
-                if (list.length > 0) {
-                    start = list[0].start;
-                    end = list[0].end;
-                }
-            }
+            const { start, end } = getEditRegion();
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
             const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
             
@@ -2471,9 +2662,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s xfade)`, true, ['looped']);
 
-            setIsPreviewingLoop(false);
             setHasNormalized(false);
-            toggleTool(null);
+            resetToolState('loop');
+            // executeToolSwitch, not toggleTool: the work is done, and toggleTool would
+            // re-run the dirty check on the settings that were just applied and raise
+            // the "unsaved changes" modal *after* the apply.
+            executeToolSwitch(null);
             showToast("Loop Applied!", "success");
         } catch (e) {
             console.error(e);
@@ -2502,16 +2696,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // "Save to Tape" implies assigning this specific edited version.
             // If nothing changed, we just re-assign the current version. (Handled by parent)
 
-            let start = 0;
-            let end = originalBuffer.duration;
-
-            if (regions.current) {
-                const regionList = regions.current.getRegions();
-                if (regionList && regionList.length > 0) {
-                    start = regionList[0].start;
-                    end = regionList[0].end;
-                }
-            }
+            const { start, end } = getEditRegion();
 
             // Optimization: If not dirty, we can just pass the original blob back?
             // Prepare blob for saving
@@ -2578,7 +2763,76 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
 
 
-    // Version Loading Logic
+    /*
+     * Copy this file into the unused pool.
+     *
+     * `withEdits` decides what the *copy* contains - the trim and fades that are set
+     * but not applied, or the file as it stands. Neither answer touches the file that
+     * is open: the copy is a copy, and the edit stays pending until it is applied
+     * here. (It used to bake the pending trim into the copy without asking, and the
+     * parent then wrote that same trimmed blob back over the source file as its new
+     * current version. Two files changed when one was asked for.)
+     */
+    const saveCopyToPool = async (withEdits: boolean) => {
+        if (!originalBuffer || !onSaveAsCopy) return;
+        setIsProcessing(true);
+        try {
+            const region = withEdits ? getEditRegion() : { start: 0, end: originalBuffer.duration };
+            let processed = await audioProcessor.trim(originalBuffer, region.start, region.end);
+            if (withEdits && (fadeIn > 0 || fadeOut > 0)) {
+                processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
+            }
+            const newId = uuidv4();
+            const newSlicePoints = slicePoints
+                .filter(p => p >= region.start && p <= region.end)
+                .map(p => p - region.start);
+            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: newId };
+            const newBlob = encodeWAV(processed, meta);
+            onSaveAsCopy(newBlob, processed.duration, newId);
+            showToast(withEdits ? "Saved copy with edits to Unused Pool!" : "Saved copy to Unused Pool!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to save copy", "error");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    /*
+     * Apply whatever the given tool is holding.
+     *
+     * The tool-switch modal used to call `handleSave()` for every tool. handleSave is
+     * the *trim* apply — it bakes region, fades and automation and nothing else — so
+     * answering "Apply & Switch" out of EQ wrote a version tagged 'trimmed' with the
+     * EQ silently dropped, while the EQ controls stayed dirty behind it. Each tool has
+     * had its own apply all along; this is the map to them.
+     */
+    const applyActiveTool = async (tool: ToolId) => {
+        // Stop the transport first. An apply replaces the loaded blob, and a transport
+        // still running across that swap is where the stuck play button was born.
+        if (wavesurfer.current?.isPlaying()) {
+            try { wavesurfer.current.pause(); } catch (e) { console.warn(e); }
+        }
+        resetTransportState();
+
+        switch (tool) {
+            case 'automation': await handleApplyAutomation(); break;
+            case 'eq': await handleApplyEQ(); break;
+            case 'limiter': await handleApplyLimiter(); break;
+            case 'pitch': await handleApplyPitch(); break;
+            case 'cutter': await handleApplyCut(); break;
+            case 'slicer': await handleApplySlicer(); break;
+            case 'loop': await handleApplyLoop(); break;
+            // Trim is the one tool whose apply *is* handleSave.
+            case 'trim':
+            default:
+                await handleSave();
+                break;
+        }
+
+        resetToolState(tool);
+    };
+
     // Version Loading Logic
     const handleLoadVersion = (version: AudioVersion) => {
         if (!isMounted.current) return;
@@ -2767,6 +3021,39 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
 
 
+            {/* Save Copy To Pool — with or without the pending trim/fade */}
+            {showPoolCopyPrompt && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-[#1a1a1a] border border-gray-700 p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
+                        <h3 className="text-xl font-bold text-white mb-2">Copy to pool</h3>
+                        <p className="text-gray-400 mb-6 text-sm">
+                            You have a trim or fade set but not applied. Should the copy carry it?
+                            <span className="block mt-2 text-gray-500">This file stays as it is either way — nothing is applied here.</span>
+                        </p>
+                        <div className="flex gap-3 justify-center flex-wrap">
+                            <button
+                                onClick={() => setShowPoolCopyPrompt(false)}
+                                className="px-4 py-2 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium text-sm transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => { setShowPoolCopyPrompt(false); saveCopyToPool(false); }}
+                                className="px-4 py-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-sm transition-colors border border-gray-600"
+                            >
+                                Copy original
+                            </button>
+                            <button
+                                onClick={() => { setShowPoolCopyPrompt(false); saveCopyToPool(true); }}
+                                className="px-4 py-2 rounded-full bg-synthux-blue hover:bg-blue-500 text-white font-bold text-sm transition-colors"
+                            >
+                                Copy with edits
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Unsaved Changes Modal */}
             {showUnsavedWarning && (
                 <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -2813,16 +3100,18 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 <ConfirmModal
                     isOpen={pendingTool !== undefined}
                     onClose={() => setPendingTool(undefined)}
-                    onConfirm={() => {
-                        handleSave();
-                        if (pendingTool !== undefined) {
-                            executeToolSwitch(pendingTool);
-                        }
+                    onConfirm={async () => {
+                        const from = activeTool;
+                        const next = pendingTool;
                         setPendingTool(undefined);
+                        await applyActiveTool(from);
+                        if (next !== undefined) {
+                            executeToolSwitch(next);
+                        }
                     }}
                     onDiscard={handleDiscardChanges}
                     title="Unsaved Changes"
-                    message="You have unsaved changes. Do you want to apply them before switching tools?"
+                    message={`You have unsaved changes${activeTool ? ` in ${TOOL_LABELS[activeTool]}` : ''}. Do you want to apply them before switching tools?`}
                     confirmLabel="Apply & Switch"
                     discardLabel="Discard"
                 />
@@ -3525,7 +3814,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 ><Check size={12} /> Apply</button>
                                                 <button onClick={() => {
                                                     if (isPreviewingLoop && wavesurfer.current && currentBlob) {
-                                                        wavesurfer.current.loadBlob(currentBlob);
+                                                        loadSourceBlob(currentBlob);
                                                         setIsPreviewingLoop(false);
                                                     }
                                                     setLoopCrossfade(0.2);
@@ -3710,7 +3999,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     onMouseEnter={() => setHelpText("Apply Limiter & Create Version")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
-                                                <button onClick={() => { setLimiterThreshold(-6); setLimiterCeiling(-0.3); if (isPreviewingLimiter && wavesurfer.current && currentBlob) { wavesurfer.current.loadBlob(currentBlob); setIsPreviewingLimiter(false); } handleDirtyChange(); }}
+                                                <button onClick={() => { setLimiterThreshold(-6); setLimiterCeiling(-0.3); if (isPreviewingLimiter && wavesurfer.current && currentBlob) { loadSourceBlob(currentBlob); setIsPreviewingLimiter(false); } handleDirtyChange(); }}
                                                     disabled={!isLimiterDirty}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isLimiterDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Reset Limiter Settings")}
@@ -3757,7 +4046,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 <button
                                                     onClick={() => {
                                                         if (isPreviewingCut && currentBlob && wavesurfer.current) {
-                                                            wavesurfer.current.loadBlob(currentBlob);
+                                                            loadSourceBlob(currentBlob);
                                                             setIsPreviewingCut(false);
                                                         } else {
                                                             handlePreviewCut();
@@ -3776,7 +4065,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     onMouseEnter={() => setHelpText("Apply Cuts & Create Version")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
-                                                <button onClick={() => { setCutRegions([]); setCutCrossfade(0.01); if (isPreviewingCut && wavesurfer.current && currentBlob) { wavesurfer.current.loadBlob(currentBlob); setIsPreviewingCut(false); } handleDirtyChange(); }}
+                                                <button onClick={() => { setCutRegions([]); setCutCrossfade(0.01); if (isPreviewingCut && wavesurfer.current && currentBlob) { loadSourceBlob(currentBlob); setIsPreviewingCut(false); } handleDirtyChange(); }}
                                                     disabled={!isCutterDirty}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${!isCutterDirty ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Clear All Cut Regions")}
@@ -4539,15 +4828,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             setIsProcessing(true);
                                             try {
                                                 // 1. Process Audio (Trim & Fade)
-                                                let start = 0;
-                                                let end = originalBuffer.duration;
-                                                if (regions.current) {
-                                                    const regionList = regions.current.getRegions();
-                                                    if (regionList && regionList.length > 0) {
-                                                        start = regionList[0].start;
-                                                        end = regionList[0].end;
-                                                    }
-                                                }
+                                                const { start, end } = getEditRegion();
 
                                                 // Determine processing tags
                                                 const processingTags: ('normalized' | 'trimmed' | 'looped')[] = [];
@@ -4587,34 +4868,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 {/* The unused pool is a project concept — no project, no button. */}
                                 {onSaveAsCopy && (
                                     <button
-                                        onClick={async () => {
-                                            if (!originalBuffer) return;
-                                            setIsProcessing(true);
-                                            try {
-                                                let start = 0;
-                                                let end = originalBuffer.duration;
-                                                if (regions.current) {
-                                                    const regionList = regions.current.getRegions();
-                                                    if (regionList && regionList.length > 0) {
-                                                        start = regionList[0].start;
-                                                        end = regionList[0].end;
-                                                    }
-                                                }
-                                                let processed = await audioProcessor.trim(originalBuffer, start, end);
-                                                if (fadeIn > 0 || fadeOut > 0) {
-                                                    processed = await audioProcessor.applyFades(processed, fadeIn, fadeOut);
-                                                }
-                                                const newId = uuidv4();
-                                                const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
-                                                const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: newId };
-                                                const newBlob = encodeWAV(processed, meta);
-                                                onSaveAsCopy(newBlob, processed.duration, newId);
-                                                showToast("Saved copy to Unused Pool!", "success");
-                                            } catch (e) {
-                                                console.error(e);
-                                                showToast("Failed to save copy", "error");
+                                        onClick={() => {
+                                            // Only ask when there is something to bake in. With
+                                            // nothing pending the two answers are the same file.
+                                            if (isTrimDirty || fadeIn > 0 || fadeOut > 0) {
+                                                setShowPoolCopyPrompt(true);
+                                            } else {
+                                                saveCopyToPool(false);
                                             }
-                                            finally { setIsProcessing(false); }
                                         }}
                                         disabled={isProcessing}
                                         className="flex items-center gap-2 px-6 h-12 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
