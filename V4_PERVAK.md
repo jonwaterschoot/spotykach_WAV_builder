@@ -1,8 +1,14 @@
 # v4 "Pervak" — Working Plan
 
-> **Start here.** This is the plan of record for v4. Intent, personas and user journeys live in
+> **🗄️ Prepared for archiving, 2026-08-18.** This document has done its job: phases 0–6 are built,
+> Phase 7's code is in, and nine of the ten test rounds are closed. **It is no longer the place work
+> gets tracked** — [roadmap-bugs.md](roadmap-bugs.md) is, and everything still live here has been
+> carried across. What stays here is the *reasoning*: the locked decisions, the phase outcomes and the
+> appendices. It moves to `docs/archive/` when the editor round closes — see Phase 7, step 7.4.
+>
+> **What was the plan of record for v4.** Intent, personas and user journeys live in
 > [UX_Overhaul.md](UX_Overhaul.md) — that document says *why*, this one says *what, in what order,
-> and what's already decided*.
+> and what was already decided*.
 >
 > **Codename:** Pervak (первак) — the first run off a still, the strong opening fraction. Fitting for
 > a release whose premise is separating one muddled thing into clean tiers.
@@ -14,37 +20,30 @@
 
 ## Open items — everything still on the table
 
-*Added 2026-08-14, after Phase 6. Extracted from the six phase outcomes, the appendices,
-[UX_Overhaul.md](UX_Overhaul.md) and [roadmap-bugs.md](roadmap-bugs.md). This section is the one place
-that says what is **not** done; the phase briefs below say what is.*
+*Added 2026-08-14 after Phase 6; **reconciled 2026-08-18 and handed over.** Everything below that is
+still open now lives in [roadmap-bugs.md](roadmap-bugs.md) ▸ *What is left before v4 ships*, which is the
+live list. This section is kept as the record of what each item was and how it was settled.*
 
 ### Blocking a v4 release
 
 | # | Item | Source | Where it lands |
 |---|---|---|---|
 | A | ~~**Storage keys are not namespaced.**~~ ✅ **Done 2026-08-14.** `utils/storageNamespace.ts` is the one place every DB name and localStorage key passes through. Root derives `''` and stays byte-identical for existing users; `/next/` derives `next`. `build:next` / `deploy:next` added. Verified against both bundles. | Locked decision 9, Appendix F.3 | Done |
-| B | **What Phases 4–7 built has been verified in a browser everywhere except Studio.** Types, build and lint are clean; four of the five doors are now walked as well — see C. What is unverified is what only Studio does, plus the hardware paths listed under it. | Phase 4, 5, 6, 7 outcomes | Phase 7, step 6 — **the only work left** |
-| C | ◐ **The functional pass over the five doors is four-fifths done.** **Browse, Preset → SD, Device Config and Edit One File are each verified on a desktop** (2026-08-14 → 17), which raised and closed 18 numbered findings between them — 15 in Browse, plus P1-1, C1-1 and D1-1; Edit One File raised none — logged in [roadmap-bugs.md](roadmap-bugs.md) ▸ *The v4 test pass*. **Studio has not been walked**, it is the door the other four changed things inside, and the editor's known bugs are still unassessed — they are all project-shaped, so they surface there. | New, this round | Phase 7, step 6 |
+| B | ~~**What Phases 4–7 built has been verified in a browser everywhere except Studio.**~~ ✅ **All five doors are walked** (2026-08-14 → 18). Types, build and lint clean throughout. What remains unverified is hardware- and engine-shaped, not door-shaped — the list moved to [roadmap-bugs.md](roadmap-bugs.md) ▸ *Paths no round has ever exercised*. | Phase 4, 5, 6, 7 outcomes | Done, bar the editor round |
+| C | ◐ **The functional pass over the five doors is done; the editor inside Studio is not.** Ten rounds, **34 numbered findings, 33 of them built** — 15 in Browse (R1–R4), P1-1, C1-1, D1-1, and S1-1…S1-15 in Studio. The full record is archived as [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md). **What is left is one round — the editor with a project behind it** — plus the remainder of S1-8. Both are in [roadmap-bugs.md](roadmap-bugs.md). | New, this round | **The one thing still blocking v4** |
 
-**Still unverified**, from the four outcomes plus what the Browse rounds added:
+**Still unverified — the list now lives in [roadmap-bugs.md](roadmap-bugs.md)** ▸ *Paths no round has
+ever exercised*: an engine without `showDirectoryPicker` · the `move()` swap on removable media · the
+workspace backup's failure path · the Project Manager against a card that already carries projects · the
+SK-snapshot toggle · the auto-save loop under a real session · the Pages build of texture 8 · Browse on a
+phone.
 
-- `move()`-based atomic swap on removable media · the per-build SK-snapshot toggle · the first Studio
-  save after the two-version collapse · **the auto-save loop under a real edit session** (bounded by
-  the serialising guard, not measured) · **a workspace backup onto a real card, including one that runs
-  out of room mid-write** — the cleanup path is the whole point of that surface and has never run ·
-  **the Project Manager against a card that already carries projects** (the migration list) · any
-  engine without `showDirectoryPicker`.
-- **Added by the Browse rounds, and none of it walked in Studio:** the shared editor's close
-  button and header layout (Studio's tape editor is the same component — the standalone `#/editor`
-  door is now a confirmed second host, Studio is the third) · **Studio's boot**, which now
-  restores a still-permitted session instead of showing the setup wizard — this changes how Studio opens
-  for every user, not just the Browse path · the Project Manager's temporary-pool row.
-- **Browse on a phone.** The layout exists and all four rounds were walked on a desktop.
-
-**Verified and struck:** Browse's "Import into a project" · the pen on a browser row · Config mode's
-card read/write and its file input *(round 2)* · `#/editor`'s "Add to pool" *(round 3)* · the optional
-workspace parameter on `createProjectFromState`, whose second caller turned out not to exist —
-`BrowseMode` is the only one *(round 3)*.
+**Verified and struck** over the ten rounds: Browse's "Import into a project" · the pen on a browser row ·
+Config mode's card read/write and its file input *(round 2)* · `#/editor`'s "Add to pool" *(round 3)* ·
+the optional workspace parameter on `createProjectFromState`, whose second caller turned out not to exist
+*(round 3)* · Studio's boot and its temporary-pool row · the shared editor's close button and header
+layout, now confirmed in two hosts *(rounds 2, 3)* · the first Studio save after the two-version collapse
+is **not** among them — it needs the editor round.
 
 ### Open, not blocking
 
@@ -61,7 +60,7 @@ workspace parameter on `createProjectFromState`, whose second caller turned out 
 | L | **Does the device tolerate an unknown key/value pair?** The app now preserves them either way; writing the *project title* into `config.txt` waits on this answer. | Phase 5 notes | Blocked on the hardware developer |
 | M | **Non-destructive editing / op log.** `AudioVersion.processing[]` is a flat tag set and a real model is a different data model, not an extension. | Appendix E.3 | **Explicitly not a v4 goal.** Don't let it creep in |
 | N | ~~**Docs are scattered and partly stale.**~~ ✅ **Done.** `docs/README.md` indexes everything with a status; `docs/deployment_guidelines.md` was rewritten — builds, Pages publishing, storage namespacing, asset resolution — with Appendix F.2/F.3 folded in so the deployment story survives this file being archived, and the stale material kept as clearly-labelled history. `CHANGELOG.md` has v4 as one Unreleased entry. | Appendix F.4 + new, this round | Done |
-| O | **UX_Overhaul's four wireframing boxes are unchecked** — hub, independent editor, browser-to-grid, guest-artist flow. Three of the four were built without ever being sketched; the fourth (guest artist) is open question 6. | [UX_Overhaul.md](UX_Overhaul.md) §"Next Steps" | **Needs your call** — close three as built, or say what a sketch would still change |
+| O | ~~**UX_Overhaul's four wireframing boxes are unchecked** — hub, independent editor, browser-to-grid, guest-artist flow.~~ ✅ **Closed as built, 2026-08-18.** Three shipped without a sketch and drawing them now would be documenting backwards — the hub box *is* the five doors, browser-to-grid *is* the temporary pool, and the guest-artist box is answered by open question 6. The fourth, independent editor vs Studio's tape editor, is not a drawing debt: how the two hosts should differ is the **editor round's** question, and lives there in [roadmap-bugs.md](roadmap-bugs.md). | [UX_Overhaul.md](UX_Overhaul.md) §"Next Steps" | Done — **no open item is left in either v4 document** |
 
 ### Discrepancies between the documents
 
@@ -70,7 +69,9 @@ document says something the codebase no longer agrees with.
 
 1. **Four personas, five doors.** UX_Overhaul names four user journeys; the hub ships five —
    **Preset → SD is a tier the persona document never describes.** It is the headline flow and has no
-   persona written for it.
+   persona written for it. **Recorded rather than repaired**, in that document's own status header:
+   writing a fifth persona for a flow that is already built and verified would be documenting
+   backwards.
 2. ~~**The backup complaint is only half answered.**~~ ✅ **Answered in full by Phase 7, step 3.** Phase 4
    fixed the *build*; step 3 fixed the *screen*. The Project Manager is a list of projects, and the
    only card language left on it is the build and the import path. One leftover, deliberately: the
@@ -84,9 +85,9 @@ document says something the codebase no longer agrees with.
 5. ~~**roadmap-bugs still lists resolved work as open.**~~ ✅ **Fixed** by the same rewrite. Both the
    editor's clean-history column and ".wav as well as .WAV" are in its Done section — the latter with
    **"don't 'fix' it"** attached, which is the part that had to survive.
-6. **UX_Overhaul §4 asks "config.txt is maybe not a necessity per project?"** — answered by open
-   question 4 (device-scoped by default, per-project still allowed) and built in Phase 5. The answer
-   was never folded back into the persona document.
+6. ~~**UX_Overhaul §4 asks "config.txt is maybe not a necessity per project?"**~~ ✅ Answered by open
+   question 4 (device-scoped by default, per-project still allowed), built in Phase 5, and **folded back
+   into that document's status header on 2026-08-18.**
 
 ---
 
@@ -101,19 +102,20 @@ document says something the codebase no longer agrees with.
 | 4 | ✅ | Backup & safety rework | SD card is a build target again |
 | 5 | ✅ | Config mode | MIDI setup without the studio |
 | 6 | ✅ | Editor mode + Studio extraction | Edit one file with no project; the session leaves `App.tsx` |
-| 7 | ◐ | Close-out | Settings owns the options, backup is one explicit act — **steps 1–5 and 7 in; step 6, the test pass, is four doors of five through** |
+| 7 | ◐ | Close-out | Settings owns the options, backup is one explicit act — **steps 1–5 and 7 in; step 6, the test pass, is nine rounds of ten through — only the editor round is left** |
 
-**The six build phases are in, and Phase 7's code is in.** Locked decision 9 is closed. What is
-left before v4 ships is **step 6 — the browser and hardware pass** — plus open questions 6 and 7,
-neither of which blocks a release. Of the items above only B and C still block.
+**The six build phases are in, and Phase 7's code is in.** Locked decision 9 is closed. Open questions
+6 and 7 are settled or parked, and neither blocks a release. **Of the items above, only C still
+blocks.**
 
-**Step 6, as of 2026-08-17:** four doors are walked and verified on a desktop — Browse over four
-rounds, then Preset → SD, Device Config and Edit One File over one each. The first two of those three
-each opened with a blocker and closed it; Edit One File raised nothing. **Studio is the last door**,
-and it is also where every deferred item now points: the shared editor shell, the boot change, the
-Project Manager's pool row, the first save after the two-version collapse, and the editor's own bug
-sweep. The rounds are logged in [roadmap-bugs.md](roadmap-bugs.md) under *The v4 test pass*, which is
-now the live record of that work — this file only says what is left.
+**Step 6, as of 2026-08-18: all five doors are walked and verified on a desktop.** Browse over four
+rounds, then Preset → SD, Device Config, Edit One File and Studio. Thirty-four findings, all built. The record is archived as [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md).
+
+**What is left is one round: the editor with a project behind it.** Every deferred item that pointed at
+Studio has since been walked — the shared editor shell in two hosts, the boot change, the Project
+Manager's pool row — except the project-shaped ones: version history across saves, slot assignment, save
+unique / save copy to pool, cleanup, and the known intermittent stuck play button. That round is what
+stands between here and the release. **It is tracked in [roadmap-bugs.md](roadmap-bugs.md), not here.**
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
 `importUtils`, `projectDescriptorUtils`, `lib/audio`) is already mode-agnostic, and every major panel
@@ -1003,11 +1005,12 @@ to trim one sample has to add it to a selection first, which is a concept they n
 - Studio's `SampleBrowser` wants the same affordance eventually, but that is a different host with a
   project behind it. Standalone first.
 
-#### Step 6 — The test pass ◐ *in progress*
+#### Step 6 — The test pass ◐ *nine rounds of ten*
 
-**The live record is [roadmap-bugs.md](roadmap-bugs.md) ▸ *The v4 test pass*** — findings, round by
-round, and a table of which doors are through. Phase 7 is where this document stops being the place
-things get written down, so nothing below is repeated there.
+**The record is archived as [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md)** —
+findings, round by round, all 34 of them, written up in full. **What is still open is in
+[roadmap-bugs.md](roadmap-bugs.md)**, which is the live list. Phase 7 is where this document stopped
+being the place things get written down.
 
 Two rounds, in this order:
 
@@ -1015,13 +1018,16 @@ Two rounds, in this order:
    Studio, plus every path in the unverified list at the top of this file. Real SD card, real folder
    picker, Chromium *and* one engine without `showDirectoryPicker` — the ZIP and file-input fallbacks
    from Phases 3 and 5 have never been exercised.
-   **Browse: done** (four rounds, 2026-08-14 → 15, 20 findings raised and closed). **Preset → SD and
-   Device Config: done** (2026-08-16, one blocker each — P1-1, C1-1). Editor and Studio left, plus the
-   engine without `showDirectoryPicker`.
-2. **The editor, deeply.** Starting points from roadmap-bugs: the cleanup confirm modal glitching out
-   of sight, and stereo splitting.
-   **Partly done:** every tool passed in the *Browse-hosted* editor in round 3. Neither starting point
-   was reachable there — cleanup is a project action, so both still need Studio.
+   ✅ **Done for all five doors** (2026-08-14 → 18). Browse over four rounds, then Preset → SD and
+   Device Config (one blocker each — P1-1, C1-1), Edit One File (no findings) and Studio (S1-1…S1-15,
+   none a blocker). **Not done:** a real SD card for the `move()` swap, and an engine without
+   `showDirectoryPicker`.
+2. **The editor, deeply.** ◐ **The one round still outstanding, and the last thing blocking v4.**
+   Every tool passed in the *Browse-hosted* editor (Browse round 3) and again in the standalone
+   `#/editor` door (test-pass round 3) — but **neither host has a project behind it**, which is the
+   whole of what is left. Starting points: the intermittent stuck play button after apply and preview,
+   and the cleanup confirm modal rendering off-screen (now reached from Project ▸ Advanced). Scope and
+   checklist: [roadmap-bugs.md](roadmap-bugs.md) ▸ *The editor round*.
 
 **One thing the rounds changed about this step.** Findings from Browse repeatedly landed in components
 Studio shares — the waveform editor twice, the Project Manager, and Studio's own boot sequence. Walking
@@ -1038,10 +1044,22 @@ documents**, as they were before v4.
    for what has stopped being true. Done 2026-08-14.
 3. ✅ v4 written up in `CHANGELOG.md` as **one** `[4.0.0 "Pervak"] - Unreleased` entry, not seven.
    Version-bump `package.json` when it actually ships.
-4. Move `V4_PERVAK.md` and `UX_Overhaul.md` into `docs/archive/` **once v4 ships**, not before — the
+4. ◐ Move `V4_PERVAK.md` and `UX_Overhaul.md` into `docs/archive/` **once v4 ships**, not before — the
    appendices are still the only written record of why several of these decisions went the way they
-   did, and Phase 7 is being run out of this file. **The deployment half of Appendix F is already
-   safe**: F.2 and F.3 were folded into `docs/deployment_guidelines.md`, which is a live document.
+   did. **The handover is done as of 2026-08-18**, so the move itself is now mechanical:
+   - ✅ the deployment half of Appendix F → `docs/deployment_guidelines.md`, a live document;
+   - ✅ the test-pass record → [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md);
+   - ✅ every still-open item from *Open items* and *Open questions* → `roadmap-bugs.md`, which now
+     carries the mirror-vocabulary rename (H), the SD-import compare view (I), the `config.txt`
+     unknown-key question (L), non-destructive editing (M), the authoring workflow's step 1 (J/Q6) and
+     multiple projects per card (K/Q7);
+   - ✅ **item O — the four wireframing boxes — closed as built, 2026-08-18.** Three shipped without a
+     sketch; the fourth was answered in writing. The one live question underneath them, how the two
+     editor hosts should differ, moved into the editor round in `roadmap-bugs.md`. **No open item is
+     left in either document.**
+
+   **Then:** `git mv V4_PERVAK.md UX_Overhaul.md docs/archive/`, and update `docs/README.md` and
+   `docs/archive/README.md` in the same commit.
 5. ✅ `docs/deployment_guidelines.md` rewritten — builds, Pages publishing with the `next/` subfolder
    and its wipe-order trap, storage namespacing, asset resolution. The stale `build-versioned-pages.mjs`
    and GitHub-Releases-samples material is kept as a clearly-labelled historical section, because the
@@ -1051,7 +1069,8 @@ documents**, as they were before v4.
 
 **Done when.** The five doors all work on real hardware; the Project Manager says nothing about
 backups; one settings screen answers "what does this app do with my files"; and this file is ready to
-move into `docs/archive/`.
+move into `docs/archive/`. **Three of the four are met.** The first is met for the doors and not yet for
+the editor inside Studio, and that is the whole of what is left.
 
 **Notes.**
 >
@@ -1199,7 +1218,9 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
    *Not blocking any current phase.* **Next step is the conversation, not code** — and if it stalls,
    forking the Spotykach firmware repo to see what a boot-time scan would actually take is a
    reasonable way to answer the feasibility half ourselves.
-   → **Answer:**
+   → **Answer:** *(none yet — blocked on @Vlad.)* **Carried to
+   [roadmap-bugs.md](roadmap-bugs.md) ▸ *Multiple projects on one card*, 2026-08-18**, so it survives
+   this file being archived.
 
 
 ---

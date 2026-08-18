@@ -2,27 +2,43 @@
 
 This document outlines the high-level wireflows, user journeys, and potential UX directions for the Spotykach app. The goal is to figure out the optimal user experience by sketching out how different types of users interact with the app.
 
-> **This is the intent document — the *why*.** Personas, journeys and open UX thinking live here.
-> The implementation plan built from it is [V4_PERVAK.md](V4_PERVAK.md) — phase checklist, decisions
-> already locked, and the codebase analysis behind them. Start there for any build work.
+> **🗄️ Prepared for archiving, 2026-08-18.** Everything this document asked for is built, and the app
+> has since been walked door by door. **It is the record of the intent, not a live list** — what is
+> still open lives in [roadmap-bugs.md](roadmap-bugs.md). It moves to `docs/archive/` alongside
+> [V4_PERVAK.md](V4_PERVAK.md) when the editor round closes.
+>
+> **This is the intent document — the *why*.** Personas, journeys and the UX thinking behind v4 live
+> here. The implementation plan built from it is [V4_PERVAK.md](V4_PERVAK.md) — phase checklist,
+> decisions already locked, and the codebase analysis behind them.
 
-> **Status, 2026-08-14 — where this document and the built app disagree.** Phases 0–6 are in. Read
-> alongside the **Open items** section at the top of [V4_PERVAK.md](V4_PERVAK.md), which is the one
-> place that lists what is *not* done.
+> **Status, 2026-08-18 — where this document and the built app disagree.** Phases 0–6 are in, Phase 7's
+> code is in, and nine of the ten test rounds are closed. Each disagreement below is settled; none of
+> them is work waiting to be done.
 >
 > - **Four personas, five doors.** The hub ships Browse, **Preset → SD**, Device Config, Edit One File
 >   and Studio. Preset → SD became the headline flow and has no persona written for it below.
-> - **§"Other UX thoughts" on backups is half answered.** A default build now writes `SK/` and nothing
->   else (v4 Phase 4) — but the Project Manager still shows sync and backup controls, so the
->   complexity this document complains about is still on screen. That is v4 Phase 7.
+> - **§"Other UX thoughts" on backups is answered in full.** ✅ A default build writes `SK/` and nothing
+>   else (Phase 4), and Phase 7 took the controls off the screen as well: the Project Manager is one
+>   list of projects with a card *read* path, and "backup" is one explicit act with a location picked
+>   every time. The two halves of the complaint — it takes longer, and it is visually complex — are both
+>   closed.
 > - **§"Other UX thoughts" on cleaning projects is answered.** Persisted history is now exactly two
 >   versions, original + current, collapsed on save — so the mess no longer accumulates and cleanup
 >   stopped being a rescue operation. It also left the editor's right-hand sidebar and became its own
 >   entry under Project ▸ Advanced, which is the separation asked for below.
 > - **§4's "config.txt is maybe not a necessity per project?"** — answered: device-scoped by default,
 >   per-project still allowed.
-> - **The four wireframing boxes at the bottom were never ticked**, and three of the four shipped
->   without being sketched. Close them or say what is still wanted.
+> - **The four wireframing boxes at the bottom are closed as built, 2026-08-18.** ✅ Three shipped
+>   without ever being sketched, and drawing them now would be documenting backwards — the
+>   Home/Dashboard box *is* the five-door hub, the browser-to-grid box *is* the temporary pool, and the
+>   guest-artist box was answered in writing by
+>   [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md). The
+>   fourth — independent editor vs Studio's tape editor — is not a drawing debt either: it is a question
+>   the editor round answers by walking the component with a project behind it, and it lives there in
+>   [roadmap-bugs.md](roadmap-bugs.md). **Nothing in this document is open.**
+> - **Preset → SD has no persona here**, and is not getting one. It became the headline flow — a cold
+>   start to a curated card — and writing a persona for something already built and verified would be
+>   documenting backwards. Recorded as discrepancy 1 in [V4_PERVAK.md](V4_PERVAK.md).
 
 ## Design Direction
 We have two main paths to consider for achieving the best UX:
@@ -104,7 +120,26 @@ Project management is the core of the experience for Power Users and those worki
 ---
 
 ## Next Steps for Wireframing
-- [ ] Sketch the **"Home/Dashboard"** screen (deciding between starting in the Browser, the Editor, or a Project Hub based on user intent).
-- [ ] Sketch the **"Independent Audio Editor"** view vs. the **"Slot Manager Editor"** view.
-- [ ] Sketch the **"Browser to Grid"** batch workflow.
-- [ ] Sketch the **"Guest Artist Pack"** discovery and loading flow.
+
+> ✅ **Closed as built, 2026-08-18.** All four are settled — three by what shipped, one by a written
+> answer. No sketch is owed on any of them: drawing a screen that has already been built and walked
+> would be documenting backwards, the same reason Preset → SD is not getting a persona. The one live
+> question underneath these boxes — how the two editor hosts should differ — is carried by the editor
+> round in [roadmap-bugs.md](roadmap-bugs.md), not by a wireframe.
+
+- [x] Sketch the **"Home/Dashboard"** screen (deciding between starting in the Browser, the Editor, or a Project Hub based on user intent).
+      *Shipped unsketched as the hub — five doors with hash routing, news inline beneath them.*
+      **Closed as built.** The decision this box existed to make — Browser, Editor or Project Hub — was
+      made and shipped: all of them, behind a hub.
+- [x] Sketch the **"Independent Audio Editor"** view vs. the **"Slot Manager Editor"** view.
+      *Shipped unsketched as `#/editor` and Studio's tape editor — the same `WaveformEditor` in two
+      hosts, with different exits. **Closed as a wireframe.** The live half — how the two hosts should
+      actually differ — is the editor round's to answer, since that round is the first time the
+      component is walked with a project behind it. Tracked there, in
+      [roadmap-bugs.md](roadmap-bugs.md).*
+- [x] Sketch the **"Browser to Grid"** batch workflow.
+      *Shipped unsketched as the temporary pool: bulk actions, drag from the sample rows, and
+      "import into a project". **Closed as built.***
+- [x] Sketch the **"Guest Artist Pack"** discovery and loading flow.
+      *Answered rather than sketched — the app is the form and the channel stays human. **Closed.** See
+      [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md).*

@@ -2,7 +2,8 @@
 
 Every documentation file in the repository, what it is for, and whether it is still true.
 
-*Last reconciled 2026-08-15, during v4 Phase 7's test pass.*
+*Last reconciled 2026-08-18, when the closed test rounds were archived and the two v4 documents were
+prepared for the move.*
 
 **Status key** — 🟢 current · 🔵 reference (stable, rarely changes) · 🟡 partly stale · 🗄️ archived ·
 ⚠️ **load-bearing — code or the app links to it, do not move**
@@ -15,19 +16,20 @@ These two are the ones to keep up to date. Everything else is reference material
 
 | File | Status | What it is |
 |---|---|---|
-| [../roadmap-bugs.md](../roadmap-bugs.md) | 🟢 | Active roadmap, feature requests and bugs, with a done/reviewed archive at the bottom. |
+| [../roadmap-bugs.md](../roadmap-bugs.md) | 🟢 | Active roadmap, feature requests and bugs. Opens with **what is left before v4 ships** — a six-row table — then the roadmap beyond it, then a short done/reviewed section. Rewritten 2026-08-18: 1401 lines → 380, with the closed rounds moved to `archive/v4-test-rounds.md`. |
 | [../CHANGELOG.md](../CHANGELOG.md) | 🟢 | Released work, newest first. |
 
 ## In flight — retired when v4 ships
 
 | File | Status | What it is |
 |---|---|---|
-| [../V4_PERVAK.md](../V4_PERVAK.md) | 🟢 | The v4 plan of record: phases, locked decisions, open items and the appendices behind them. **Moves to `archive/` when v4 ships** — see its Phase 7, step 7. |
-| [../UX_Overhaul.md](../UX_Overhaul.md) | 🟡 | The intent document behind v4: personas, user journeys, UX thinking. Same fate. **Partly overtaken:** it describes four personas where the hub ships five doors, and its §4 `config.txt` question was answered in Phase 5. Both are logged as discrepancies in `V4_PERVAK.md`. |
+| [../V4_PERVAK.md](../V4_PERVAK.md) | 🗄️ | The v4 plan of record: phases, locked decisions, open items and the appendices behind them. **Prepared for archiving 2026-08-18** — it no longer tracks work, and everything still open was carried into `roadmap-bugs.md`. Moves to `archive/` when the editor round closes; see its Phase 7, step 7.4. |
+| [../UX_Overhaul.md](../UX_Overhaul.md) | 🗄️ | The intent document behind v4: personas, user journeys, UX thinking. Same fate, same date. Every disagreement between it and the built app is now settled in its own status header, **including its four wireframing boxes** — closed as built 2026-08-18, so nothing in either document is open and the move waits only on the editor round. |
 
-**Which file holds what, while v4 is in flight:** `V4_PERVAK.md` says what is *left* — open items, locked
-decisions, the reasoning in the appendices. `roadmap-bugs.md` ▸ *The v4 test pass* is the live record of
-the test pass itself, round by round. Findings go in roadmap-bugs, never in the plan.
+**Which file holds what, now:** `roadmap-bugs.md` is the live list and the only place work is tracked.
+The two v4 documents hold *reasoning* — locked decisions, phase outcomes, appendices — and are read, not
+updated. The test pass itself is closed and archived as
+[archive/v4-test-rounds.md](archive/v4-test-rounds.md).
 
 ## Project-level
 
