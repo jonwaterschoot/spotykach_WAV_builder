@@ -5435,7 +5435,11 @@ function App({ onExitToHub }: AppProps) {
                   mixBlendMode: 'overlay',
                 }}
               >
-                <source src="/vid/wavbuilderfullscreen_1.mp4" type="video/mp4" />
+                {/* S1-14: every other asset goes through resolveAssetPath, including the
+                    --master-texture-image line in the same feature. This one did not, so on
+                    Pages — where the app is served under a base path — it resolved off the
+                    site root and 404d, and texture 8 was dead there and only there. */}
+                <source src={resolveAssetPath("/vid/wavbuilderfullscreen_1.mp4")} type="video/mp4" />
               </video>
             )}
           </div>

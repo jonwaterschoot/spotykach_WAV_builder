@@ -75,15 +75,46 @@ release whose premise is separating one muddled thing into clean tiers.*
 - **The way into the Sample Browser says what it does.** The Registry header's plain folder icon is
   now a folder with a plus in it, with the word *Browse* beside it — the control adds files, and a
   bare folder never said so.
+- **Settings can be read.** Every explainer on the Files and System tabs was set at a size below the
+  one at which the text can be read at all, and several ran to four lines of it. They are larger now
+  and cut to the one sentence that answers the question, with the full wording behind an info icon
+  that opens it in place. Nothing was shortened away — what the icon opens is the text that was
+  there. The Danger Zone's explainer had a second problem: its heading, a full-width button and its
+  paragraph were three things in one row, squeezing all of them. It reads down the page now.
+- **Presets and the three custom slots are two labelled sections** at the top of the Look tab,
+  instead of named presets at one end of the panel and the `C1 C2 C3` they store into at the other,
+  with the store buttons hidden behind a hover on the word *Store:*. Each slot is one control: the
+  name puts the look on, the disk icon beside it saves the current look into that slot, and an empty
+  slot says *empty*. **The live preset is highlighted**, and moving a slider off it marks it as
+  changed and grows a way straight back to it. Which one is live is worked out from the look itself,
+  so a preset restored from a previous session lights up correctly on open.
+- **Every filter slider has a reset button** next to its name. Double-clicking a slider has always
+  reset it and nothing but a tooltip ever said so; the double-click still works. The button greys out
+  when that slider is already at its default, so the panel also says which of them have been touched.
+- **Brightness and contrast go to 3×**, where both used to stop at 2× — not far enough to be useful
+  on a bright screen.
 
 ### Fixed
+- **"Reset Visual Effects" trailed the panel and could become unreadable.** The button has to be drawn
+  outside the app's visual filters — it is what turns them off, and a CSS filter traps everything
+  inside it — so it is drawn separately and told where to sit. It was also set to animate any
+  property that changed, which included the position it was being told: it arrived 150ms late,
+  trailing behind a dragged panel and sliding in from the corner of the screen when the tab was first
+  opened. It lands where it is put now, and follows the panel through scrolling and reflow as well as
+  dragging. Its fill was translucent, which meant it borrowed its background from the filtered panel
+  underneath — at full inversion, pale text on a pale ground. It is opaque.
+- **The video texture (texture 8) never worked on the published site.** Its file was requested from the
+  root of the domain rather than from the app's own address, so it worked when run locally and 404d
+  everywhere else. Every other asset in the app already resolved its path properly, including the one
+  eleven lines away in the same feature.
 - **"New Fresh Project" replaced the open project without asking.** Every neighbouring path —
   loading a project, leaving for the hub, changing the work folder — already warned about unsaved
   changes; the one menu item that creates a project on top of yours did not. It asks now, before
   the name is typed. The dialog also gained the answer it never had: **save the open project first,
   then start the new one**, alongside going ahead without saving and cancelling. It waits for the
   save to actually reach disk, so a save stopped by missing files leaves the open project where it
-  is instead of replacing it anyway. Tailwind v4 only applies
+  is instead of replacing it anyway.
+- **Nothing in the app reacted to hover on a touchscreen machine.** Tailwind v4 only applies
   `hover:` styles when the browser says the primary pointer can hover, and a touchscreen laptop
   says it cannot — even when you are driving it with a mouse. All 333 hover rules, 16% of the
   stylesheet, were being skipped: buttons stayed grey, rows never lit, and the only hover left

@@ -25,7 +25,7 @@ section at the top of [V4_PERVAK.md](V4_PERVAK.md).
 
 ---
 
-## Round 4 — Studio, first pass 🔧 *(2026-08-17, 8 of 15 built)*
+## Round 4 — Studio, first pass 🔧 *(2026-08-17, 14 of 15 built)*
 
 **The last door, walked for the first time.** Fourteen findings, none of them a blocker: nothing here
 stops Studio working, and no ✅ elsewhere is put in doubt. They are ordinary rough edges, so each one
@@ -34,6 +34,9 @@ below is written to be picked up on its own — what is wrong, where it lives, a
 **A fifteenth arrived mid-round.** S1-15 was found while walking S1-5 — it is not a Studio finding at
 all but an app-wide one, and the only item here that was ever invisible in a browser on a desktop
 machine. It is kept in this round because this is where it surfaced.
+
+**All but one are built now.** What is still open is **S1-8**: the pool-first offer, counting moves as
+moves, and the simple view's before/after grids.
 
 **What this round did *not* cover.** Two things were deliberately left out and each wants a pass of its
 own, described under **Not this round** at the end of this section:
@@ -48,8 +51,8 @@ Legend as elsewhere in this file: 🐞 a fault · ✂️ wording · 🏗️ need
 ### The list
 
 Each row is meant to be a session on its own. **The 🏗️ rows need an answer before code**, so don't
-start them cold; the rest are described well enough below to open the file and go. Of the three, S1-4 is
-answered and built — S1-11 and the auto-save question are what is left.
+start them cold; the rest are described well enough below to open the file and go. Of the three, S1-4
+and S1-11 are answered and built — the auto-save question is what is left.
 
 | # | What | Where | Type |
 |---|---|---|---|
@@ -61,17 +64,18 @@ answered and built — S1-11 and the auto-save question are what is left.
 | **S1-6** | New project doesn't warn about unsaved changes | `App.tsx` | 🐞 ✅ |
 | **S1-7** | Import presets don't say which of them also write the card | `ExportPreviewModal.tsx` | ✂️ ✅ |
 | **S1-8** | Clean Mirror doesn't show what it deletes | `ExportPreviewModal.tsx` | 🐞 |
-| **S1-9** | Files and System explainers too small to read | `SettingsModal.tsx` | ✂️ |
-| **S1-10** | "Reset Visual Effects" lags the window, loses contrast | `SettingsModal.tsx` | 🐞 |
-| **S1-11** | Presets and Custom Stored split across the panel | `SettingsModal.tsx` | 🏗️ |
-| **S1-12** | Slider reset is double-click only, undiscoverable | `SettingsModal.tsx` | ✂️ |
-| **S1-13** | Brightness capped at 2× | `SettingsModal.tsx` | ✂️ |
-| **S1-14** | Texture 8 (the mp4) dead on Pages — **cause found** | `App.tsx` | 🐞 |
+| **S1-9** | Files and System explainers too small to read | `SettingsModal.tsx` | ✂️ ✅ |
+| **S1-10** | "Reset Visual Effects" lags the window, loses contrast | `SettingsModal.tsx` | 🐞 ✅ |
+| **S1-11** | Presets and Custom Stored split across the panel | `SettingsModal.tsx` | 🏗️ ✅ |
+| **S1-12** | Slider reset is double-click only, undiscoverable | `SettingsModal.tsx` | ✂️ ✅ |
+| **S1-13** | Brightness capped at 2× | `SettingsModal.tsx` | ✂️ ✅ |
+| **S1-14** | Texture 8 (the mp4) dead on Pages | `App.tsx` | 🐞 ✅ |
 | **S1-15** | **Every hover state in the app is dead on a touchscreen machine** | `index.css` | 🐞 ✅ |
 
-**Cheapest first, if that matters:** S1-13 and S1-14 are one line each, S1-14 with the fix already
-identified. S1-12 is small and local, as S1-1, S1-2 and S1-5 were, and all three are built. S1-8 is the
-largest piece of real work here and the only one that changes what a destructive action does.
+**S1-8 is what is left of this round**, and it was always the largest piece of real work here — the
+only one that changes what a destructive action does. The six `SettingsModal.tsx` rows were closed
+together on 2026-08-18, since they all sat in one file and three of them (S1-11, S1-12, S1-13) turned
+out to want the same constants.
 
 ### The default view
 
@@ -366,66 +370,140 @@ the pool-first offer isn't built, and moves aren't counted as moves.
 
 ### Settings — `SettingsModal.tsx`
 
-#### S1-9 — The Files and System explainers are too small to read ✂️
+#### S1-9 — The Files and System explainers are too small to read ✂️ ✅ *built and walked 2026-08-18*
 
-Every setting on the first and last tabs carries a small-text explainer that isn't readable at its size.
-Either shorten them and set them larger, or move the full text behind an info icon that expands it —
-possibly both, a short readable line with the long version on the icon.
+**Both of the offered answers, since the item allowed both: a short line at a readable size, with the
+long version on an icon.** Every explainer on Files and System was `text-[9px]` grey and several ran to
+four lines of it. They are `text-[11px]` now, cut to the one sentence that answers the question, with an
+ⓘ that expands the rest in place. One `Explainer` component
+([SettingsModal.tsx:125](src/components/SettingsModal.tsx#L125)) carries all of them, so the size is set
+once rather than eleven times.
 
-#### S1-10 — "Reset Visual Effects" lags the window and can lose contrast 🐞
+- **Nothing was rewritten away.** What the icon opens is the wording that was already there. That
+  matters most for auto-save, where **Auto-save replacing "save"**, under *Not this round*,
+  records that the current text is accurate and should not change until the feature does — so it is
+  split at its first full stop, not edited.
+- **The toggle rows had to come apart to allow it.** An ⓘ inside the `<button>` that carries the whole
+  row is a button inside a button. The switch and its title are the button now; the explainer is a
+  sibling beneath it, indented to the same column, and clicking the text expands rather than toggles.
+- **The Danger Zone's explainer was unreadable for its layout as much as its size.** Its heading, a
+  `w-full` button and its paragraph were three children of one `flex items-center justify-between`
+  row, which put a full-width button and a paragraph side by side and squeezed both. It reads down the
+  page now ([SettingsModal.tsx:1108](src/components/SettingsModal.tsx#L1108)).
 
-The button is portalled out of the panel to escape the render filters
-([SettingsModal.tsx:553-568](src/components/SettingsModal.tsx#L553-L568)) and positioned with `fixed` plus
-a measured `portalPos`. Two consequences:
+The type around them went up where it shared the problem: a location's name and the folder under it,
+and the title on each toggle, are 12px and 11px rather than 11px and 10px.
 
-- **It travels slower than the window.** Dragging the panel disconnects it, and on first opening the Look
-  tab it visibly floats into place — the measurement is chasing the layout instead of following it.
-- **Its colours can become unreadable**, since the effects it resets are exactly what it sits over.
+#### S1-10 — "Reset Visual Effects" lags the window and can lose contrast 🐞 ✅ *built and walked 2026-08-18*
 
-Two questions to settle together: whether the button can genuinely be placed above the render effects,
-and — if not — whether hard black-and-white is the honest answer for a control that must stay legible
-whatever the filters are doing.
+**Both questions the item asked came back no, and both had a cause that wasn't where it looked.**
 
-#### S1-11 — Quick Presets and Custom Stored are one idea split across the panel 🏗️
+**Can the button genuinely be placed above the render effects? No — not while it is inside `#root`.**
+`#root` carries the master filter ([index.css:254](src/index.css#L254)), and a CSS `filter` makes its
+element the containing block for every `fixed` descendant. Nothing inside the panel can escape the
+effects that button exists to reset, whatever z-index it is given. The portal is not a workaround, it
+is the only way, and it stays.
 
-The named presets sit at the top and the `C1 C2 C3` store buttons at the bottom, so which slot is
-*saved* and which is merely *selected* is guesswork.
+**What made it float was not the measuring.** The button was `transition-all`, so `top`, `left` and
+`width` — the three properties the portal sets from the measurement — were animated properties. Every
+measurement was correct and arrived on time; the button then took 150ms to walk to it. Dragging the
+panel left it trailing by exactly that, and on first open it slid in from the top-left corner because
+`portalPos` starts at `{0, 0, 0}`. It transitions colour only now and lands where it is put.
 
-- **Two labelled sections** — *Presets* and *Custom stored* — instead of two ends of the panel.
-- **Highlight the active preset.**
-- **Presets** get an icon marking that their settings have been altered, and a reset back to the preset.
-- **Custom** get a save icon, since saving is what they are for.
+**The measuring was wrong too, just not visibly.** It ran from a dependency list — modal position, tab,
+special mode — which named some of the reasons the placeholder moves and missed the rest: the panel
+scrolling internally, or a preset chip growing a reset button and rewrapping the row above it, which is
+new in S1-11 below. It follows the placeholder every frame instead, while the Look tab is open, and
+only writes state when the rect actually changed, so it doesn't re-render on its own
+([SettingsModal.tsx:282](src/components/SettingsModal.tsx#L282)).
 
-*One note from the round is an unfinished sentence — "after changing a preset: clicking" — and is
-recorded here rather than guessed at. It needs a line from the test session before it can be built.*
+**Is hard black-and-white the honest answer for the contrast? No — being opaque is.** The fill was
+`bg-indigo-500/20`: 20% alpha, compositing over whatever the *filtered* panel behind it had become. Push
+inversion to 100% and it was pale indigo text on a pale indigo ground. The button is outside the filter,
+so it needs no monochrome discipline — it only needed to stop borrowing its background from the thing it
+resets. Solid `indigo-600` with white text (6.4:1) and a dark ring, legible over anything, and still the
+app's palette ([SettingsModal.tsx:817](src/components/SettingsModal.tsx#L817)).
 
-#### S1-12 — Sliders reset by double-click, which nothing says ✂️
+#### S1-11 — Quick Presets and Custom Stored are one idea split across the panel 🏗️ ✅ *built and walked 2026-08-18*
 
-`onDoubleClick={() => resetValue(...)}` with the hint only in a `title` tooltip
-([SettingsModal.tsx:651-654](src/components/SettingsModal.tsx#L651-L654)). Wanted: a small circular reset
-icon next to each slider's title. The behaviour exists; only its affordance is missing.
+**Two labelled sections, *Presets* and *Custom stored*, adjacent at the top of the Look tab.** The
+`S1 S2 S3` store buttons are gone from the header — they hid behind a hover on a label reading
+"Store:", at the opposite end of the panel from the `C1 C2 C3` they wrote to, which is most of why the
+split read as guesswork. Each custom slot is one chip now: the name applies it, the disk icon beside it
+stores over it, and an empty slot says *empty* and refuses the apply
+([SettingsModal.tsx:734](src/components/SettingsModal.tsx#L734)).
 
-#### S1-13 — Brightness stops at 2× ✂️
+- **The active preset is highlighted** — in both sections, from the same rule.
+- **A modified preset carries an amber dot and grows a ↺** back to it, which is the item's "icon marking
+  that their settings have been altered, and a reset back to the preset". Custom slots get the same,
+  since they are altered the same way.
+- **Which one is live is derived, not remembered.** `exactPresetId` compares the current filters against
+  every preset and every stored slot ([SettingsModal.tsx:590](src/components/SettingsModal.tsx#L590)),
+  so a look restored from storage on open — or one reached by dragging sliders onto a preset's values —
+  still lights the right chip, with no state to go stale. The remembered id only answers for the
+  modified state: the preset the look *came from* and has since moved off.
+- **Font size is not part of the comparison**, because it was never part of a preset — `applyPreset` has
+  always carried the current font size through.
+- **Random, Crazy and Don't sit under the presets rather than among them.** They are moods: they set no
+  named state to come back to, so they clear the highlight instead of taking it.
 
-`max="2"` at [SettingsModal.tsx:648](src/components/SettingsModal.tsx#L648). Raise it — 3× was the
-suggestion. A one-line change; worth a look at whether the other filter ranges deserve the same question.
+*The round's unfinished note — "after changing a preset: clicking" — was a remnant, not a request, and
+is dropped.*
 
-#### S1-14 — Texture 8, the video, is dead on the Pages build 🐞 *(cause found)*
+#### S1-12 — Sliders reset by double-click, which nothing says ✂️ ✅ *built and walked 2026-08-18*
 
-The mp4 texture works locally and not on the deployed site, and the reason is a hardcoded path:
+**A small circular ↺ next to each slider's name, as asked.** The double-click stays and is now the
+second way rather than the only one, and the `title` says which slider it resets rather than just
+"Double click to reset".
 
-```
-<source src="/vid/wavbuilderfullscreen_1.mp4" type="video/mp4" />
-```
+**The button greys out when the slider is already at its default**, so it answers a question the panel
+couldn't answer before: which of these six have been touched. The six sliders were six near-identical
+blocks of JSX; they are one `FilterSlider`
+([SettingsModal.tsx:164](src/components/SettingsModal.tsx#L164)), declared at module scope so that a
+render mid-drag doesn't hand React a new component type and remount the input under the pointer.
 
-[App.tsx:5348](src/App.tsx#L5348). Every other asset goes through `resolveAssetPath`, including the
-`--master-texture-image` line eleven lines apart in the same feature
-([App.tsx:560](src/App.tsx#L560)) — so on Pages, where the app is served under a base path, this single
-absolute URL resolves off the site root and 404s. The file itself is committed
-(`public/vid/wavbuilderfullscreen_1.mp4`).
+#### S1-13 — Brightness stops at 2× ✂️ ✅ *built and walked 2026-08-18*
 
-**Fix: wrap it in `resolveAssetPath`.** Then check whether anything else hardcodes a leading `/` asset
-path the same way, since the local build hides this class of bug completely.
+**Brightness goes to 3×, and contrast with it.** They are the same kind of multiplier over the same old
+0.5–2 range, and the question the item asks about the other ranges answers itself for the rest:
+inversion and desaturation are proportions that cap themselves at 100%, font size is bounded by what the
+layout survives, and grain past 50% buries the UI it sits over. Those four keep their bounds.
+
+**It was not a one-line change, because the bounds existed in three places.** The sliders had them as
+literals, Crazy mode clamped to its own copy (`Math.min(2, …)`, which would have pinned the new range
+back to the old one the moment Crazy was toggled), and the reset defaults were a fourth copy of the
+default object. There is one `FILTER_RANGES` and one `DEFAULT_FILTERS` now
+([SettingsModal.tsx:68-97](src/components/SettingsModal.tsx#L68-L97)), and everything reads them.
+**Random deliberately does not**: it keeps the old 0.5–2 band, because it should land somewhere usable
+rather than at the far end of 3×.
+
+#### S1-14 — Texture 8, the video, is dead on the Pages build 🐞 ✅ *built and walked 2026-08-18*
+
+**Wrapped in `resolveAssetPath`, and the sweep the item asked for came back with nothing else.**
+Confirmed in the built bundle: both call sites for that file — this one and the `SetupWizard` one that
+was already correct — now emit `At("/vid/wavbuilderfullscreen_1.mp4")` under the base path.
+
+**The class of bug is narrower than it looked, and worth writing down.** A leading-slash asset path is
+only broken when it reaches the DOM as a *JSX attribute*. In CSS, Vite rebases `url(/…)` against `base`
+at build time, so the two remaining hardcoded ones — the `--master-texture-image` default in
+[index.css:71](src/index.css#L71) and the Tailwind arbitrary `bg-[url('/img/…')]` in
+[Dropdown.tsx:59](src/components/Dropdown.tsx#L59) — come out of the build as
+`/spotykach_WAV_builder/img/…` and are correct on Pages. Checked in `dist`, not assumed. A sweep of
+every `src=`, `href=`, `poster=`, `fetch(` and `new URL(` in `src/` found no other offender, so
+App.tsx was the only one.
+
+##### The round, walked ✅ *2026-08-18*
+
+**All six walked on a desktop, and none of them turned anything up.** `tsc`, `eslint` (the file's two
+remaining errors are both pre-existing and untouched — it had seven before this round) and the
+production build are clean, and S1-14 was verified in the built bundle as well as in the browser.
+
+**Two things a build could never have answered, and the walk did**: the reset button tracks the panel
+while it is dragged, and the modified dot appears when the sliders move off a preset and not otherwise.
+
+**Still unwalked, because no round has had the machine for it**: the Pages build itself. S1-14's fix is
+verified in `dist` — both call sites emit the path under the base — but the deployed site is where that
+bug lived, and it will only be closed for certain by loading texture 8 there.
 
 ### Found mid-round — app-wide
 
@@ -512,7 +590,7 @@ Phase 7, step 6 in [V4_PERVAK.md](V4_PERVAK.md) — the last thing blocking the 
 | **Preset → SD** (`#/presets`) | 1 | ✅ **Verified on a desktop.** One blocker found and closed (P1-1 — the write could never open the picker). Card write with its warnings, and the ZIP download, both walked. |
 | **Device Config** (`#/config`) | 1 | ✅ **Verified on a desktop.** One blocker found and closed (C1-1 — the atomic swap rejected the write). All four buttons walked: read, write, open `config.txt`, download `config.txt`. There is no ZIP here and none is wanted — it is one text file. |
 | **Edit One File** (`#/editor`) | 1 | ✅ **Verified on a desktop.** No findings — the door's own entry, its DOWNLOAD exit and its ADD TO POOL exit all behave. Anything still wrong in the editor is a general editor matter, not this door's; it belongs to the [editor bug sweep](#editor-bug-sweep). |
-| **Studio** | 1 | 🔧 **Walked on a desktop, 2026-08-17. Fourteen findings, all open, none a blocker** — the list is **Round 4 — Studio, first pass**, at the top of this file. **The editor with a project behind it was not opened**, so the [editor bug sweep](#editor-bug-sweep) is still the rest of this door — and so are the four Browse-side changes listed below. |
+| **Studio** | 1 | 🔧 **Walked on a desktop, 2026-08-17. Fourteen findings, none a blocker; six of the Settings ones closed 2026-08-18** — the list is **Round 4 — Studio, first pass**, at the top of this file. **The editor with a project behind it was not opened**, so the [editor bug sweep](#editor-bug-sweep) is still the rest of this door — and so are the four Browse-side changes listed below. |
 
 Plus, from [V4_PERVAK.md](V4_PERVAK.md)'s unverified list and untouched by any round so far: the workspace
 backup's **failure path** (never run), the Project Manager against **a card that already has projects**,
