@@ -37,6 +37,13 @@ interface FadeOverlayProps {
 }
 
 const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active = true, onFadeChange, onRegionChange }: FadeOverlayProps) => {
+    // Hooks first: `duration` is 0 until the audio loads, so guarding above these
+    // would change the hook count on the render where it arrives, and throw.
+    const [dragging, setDragging] = useState<'in' | 'out' | 'move' | 'resize-start' | 'resize-end' | null>(null);
+    const [dragStart, setDragStart] = useState<{ x: number, regionStart: number, regionEnd: number } | null>(null);
+    // Ref for the SVG to calculate drag positions
+    const svgRef = useRef<SVGSVGElement>(null);
+
     if (duration <= 0) return null;
 
     const pxPerSec = width / duration;
@@ -53,13 +60,6 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
     const limitDuration = 42;
     const limitStartPx = regionStartPx + (limitDuration * pxPerSec);
     const isOverLimit = regionDuration > limitDuration;
-
-    // Drag Logic
-    const [dragging, setDragging] = useState<'in' | 'out' | 'move' | 'resize-start' | 'resize-end' | null>(null);
-    const [dragStart, setDragStart] = useState<{ x: number, regionStart: number, regionEnd: number } | null>(null);
-
-    // Ref for the SVG to calculate drag positions
-    const svgRef = useRef<SVGSVGElement>(null);
 
     const handlePointerDown = (type: 'in' | 'out' | 'move' | 'resize-start' | 'resize-end', e: React.PointerEvent) => {
         if (!active) return;
@@ -367,6 +367,12 @@ interface LoopOverlayProps {
 }
 
 const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeChange, active = true, isPreview = false }: LoopOverlayProps) => {
+    // Hooks first: both the guard below and the isPreview branch return early, and
+    // `duration`, `active` and `isPreview` all change while this stays mounted.
+    const [dragging, setDragging] = useState<boolean>(false);
+    const [dragStart, setDragStart] = useState<{ x: number, initialXf: number } | null>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
+
     if (duration <= 0 || !active) return null;
 
     const pxPerSec = width / duration;
@@ -398,10 +404,6 @@ const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeCh
     const regionStartPx = region.start * pxPerSec;
     const regionEndPx = region.end * pxPerSec;
     const xfPx = crossfade * pxPerSec;
-
-    const [dragging, setDragging] = useState<boolean>(false);
-    const [dragStart, setDragStart] = useState<{ x: number, initialXf: number } | null>(null);
-    const svgRef = useRef<SVGSVGElement>(null);
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (!active) return;

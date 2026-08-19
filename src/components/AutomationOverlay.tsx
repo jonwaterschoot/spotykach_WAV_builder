@@ -32,7 +32,10 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     snapPoints = [],
     snapToSlices = false
 }) => {
-    if (!active) return null;
+    // `active` is gated below, at the JSX return and inside each effect — never
+    // by an early return above the hooks. This component stays mounted while the
+    // editor's tool selection changes, so bailing out before the hook calls would
+    // change the hook count between renders and throw.
     const svgRef = useRef<SVGSVGElement>(null);
     const [draggingPointId, setDraggingPointId] = useState<string | null>(null);
     const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null);
@@ -85,6 +88,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
 
     // Global Drag Listeners
     useEffect(() => {
+        if (!active) return;
         const handleGlobalMove = (e: MouseEvent) => {
             if (!svgRef.current) return;
             const rect = svgRef.current.getBoundingClientRect();
@@ -234,11 +238,12 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
             window.removeEventListener('mousemove', handleGlobalMove);
             window.removeEventListener('mouseup', handleGlobalUp);
         };
-    }, [dragStart, isDragging, draggingPointId, selectionBox, points, duration, width, height, onPointsChange, onSeek, MAX_GAIN_VAL]);
+    }, [active, dragStart, isDragging, draggingPointId, selectionBox, points, duration, width, height, onPointsChange, onSeek, MAX_GAIN_VAL]);
 
 
     // Keyboard Nudge logic preserved...
     useEffect(() => {
+        if (!active) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             const selectedPoints = points.filter(p => p.selected);
             if (selectedPoints.length === 0) return;
@@ -278,7 +283,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [points, duration, onPointsChange]);
+    }, [active, points, duration, onPointsChange]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (!svgRef.current) return;
@@ -499,6 +504,8 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         }
         return lines;
     };
+
+    if (!active) return null;
 
     return (
         <div className="absolute inset-0 pointer-events-none">
