@@ -11,24 +11,23 @@ interface AboutHelpModalProps {
 }
 
 
+// Buy Me a Coffee's generator hands you a <script> from their CDN that renders the
+// button in the Cookie typeface. This is that button rebuilt in markup instead, so
+// no third-party script runs here — and it uses our own header font rather than
+// pulling a fourth family from Google for one line of text.
 const BuyMeACoffeeWidget = () => {
     return (
-        <>
-            <style>
-                {`@import url('https://fonts.googleapis.com/css2?family=Cookie&display=swap');`}
-            </style>
-            <a 
-                href="https://www.buymeacoffee.com/jonwtr" 
-                target="_blank" 
-                rel="noreferrer"
-                className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-[#FFDD00] hover:bg-[#FFDD00]/90 transition-all hover:scale-105 active:scale-95 shadow-lg group border border-black/5 no-underline h-[50px]"
-            >
-                <span className="text-2xl drop-shadow-sm group-hover:rotate-12 transition-transform">🧠</span>
-                <span className="text-black font-bold text-xl" style={{ fontFamily: "'Cookie', cursive" }}>
-                    Buy me a coffee
-                </span>
-            </a>
-        </>
+        <a
+            href="https://www.buymeacoffee.com/jonwtr"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-[#FFDD00] hover:bg-[#FFDD00]/90 transition-all hover:scale-105 active:scale-95 shadow-lg group border border-black/5 no-underline h-[50px]"
+        >
+            <span className="text-2xl drop-shadow-sm group-hover:rotate-12 transition-transform">🧠</span>
+            <span className="text-black font-bold text-lg" style={{ fontFamily: 'var(--font-header)' }}>
+                Buy me a coffee
+            </span>
+        </a>
     );
 };
 
