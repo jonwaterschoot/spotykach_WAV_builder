@@ -5,6 +5,12 @@
 > file could go back to being a short list of what is left. **The test pass is complete**: Round 5, the
 > editor with a project behind it, was added on 2026-08-19 when it closed.
 >
+> **The deployed site was walked on 2026-08-19**, after the release, on a desktop and on an Android
+> phone — the two things a local `dist` could not answer. Texture 8 plays on the Pages build (S1-14),
+> and on the phone the hub, the Sample Browser, the sources drawer and the full-screen pool sheet all
+> behaved as they do on a desktop. Neither raised a finding, and both left
+> [roadmap-bugs.md](../../roadmap-bugs.md). Three shots from the phone walk are in the v4 news article.
+>
 > **Eleven rounds between 2026-08-14 and 2026-08-19 raised 38 numbered findings** — R1-x through R4-x in
 > Browse, P1-1, C1-1, D1-1, S1-1…S1-15, and Round 5's four — **and all of them are built and walked**.
 > Everything below is closed.
@@ -20,7 +26,7 @@
 
 | Door | Rounds | Verdict |
 |---|---|---|
-| **Browse Samples** (`#/browse`) | 4 | ✅ Verified on a desktop. 15 findings. Phone layout never opened on a phone. |
+| **Browse Samples** (`#/browse`) | 4 | ✅ Verified on a desktop, and on an Android phone after the release. 15 findings. |
 | **Preset → SD** (`#/presets`) | 1 | ✅ Verified on a desktop. One blocker (P1-1). |
 | **Device Config** (`#/config`) | 1 | ✅ Verified on a desktop. One blocker (C1-1). |
 | **Edit One File** (`#/editor`) | 1 | ✅ Verified on a desktop. No findings. |
@@ -34,8 +40,8 @@
 Kept for the reasoning. **Nothing below is open** — the two things these rounds raised that are still
 outstanding were filed where the work belongs, not left here: the workspace backup's missing restore
 path and backup reminder are under
-[Settings, backup and project management](../../roadmap-bugs.md#settings-backup-and-project-management), and the untested
-phone layout is under [Onboarding, news and guides](../../roadmap-bugs.md#onboarding-news-and-guides).
+[Settings, backup and project management](../../roadmap-bugs.md#settings-backup-and-project-management). The phone
+layout was the other, and it closed on 2026-08-19 when the live site was walked on an Android phone.
 
 ### Round 1 — workspace backup ✅ *(2026-08-14)*
 
@@ -46,8 +52,10 @@ below, since that is where the work belongs.
 
 ### Round 1 — Sample Browser ✅
 
-All six built 2026-08-15. Verified on a desktop browser across rounds 2–4; **the phone layout below has
-still never been opened on a phone** — see [Onboarding, news and guides](../../roadmap-bugs.md#onboarding-news-and-guides).
+All six built 2026-08-15. Verified on a desktop browser across rounds 2–4, and **the phone layout below
+was walked on an Android phone on 2026-08-19**, on the live site: the hub sends a phone to Browse, the
+sources drawer and the full-screen pool sheet were both opened, and everything behaved as it does on a
+desktop.
 
 - **Max width on very large monitors** — Browse caps its content at 2200px and centres it.
 - **A mobile version of the samples page** — the sources list becomes a drawer, the pool becomes a
@@ -1109,9 +1117,9 @@ production build are clean, and S1-14 was verified in the built bundle as well a
 **Two things a build could never have answered, and the walk did**: the reset button tracks the panel
 while it is dragged, and the modified dot appears when the sliders move off a preset and not otherwise.
 
-**Still unwalked, because no round has had the machine for it**: the Pages build itself. S1-14's fix is
-verified in `dist` — both call sites emit the path under the base — but the deployed site is where that
-bug lived, and it will only be closed for certain by loading texture 8 there.
+**The Pages build itself waited for a machine, and got one.** S1-14's fix was verified in `dist` — both
+call sites emit the path under the base — but the deployed site is where that bug lived. It was loaded
+there on 2026-08-19 and texture 8 plays, which is the last word on it.
 
 ### Found mid-round — app-wide
 

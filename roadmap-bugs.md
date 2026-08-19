@@ -9,6 +9,11 @@
 > intent behind it (`UX_Overhaul.md`) moved to `docs/archive/` with the release. What v4 changed is in
 > the [changelog](CHANGELOG.md).
 >
+> **The deployed site has been walked.** The two things a local `dist` could never answer — texture 8 on
+> the Pages build, and the phone layout on an actual phone — were checked on the live site on
+> 2026-08-19: the texture plays, and on the phone the hub, the Sample Browser, the sources drawer and
+> the full-screen pool sheet all behave as they do on a desktop. Both left the open list.
+>
 > *Last reconciled against the code: 2026-08-19.*
 
 ---
@@ -31,22 +36,12 @@ shrinking over time; not worth holding a release for.
 - **The Project Manager against a card that already carries projects** — the migration list.
 - **The per-build SK-snapshot toggle.**
 - **The auto-save loop under a real edit session** — bounded by the serialising guard, never measured.
-- **The Pages build of texture 8.** The fix is verified in `dist`; the deployed site is where the bug
-  lived.
 - **The two-version setting** (`collapseHistoryOnSave`, built 2026-08-19) — read by eye, not yet walked
   with a project behind it.
 - **Cleanup with a project behind it.** The modal's own bug was found and fixed during Round 5; the
   full project-wide run has still only been read, not walked.
 
-### 2. Browse on a real phone
-
-The phone layout shipped in round 1 — the sources list becomes a drawer, the pool a full-screen sheet,
-and the hub tells phone-sized screens that Browse is the door that works. **All four Browse rounds were
-walked on a desktop.** The drawer and the pool sheet have never been touched on a touch screen. Browse is
-the only door that claims to work there, so this is the one part of it still unverified. Tunnelling notes
-are in `docs/MOBILE_TESTING.private.md` (gitignored).
-
-### 3. ASSIGN TO TAPE bakes the wrong thing
+### 2. ASSIGN TO TAPE bakes the wrong thing
 
 `ASSIGN TO TAPE` calls `handleSave`, which writes region, fades and automation and nothing else. Press it
 with an EQ, limiter, pitch or cutter setting pending and you get a version without that setting, and the
@@ -74,7 +69,7 @@ new-project path has: **loading a different project** and **leaving for the hub*
 [App.tsx:400](src/App.tsx#L400) is still a bare `window.confirm` that proceeds whichever way it is
 answered.
 
-**Decide what ASSIGN TO TAPE bakes** — see [Open ▸ 3](#3-assign-to-tape-bakes-the-wrong-thing).
+**Decide what ASSIGN TO TAPE bakes** — see [Open ▸ 2](#2-assign-to-tape-bakes-the-wrong-thing).
 
 ### SD import / build
 
