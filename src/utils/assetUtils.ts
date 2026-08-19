@@ -37,7 +37,7 @@ export const resolveAssetPath = (path: string): string => {
     // Any path that isn't a known internal asset or the root is treated as an R2 candidate.
     const internalPaths = [
         '/manifest.json', '/favicon.ico', '/vite.svg', '/assets', 
-        '/img', '/vid', '/v2', '/ffmpeg-core', '/ffmpeg-worker', 
+        '/img', '/vid', '/ffmpeg-core', '/ffmpeg-worker', 
         '/spotykachtapeicon.svg', '/spotytape.svg', '/og-image.png',
         '/presets', '/news'
     ];

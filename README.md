@@ -86,6 +86,21 @@ This project is built using:
 
 Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV_builder/](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
 
+## Publishing (maintainers)
+
+The live site is published **manually, from a maintainer's machine**. There is no Actions
+workflow, so **pushing to `main` does not update the site** — main can be ahead of what is live.
+
+```bash
+npm run deploy        # builds, then pushes dist/ to the gh-pages branch
+```
+
+Commit first: the deploy ships the working tree, not `main`. It takes about half a minute end to
+end, so small changes — one new screenshot in a news article — are deployed the same way as a
+release. On Windows, use `npm.cmd run deploy` if PowerShell blocks the script.
+
+Full detail in [docs/deployment_guidelines.md](docs/deployment_guidelines.md).
+
 
 ## Roadmap
 
