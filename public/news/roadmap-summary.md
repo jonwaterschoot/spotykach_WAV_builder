@@ -10,7 +10,7 @@ Something better than a video? A live guide that walks you through the app while
 Not an easy task i think, so perhaps I'll start with some video tutorials.
 
 ### SD Card: Prepare empty project
-- Erase SD card — warn the user, compare current content (show which project is on it), confirm it's safe to delete.
+- Erase SD card: warn the user, compare current content (show which project is on it), confirm it's safe to delete.
 - Format SD card? Can we e.g. bypass the Windows 32 GB limit? (unlikely feature in browser i think)
 
 ### 🗑️ History & Undo

@@ -77,7 +77,12 @@ export const HubNews: React.FC = () => {
             <span className="text-gray-500">{activeItem.category || 'Update'}</span>
           </div>
 
-          <h3 className="text-xl font-bold font-header tracking-tight text-white mb-2">{activeItem.title}</h3>
+          {/*
+           * No title here. Every article opens with its own `# ` heading, which
+           * NewsArticle renders as the big yellow header — printing the manifest
+           * title above it said the same thing twice, in two different voices.
+           * The manifest title is still what the picker buttons below show.
+           */}
 
           {/* The hub is a landing screen, not a reader: cap the body and let it scroll. */}
           <div className="max-h-[26rem] overflow-y-auto pr-2 custom-scrollbar">

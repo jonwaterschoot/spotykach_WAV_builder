@@ -32,6 +32,7 @@ interface NewsArticleProps {
  */
 export const NewsArticle: React.FC<NewsArticleProps> = ({ markdown }) => (
     <div className="prose prose-invert max-w-none
+      [&>*:first-child]:mt-0
       prose-h1:text-3xl prose-h1:font-bold prose-h1:text-synthux-yellow prose-h1:mt-8 prose-h1:mb-4 prose-h1:font-header prose-h1:uppercase prose-h1:tracking-tight
       prose-h2:text-xl prose-h2:font-bold prose-h2:text-synthux-orange prose-h2:mt-6 prose-h2:mb-3 prose-h2:font-header prose-h2:uppercase prose-h2:tracking-tight
       prose-p:text-gray-300 prose-p:leading-relaxed prose-p:text-lg prose-p:my-5
