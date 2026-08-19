@@ -2006,7 +2006,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
         // Map Y position (0 to height) to dB (+24 to -24)
         // Y=0 is +24dB, Y=height is -24dB
-        let rawVal = 24 - (y / height) * 48;
+        const rawVal = 24 - (y / height) * 48;
         let val = Math.round(rawVal * 2) / 2; // Step 0.5
         val = Math.max(-24, Math.min(24, val));
 
@@ -2624,7 +2624,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const { start, end } = getEditRegion();
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
 
-            let looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = await audioProcessor.toWav(looped, meta);
 
@@ -2714,7 +2714,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             if (!isDirty) {
                 // Not dirty -> Assign to Tape
-                let processed = await audioProcessor.trim(bufferToProcess, start, end);
+                const processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
                 // Preserve metadata and recalculate slice points for trim
                 const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);

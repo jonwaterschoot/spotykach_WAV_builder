@@ -872,7 +872,7 @@ function App({ onExitToHub }: AppProps) {
           }
         };
 
-        let recoverableRefs = new Set<string>();
+        const recoverableRefs = new Set<string>();
         if (sdHandle) {
           try {
             const backupProjectDir = await resolveBackupProjectDir();
@@ -2614,7 +2614,7 @@ function App({ onExitToHub }: AppProps) {
     setIsProcessing(true);
     setProgressMsg("Restoring files from SD backup...");
 
-    let recoveredRefs = new Set<string>();
+    const recoveredRefs = new Set<string>();
     try {
       let backupProjectDir: FileSystemDirectoryHandle | null = null;
       try {
