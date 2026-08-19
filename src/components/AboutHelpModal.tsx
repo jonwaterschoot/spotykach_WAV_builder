@@ -187,11 +187,8 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
 
                                 <div className="mt-6 flex flex-col items-center bg-gray-800/30 p-6 rounded-xl border border-gray-700/50">
                                     <p className="text-gray-300 text-sm mb-6 text-center">If you find this tool useful, consider supporting its development!</p>
-                                    <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-                                        <div className="hover:opacity-90 transition-opacity flex items-center h-[60px]">
-                                            <BuyMeACoffeeWidget />
-                                        </div>
-                                        <div className="hidden md:block w-px h-16 bg-gray-700"></div>
+                                    <div className="hover:opacity-90 transition-opacity flex items-center h-[60px]">
+                                        <BuyMeACoffeeWidget />
                                     </div>
                                 </div>
                             </div>
