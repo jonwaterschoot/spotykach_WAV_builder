@@ -17,7 +17,10 @@ export const useAudioConverter = () => {
         const withBase = (path: string) => `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
         const localCoreBaseURL = withBase('ffmpeg-core');
         const localWorkerURL = withBase('ffmpeg-worker/worker.js');
-        const cdnBaseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+        // Must match the vendored core in public/ffmpeg-core/, which is a copy of
+        // @ffmpeg/core@0.12.10's umd build — otherwise the CDN fallback quietly
+        // runs a different ffmpeg than the local path does.
+        const cdnBaseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
         const ffmpeg = ffmpegRef.current;
         const loadTimeoutMs = 20000;
 

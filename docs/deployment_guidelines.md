@@ -91,7 +91,30 @@ is deployed in a subdirectory.
 If you add a new folder under `public/`, add it to `internalPaths` in `assetUtils.ts` — a deep
 path that isn't listed there is treated as an R2 sample and sent to the bucket.
 
-## 5. Deployment size
+## 5. The vendored ffmpeg core
+
+[`public/ffmpeg-core/`](../public/ffmpeg-core/) holds `ffmpeg-core.js` and the 32 MB
+`ffmpeg-core.wasm`. They are a hand copy of **`@ffmpeg/core@0.12.10`, `dist/umd/`** — byte
+identical, verified 2026-08-19. The app loads them from there first and only falls back to
+jsdelivr if that fails, which is why `cdnBaseURL` in
+[`useAudioConverter.ts`](../src/utils/useAudioConverter.ts) must name the same version. It was
+pinned to `0.12.6` against a vendored `0.12.10` until 2026-08-19, so a local-load failure ran a
+different ffmpeg build than the normal path.
+
+To refresh the core, install the package, copy `dist/umd/ffmpeg-core.{js,wasm}` into
+`public/ffmpeg-core/`, update `cdnBaseURL` to match, then uninstall it again:
+
+```bash
+npm i @ffmpeg/core@<version>
+cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js  public/ffmpeg-core/
+cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm public/ffmpeg-core/
+npm uninstall @ffmpeg/core
+```
+
+It is not a dependency the rest of the time: nothing imports it, and leaving it installed costs
+62 MB in `node_modules` for a copy step done once a release at most.
+
+## 6. Deployment size
 
 Audio is not in the bundle. Samples are fetched on demand from R2, which is what keeps the
 published site well inside Pages' limits. If you find yourself adding audio to `public/`,
