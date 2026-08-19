@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { toBlobURL, fetchFile } from '@ffmpeg/util';
+import { fetchFile } from '@ffmpeg/util';
 
 export const useAudioConverter = () => {
     const [isLoaded, setIsLoaded] = useState(false);
@@ -15,12 +15,14 @@ export const useAudioConverter = () => {
 
         const base = import.meta.env.BASE_URL || '/';
         const withBase = (path: string) => `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+        // The core is served from our own origin (public/ffmpeg-core/, a copy of
+        // @ffmpeg/core@0.12.10's umd build). There is deliberately no CDN fallback:
+        // the app itself comes from this origin, so an origin that can serve the
+        // bundle can serve the core too. The only case a fallback covered was the
+        // vendored file being missing or corrupt — a deploy error, better seen than
+        // masked by quietly running a differently-built binary from a third party.
         const localCoreBaseURL = withBase('ffmpeg-core');
         const localWorkerURL = withBase('ffmpeg-worker/worker.js');
-        // Must match the vendored core in public/ffmpeg-core/, which is a copy of
-        // @ffmpeg/core@0.12.10's umd build — otherwise the CDN fallback quietly
-        // runs a different ffmpeg than the local path does.
-        const cdnBaseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
         const ffmpeg = ffmpegRef.current;
         const loadTimeoutMs = 20000;
 
@@ -52,21 +54,11 @@ export const useAudioConverter = () => {
                 console.log('[FFmpeg] Cross-Origin Isolated:', window.crossOriginIsolated);
                 console.log('[FFmpeg] Initializing with local assets:', localCoreBaseURL);
 
-                try {
-                    await loadWithTimeout({
-                        coreURL: `${localCoreBaseURL}/ffmpeg-core.js`,
-                        wasmURL: `${localCoreBaseURL}/ffmpeg-core.wasm`,
-                        classWorkerURL: localWorkerURL,
-                    }, 'local');
-                } catch (localErr) {
-                    console.warn('[FFmpeg] Local core load failed, falling back to CDN:', localErr);
-                    console.log('[FFmpeg] Initializing with CDN assets:', cdnBaseURL);
-                    await loadWithTimeout({
-                        coreURL: await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript'),
-                        wasmURL: await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                        classWorkerURL: localWorkerURL,
-                    }, 'CDN');
-                }
+                await loadWithTimeout({
+                    coreURL: `${localCoreBaseURL}/ffmpeg-core.js`,
+                    wasmURL: `${localCoreBaseURL}/ffmpeg-core.wasm`,
+                    classWorkerURL: localWorkerURL,
+                }, 'local');
 
                 console.log('[FFmpeg] Core loaded successfully.');
                 setIsLoaded(true);
