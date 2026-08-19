@@ -1,0 +1,1 @@
+import{r as a}from"./vendor-elqpOQYo.js";const i=()=>Math.random().toString(36).substring(2,11);function l(){const[r,e]=a.useState([]),n=a.useCallback((t,s="info")=>{e(o=>[...o,{id:i(),msg:t,type:s}])},[]),c=a.useCallback(t=>{e(s=>s.filter(o=>o.id!==t))},[]);return{toasts:r,showToast:n,removeToast:c}}export{l as u};

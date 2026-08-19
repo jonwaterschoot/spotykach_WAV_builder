@@ -1,0 +1,1 @@
+const n="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/docs/presets-samples/README.md",a="jonwtr";const o="synthux.academy",t=()=>`jon@${o}`,c=(s="Spotykach submission")=>`mailto:${t()}?subject=${encodeURIComponent(s)}`;export{a as D,n as S,c as a,t as s};
