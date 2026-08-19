@@ -1,10 +1,10 @@
 # v4 "Pervak" — Working Plan
 
-> **🗄️ Prepared for archiving, 2026-08-18.** This document has done its job: phases 0–6 are built,
-> Phase 7's code is in, and nine of the ten test rounds are closed. **It is no longer the place work
-> gets tracked** — [roadmap-bugs.md](roadmap-bugs.md) is, and everything still live here has been
-> carried across. What stays here is the *reasoning*: the locked decisions, the phase outcomes and the
-> appendices. It moves to `docs/archive/` when the editor round closes — see Phase 7, step 7.4.
+> **🗄️ Archived 2026-08-19, when v4 shipped.** This document did its job: every phase is built and all
+> eleven test rounds are closed. **It is not guidance and not a work list** —
+> [roadmap-bugs.md](../../roadmap-bugs.md) is the live list and [CHANGELOG.md](../../CHANGELOG.md) says
+> what shipped. What is kept here is the *reasoning*: the locked decisions, the phase outcomes and the
+> appendices. Line-numbered code links were accurate when written and will drift.
 >
 > **What was the plan of record for v4.** Intent, personas and user journeys live in
 > [UX_Overhaul.md](UX_Overhaul.md) — that document says *why*, this one says *what, in what order,
@@ -21,7 +21,7 @@
 ## Open items — everything still on the table
 
 *Added 2026-08-14 after Phase 6; **reconciled 2026-08-18 and handed over.** Everything below that is
-still open now lives in [roadmap-bugs.md](roadmap-bugs.md) ▸ *What is left before v4 ships*, which is the
+still open now lives in [roadmap-bugs.md](../../roadmap-bugs.md) ▸ *What is left before v4 ships*, which is the
 live list. This section is kept as the record of what each item was and how it was settled.*
 
 ### Blocking a v4 release
@@ -29,10 +29,10 @@ live list. This section is kept as the record of what each item was and how it w
 | # | Item | Source | Where it lands |
 |---|---|---|---|
 | A | ~~**Storage keys are not namespaced.**~~ ✅ **Done 2026-08-14.** `utils/storageNamespace.ts` is the one place every DB name and localStorage key passes through. Root derives `''` and stays byte-identical for existing users; `/next/` derives `next`. `build:next` / `deploy:next` added. Verified against both bundles. | Locked decision 9, Appendix F.3 | Done |
-| B | ~~**What Phases 4–7 built has been verified in a browser everywhere except Studio.**~~ ✅ **All five doors are walked** (2026-08-14 → 18). Types, build and lint clean throughout. What remains unverified is hardware- and engine-shaped, not door-shaped — the list moved to [roadmap-bugs.md](roadmap-bugs.md) ▸ *Paths no round has ever exercised*. | Phase 4, 5, 6, 7 outcomes | Done, bar the editor round |
-| C | ◐ **The functional pass over the five doors is done; the editor inside Studio is not.** Ten rounds, **34 numbered findings, 33 of them built** — 15 in Browse (R1–R4), P1-1, C1-1, D1-1, and S1-1…S1-15 in Studio. The full record is archived as [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md). **What is left is one round — the editor with a project behind it** — plus the remainder of S1-8. Both are in [roadmap-bugs.md](roadmap-bugs.md). | New, this round | **The one thing still blocking v4** |
+| B | ~~**What Phases 4–7 built has been verified in a browser everywhere except Studio.**~~ ✅ **All five doors are walked** (2026-08-14 → 18). Types, build and lint clean throughout. What remains unverified is hardware- and engine-shaped, not door-shaped — the list moved to [roadmap-bugs.md](../../roadmap-bugs.md) ▸ *Paths no round has ever exercised*. | Phase 4, 5, 6, 7 outcomes | Done, bar the editor round |
+| C | ◐ **The functional pass over the five doors is done; the editor inside Studio is not.** Ten rounds, **34 numbered findings, 33 of them built** — 15 in Browse (R1–R4), P1-1, C1-1, D1-1, and S1-1…S1-15 in Studio. The full record is archived as [docs/archive/v4-test-rounds.md](../archive/v4-test-rounds.md). **What is left is one round — the editor with a project behind it** — plus the remainder of S1-8. Both are in [roadmap-bugs.md](../../roadmap-bugs.md). | New, this round | **The one thing still blocking v4** |
 
-**Still unverified — the list now lives in [roadmap-bugs.md](roadmap-bugs.md)** ▸ *Paths no round has
+**Still unverified — the list now lives in [roadmap-bugs.md](../../roadmap-bugs.md)** ▸ *Paths no round has
 ever exercised*: an engine without `showDirectoryPicker` · the `move()` swap on removable media · the
 workspace backup's failure path · the Project Manager against a card that already carries projects · the
 SK-snapshot toggle · the auto-save loop under a real session · the Pages build of texture 8 · Browse on a
@@ -49,18 +49,18 @@ is **not** among them — it needs the editor round.
 
 | # | Item | Source | Status |
 |---|---|---|---|
-| D | ~~**`saveStateToDB` has no callers.**~~ ✅ **Wired up.** Auto-save writes the `app-state` slot on a 3 s trailing debounce, gated on the mount-time load having resolved, with writes serialised so a slow one can't be overtaken. Default on, in Settings; turning it off drops the slot. The back-to-hub button now routes through the unsaved check. | Phase 6 note, [persistence.ts](src/utils/persistence.ts) | Done |
+| D | ~~**`saveStateToDB` has no callers.**~~ ✅ **Wired up.** Auto-save writes the `app-state` slot on a 3 s trailing debounce, gated on the mount-time load having resolved, with writes serialised so a slow one can't be overtaken. Default on, in Settings; turning it off drops the slot. The back-to-hub button now routes through the unsaved check. | Phase 6 note, [persistence.ts](../../src/utils/persistence.ts) | Done |
 | E | ~~**Backup and sync still live in the Project Manager.**~~ ✅ **Removed.** Sync ↕ Backup ×3, Sync Lib, Delete from SD Backup, the rename-on-the-drive prompt, both backup badges, the save-before-sync banner, and `ProjectSyncModal` (497 lines) with them. | New, this round | Done |
 | F | ~~**No workspace-level backup exists.**~~ ✅ **Built.** `utils/workspaceBackup.ts` + `WorkspaceBackupModal`, in Settings ▸ Files. Itemised survey before any write, destination picked each time, whole-folder rollback on failure. | New, this round + D.3 | Done |
 | G | ~~**The editor can only be reached from the pool.**~~ ✅ **A pen on the sample row** pools the file and opens the editor on it in one step. | New, this round | Done |
 | H | **The mirror vocabulary survives in the types.** `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` are still there, because existing cards still carry projects that `scanProjects` merges. **Phase 7 took the recommended half:** the dead states are no longer *rendered* — the Project Manager reads only "in the workspace" vs "only on the card". Renaming the vocabulary is still open, as one mechanical commit. | D.3, deferred by Phase 4, 6 *and* 7 | A mechanical rename, whenever |
 | I | **The SD-import compare view was not built** — the `SyncDashboard`-derived per-slot view. `ProjectManager`'s import button covers the case for now. | Phase 4, "deliberately not built" | Only when SD import gets real use |
-| J | ~~**Open question 6 — preset & pack authoring.**~~ ✅ **Answered 2026-08-16.** The app guides the creation of presets and packs and hands back files; the submitter sends them over email or Discord; the maintainer commits them. No PRs, no CI, no backend, no authoring surface. Plan and findings: [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md) — step 0 built, **step 1 (make the preset export actually submittable) is the next piece.** | Open questions | Answered; step 1 is post-v4 work |
+| J | ~~**Open question 6 — preset & pack authoring.**~~ ✅ **Answered 2026-08-16.** The app guides the creation of presets and packs and hands back files; the submitter sends them over email or Discord; the maintainer commits them. No PRs, no CI, no backend, no authoring surface. Plan and findings: [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md) — step 0 built, **step 1 (make the preset export actually submittable) is the next piece.** | Open questions | Answered; step 1 is post-v4 work |
 | K | **Open question 7 — multiple projects per card (`SK1/`, `SK2/`).** Firmware question first. `'SK'` is hardcoded in 13 places across 6 files and would need to become a parameter before any feature work. | Open questions | Blocked on @Vlad |
 | L | **Does the device tolerate an unknown key/value pair?** The app now preserves them either way; writing the *project title* into `config.txt` waits on this answer. | Phase 5 notes | Blocked on the hardware developer |
 | M | **Non-destructive editing / op log.** `AudioVersion.processing[]` is a flat tag set and a real model is a different data model, not an extension. | Appendix E.3 | **Explicitly not a v4 goal.** Don't let it creep in |
 | N | ~~**Docs are scattered and partly stale.**~~ ✅ **Done.** `docs/README.md` indexes everything with a status; `docs/deployment_guidelines.md` was rewritten — builds, Pages publishing, storage namespacing, asset resolution — with Appendix F.2/F.3 folded in so the deployment story survives this file being archived, and the stale material kept as clearly-labelled history. `CHANGELOG.md` has v4 as one Unreleased entry. | Appendix F.4 + new, this round | Done |
-| O | ~~**UX_Overhaul's four wireframing boxes are unchecked** — hub, independent editor, browser-to-grid, guest-artist flow.~~ ✅ **Closed as built, 2026-08-18.** Three shipped without a sketch and drawing them now would be documenting backwards — the hub box *is* the five doors, browser-to-grid *is* the temporary pool, and the guest-artist box is answered by open question 6. The fourth, independent editor vs Studio's tape editor, is not a drawing debt: how the two hosts should differ is the **editor round's** question, and lives there in [roadmap-bugs.md](roadmap-bugs.md). | [UX_Overhaul.md](UX_Overhaul.md) §"Next Steps" | Done — **no open item is left in either v4 document** |
+| O | ~~**UX_Overhaul's four wireframing boxes are unchecked** — hub, independent editor, browser-to-grid, guest-artist flow.~~ ✅ **Closed as built, 2026-08-18.** Three shipped without a sketch and drawing them now would be documenting backwards — the hub box *is* the five doors, browser-to-grid *is* the temporary pool, and the guest-artist box is answered by open question 6. The fourth, independent editor vs Studio's tape editor, is not a drawing debt: how the two hosts should differ is the **editor round's** question, and lives there in [roadmap-bugs.md](../../roadmap-bugs.md). | [UX_Overhaul.md](UX_Overhaul.md) §"Next Steps" | Done — **no open item is left in either v4 document** |
 
 ### Discrepancies between the documents
 
@@ -109,13 +109,13 @@ document says something the codebase no longer agrees with.
 blocks.**
 
 **Step 6, as of 2026-08-18: all five doors are walked and verified on a desktop.** Browse over four
-rounds, then Preset → SD, Device Config, Edit One File and Studio. Thirty-four findings, all built. The record is archived as [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md).
+rounds, then Preset → SD, Device Config, Edit One File and Studio. Thirty-four findings, all built. The record is archived as [docs/archive/v4-test-rounds.md](../archive/v4-test-rounds.md).
 
 **What is left is one round: the editor with a project behind it.** Every deferred item that pointed at
 Studio has since been walked — the shared editor shell in two hosts, the boot change, the Project
 Manager's pool row — except the project-shaped ones: version history across saves, slot assignment, save
 unique / save copy to pool, cleanup, and the known intermittent stuck play button. That round is what
-stands between here and the release. **It is tracked in [roadmap-bugs.md](roadmap-bugs.md), not here.**
+stands between here and the release. **It is tracked in [roadmap-bugs.md](../../roadmap-bugs.md), not here.**
 
 **Verdict driving all of it: restructure, don't rebuild.** The domain layer (`exportUtils`,
 `importUtils`, `projectDescriptorUtils`, `lib/audio`) is already mode-agnostic, and every major panel
@@ -169,9 +169,9 @@ lines, zero references between them. `tsc -b && vite build` clean. Commit `07d08
 
 Why each was safe:
 - `WelcomeScreen` — no onboarding content; the explainer slides live in
-  [SetupWizard.tsx:26-100](src/components/SetupWizard.tsx#L26-L100), which is kept.
+  [SetupWizard.tsx:26-100](../../src/components/SetupWizard.tsx#L26-L100), which is kept.
 - `SamplePackModal` — superseded ancestor of `SampleBrowser`, already non-functional at runtime: it
-  read `SAMPLE_PACKS`, now a permanently empty array ([samplePacks.ts:92](src/data/samplePacks.ts#L92)).
+  read `SAMPLE_PACKS`, now a permanently empty array ([samplePacks.ts:92](../../src/data/samplePacks.ts#L92)).
 - `SyncDashboard` — genuinely good design, salvaged as a written reference in Appendix D rather than
   left dead in the tree.
 
@@ -217,10 +217,10 @@ Deliberately deferred:
 today's shell, wizard included. Nothing else changes yet.
 
 **Why now.** Everything else depends on there being a third state. Today it's a binary: wizard *or*
-studio ([App.tsx:4160/4191](src/App.tsx#L4160)).
+studio ([App.tsx:4160/4191](../../src/App.tsx#L4160)).
 
 **Touches.** New `src/shell/`. `App.tsx` only where the gate lives (~4158-4191) and the news effect
-([App.tsx:714-725](src/App.tsx#L714-L725)).
+([App.tsx:714-725](../../src/App.tsx#L714-L725)).
 
 **Steps.**
 1. `useAppMode.ts` — mode state ↔ `window.location.hash`, back/forward safe.
@@ -232,7 +232,7 @@ studio ([App.tsx:4160/4191](src/App.tsx#L4160)).
 **Done when.** Landing on `#/` shows the hub; `#/studio` reaches today's app unchanged, wizard and
 all; browser back/forward moves between modes; three doors still lead to Studio.
 
-**Watch out for.** The ESC handler ([App.tsx:592-684](src/App.tsx#L592-L684)) is a hand-ordered `if`
+**Watch out for.** The ESC handler ([App.tsx:592-684](../../src/App.tsx#L592-L684)) is a hand-ordered `if`
 chain over ~15 boolean flags. Don't extend it — modes need a view/overlay stack, and this is the
 moment to introduce one.
 
@@ -255,7 +255,7 @@ Commits `6c5461b`, `3911788`, `9e6a677`.
   name. `userLibrary` / `projects` / `workHandle` / `onOpenLibraryManager` are all optional now, and
   standalone hides what needs a project: the Projects source, every "send to slot/tape" target, and
   the three Library Manager entry points.
-- **`buildDetachedState(samples) → AppState`** ([detachedState.ts](src/utils/detachedState.ts)) is
+- **`buildDetachedState(samples) → AppState`** ([detachedState.ts](../../src/utils/detachedState.ts)) is
   pure and synchronous — no IDB, no handles, autospread in list order, overflow past 36 parked. It
   also exports `slotLabelForIndex` and `GRID_CAPACITY`, which the pool UI reads. **Phase 3's
   `hydratePreset` should return this same value**, so step 1 there is mostly done.
@@ -283,7 +283,7 @@ Commits `6c5461b`, `3911788`, `9e6a677`.
 Two judgement calls that deviate from the brief, both deliberate:
 
 - **No `onConvert` on either export**, contrary to step 5. Every pooled blob has already been through
-  `audioEngine.loadAndProcessAudio`, and [`encodeWAV`](src/lib/audio/wavEncoder.ts) emits *exactly*
+  `audioEngine.loadAndProcessAudio`, and [`encodeWAV`](../../src/lib/audio/wavEncoder.ts) emits *exactly*
   what `convertAudioToWav` does — 48 kHz, stereo, 32-bit IEEE float, plain 16-byte `fmt `, no `fact`.
   Passing the hook would re-encode identical bytes and make the zero-setup tier pull ~30 MB of
   ffmpeg-wasm first. Studio still passes it, because Studio's files can be anything.
@@ -323,9 +323,9 @@ download exits.
 1. Make `userLibrary` / `projects` / `workHandle` optional; add `mode: 'standalone' | 'project'` so
    "Send to Project" actions hide when there's no project.
 2. Mount full-screen rather than inside the `Rnd` draggable window used at
-   [App.tsx:5228](src/App.tsx#L5228).
+   [App.tsx:5228](../../src/App.tsx#L5228).
 3. **User library shown only when non-empty, read-only** (open question 3). Load it directly with
-   `loadUserLibraryFromDB()` ([persistence.ts:64](src/utils/persistence.ts#L64)) — blobs are resident
+   `loadUserLibraryFromDB()` ([persistence.ts:64](../../src/utils/persistence.ts#L64)) — blobs are resident
    in its own IDB store, so no work folder and no permission prompt. No upload, no delete, no
    `LibraryManager` in standalone mode; those stay in Studio.
 4. **`buildDetachedState(samples) → AppState`** — the pool's payload. Autospread across the 6×6 grid,
@@ -333,13 +333,13 @@ download exits.
    (locked decision 5). Appendix C.3 already names this shape; **Phase 3's `hydratePreset` returns the
    same thing**, so build it here and Phase 3 inherits it.
 5. Two download exits off the pool, both existing code fed by that `AppState`:
-   - **SK-ready files** → `exportFilesOnly` ([exportUtils.ts:824](src/utils/exportUtils.ts#L824)) —
+   - **SK-ready files** → `exportFilesOnly` ([exportUtils.ts:824](../../src/utils/exportUtils.ts#L824)) —
      ZIP, `keepStructure`, plus the `onConvert` hardware-conversion hook.
-   - **SD-ready 6×6** → `exportSDStructure` ([exportUtils.ts:545](src/utils/exportUtils.ts#L545)).
+   - **SD-ready 6×6** → `exportSDStructure` ([exportUtils.ts:545](../../src/utils/exportUtils.ts#L545)).
    Single-file/single-tape downloads keep using `exportSingleFile` / `exportSingleTape`.
 6. Hub news section (open question 1): news renders **beneath the doors on the hub**, not as a
    covering modal. Delete the `NewsModal` auto-open path and its `hasCheckedNewsThisSession` gate
-   ([App.tsx:714-725](src/App.tsx#L714-L725)) along with the `spotykach_show_news_on_start`
+   ([App.tsx:714-725](../../src/App.tsx#L714-L725)) along with the `spotykach_show_news_on_start`
    preference, rather than maintaining both routes.
 
 **Done when.** A cold visitor can browse packs, preview, pool a selection, and download it in either
@@ -362,9 +362,9 @@ before download". Both cross into project ownership or the editor.
 > than a technical one. Only revisit if egress cost actually shows up.
 >
 > **Filename case needs no work.** SD writes are uppercase `${slot.id}.WAV`
-> ([exportUtils.ts:629](src/utils/exportUtils.ts#L629), [790](src/utils/exportUtils.ts#L790),
-> [922](src/utils/exportUtils.ts#L922)); single-file downloads are lowercase `.wav`
-> ([exportUtils.ts:944](src/utils/exportUtils.ts#L944)). Recent SK firmware accepts both, so this is
+> ([exportUtils.ts:629](../../src/utils/exportUtils.ts#L629), [790](../../src/utils/exportUtils.ts#L790),
+> [922](../../src/utils/exportUtils.ts#L922)); single-file downloads are lowercase `.wav`
+> ([exportUtils.ts:944](../../src/utils/exportUtils.ts#L944)). Recent SK firmware accepts both, so this is
 > already correct in both places — don't "fix" it.
 >
 
@@ -379,7 +379,7 @@ before download". Both cross into project ownership or the editor.
 
 - **`handleLoadPreset` split into three, and only Studio does all three.** `hydratePreset(entry)`
   and `writeToSD(state, options)` are shared and live in
-  [presetLoader.ts](src/utils/presetLoader.ts); `adoptPresetAsProject(state, name)` — dedupe the
+  [presetLoader.ts](../../src/utils/presetLoader.ts); `adoptPresetAsProject(state, name)` — dedupe the
   name, write the project folder, take it over as current — stayed in `App.tsx`, because every line
   of it is Tier-3 by definition. Tier 2 calls the first and the third and never touches `App.tsx`.
 - **`hydratePreset` returns `{ state, name }`, not a bare `AppState`.** The descriptor's own `name`
@@ -403,7 +403,7 @@ before download". Both cross into project ownership or the editor.
   `type.startsWith('audio/')` check downstream — including `exportSDStructure`'s `onConvert` gate,
   which would then have written FLAC bytes into a file called `1.WAV`. The header is now trusted only
   when it names an audio type, otherwise the extension decides
-  ([projectDescriptorUtils.ts:132](src/utils/projectDescriptorUtils.ts#L132)). This was latent on
+  ([projectDescriptorUtils.ts:132](../../src/utils/projectDescriptorUtils.ts#L132)). This was latent on
   Studio's ffmpeg path too.
 - **A ZIP fallback where there's no picker.** `exportSDStructure`'s direct write needs
   `showDirectoryPicker`, which Firefox and Safari don't have. `PresetsMode` checks once and flips the
@@ -433,7 +433,7 @@ user picks. Locked decision 9 still gates any Pages deploy — Studio shares the
 
 **Goal.** Cold start → curated project on the SD card, with no work folder and no project created.
 
-**Touches.** `handleLoadPreset` ([App.tsx:1238](src/App.tsx#L1238)), `PresetsPanel.tsx`.
+**Touches.** `handleLoadPreset` ([App.tsx:1238](../../src/App.tsx#L1238)), `PresetsPanel.tsx`.
 
 **Steps.**
 1. Split `handleLoadPreset` into three: `hydratePreset(entry) → AppState`,
@@ -441,7 +441,7 @@ user picks. Locked decision 9 still gates any Pages deploy — Studio shares the
 2. Add "Write to SD" to `PresetsPanel` beside "Load into App" / "SD ZIP".
 3. `writeToSD` is a thin call into `exportSDStructure({ directWrite: true })` — it already takes a
    `destinationHandle` or opens its own picker
-   ([exportUtils.ts:548-567](src/utils/exportUtils.ts#L548-L567)), and needs only `AppState`.
+   ([exportUtils.ts:548-567](../../src/utils/exportUtils.ts#L548-L567)), and needs only `AppState`.
 
 **Done when.** From a fresh browser profile: open app → presets → pick one → choose SD card → done.
 No work folder, no project name, nothing written to the global IDB slot.
@@ -455,7 +455,7 @@ presets won't have one at all, so ZIP-first would only sometimes apply. Revisit 
 measurably drags.
 
 **Reuse note.** Phase 2 landed
-[`buildDetachedState(samples) → AppState`](src/utils/detachedState.ts) — pure, synchronous, no IDB,
+[`buildDetachedState(samples) → AppState`](../../src/utils/detachedState.ts) — pure, synchronous, no IDB,
 autospread across the 6×6 grid. `hydratePreset(entry)` should end in a call to it and hand the result
 to the same `exportSDStructure`, so step 1 is mostly a matter of pulling the fetch-and-decode half out
 of `handleLoadPreset`.
@@ -556,7 +556,7 @@ undefined in that mode. The assumption has to go before the tiers can be trusted
    change.
 2. Default `_sk_backups` off; opt-in per build.
 3. Make SD-as-project-mirror an explicit setting, default off.
-4. Atomic writes in [`safeWriteBlob`](src/utils/exportUtils.ts#L93) — temp name, swap on close.
+4. Atomic writes in [`safeWriteBlob`](../../src/utils/exportUtils.ts#L93) — temp name, swap on close.
 5. Keep the SD **read** path for migration: "found N projects on this card, import them?"
 
 **Done when.** A build with defaults writes only `SK/`, and an interrupted write can't destroy an
@@ -582,7 +582,7 @@ existing file.
   component with a flag. So the fields and the presets moved to `ConfigForm`, which both tiers render,
   and each container keeps its own chrome and its own I/O buttons. The field set is expected to grow;
   one copy of it was the point.
-- **The card I/O moved out of the component into [`configFile.ts`](src/utils/configFile.ts)** —
+- **The card I/O moved out of the component into [`configFile.ts`](../../src/utils/configFile.ts)** —
   `readConfigFromCard`, `writeConfigToCard`, `downloadConfig`, `readConfigFromFile`, `pickCard`,
   `ensureWritable`. `generateConfigText`/`parseConfigText` stayed where they were; what was missing
   was never the parsing but everything around it, since the only existing route to the card was
@@ -596,7 +596,7 @@ existing file.
   `ProjectConfig` gained `unknown?: Array<{key, value}>`; `parseConfigText` collects every pair it
   doesn't recognise, `generateConfigText` writes them back verbatim after the ones it knows. The
   field is left *absent* when there are none, so existing projects serialize byte-identically and
-  `calculateSyncDiff`'s config comparison ([importUtils.ts:550](src/utils/importUtils.ts#L550)) is
+  `calculateSyncDiff`'s config comparison ([importUtils.ts:550](../../src/utils/importUtils.ts#L550)) is
   unaffected. A key that has since *become* known is dropped from `unknown` rather than emitted
   twice. Verified by bundling the two functions and running them over firmware-shaped files: known
   keys read, unknown kept and written after the known ones, second pass identical, output stable,
@@ -616,7 +616,7 @@ existing file.
   places — `initialState`, two backward-compatibility fills in `exportUtils`, the parser's starting
   point, the factory presets, Config mode. Adding two fields would have meant editing all six and
   finding out at runtime if one was missed, so they all spread a single const in
-  [types.ts](src/types.ts) instead. The next firmware setting is one line there.
+  [types.ts](../../src/types.ts) instead. The next firmware setting is one line there.
 - **The unrecognised pairs are shown, not hidden.** A "Kept from the file" section lists them
   read-only. Silently carrying settings the user can't see would be its own kind of surprise, and it
   makes "this app is older than your firmware" legible.
@@ -660,7 +660,7 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 1. Accept a null project — hold a `ProjectConfig` in local state.
 2. `config.txt` import/export against a bare SD handle, via the existing pure functions
    `generateConfigText` / `parseConfigText`
-   ([exportUtils.ts:35](src/utils/exportUtils.ts#L35), [exportUtils.ts:1445](src/utils/exportUtils.ts#L1445)).
+   ([exportUtils.ts:35](../../src/utils/exportUtils.ts#L35), [exportUtils.ts:1445](../../src/utils/exportUtils.ts#L1445)).
 3. With an SD handle present, offer to load the card's existing `config.txt`. With no workspace at
    all, just show the settings and offer a plain `config.txt` download — permission-free, consistent
    with Tiers 1–2.
@@ -674,7 +674,7 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 
 **Notes.**
 > **The parser is strictly positional — a comment line would break it.** `parseConfigText`
-> ([exportUtils.ts:1445](src/utils/exportUtils.ts#L1445)) drops blank lines and then walks two-line
+> ([exportUtils.ts:1445](../../src/utils/exportUtils.ts#L1445)) drops blank lines and then walks two-line
 > pairs (`i += 2`). A single stray line shifts every pair after it and the whole file misparses. So
 > writing the project title as a comment is not safe; write it as a normal 8-char key + value pair —
 > unknown keys are skipped harmlessly *because* they still consume two lines. The ask to the hardware
@@ -683,7 +683,7 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 >
 > **Round-tripping currently deletes fields we don't know.** `parseConfigText` returns a fixed
 > five-field `ProjectConfig` and `generateConfigText` writes exactly those five
-> ([exportUtils.ts:35](src/utils/exportUtils.ts#L35)). Since the field set is expected to grow, a
+> ([exportUtils.ts:35](../../src/utils/exportUtils.ts#L35)). Since the field set is expected to grow, a
 > `config.txt` written by newer firmware would come back stripped. Carry unrecognised pairs through
 > untouched before this phase ships.
 >
@@ -705,7 +705,7 @@ were not exercised against real hardware. Same standing caveat as Phase 4; worth
 > | Disable polyphony in Slice mode, deck B | `slc_mn_b` | 0 / 1 | 0 |
 >
 > The app's own default for `mid_ps_a`/`mid_ps_b` matches the manual (`0`), and
-> `DEFAULT_PROJECT_CONFIG` ([types.ts](src/types.ts)) is the one place that says so.
+> `DEFAULT_PROJECT_CONFIG` ([types.ts](../../src/types.ts)) is the one place that says so.
 
 ---
 
@@ -784,7 +784,7 @@ is the one still standing**, and it waits on the Studio walk like everything els
 > collapse happens on every applied edit instead: there is no save boundary to defer to, and it makes
 > the sidebar read as "Original / Edited", which is the safety story E.2 exists to tell.
 >
-> ⚠️ **`saveStateToDB` has no callers.** [persistence.ts:36](src/utils/persistence.ts#L36) is
+> ⚠️ **`saveStateToDB` has no callers.** [persistence.ts:36](../../src/utils/persistence.ts#L36) is
 > exported and never invoked from anywhere in `src/`. The `app-state` IDB slot is *read* on mount and
 > never written, which means **Appendix E.1's "the whole `AppState` is autosaved to IndexedDB" is
 > stale**, and locked decision 5 has been guarding a slot nothing writes. This doesn't change the
@@ -812,7 +812,7 @@ is the one still standing**, and it waits on the Studio walk like everything els
 > the rule can't reach: orphaned disk assets, unwanted files, old SD backups.
 >
 > **Both upgrade paths are one function.** `createProjectFromState` in
-> [newProject.ts](src/utils/newProject.ts) is what Browse's "Import into a project" and Editor's "Save
+> [newProject.ts](../../src/utils/newProject.ts) is what Browse's "Import into a project" and Editor's "Save
 > as project" both call: pick the folder *now* (Appendix C.2), write `Projects/<name>/`, store the
 > work handle so Studio can find it. It writes the stored handle and `spotykach_current_project` —
 > the only durable state either mode touches — and never the `app-state` slot. `ProjectCreatedModal`
@@ -896,7 +896,7 @@ Moves in:
 
 - **Auto-save** (step 2).
 - **Locations** — work folder and SD card. These sit in the Project Manager header today
-  ([ProjectManager.tsx:393-407](src/components/ProjectManager.tsx#L393-L407)), and roadmap-bugs has
+  ([ProjectManager.tsx:393-407](../../src/components/ProjectManager.tsx#L393-L407)), and roadmap-bugs has
   been asking for them under the settings icon since v3. Leave the inline "Change" where it is; a
   setting is a second entry, not a replacement.
 - **History & cleanup** — `CleanupModal` is reachable from Settings and the Project Manager already
@@ -910,10 +910,10 @@ passes ~6, give it tabs before adding the seventh — the same call `AboutHelpMo
 #### Step 2 — Auto-save as a real setting
 
 **The premise needs correcting before it can be built: there is no auto-save.** `saveStateToDB`
-([persistence.ts:36](src/utils/persistence.ts#L36)) is exported and never called; the `app-state` IDB
+([persistence.ts:36](../../src/utils/persistence.ts#L36)) is exported and never called; the `app-state` IDB
 slot is read on mount and never written. Projects reach disk only through explicit saves and
 `ProjectManager`'s save-before-sync guard
-([ProjectManager.tsx:123-131](src/components/ProjectManager.tsx#L123-L131)). So this step **builds**
+([ProjectManager.tsx:123-131](../../src/components/ProjectManager.tsx#L123-L131)). So this step **builds**
 the feature; "toggle it in settings, on by default" is the second half of it.
 
 - **What auto-save saves — two candidates, and they are different promises.** Writing `project.json`
@@ -922,11 +922,11 @@ the feature; "toggle it in settings, on by default" is the second half of it.
   and crash-proof but invisible in the user's folder. *Recommendation: the IDB slot, debounced* — it
   is what that slot exists for, and it makes "the tab crashed" survivable without surprising anyone's
   disk. Explicit save stays the thing that writes the project.
-- **Default on**, with its key alongside the two in [durabilityPrefs.ts](src/utils/durabilityPrefs.ts)
+- **Default on**, with its key alongside the two in [durabilityPrefs.ts](../../src/utils/durabilityPrefs.ts)
   — same absent-means-default reading, so changing a default later doesn't rewrite anyone's choice.
 - **When it's off, exiting to the hub must warn.** It doesn't today: the header's back button calls
-  `onExitToHub` directly ([App.tsx:4214-4218](src/App.tsx#L4214-L4218)) with no unsaved check, while
-  `handleWithUnsavedCheck` ([App.tsx:700-712](src/App.tsx#L700-L712)) already exists and already knows
+  `onExitToHub` directly ([App.tsx:4214-4218](../../src/App.tsx#L4214-L4218)) with no unsaved check, while
+  `handleWithUnsavedCheck` ([App.tsx:700-712](../../src/App.tsx#L700-L712)) already exists and already knows
   to stay quiet for an empty project. Route the button through it. **Worth doing whether or not
   auto-save lands** — leaving Studio unmounts it, so that warning is missing right now.
 
@@ -938,19 +938,19 @@ the feature; "toggle it in settings, on by default" is the second half of it.
 `mirrorProjectsToSD` as default-off opt-ins in Settings. `backupHandle` → `sdHandle`. Writes are
 atomic. `SyncOptionsModal` deleted.
 
-**Still there — all of it in [ProjectManager.tsx](src/components/ProjectManager.tsx):**
+**Still there — all of it in [ProjectManager.tsx](../../src/components/ProjectManager.tsx):**
 
 | What | Where | Verdict |
 |---|---|---|
-| "Sync ↕ Backup" / "Sync to Backup", three variants | [543](src/components/ProjectManager.tsx#L543), [568](src/components/ProjectManager.tsx#L568), [582](src/components/ProjectManager.tsx#L582) | **Remove.** The push half of the mirror locked decision 6 retired. |
-| "Sync Lib" — library → SD | [410-416](src/components/ProjectManager.tsx#L410-L416) → `LibrarySyncModal` (501 lines) | **Remove from here.** The library belongs in the workspace backup (step 4), not on a card. |
-| "Delete from SD Backup" | [629-633](src/components/ProjectManager.tsx#L629-L633) | **Remove.** Deleting from a card the app no longer writes to is a file-manager job. |
-| "Rename synced project? Also rename it on the backup drive" | [185-258](src/components/ProjectManager.tsx#L185-L258) | **Remove** with the mirror. |
-| Badges "Backup Synced" / "Backup Modified" | [506-553](src/components/ProjectManager.tsx#L506-L553) | **Remove.** They describe a mirror that no longer runs. |
-| The auto-save-before-sync banner | [113-131](src/components/ProjectManager.tsx#L113-L131) | **Remove** with its trigger; the guard itself folds into step 2. |
-| **"Import" a project found on the card** | [588-598](src/components/ProjectManager.tsx#L588-L598) | **Keep.** D.3's migration path, and the reason the read side survives at all. |
-| **"Import Sync" — device changes back into the project** | [352](src/components/ProjectManager.tsx#L352) | **Keep.** Reading the card is not mirroring it. |
-| **"Hardware Synced" badge** | [519](src/components/ProjectManager.tsx#L519) | **Keep.** That one describes the build, which is still a real relationship. |
+| "Sync ↕ Backup" / "Sync to Backup", three variants | [543](../../src/components/ProjectManager.tsx#L543), [568](../../src/components/ProjectManager.tsx#L568), [582](../../src/components/ProjectManager.tsx#L582) | **Remove.** The push half of the mirror locked decision 6 retired. |
+| "Sync Lib" — library → SD | [410-416](../../src/components/ProjectManager.tsx#L410-L416) → `LibrarySyncModal` (501 lines) | **Remove from here.** The library belongs in the workspace backup (step 4), not on a card. |
+| "Delete from SD Backup" | [629-633](../../src/components/ProjectManager.tsx#L629-L633) | **Remove.** Deleting from a card the app no longer writes to is a file-manager job. |
+| "Rename synced project? Also rename it on the backup drive" | [185-258](../../src/components/ProjectManager.tsx#L185-L258) | **Remove** with the mirror. |
+| Badges "Backup Synced" / "Backup Modified" | [506-553](../../src/components/ProjectManager.tsx#L506-L553) | **Remove.** They describe a mirror that no longer runs. |
+| The auto-save-before-sync banner | [113-131](../../src/components/ProjectManager.tsx#L113-L131) | **Remove** with its trigger; the guard itself folds into step 2. |
+| **"Import" a project found on the card** | [588-598](../../src/components/ProjectManager.tsx#L588-L598) | **Keep.** D.3's migration path, and the reason the read side survives at all. |
+| **"Import Sync" — device changes back into the project** | [352](../../src/components/ProjectManager.tsx#L352) | **Keep.** Reading the card is not mirroring it. |
+| **"Hardware Synced" badge** | [519](../../src/components/ProjectManager.tsx#L519) | **Keep.** That one describes the build, which is still a real relationship. |
 
 **The vocabulary question (open item H).** D.3 predicted `status: 'synced'|'local'|'backup'|'modified'`
 and `.local`/`.backup` would evaporate once the mirror was off; Phases 4 and 6 both found they don't,
@@ -994,7 +994,7 @@ walk rather than the modal.
 #### Step 5 — Edit one file straight from the browser
 
 The editor already opens over Browse and applied edits go back into the pool
-([BrowseMode.tsx:558](src/modes/BrowseMode.tsx#L558)) — but **only from a pool row**. A user who wants
+([BrowseMode.tsx:558](../../src/modes/BrowseMode.tsx#L558)) — but **only from a pool row**. A user who wants
 to trim one sample has to add it to a selection first, which is a concept they never asked for.
 
 - A **pen icon on the sample row** in `SampleBrowser`, beside preview. It decodes that one file and
@@ -1007,9 +1007,9 @@ to trim one sample has to add it to a selection first, which is a concept they n
 
 #### Step 6 — The test pass ◐ *nine rounds of ten*
 
-**The record is archived as [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md)** —
+**The record is archived as [docs/archive/v4-test-rounds.md](../archive/v4-test-rounds.md)** —
 findings, round by round, all 34 of them, written up in full. **What is still open is in
-[roadmap-bugs.md](roadmap-bugs.md)**, which is the live list. Phase 7 is where this document stopped
+[roadmap-bugs.md](../../roadmap-bugs.md)**, which is the live list. Phase 7 is where this document stopped
 being the place things get written down.
 
 Two rounds, in this order:
@@ -1027,7 +1027,7 @@ Two rounds, in this order:
    `#/editor` door (test-pass round 3) — but **neither host has a project behind it**, which is the
    whole of what is left. Starting points: the intermittent stuck play button after apply and preview,
    and the cleanup confirm modal rendering off-screen (now reached from Project ▸ Advanced). Scope and
-   checklist: [roadmap-bugs.md](roadmap-bugs.md) ▸ *The editor round*.
+   checklist: [roadmap-bugs.md](../../roadmap-bugs.md) ▸ *The editor round*.
 
 **One thing the rounds changed about this step.** Findings from Browse repeatedly landed in components
 Studio shares — the waveform editor twice, the Project Manager, and Studio's own boot sequence. Walking
@@ -1035,7 +1035,7 @@ the remaining doors is therefore also a regression pass over those, not only a f
 
 #### Step 7 — Retire the v4 documents
 
-The end state: **[roadmap-bugs.md](roadmap-bugs.md) and [CHANGELOG.md](CHANGELOG.md) are the only live
+The end state: **[roadmap-bugs.md](../../roadmap-bugs.md) and [CHANGELOG.md](../../CHANGELOG.md) are the only live
 documents**, as they were before v4.
 
 1. ✅ `roadmap-bugs.md` rewritten against the overhaul — obsolete items retired to its Done section,
@@ -1048,7 +1048,7 @@ documents**, as they were before v4.
    appendices are still the only written record of why several of these decisions went the way they
    did. **The handover is done as of 2026-08-18**, so the move itself is now mechanical:
    - ✅ the deployment half of Appendix F → `docs/deployment_guidelines.md`, a live document;
-   - ✅ the test-pass record → [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md);
+   - ✅ the test-pass record → [docs/archive/v4-test-rounds.md](../archive/v4-test-rounds.md);
    - ✅ every still-open item from *Open items* and *Open questions* → `roadmap-bugs.md`, which now
      carries the mirror-vocabulary rename (H), the SD-import compare view (I), the `config.txt`
      unknown-key question (L), non-destructive editing (M), the authoring workflow's step 1 (J/Q6) and
@@ -1118,7 +1118,7 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
 
    **Settled: shown when non-empty** — and it's cheaper than the answer assumes. The library needs
    **no workspace folder**: `UserLibrary` is `files: Record<string, FileRecord>`
-   ([types.ts:59](src/types.ts#L59)) with blobs resident in its own `user-library` IDB store, separate
+   ([types.ts:59](../../src/types.ts#L59)) with blobs resident in its own `user-library` IDB store, separate
    from the `app-state` slot that locked decision 5 protects. Browse can list, preview and download
    from it with zero permission prompts. Read-only in standalone mode — upload/delete/`LibraryManager`
    stay in Studio, or Browse gains a write path into IDB.
@@ -1147,8 +1147,8 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
      - **Single file edit before download** -> open editor with only the option to download in editor a button could be used to allow taking the edited file into a project
 
    **Settled, split across two phases.** The pool and both **download** exits are Phase 2 — they're
-   nearly free, because `exportFilesOnly` ([exportUtils.ts:824](src/utils/exportUtils.ts#L824)) and
-   `exportSDStructure` ([exportUtils.ts:545](src/utils/exportUtils.ts#L545)) already do the work and
+   nearly free, because `exportFilesOnly` ([exportUtils.ts:824](../../src/utils/exportUtils.ts#L824)) and
+   `exportSDStructure` ([exportUtils.ts:545](../../src/utils/exportUtils.ts#L545)) already do the work and
    only need an `AppState`. That shared requirement is the unlock: Phase 2 builds
    `buildDetachedState(samples)`, and Phase 3's `hydratePreset` returns the same thing.
    **"Import into project" and "single-file edit" move to Phase 6** — the first needs a work folder
@@ -1180,7 +1180,7 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
    **The consequence is that the app is the form**, so what it hands back has to be complete —
    which today it is not: the settings-only export downloads an unmentioned ZIP, names every descriptor
    `"Untitled Project"` and derives no `requiredPacks`. Findings and the staged plan are in
-   [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md); its
+   [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md); its
    step 0, a signpost on the Preset door, is built. **No dedicated authoring surface** is planned.
 
 7. **Multiple projects on one card — `SK1/`, `SK2/`, …?** *(new, from the community thread, 2026-08-14)*
@@ -1219,7 +1219,7 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
    forking the Spotykach firmware repo to see what a boot-time scan would actually take is a
    reasonable way to answer the feasibility half ourselves.
    → **Answer:** *(none yet — blocked on @Vlad.)* **Carried to
-   [roadmap-bugs.md](roadmap-bugs.md) ▸ *Multiple projects on one card*, 2026-08-18**, so it survives
+   [roadmap-bugs.md](../../roadmap-bugs.md) ▸ *Multiple projects on one card*, 2026-08-18**, so it survives
    this file being archived.
 
 
@@ -1234,35 +1234,35 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
 
 | Step | Where | Behaviour |
 |---|---|---|
-| App boots | [App.tsx:180](src/App.tsx#L180) | `isWelcomeActive = true` |
-| Gate | [App.tsx:4160](src/App.tsx#L4160) | `isWelcomeActive && !workHandle` → `SetupWizard` full-screen, `z-[100]`. **Nothing else can render.** |
-| Wizard | [SetupWizard.tsx:17](src/components/SetupWizard.tsx#L17) | `INTRO → EXPLAINER (5 slides) → SELECT_WORK → SELECT_BACKUP → PROJECT_TITLE` |
-| Completion | [App.tsx:4162-4180](src/App.tsx#L4162-L4180) | Sets handles → `saveDirectoryHandle` → `handleSmartScan` → creates a project or opens Project Manager |
-| Escape hatch | [App.tsx:4181](src/App.tsx#L4181) | `onSkip` → raw `window.confirm` → "browser cache mode". Undocumented, unbranded, still lands in the full pro workspace. |
-| Main shell | [App.tsx:4191](src/App.tsx#L4191) | `TapeSelector` + header + `FileBrowser` + 6×6 grid — all assume a loaded project |
+| App boots | [App.tsx:180](../../src/App.tsx#L180) | `isWelcomeActive = true` |
+| Gate | [App.tsx:4160](../../src/App.tsx#L4160) | `isWelcomeActive && !workHandle` → `SetupWizard` full-screen, `z-[100]`. **Nothing else can render.** |
+| Wizard | [SetupWizard.tsx:17](../../src/components/SetupWizard.tsx#L17) | `INTRO → EXPLAINER (5 slides) → SELECT_WORK → SELECT_BACKUP → PROJECT_TITLE` |
+| Completion | [App.tsx:4162-4180](../../src/App.tsx#L4162-L4180) | Sets handles → `saveDirectoryHandle` → `handleSmartScan` → creates a project or opens Project Manager |
+| Escape hatch | [App.tsx:4181](../../src/App.tsx#L4181) | `onSkip` → raw `window.confirm` → "browser cache mode". Undocumented, unbranded, still lands in the full pro workspace. |
+| Main shell | [App.tsx:4191](../../src/App.tsx#L4191) | `TapeSelector` + header + `FileBrowser` + 6×6 grid — all assume a loaded project |
 
 One door, demanding a work folder + SD card + project name before you see anything. Everything else
 lives behind it as an overlay.
 
 ### A.2 Blockers, in rough order of severity
 
-1. **The boolean gate.** [App.tsx:4160/4191](src/App.tsx#L4160) — wizard *or* studio, no third state.
+1. **The boolean gate.** [App.tsx:4160/4191](../../src/App.tsx#L4160) — wizard *or* studio, no third state.
 2. **Monolithic shell.** 5656 lines, ~60 `useState`. Every handler is a closure inside the studio
    component; a browse-only mode can't reach `handleSampleImport` without the whole file.
-3. **Global single-slot persistence.** ~~[persistence.ts:36](src/utils/persistence.ts#L36) autosaves
+3. **Global single-slot persistence.** ~~[persistence.ts:36](../../src/utils/persistence.ts#L36) autosaves
    one `AppState`~~ — **correction (Phase 6): `saveStateToDB` has no callers.** The slot is *read* on
    mount and never written, so there is no autosave. What is true is the second half:
-   [the dirty watcher](src/session/ProjectSession.tsx) flags *any* state change as unsaved, so a
+   [the dirty watcher](../../src/session/ProjectSession.tsx) flags *any* state change as unsaved, so a
    Tier-1/2 session touching `state` would still raise phantom warnings. The blocker was real; the
    mechanism named was not. See open item D.
-4. **Manual modal z-stack.** [App.tsx:592-684](src/App.tsx#L592-L684) — hand-ordered `if` chain over
+4. **Manual modal z-stack.** [App.tsx:592-684](../../src/App.tsx#L592-L684) — hand-ordered `if` chain over
    ~15 flags. Adding modes multiplies it.
 5. **No routing.** No router dep; `base: '/spotykach_WAV_builder/'`. Deep links impossible, and
    shareable links are the point of a public browse tier.
 6. **Permission demanded too early.** `showDirectoryPicker` fires at wizard step 3, before the user
    has seen anything.
 7. **News modal auto-opens** keyed on `isWelcomeActive`
-   ([App.tsx:714-725](src/App.tsx#L714-L725)) — will fire on every mode entry once the gate changes.
+   ([App.tsx:714-725](../../src/App.tsx#L714-L725)) — will fire on every mode entry once the gate changes.
 
 ---
 
@@ -1272,21 +1272,21 @@ lives behind it as an overlay.
 
 | Asset | Lines | State |
 |---|---|---|
-| [SampleBrowser.tsx](src/components/SampleBrowser.tsx) | 1193 | Remote packs, user library, project sources, custom folders, preview player, multi-select, bulk actions. **Recyclable core.** |
-| [samplePacks.ts](src/data/samplePacks.ts) | 92 | `fetchSampleManifest()` — packs + presets from `public/manifest.json`. Zero project coupling. |
-| [LocalFolderBrowser.tsx](src/components/LocalFolderBrowser.tsx) | 859 | OS folder tree. Needs a handle, not a project. |
-| [exportSingleFile / exportSingleTape](src/utils/exportUtils.ts#L906) | — | Already download without touching a project. |
+| [SampleBrowser.tsx](../../src/components/SampleBrowser.tsx) | 1193 | Remote packs, user library, project sources, custom folders, preview player, multi-select, bulk actions. **Recyclable core.** |
+| [samplePacks.ts](../../src/data/samplePacks.ts) | 92 | `fetchSampleManifest()` — packs + presets from `public/manifest.json`. Zero project coupling. |
+| [LocalFolderBrowser.tsx](../../src/components/LocalFolderBrowser.tsx) | 859 | OS folder tree. Needs a handle, not a project. |
+| [exportSingleFile / exportSingleTape](../../src/utils/exportUtils.ts#L906) | — | Already download without touching a project. |
 
 ### Tier 2: Preset → SD — both halves already work
 
-- [PresetsPanel.tsx](src/components/PresetsPanel.tsx) renders preset cards with cover art, pack
+- [PresetsPanel.tsx](../../src/components/PresetsPanel.tsx) renders preset cards with cover art, pack
   badges, progress, and an "SD ZIP" download when `sdExportUrl` is set
-  ([PresetsPanel.tsx:216](src/components/PresetsPanel.tsx#L216)).
-- [exportSDStructure](src/utils/exportUtils.ts#L545) supports `directWrite` with a supplied
+  ([PresetsPanel.tsx:216](../../src/components/PresetsPanel.tsx#L216)).
+- [exportSDStructure](../../src/utils/exportUtils.ts#L545) supports `directWrite` with a supplied
   `destinationHandle` **or its own picker**. Needs `AppState` + options — not a work folder, not a
   project name.
 
-The blocker is `handleLoadPreset` ([App.tsx:1238](src/App.tsx#L1238)), which fuses five things:
+The blocker is `handleLoadPreset` ([App.tsx:1238](../../src/App.tsx#L1238)), which fuses five things:
 fetch descriptor → hydrate blobs → dedupe name against `foundProjects` → write a local project →
 adopt as current. The last three are Tier-3 concerns forced on a Tier-2 user.
 
@@ -1381,9 +1381,9 @@ The root of the confusion, and why the flow feels heavy.
 
 | # | What it is | Where | Cost |
 |---|---|---|---|
-| 1 | **`backupHandle` — which is just the SD card** | 49 refs in `App.tsx`; the UI that creates it says "Connect SD Card" ([SetupWizard.tsx:394](src/components/SetupWizard.tsx#L394)) | Pure naming confusion. The card is a *build target*. |
-| 2 | **Projects mirrored onto the SD card** | [`scanProjects(local, backup)`](src/App.tsx#L1836) scans both, merges by name, tags `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` ([types.ts:111-113](src/types.ts#L111-L113)) | `ProjectSyncModal` (497) + `projectSyncUtils` (404) + `LibrarySyncModal` (501) + `calculateSyncDiff`/`applySyncDiff` exist to service this duality. |
-| 3 | **`_sk_backups/` snapshots** | [App.tsx:296-337](src/App.tsx#L296-L337) — recursive copy of the whole SK folder into `Projects/<name>/_sk_backups/<timestamp>/`, rotating at 5 | Up to 36 WAVs copied *per build*, five deep. The "makes the process take longer" complaint, literally. |
+| 1 | **`backupHandle` — which is just the SD card** | 49 refs in `App.tsx`; the UI that creates it says "Connect SD Card" ([SetupWizard.tsx:394](../../src/components/SetupWizard.tsx#L394)) | Pure naming confusion. The card is a *build target*. |
+| 2 | **Projects mirrored onto the SD card** | [`scanProjects(local, backup)`](../../src/App.tsx#L1836) scans both, merges by name, tags `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` ([types.ts:111-113](../../src/types.ts#L111-L113)) | `ProjectSyncModal` (497) + `projectSyncUtils` (404) + `LibrarySyncModal` (501) + `calculateSyncDiff`/`applySyncDiff` exist to service this duality. |
+| 3 | **`_sk_backups/` snapshots** | [App.tsx:296-337](../../src/App.tsx#L296-L337) — recursive copy of the whole SK folder into `Projects/<name>/_sk_backups/<timestamp>/`, rotating at 5 | Up to 36 WAVs copied *per build*, five deep. The "makes the process take longer" complaint, literally. |
 
 ### D.2 What stays basic — always available, no configuration
 
@@ -1436,12 +1436,12 @@ targeted fixes:
 interrupted or crashed write leaves a zero-length or partial file — the original is already gone.
 Five SK snapshots don't help, because the file being destroyed is in `Assets/`, not `SK/`.
 *Fix:* write to a temp name, swap on successful close. Highest-value durability change in the
-codebase, and it's local to [`safeWriteBlob`](src/utils/exportUtils.ts#L93).
+codebase, and it's local to [`safeWriteBlob`](../../src/utils/exportUtils.ts#L93).
 ✅ **Phase 4** — `.wbtmp` + `FileSystemFileHandle.move()`, feature-detected, with an in-place fallback
 for the engines that have the method and reject the call (C1-1).
 
 > Worth fixing while in there: `safeWriteBlob` skips the write when the existing file's **size**
-> matches the new blob's ([exportUtils.ts:98](src/utils/exportUtils.ts#L98)). Two different WAVs of
+> matches the new blob's ([exportUtils.ts:98](../../src/utils/exportUtils.ts#L98)). Two different WAVs of
 > identical byte length are silently treated as identical. Harmless for `Assets/<versionId>.wav`
 > (unique id per version, never rewritten with different content), potentially wrong for SD sync.
 >
@@ -1463,10 +1463,10 @@ continuous mirroring on every build.
 - Every edit appends to `FileRecord.versions[]` and becomes the new `currentVersionId`
   (`handleSaveFile` in App.tsx). **Unbounded.**
 - On save, every version's blob is written as its own `Assets/<versionId>.wav`
-  ([exportUtils.ts:1108-1130](src/utils/exportUtils.ts#L1108-L1130)).
+  ([exportUtils.ts:1108-1130](../../src/utils/exportUtils.ts#L1108-L1130)).
 - All version blobs stay resident in `state.files[].versions[].blob`.
 - ~~and the whole `AppState` is autosaved to IndexedDB~~ — **this was never true.**
-  `saveStateToDB` ([persistence.ts:36](src/utils/persistence.ts#L36)) has no callers anywhere in
+  `saveStateToDB` ([persistence.ts:36](../../src/utils/persistence.ts#L36)) has no callers anywhere in
   `src/`; the `app-state` slot is read on mount and never written. Found in Phase 6.
 
 History depth therefore multiplies **disk × memory** — not IDB. `CleanupModal` (766 lines) existed to
@@ -1490,7 +1490,7 @@ is "you can always get back to the original", which is what users actually want 
 ### E.3 Why a sidecar model isn't a small step
 
 `AudioVersion.processing[]` is a **flat set of tags on a whole version** — `'normalized' | 'trimmed' |
-'looped' | 'eq' | 'limited' | 'cut' | 'sliced'` ([types.ts:20](src/types.ts#L20)). No parameters, no
+'looped' | 'eq' | 'limited' | 'cut' | 'sliced'` ([types.ts:20](../../src/types.ts#L20)). No parameters, no
 time ranges, no ordering. `processing: ['normalized', 'cut']` can't reconstruct anything: it doesn't
 say by how much, where, or in which order.
 
@@ -1503,7 +1503,7 @@ A real non-destructive model needs an **ordered op log**, each entry carrying at
 - `order` / `timestamp` — so overlapping edits on different regions resolve deterministically
 
 A different data model, not an extension. Two details show its shape:
-`WavMetadata.slicePoints: number[]` ([types.ts:51](src/types.ts#L51)) is already parameter-level
+`WavMetadata.slicePoints: number[]` ([types.ts:51](../../src/types.ts#L51)) is already parameter-level
 data, and slicing fans out to *multiple* files rather than one derived blob — so the log isn't a pure
 linear chain either.
 
@@ -1544,9 +1544,9 @@ was one `gh-pages` branch with subfolders, and that still works:
 "deploy:next": "npm run build:next && gh-pages -d dist --dest next"
 ```
 
-`--base` on the CLI overrides [vite.config.ts:13](vite.config.ts#L13), same as the existing
+`--base` on the CLI overrides [vite.config.ts:13](../../vite.config.ts#L13), same as the existing
 `build:local`. Verified in the installed source: the delete glob runs with `cwd` set to the
-destination ([lib/index.js:183-186](node_modules/gh-pages/lib/index.js#L183-L186)), so `--dest next`
+destination ([lib/index.js:183-186](../../node_modules/gh-pages/lib/index.js#L183-L186)), so `--dest next`
 only clears `next/`.
 
 > **The trap runs the other way.** Deploying main at root uses the default `remove: '.'` at branch
@@ -1558,9 +1558,9 @@ only clears `next/`.
 Root and `/next/` are **the same origin**, so both builds read and write the same storage:
 
 - `spotykach-wav-builder` — app state, user library, custom folders
-  ([persistence.ts:4](src/utils/persistence.ts#L4))
+  ([persistence.ts:4](../../src/utils/persistence.ts#L4))
 - `SpotykachDB` — **saved directory handles**, pointing at the real work folder and SD card
-  ([storageUtils.ts:2](src/utils/storageUtils.ts#L2))
+  ([storageUtils.ts:2](../../src/utils/storageUtils.ts#L2))
 - localStorage: `spotykach_state`, `spotykach_current_project`, `spotykach_user_library`,
   `spotykach_visual_filters`, `spotykach_config_presets`, `spotykach_custom_presets`,
   `spotykach_emptySlotPreferredBrowser`, and from Phase 4 `spotykach_sk_snapshots` +
@@ -1573,12 +1573,12 @@ a custom domain would isolate it.
 
 ### F.4 Stale documentation
 
-[docs/deployment_guidelines.md](docs/deployment_guidelines.md) describes
+[docs/deployment_guidelines.md](../deployment_guidelines.md) describes
 `scripts/build-versioned-pages.mjs` at length. **That script no longer exists** — `scripts/` holds
 only `generate-manifest.mjs`, `normalize.py`, `collect-release-samples.ps1`. And
-[public/v2/index.html](public/v2/index.html) is now just a redirect stub to root. Worth correcting
+[public/v2/index.html](../../public/v2/index.html) is now just a redirect stub to root. Worth correcting
 when Pages deployment comes back into play.
 
 **Tracked as Phase 7, step 7.** The file is classified 🟡 *partly stale* in
-[docs/README.md](docs/README.md) — its asset-path section is still accurate, so the choice is repair
+[docs/README.md](../README.md) — its asset-path section is still accurate, so the choice is repair
 the second half or fold the first half elsewhere and archive it.

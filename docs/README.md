@@ -2,8 +2,7 @@
 
 Every documentation file in the repository, what it is for, and whether it is still true.
 
-*Last reconciled 2026-08-18, when the closed test rounds were archived and the two v4 documents were
-prepared for the move.*
+*Last reconciled 2026-08-19, when v4 shipped and the two v4 documents moved to `archive/`.*
 
 **Status key** — 🟢 current · 🔵 reference (stable, rarely changes) · 🟡 partly stale · 🗄️ archived ·
 ⚠️ **load-bearing — code or the app links to it, do not move**
@@ -16,19 +15,12 @@ These two are the ones to keep up to date. Everything else is reference material
 
 | File | Status | What it is |
 |---|---|---|
-| [../roadmap-bugs.md](../roadmap-bugs.md) | 🟢 | Active roadmap, feature requests and bugs. Opens with **what is left before v4 ships** — a six-row table — then the roadmap beyond it, then a short done/reviewed section. Rewritten 2026-08-18: 1401 lines → 380, with the closed rounds moved to `archive/v4-test-rounds.md`. |
-| [../CHANGELOG.md](../CHANGELOG.md) | 🟢 | Released work, newest first. |
+| [../roadmap-bugs.md](../roadmap-bugs.md) | 🟢 | Active roadmap, feature requests and bugs. Opens with **Open** — the loose ends v4 shipped with — then the roadmap beyond v4, then a short "settled, don't reopen" list and pointers to where closed work went. Rewritten 2026-08-19 when v4 shipped; nothing closed is kept in it. |
+| [../CHANGELOG.md](../CHANGELOG.md) | 🟢 | Released work, newest first. The 4.0.0 entry is the summary of what v4 changed. |
 
-## In flight — retired when v4 ships
-
-| File | Status | What it is |
-|---|---|---|
-| [../V4_PERVAK.md](../V4_PERVAK.md) | 🗄️ | The v4 plan of record: phases, locked decisions, open items and the appendices behind them. **Prepared for archiving 2026-08-18** — it no longer tracks work, and everything still open was carried into `roadmap-bugs.md`. Moves to `archive/` when the editor round closes; see its Phase 7, step 7.4. |
-| [../UX_Overhaul.md](../UX_Overhaul.md) | 🗄️ | The intent document behind v4: personas, user journeys, UX thinking. Same fate, same date. Every disagreement between it and the built app is now settled in its own status header, **including its four wireframing boxes** — closed as built 2026-08-18, so nothing in either document is open and the move waits only on the editor round. |
-
-**Which file holds what, now:** `roadmap-bugs.md` is the live list and the only place work is tracked.
-The two v4 documents hold *reasoning* — locked decisions, phase outcomes, appendices — and are read, not
-updated. The test pass itself is closed and archived as
+**Which file holds what, now:** these two are the only live documents. `roadmap-bugs.md` is the only
+place work is tracked; `CHANGELOG.md` is the only place shipped work is described. The v4 plan and intent
+documents moved to `archive/` on 2026-08-19 and are read, not updated. The test pass is
 [archive/v4-test-rounds.md](archive/v4-test-rounds.md).
 
 ## Project-level
@@ -66,7 +58,7 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 | [style_guide_colors.md](style_guide_colors.md) | 🔵 | Tape colours and the app palette. |
 | [debugging/README.md](debugging/README.md) | 🔵 | What `DragDebug.tsx` was for and how to re-mount it. The component was removed from `App.tsx` deliberately and kept here beside its notes. |
 | [debugging/crossfade_technique.md](debugging/crossfade_technique.md) | 🔵 | Crossfade approach notes. |
-| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | Builds, Pages publishing (root + `next/`), **storage namespacing**, and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in so the deployment story survives that file being archived. |
+| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | Builds, Pages publishing (root + `next/`), **storage namespacing**, and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in — which is why the deployment story survived that file being archived. |
 
 ## Not in git
 

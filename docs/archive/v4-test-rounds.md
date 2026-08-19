@@ -2,18 +2,17 @@
 
 > **Archived record, not guidance.** This is the full write-up of Phase 7 step 6 — the functional pass
 > over the five hub doors — moved out of [roadmap-bugs.md](../../roadmap-bugs.md) on 2026-08-18 so that
-> file could go back to being a short list of what is left.
+> file could go back to being a short list of what is left. **The test pass is complete**: Round 5, the
+> editor with a project behind it, was added on 2026-08-19 when it closed.
 >
-> **Ten rounds between 2026-08-14 and 2026-08-18 raised 34 numbered findings** — R1-x through R4-x in
-> Browse, P1-1, C1-1, D1-1 and S1-1…S1-15 — **and all 34 are built and walked**. **S1-8** (Clean Mirror)
-> was the last, built and then walked in the build modal on 2026-08-18. Everything below is closed.
+> **Eleven rounds between 2026-08-14 and 2026-08-19 raised 38 numbered findings** — R1-x through R4-x in
+> Browse, P1-1, C1-1, D1-1, S1-1…S1-15, and Round 5's four — **and all of them are built and walked**.
+> Everything below is closed.
 >
 > Kept for the reasoning: several findings turned on a cause that was not where it looked — Tailwind v4's
 > hover gate (S1-15), a transient-activation expiry (P1-1), a `move()` that exists but is refused
-> (C1-1) — and those are worth being able to find again.
->
-> **What was *not* covered by any round:** the editor with a project behind it. That is the editor
-> round, and it is live in [roadmap-bugs.md](../../roadmap-bugs.md).
+> (C1-1), and a transport flag whose only reset was an event that never fired (Round 5) — and those are
+> worth being able to find again.
 
 **Legend:** 🐞 a fault · ✂️ wording · 🏗️ needed a decision before it could be built.
 
@@ -25,7 +24,8 @@
 | **Preset → SD** (`#/presets`) | 1 | ✅ Verified on a desktop. One blocker (P1-1). |
 | **Device Config** (`#/config`) | 1 | ✅ Verified on a desktop. One blocker (C1-1). |
 | **Edit One File** (`#/editor`) | 1 | ✅ Verified on a desktop. No findings. |
-| **Studio** | 1 | ✅ Verified on a desktop. 15 findings, none a blocker, all built and walked. The editor *inside* it was never opened. |
+| **Studio** | 1 | ✅ Verified on a desktop. 15 findings, none a blocker, all built and walked. |
+| **The editor with a project** | 1 | ✅ Round 5, the last one. Four findings — the main-view player and three editor reports — all built and walked. |
 
 ---
 
@@ -1154,3 +1154,134 @@ stuck in its hover look until you tap elsewhere. Accepted deliberately: this is 
 whose affordances lean on hover throughout, and a hybrid touchscreen laptop — common in this audience —
 is exactly the machine that loses all of them. If sticky hover becomes a real complaint, the narrower
 form is to gate on `(pointer: fine)` instead, which gives a mouse its hover without giving a finger one.
+
+---
+
+## Round 5 — the editor with a project behind it ✅ *(2026-08-18 → 2026-08-19)*
+
+**The eleventh round, and the last one.** Added here 2026-08-19, when it closed. Everything in this
+section was open in [roadmap-bugs.md](../../roadmap-bugs.md) as *the only thing blocking the release*.
+
+Two earlier passes had walked the same `WaveformEditor` component — Browse round 3 in the Browse-hosted
+editor, and the test pass's own round 3 in the standalone `#/editor` door — and both came back clean.
+**Neither host has a project behind it**, and everything the round found was project-shaped: version
+history across saves, assigning to a slot, save unique, save copy to pool, cleanup.
+
+Two symptoms were known going in and both were reproduced first:
+
+1. **The play button could stick after apply and preview.** Cause A below. Intermittent because it needed
+   a preview playing when a new version landed — which is why the round had to walk every edit function
+   one at a time.
+2. **The cleanup confirm modal appeared to render off-screen.** It never was. `CleanupModal`'s reset and
+   its Escape handler shared one effect that listed `confirmAction` in its deps, so pressing a cleanup
+   button set the confirmation, re-ran the effect, and the effect's own `setConfirmAction(null)` closed
+   it a frame later. That flash is what looked like an off-screen modal. Split into two effects: the
+   reset belongs to the modal opening, the key handler is the only part that needs to know which layer
+   is on top.
+
+### Main view — the player
+
+**Playing a file from a tape slot or from the left column did not start playback; once it did start it
+answered neither the spacebar, nor the pause button on the playbar, nor the stop button in the left
+browser panel.** Fixed 2026-08-18 in
+[`src/contexts/AudioPlayerContext.tsx`](../../src/contexts/AudioPlayerContext.tsx) and walked the same day
+in every situation — play, pause, stop and the spacebar, from the tape slots, the left column and both
+player bars, in All Tapes and in a single tape. Three causes, all in the one file:
+
+- **The transport was gated behind a frame.** `stop()` and `pause()` never touched the audio element
+  themselves — they handed a callback to `fadeOut`, and the actual `audio.pause()` only ran on the final
+  frame of a 15 ms `requestAnimationFrame` chain. Frames stop landing whenever the main thread is busy
+  (decoding a waveform, encoding a WAV) and stop altogether when the tab is hidden, so the pause could
+  simply never arrive. Worse, every fresh call began with `clearFade()`, which **discarded the pending
+  `audio.pause()`** — so pressing the button again actively kept the audio alive. The ramp is cosmetic
+  now and the halt belongs to a `setTimeout`; `stop()`/`pause()` also set their state synchronously, so
+  the button answers the click rather than the ramp.
+- **A missing blob failed silently.** `AudioVersion.blob` is `Blob | null` by design (missing or
+  unreadable files), and `play()` returned on null with only a `console.warn` — after the fade-out had
+  already stopped the previous file. Nothing played, and `isPlaying`/`activeFileId` were left pointing at
+  the old file, so its card kept offering a STOP for audio that was no longer there. It resets the
+  transport and says what happened.
+- **Two `.catch` paths left `volume` at 0**, which would have made the *next* successful play silent.
+
+**No player bar in a single tape view.** Added 2026-08-18. The bar was inline in `AllViewGrid`; it is now
+[`src/components/GlobalPlayerBar.tsx`](../../src/components/GlobalPlayerBar.tsx), used by both views. It is
+placed with `sticky bottom-4`, not `fixed`, so it rides the foot of the scroll column and inherits that
+column's width and left offset — which matters because the browser panel on the left is resizable and a
+`fixed` bar would have had to guess its width. "Last played file" moved into the player context
+(`lastActiveFileId`) so both bars still name the same file across a view switch.
+
+**On the spacebar:** there is no key handler for it and there should not be — the playbar's play/pause
+control is a real `<button>`, so once clicked it holds focus and the browser fires a click on Space. That
+is why it worked in All Tapes and not in a single tape: the behaviour follows the bar, and the single
+tape view had no bar. It works in both now, but it is **focus-dependent by nature** — it acts on the last
+thing clicked. A genuinely global "space always toggles the player" is a separate change, and would have
+to be reconciled with the editor's own Space handler in
+[`WaveformEditor.tsx`](../../src/components/WaveformEditor.tsx), which grabs and `preventDefault`s every
+Space while it is mounted.
+
+### Editor in Studio — three reports
+
+As reported:
+
+1. **Save copy to pool baked a pending edit.** With a trim made but not applied, "save copy to pool"
+   applied the trim to the open file *and* saved a trimmed copy. Expected: an "Apply trim?" question, the
+   open file left as it was, and a copy in the pool.
+2. **Loop.** After previewing and auditioning a loop, applying it raised a "switch tools or discard?"
+   warning instead of just applying.
+3. **EQ.** Preview an EQ, switch tool without applying, answer "apply and switch" — the play button in
+   the new tool (pitch) was dead and stuck reading PAUSE, the EQ still showed as previewing with its
+   marker in the tool header, and the sound in pitch was back to pre-EQ. Nothing had actually applied.
+
+**All three built and walked 2026-08-18 — every edit tool exercised, no bugs or unexpected behaviour
+left.** The three share their plumbing: two of the causes are the shape the main-view player bug had, a
+flag whose only reset path is an event that never arrives. In
+[`WaveformEditor.tsx`](../../src/components/WaveformEditor.tsx) unless said otherwise.
+
+- **A — the transport flag survived a reload, and nothing could clear it.** `isPlaying` was reset only by
+  WaveSurfer's `'pause'` event, and that event does not come on either path that matters: the teardown
+  clears `isMounted` *before* `destroy()`, and the handler is behind that guard; and `pause()` on an
+  already-paused instance returns before emitting in both backends. `initEditor`'s own
+  `setIsPlaying(false)` sat inside `if (wavesurfer.current)`, which the effect cleanup had already
+  nulled — skipped exactly when it mattered. So the reload after an apply came up stuck: the button read
+  PAUSE, and pressing it only re-ran the fade-out on an idle instance, which emitted nothing, for the
+  rest of the session. There is one `resetTransportState()` now, called by everything that destroys or
+  replaces the instance, and `handlePlayPause`/`triggerSafePause` ask the instance rather than the flag.
+- **B — "Apply & Switch" ran the trim apply, whatever tool you were in.** The modal called
+  `handleSave()`, which bakes region, fades and automation and nothing else — so answering it out of EQ
+  wrote a version tagged `trimmed` with the EQ dropped, while the EQ controls stayed dirty behind it
+  (hence the marker in the tool header and the preview still showing). Each tool has had its own apply
+  all along; `applyActiveTool()` is the map to them, and `resetToolState()` puts the tool's controls back
+  afterwards. That is report 3.
+- **C — every preview `loadBlob` destroyed the trim region.** `'ready'` fires on each load and used to
+  `clearRegions()` and hang a fresh full-width region across the *preview's* duration, so save, apply
+  loop, save copy and save unique were all measuring the preview instead of the file — applying a loop
+  after auditioning it trimmed a second time. The selection lives in a ref now and `getEditRegion()` is
+  the only reader; a preview shows no region rather than a wrong one.
+- **Report 2** — `handleApplyLoop` ended with `toggleTool(null)`, which re-ran the dirty check on the
+  settings it had just applied and raised the "unsaved changes" modal *after* the work was done. It uses
+  `executeToolSwitch(null)` now, like every other apply handler, and resets the loop's own params.
+  `handleApplyStereoSplit` had the same line.
+- **Report 1** — two separate faults. The button baked the pending trim/fade into the copy without
+  asking; it offers *Copy with edits* / *Copy original* / Cancel now, and the open file is untouched
+  either way. And [`handleSaveAsCopy`](../../src/App.tsx) pushed the copy's blob onto the **source** file
+  as its new current version — asking for a copy silently applied the pending edit to the file you were
+  editing. The history note now carries the source's own current audio, `currentVersionId` does not move,
+  and the note is appended rather than prepended, because `versions[0]` is the original by contract
+  ([utils/versionHistory.ts](../../src/utils/versionHistory.ts)) and prepending made the note *be* the
+  original.
+- **Also seen, not reported:** the pitch tool opened with no region when the switch rode on an apply (the
+  blob-change reset clears what `executeToolSwitch` had just seeded); it re-seeds now.
+
+### What the round left behind
+
+Two things came out of it that are not bugs, and both stayed live in
+[roadmap-bugs.md](../../roadmap-bugs.md):
+
+- **ASSIGN TO TAPE is `handleSave`**, so pressing it with an EQ, limiter, pitch or cutter setting pending
+  writes a version without that setting and leaves the tool dirty. Same trap as cause B through a
+  different button, and changing what ASSIGN bakes is a design call rather than a bug fix.
+- **How the two editor hosts should differ.** `#/editor` is a loose file that exits to the hub; Studio's
+  tape editor is a slot that exits back to the grid. UX_Overhaul asked for a sketch of that split and
+  never got one — the box was closed as a wireframe on 2026-08-18 because the answer comes from walking
+  the component with a project behind it. The walk raised nothing about the split, so it is a roadmap
+  item rather than a finding.

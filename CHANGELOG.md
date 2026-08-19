@@ -1,53 +1,101 @@
 # Changelog
 
-## [4.0.0 "Pervak"] - Unreleased
+## [4.0.0 "Pervak"] - 2026-08-19
 
-The app was one door: a setup wizard demanding a work folder, an SD card and a project name
-before you could see anything. It is now five, and four of them need no setup at all.
+**The app used to be one door.** A setup wizard demanded a work folder, an SD card and a project name
+before you could see anything at all, whether you had come to build a full six-tape project or just to
+listen to a few samples. **It is now five doors, and four of them need no setup whatsoever.**
 
-*Named for первак — the first run off a still, the strong opening fraction. Fitting for a
-release whose premise is separating one muddled thing into clean tiers.*
+*Named for первак, the first run off a still, the strong opening fraction. Fitting for a release whose
+premise is separating one muddled thing into clean tiers.*
+
+### The five doors
+
+| | What it is for | What it asks of you |
+|---|---|---|
+| **Browse** `#/browse` | Listen to the sample packs, collect what you like, download it | Nothing |
+| **Preset → SD** `#/presets` | Pick a ready-made project, write it to a card, done | The card |
+| **Config** `#/config` | Edit the device's `config.txt` | The card, or nothing at all |
+| **Edit one file** `#/editor` | Open a file, edit it, download it | Nothing |
+| **Studio** `#/studio` | The full app: projects, six tapes, the workspace | A work folder |
+
+Each door is a real link you can bookmark or share, each loads only what it needs, and **nothing asks for
+a folder until the moment something is actually written.**
+
+### The short version of everything else
+
+- **You can start with nothing.** No wizard, no folder, no project. Browse, preview, pool a selection and
+  download it as SK-ready files or a card-ready 6×6, with no permission prompt anywhere in that path.
+  Your own files go in too, dropped on the column or added from the pool header, converted as they land.
+- **Cold start to a loaded card.** Preset → SD is pick a preset, pick the card, done. No work folder, no
+  project created. Browsers without a directory picker get a ZIP rather than a dead end.
+- **The SD card is a build target, not a backup.** A build used to write three copies of the same audio.
+  With defaults it writes `SK/` and nothing else; the other two are opt-ins, off by default.
+- **There is one backup, and it is deliberate.** Workspace backup goes to a folder you pick each time,
+  shows exactly what it contains and what it weighs before it opens the picker, and removes its own
+  folder if the write dies partway.
+- **Auto-save actually exists.** The function was there and nothing ever called it. A closed tab or a
+  crash no longer costs you the open project.
+- **The Project Manager is a list of projects again**, not a two-column mirror with a sync column down
+  the middle. Building to a card and importing a project from one both stay; the push-mirror, its badges
+  and its modals are gone.
+- **Settings is where options live**, in three tabs (Files / Look / System), instead of controls
+  scattered across the Project Manager header, the build dialog and the editor sidebar.
+- **The card can't be surprised any more.** Before a build, the preview names every file that is about to
+  leave the card, deleted *or* overwritten, and offers to import them into the pool first.
+- **Writes can no longer destroy what they were replacing.** Every write goes to a temp name and is
+  swapped in only after the stream closes cleanly.
+- **Hover works again.** All 333 hover rules in the app, 16% of the stylesheet, had been silently skipped
+  on touchscreen machines since the very first commit.
+
+Everything below is the same release in more detail. The full functional test pass that produced most of
+the *Fixed* list is archived at [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md), and the
+reasoning behind the restructure is at [docs/archive/V4_PERVAK.md](docs/archive/V4_PERVAK.md).
+
+---
 
 ### Added
 - **A hub with five doors**, each linkable (`#/browse`, `#/presets`, `#/config`, `#/editor`,
   `#/studio`) and each loading only what it needs. Permission follows intent: nothing asks for
   a folder until the moment of an actual write.
-- **Browse** — the sample packs, previewable, with a selection pool, and two downloads off it:
+- **Browse.** The sample packs, previewable, with a selection pool, and two downloads off it:
   SD-ready 6×6, or all the files under their original names. No permission prompt anywhere in
   that path. Your own library appears too, read-only, when it isn't empty. **Files from your
   own computer go in as well**, through "Add files" in the pool header or by dropping them on
   the column, converted to SK-ready WAV as they land. The export block under the pool folds
   away when the list needs the room, and stays folded until you unfold it.
-- **Preset → SD** — cold start to a curated project on the card: pick a preset, pick the card,
+- **Preset → SD.** Cold start to a curated project on the card: pick a preset, pick the card,
   done. No work folder, no project created. Browsers without a directory picker get a ZIP
   instead of a dead end.
-- **Config** — MIDI and device setup against a bare card, with no project and no studio. Two
+- **Config.** MIDI and device setup against a bare card, with no project and no studio. Two
   settings the app never had (`slc_mn_a` / `slc_mn_b`, polyphony in Slice mode per deck) are
   now first-class, and **settings this build doesn't recognise survive a round-trip** instead
-  of being silently stripped — shown in a "Kept from the file" section rather than hidden.
-- **Editor** — edit one file with no project at all, then download it or add it to the Browse
+  of being silently stripped, shown in a "Kept from the file" section rather than hidden.
+- **Editor.** Edit one file with no project at all, then download it or add it to the Browse
   pool, where a whole set becomes a card. It also opens over Browse, from a pool row or
   straight from a sample row.
 - **Import into a project** from the Browse pool: the folder is picked at that moment and
   nothing that already exists is disturbed.
-- **Workspace backup** — one explicit act, to a folder you pick each time, showing exactly what
+- **Workspace backup.** One explicit act, to a folder you pick each time, showing exactly what
   it contains and what it weighs before writing anything.
 - **Auto-save**, which genuinely did not exist before: the function was there and nothing ever
   called it. A crash or a closed tab no longer costs the open project.
 - News moved onto the hub, beneath the doors, instead of a modal covering the app on start.
-- **The Preset door says where presets come from** — a line under the cards explaining that they are
+- **The Preset door says where presets come from.** A line under the cards explains that they are
   projects built in Studio and shared, with a link to the submission guide.
 - **Sample rows drag into the pool.** The row's button still works; a drag is the same act
   performed where you are looking. A drag begun on a selected row takes **the whole selection** and
   says so under the cursor; one begun anywhere else takes that row. The pool opens itself when the
   drag starts, so there is always somewhere to let go, and it says how many are about to land.
-- **A pack page points at its preset.** Under a pack's ZIP, "Want this pack in a ready-to-go format
-  for SK? Use the preset." — matched from the preset's own `requiredPacks`, so nothing new goes in
+- **A pack page points at its preset.** Under a pack's ZIP: "Want this pack in a ready-to-go format
+  for SK? Use the preset." It is matched from the preset's own `requiredPacks`, so nothing new goes in
   the manifest. Browse routes to `#/presets?preset=…` and Studio swaps the browser window for its
   presets panel; either way the card it means is scrolled to and ringed on arrival.
-- **The pack ZIP says what it is** — "Dry file list · all N files, one folder, FLAC format", read off
+- **The pack ZIP says what it is.** "Dry file list · all N files, one folder, FLAC format", read off
   the pack's own file list rather than written into the button, so it is also the plain statement of
   what the preset beside it does differently.
+- **A player bar in single-tape view.** It only ever existed in All Tapes; both views share one bar
+  now, and the name of the last played file follows you across a view switch.
 
 ### Changed
 - **The SD card is a build target, not a backup.** A build used to write three copies of the
@@ -56,30 +104,34 @@ release whose premise is separating one muddled thing into clean tiers.*
 - **The Project Manager is a list of projects**, not a two-column mirror with a sync column
   down the middle. Building to the card and importing a project found on one both stay; the
   push-mirror, its badges and its modals are gone.
-- **Settings is where options live** — locations, auto-save, backup, history and cleanup, in
+- **Settings is where options live.** Locations, auto-save, backup, history and cleanup, in
   three tabs, instead of scattered across the Project Manager header and a build dialog.
-- **History is exactly two versions per file**: the original and the current one. Everything
-  between is dropped on save. Cleanup stops being a rescue operation and becomes housekeeping.
-- Cleanup moved out of the editor's version sidebar — a project-wide destructive action does
+- **History is two versions per file by default**, the original and the current one, with
+  everything between dropped on save. It is a setting now (Settings ▸ Files ▸ History & cleanup)
+  rather than a rule the app applied without asking, and the Cleanup screen shows which way it is
+  set instead of asserting it.
+- **Cleanup says what each option costs.** Every option carries what it will free and how many steps
+  it drops (`4 steps · 43.3 MB`), and the destructive ones ask before they run.
+- Cleanup moved out of the editor's version sidebar, because a project-wide destructive action does
   not belong in one file's history panel.
 - **A project opens on all six tapes**, not on one of them. The grid is the overview, so it is
-  what you land on — every time a project is opened, created, restored or taken over from a
+  what you land on: every time a project is opened, created, restored or taken over from a
   preset, and not remembered from wherever you were standing in the last one. Picking a tape is
   still how you get to a single one; renaming or saving-as the project you are already in leaves
   you where you were.
-- **The Registry sorts** — A–Z, by tape, or as added, each reversible, from one control in the
+- **The Registry sorts.** A–Z, by tape, or as added, each reversible, from one control in the
   browser header. A–Z puts numbers first and reads `10` as ten, not as one-zero; by tape runs
   tape then slot, and falls back to A–Z in the pool, where nothing has a tape yet. *As added* is
   the order files arrived in and is still the default, so no list rearranges itself until you ask
   it to. The choice is remembered on your machine, not in the project.
 - **The way into the Sample Browser says what it does.** The Registry header's plain folder icon is
-  now a folder with a plus in it, with the word *Browse* beside it — the control adds files, and a
-  bare folder never said so.
+  now a folder with a plus in it, with the word *Browse* beside it, because the control adds files
+  and a bare folder never said so.
 - **Settings can be read.** Every explainer on the Files and System tabs was set at a size below the
   one at which the text can be read at all, and several ran to four lines of it. They are larger now
   and cut to the one sentence that answers the question, with the full wording behind an info icon
-  that opens it in place. Nothing was shortened away — what the icon opens is the text that was
-  there. The Danger Zone's explainer had a second problem: its heading, a full-width button and its
+  that opens it in place. Nothing was shortened away: what the icon opens is the text that was
+  there. The Danger Zone's explainer had a second problem. Its heading, a full-width button and its
   paragraph were three things in one row, squeezing all of them. It reads down the page now.
 - **Presets and the three custom slots are two labelled sections** at the top of the Look tab,
   instead of named presets at one end of the panel and the `C1 C2 C3` they store into at the other,
@@ -91,32 +143,55 @@ release whose premise is separating one muddled thing into clean tiers.*
 - **Every filter slider has a reset button** next to its name. Double-clicking a slider has always
   reset it and nothing but a tooltip ever said so; the double-click still works. The button greys out
   when that slider is already at its default, so the panel also says which of them have been touched.
-- **Brightness and contrast go to 3×**, where both used to stop at 2× — not far enough to be useful
-  on a bright screen.
+- **Brightness and contrast go to 3×**, where both used to stop at 2×, which was not far enough to be
+  useful on a bright screen.
 
 ### Fixed
 - **The build preview says what leaves the SD card, and offers to keep it.** Clean Mirror makes the
   card match the project exactly, and what that removed was said only with a red trash badge on a grid
-  cell: the confirmation counted none of it, and a card file being *overwritten* — destroyed just as
-  surely as a deleted one — was counted nowhere at all. Every file leaving the card is now named
+  cell: the confirmation counted none of it, and a card file being *overwritten*, destroyed just as
+  surely as a deleted one, was counted nowhere at all. Every file leaving the card is now named
   before the write, in the plain view as well as the slot list and the final confirmation, and **one
   button imports them into the pool first**, so "clean" is no longer the only way out of it. A file
   the project simply moves to another slot is shown as a move: the card keeps that audio, and the
   preview no longer calls it a loss.
+- **The player would not answer the buttons.** Playing a file from a tape slot or the left column
+  could fail to start, and once started it answered neither the spacebar, nor pause, nor stop, for
+  the rest of the session. The stop and pause commands were being handed to an animation frame that
+  simply never arrived when the main thread was busy or the tab was hidden, and pressing the button
+  again actively cancelled the pause that was still pending. The fade is decoration now; the halt is
+  immediate. A file whose audio has gone missing also says so instead of failing in silence and
+  leaving a STOP button pointing at nothing.
+- **The editor applied the wrong tool.** Answering "Apply & Switch" ran the trim apply whatever tool
+  you were actually in, so leaving EQ that way wrote a version with the EQ thrown away, while the EQ
+  controls stayed dirty behind it and the preview kept showing. Each tool applies itself now.
+- **Applying a loop after auditioning it raised a warning about unsaved changes**, after the work had
+  already been done. Same for stereo split.
+- **Auditioning an edit destroyed your selection.** Every preview quietly replaced the trim region
+  with a full-width one across the preview's own length, so save, save copy, save unique and apply
+  loop were all measuring the preview instead of the file. Applying a loop after previewing it
+  trimmed the audio a second time.
+- **"Save copy to pool" changed the file you were editing.** It baked a pending trim into the open
+  file without asking, *and* wrote the copy's audio back onto the source as its new current version.
+  It offers *Copy with edits* / *Copy original* / Cancel now, and the open file is untouched either
+  way.
+- **The editor's play button could stick on PAUSE after an apply**, dead for the rest of the session.
+- **The cleanup confirmation flashed and vanished**, which read as a modal rendering off-screen. It
+  was closing itself one frame after it opened.
 - **"Reset Visual Effects" trailed the panel and could become unreadable.** The button has to be drawn
-  outside the app's visual filters — it is what turns them off, and a CSS filter traps everything
-  inside it — so it is drawn separately and told where to sit. It was also set to animate any
+  outside the app's visual filters, since it is what turns them off and a CSS filter traps everything
+  inside it, so it is drawn separately and told where to sit. It was also set to animate any
   property that changed, which included the position it was being told: it arrived 150ms late,
   trailing behind a dragged panel and sliding in from the corner of the screen when the tab was first
   opened. It lands where it is put now, and follows the panel through scrolling and reflow as well as
   dragging. Its fill was translucent, which meant it borrowed its background from the filtered panel
-  underneath — at full inversion, pale text on a pale ground. It is opaque.
+  underneath: at full inversion, pale text on a pale ground. It is opaque.
 - **The video texture (texture 8) never worked on the published site.** Its file was requested from the
   root of the domain rather than from the app's own address, so it worked when run locally and 404d
   everywhere else. Every other asset in the app already resolved its path properly, including the one
   eleven lines away in the same feature.
-- **"New Fresh Project" replaced the open project without asking.** Every neighbouring path —
-  loading a project, leaving for the hub, changing the work folder — already warned about unsaved
+- **"New Fresh Project" replaced the open project without asking.** Every neighbouring path (loading a
+  project, leaving for the hub, changing the work folder) already warned about unsaved
   changes; the one menu item that creates a project on top of yours did not. It asks now, before
   the name is typed. The dialog also gained the answer it never had: **save the open project first,
   then start the new one**, alongside going ahead without saving and cancelling. It waits for the
@@ -124,22 +199,22 @@ release whose premise is separating one muddled thing into clean tiers.*
   is instead of replacing it anyway.
 - **Nothing in the app reacted to hover on a touchscreen machine.** Tailwind v4 only applies
   `hover:` styles when the browser says the primary pointer can hover, and a touchscreen laptop
-  says it cannot — even when you are driving it with a mouse. All 333 hover rules, 16% of the
+  says it cannot, even when you are driving it with a mouse. All 333 hover rules, 16% of the
   stylesheet, were being skipped: buttons stayed grey, rows never lit, and the only hover left
   working anywhere was the `+` on an empty slot, which is hand-written CSS rather than a utility.
   Hover now applies wherever there is a pointer to do it.
 - **"Write to SD card" in Preset → SD could never open the picker.** The preset's audio was
   downloaded first and the card asked for afterwards, by which time the click that could open a
-  file picker had expired — Chrome refused it outright. The card is now chosen *before* anything
+  file picker had expired, and Chrome refused it outright. The card is now chosen *before* anything
   downloads, from a step that says the two things that matter: pick the card itself, not a folder
   on it. Picking a card that already holds an `SK/` asks once more before overwriting it.
 - **Interrupted writes can no longer destroy the file they were replacing.** Writes go to a
   temp name and are swapped in only after the stream closes cleanly. Where the browser refuses
-  the swap — it is a newer, separate feature for folders you pick, and no feature test can see
-  the difference — the file is written the plain way instead of the write failing.
+  the swap (it is a newer, separate feature for folders you pick, and no feature test can see
+  the difference) the file is written the plain way instead of the write failing.
 - **Two files of identical byte length are no longer assumed identical.** SD writes now compare
   content; the cheap size check is kept only where the filename determines the content.
-- **Hydrated preset audio could skip conversion entirely** — a bucket answering
+- **Hydrated preset audio could skip conversion entirely.** A bucket answering
   `application/octet-stream` produced blobs that failed every `audio/` check downstream, which
   would have written FLAC bytes into a file called `1.WAV`.
 - **Bulk actions only ever worked for built-in packs**, logging "coming soon" for the library
@@ -151,12 +226,18 @@ release whose premise is separating one muddled thing into clean tiers.*
 
 ### Internal
 - Storage keys and database names are namespaced per build, so a preview deploy can never
-  reach the real app's data — or the live directory handles pointing at a real disk.
+  reach the real app's data, or the live directory handles pointing at a real disk.
 - `App.tsx`'s session state moved out into `session/ProjectSession.tsx`; the project-free modes
   are separate modules that never import `App.tsx` at all.
 - 1002 lines of dead code removed in the first pass; `SyncOptionsModal` and `ProjectSyncModal`
   followed as their reasons for existing went away.
 - The five `config.txt` defaults were spelled out in six places and are now defined once.
+- **Eleven test rounds over the five doors, 38 findings, all built and walked.** The record is
+  [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md).
+- The v4 plan and intent documents are archived at
+  [docs/archive/V4_PERVAK.md](docs/archive/V4_PERVAK.md) and
+  [docs/archive/UX_Overhaul.md](docs/archive/UX_Overhaul.md); `roadmap-bugs.md` and this file are the
+  live documents again.
 
 ## [3.7.3] - 2026-06-30
 

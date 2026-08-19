@@ -2,10 +2,10 @@
 
 This document outlines the high-level wireflows, user journeys, and potential UX directions for the Spotykach app. The goal is to figure out the optimal user experience by sketching out how different types of users interact with the app.
 
-> **🗄️ Prepared for archiving, 2026-08-18.** Everything this document asked for is built, and the app
-> has since been walked door by door. **It is the record of the intent, not a live list** — what is
-> still open lives in [roadmap-bugs.md](roadmap-bugs.md). It moves to `docs/archive/` alongside
-> [V4_PERVAK.md](V4_PERVAK.md) when the editor round closes.
+> **🗄️ Archived 2026-08-19, when v4 shipped.** Everything this document asked for is built, and the app
+> was walked door by door afterwards. **It is the record of the intent, not a live list** — what is still
+> open lives in [roadmap-bugs.md](../../roadmap-bugs.md), and what shipped is in
+> [CHANGELOG.md](../../CHANGELOG.md).
 >
 > **This is the intent document — the *why*.** Personas, journeys and the UX thinking behind v4 live
 > here. The implementation plan built from it is [V4_PERVAK.md](V4_PERVAK.md) — phase checklist,
@@ -32,10 +32,10 @@ This document outlines the high-level wireflows, user journeys, and potential UX
 >   without ever being sketched, and drawing them now would be documenting backwards — the
 >   Home/Dashboard box *is* the five-door hub, the browser-to-grid box *is* the temporary pool, and the
 >   guest-artist box was answered in writing by
->   [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md). The
+>   [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md). The
 >   fourth — independent editor vs Studio's tape editor — is not a drawing debt either: it is a question
 >   the editor round answers by walking the component with a project behind it, and it lives there in
->   [roadmap-bugs.md](roadmap-bugs.md). **Nothing in this document is open.**
+>   [roadmap-bugs.md](../../roadmap-bugs.md). **Nothing in this document is open.**
 > - **Preset → SD has no persona here**, and is not getting one. It became the headline flow — a cold
 >   start to a curated card — and writing a persona for something already built and verified would be
 >   documenting backwards. Recorded as discrepancy 1 in [V4_PERVAK.md](V4_PERVAK.md).
@@ -125,7 +125,7 @@ Project management is the core of the experience for Power Users and those worki
 > answer. No sketch is owed on any of them: drawing a screen that has already been built and walked
 > would be documenting backwards, the same reason Preset → SD is not getting a persona. The one live
 > question underneath these boxes — how the two editor hosts should differ — is carried by the editor
-> round in [roadmap-bugs.md](roadmap-bugs.md), not by a wireframe.
+> round in [roadmap-bugs.md](../../roadmap-bugs.md), not by a wireframe.
 
 - [x] Sketch the **"Home/Dashboard"** screen (deciding between starting in the Browser, the Editor, or a Project Hub based on user intent).
       *Shipped unsketched as the hub — five doors with hash routing, news inline beneath them.*
@@ -136,10 +136,10 @@ Project management is the core of the experience for Power Users and those worki
       hosts, with different exits. **Closed as a wireframe.** The live half — how the two hosts should
       actually differ — is the editor round's to answer, since that round is the first time the
       component is walked with a project behind it. Tracked there, in
-      [roadmap-bugs.md](roadmap-bugs.md).*
+      [roadmap-bugs.md](../../roadmap-bugs.md).*
 - [x] Sketch the **"Browser to Grid"** batch workflow.
       *Shipped unsketched as the temporary pool: bulk actions, drag from the sample rows, and
       "import into a project". **Closed as built.***
 - [x] Sketch the **"Guest Artist Pack"** discovery and loading flow.
       *Answered rather than sketched — the app is the form and the channel stays human. **Closed.** See
-      [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md).*
+      [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md).*

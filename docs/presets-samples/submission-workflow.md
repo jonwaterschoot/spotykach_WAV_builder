@@ -3,7 +3,7 @@
 *Written 2026-08-16, against the code as it is on `v4-pervak`. §1–2 are findings; §3 onward is the
 plan, revised the same day against the answer to open question 6.*
 
-This is the answer to **open question 6** in [V4_PERVAK.md](../../V4_PERVAK.md) — *preset & pack
+This is the answer to **open question 6** in [V4_PERVAK.md](../archive/V4_PERVAK.md) — *preset & pack
 authoring: who makes them, and where.*
 
 > **The answer, given 2026-08-16:** neither pull requests nor a backend. **The app guides the
