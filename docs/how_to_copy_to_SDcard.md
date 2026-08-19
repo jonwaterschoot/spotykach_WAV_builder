@@ -64,4 +64,6 @@ SK/
 │ └── 1.WAV
 └── ...
 ```
-> ⚠️ **Folder and File names must be UPPERCASE.**
+> The app writes these names in UPPERCASE. Recent firmware accepts either case — `B/1.WAV` and
+> `B/1.wav` both play — so a card that already uses lowercase does not need renaming. What does
+> matter is the structure and the audio format above.

@@ -1,16 +1,18 @@
 {
   "name": "spotykach-wav-builder",
   "private": true,
-  "version": "3.7.3",
+  "version": "4.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:local": "tsc -b && vite build --base=/",
+    "build:next": "tsc -b && vite build --base=/spotykach_WAV_builder/next/",
     "lint": "eslint .",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "deploy:next": "npm run build:next && gh-pages -d dist --dest next"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

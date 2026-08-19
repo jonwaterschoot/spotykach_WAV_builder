@@ -5,9 +5,10 @@ import logoImg from './assets/img/Spotykach_Logo.webp?url';
 import tapeIcon from './assets/img/spotykachtapeicon.svg?url';
 import { SlotGrid } from './components/SlotGrid';
 import { AllViewGrid } from './components/AllViewGrid';
+import { GlobalPlayerBar } from './components/GlobalPlayerBar';
 import { FileBrowser } from './components/FileBrowser';
 import type { AppState, TapeColor, FileRecord, AudioVersion, ExportOptions } from './types';
-import { TAPE_COLORS } from './types';
+import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from './types';
 import { getInitialState } from './utils/initialState';
 import { audioEngine } from './lib/audio/audioEngine';
 import type { ImportAnalysis } from './utils/importUtils';
@@ -20,7 +21,6 @@ import BrowserChoiceModal from './components/BrowserChoiceModal';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
-import { ProjectSyncModal } from './components/ProjectSyncModal';
 import { fetchSampleManifest, type PresetManifestEntry } from './data/samplePacks';
 import { NewsModal } from './components/NewsModal';
 // dynamic descriptor imports
@@ -32,10 +32,11 @@ const LibraryManager = React.lazy(() => import('./components/LibraryManager').th
 const SampleBrowser = React.lazy(() => import('./components/SampleBrowser').then(m => ({ default: m.SampleBrowser })));
 const ExportModal = React.lazy(() => import('./components/ExportModal').then(m => ({ default: m.ExportModal })));
 const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal').then(m => ({ default: m.LibrarySyncModal })));
+const WorkspaceBackupModal = React.lazy(() => import('./components/WorkspaceBackupModal').then(m => ({ default: m.WorkspaceBackupModal })));
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, X, FileText, Package, Copy, Newspaper } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2 } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -60,8 +61,14 @@ import { useAudioConverter } from './utils/useAudioConverter';
 
 // Confirm Action Helper
 // dynamic persistence imports
-import { saveDirectoryHandle, getDirectoryHandle } from './utils/storageUtils';
+import { saveDirectoryHandle } from './utils/storageUtils';
+import { getDurabilityPrefs, getDurabilityPref } from './utils/durabilityPrefs';
 import { resolveAssetPath, hashBlob } from './utils/assetUtils';
+import { hydratePreset, missingAssetCount, writeToSD, type PresetProgress } from './utils/presetLoader';
+import { collapseVersionHistoryOnSave } from './utils/versionHistory';
+import { useProjectSession } from './session/ProjectSession';
+import { useEscapeLayer } from './shell/escapeStack';
+import { appStorage } from './utils/storageNamespace';
 
 const sanitizeFilename = (name: string) => {
   return name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.\-_]/g, '');
@@ -80,15 +87,50 @@ const getNotePreview = (notes?: string) => {
     .trim();
 };
 
-function App() {
+interface AppProps {
+  /** Provided by the shell; absent when Studio is mounted on its own. */
+  onExitToHub?: () => void;
+}
+
+function App({ onExitToHub }: AppProps) {
   console.log("App Component Rendered");
   // ==========================================
   // STATE DEFINITIONS
   // ==========================================
-  const [state, setState] = useState<AppState>(getInitialState());
-  const [restorableHandles, setRestorableHandles] = useState<{ work: FileSystemDirectoryHandle, backup: FileSystemDirectoryHandle | null } | null>(null);
+  // The project itself — state, handles, name, dirty tracking — lives in the
+  // session hook. Everything else in this file is the studio shell around it.
+  // V4_PERVAK.md, Appendix C.3.
+  const {
+    state, setState,
+    workHandle, setWorkHandle,
+    sdHandle, setSdHandle: setBackupHandle,
+    projectRootHandleRef,
+    restorableHandles, isRestoreResolved,
+    currentProjectName, setCurrentProjectName,
+    hasUnsavedChanges, setHasUnsavedChanges,
+    isEditorDirty, setIsEditorDirty,
+    markSystemUpdate,
+  } = useProjectSession();
+
+  /**
+   * True until the shell knows whether it can walk back in without asking.
+   *
+   * The setup wizard would otherwise render for the second or so the handle lookup
+   * and permission check take — a setup screen flashing in front of someone who has
+   * a workspace, which is the thing this is here to prevent.
+   */
+  const [isAutoRestoring, setIsAutoRestoring] = useState(true);
+
   const [currentTapeColor, setCurrentTapeColor] = useState<TapeColor>('Blue');
-  const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
+  /**
+   * The all-tapes grid is the overview, so it is what a project opens on — always,
+   * not remembered from last time. Single-tape is where you go to work on one of the
+   * six, and picking a tape is how you say so. Every path that makes a different
+   * project the live one puts this back to 'all' (see `handleLoadProject` and
+   * friends); renaming or saving-as the project you are already in does not, because
+   * neither is opening anything. Roadmap S1-1.
+   */
+  const [viewMode, setViewMode] = useState<'single' | 'all'>('all');
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
 
   const { stop: stopGlobalPlayer } = useAudioPlayer();
@@ -158,6 +200,10 @@ function App() {
     title: string;
     message: React.ReactNode;
     onConfirm: () => void;
+    // The third way out, sitting apart from confirm/cancel: used where "no" and
+    // "not like that" are different answers — see checkUnsavedChanges.
+    onDiscard?: () => void;
+    discardLabel?: string;
     isDestructive?: boolean;
     confirmLabel?: string;
     showCancel?: boolean;
@@ -175,22 +221,13 @@ function App() {
   // Presets Panel State
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   const [presets, setPresets] = useState<PresetManifestEntry[]>([]);
+  /** Set when the panel was opened from a pack in the sample browser — that card gets ringed. */
+  const [focusPresetId, setFocusPresetId] = useState<string | null>(null);
   const [showLibrarySyncModal, setShowLibrarySyncModal] = useState(false);
-  const [syncProjectTarget, setSyncProjectTarget] = useState<string | null>(null);
   const [isWelcomeActive, setIsWelcomeActive] = useState(true); // NEW: Track welcome screen visibility
-  const [isEditorDirty, setIsEditorDirty] = useState(false);
   const [foundProjects, setFoundProjects] = useState<import('./types').ProjectSummary[]>([]);
-  const [currentProjectName, setCurrentProjectName] = useState<string | undefined>(() => localStorage.getItem('spotykach_current_project') || undefined);
   const [skBackups, setSkBackups] = useState<{ timestamp: string; sizeBytes: number }[]>([]);
   const SK_BACKUP_LIMIT = 5;
-
-  useEffect(() => {
-    if (currentProjectName) {
-      localStorage.setItem('spotykach_current_project', currentProjectName);
-    } else {
-      localStorage.removeItem('spotykach_current_project');
-    }
-  }, [currentProjectName]);
 
   const [allViewNoteStates, setAllViewNoteStates] = useState<Record<TapeColor, 'collapsed' | 'preview' | 'expanded'>>({
     Blue: 'collapsed', Green: 'collapsed', Pink: 'collapsed', Red: 'collapsed', Turquoise: 'collapsed', Yellow: 'collapsed'
@@ -243,10 +280,9 @@ function App() {
   };
 
   // Workflow / Settings State
-  const [workHandle, setWorkHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showWorkspaceBackup, setShowWorkspaceBackup] = useState(false);
 
   // Sync Logic State
   const [syncModalState, setSyncModalState] = useState<{
@@ -411,7 +447,7 @@ function App() {
         await w.close();
       }
 
-      await scanProjects(workHandle, backupHandle);
+      await scanProjects(workHandle, sdHandle);
       showToast(`"${projectName}" imported from zip`, 'success');
       
       // 2. Automatically load the imported project
@@ -479,16 +515,6 @@ function App() {
   // Computed Mode for UI/Logic compatibility
   // const workflowMode: 'LOCAL' | 'BROWSER' = workHandle ? 'LOCAL' : 'BROWSER';
 
-  // Ref for the Root Handle (SD or Folder) - Merged into workHandle state but we might keep ref for non-reactive access if needed?
-  // Actually, let's keep it sync'd or just use state. State is fine for high level.
-  // BUT many utils depend on ref.current for async ops without staleness.
-  const projectRootHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
-
-  // Sync ref with state
-  useEffect(() => {
-    projectRootHandleRef.current = workHandle;
-  }, [workHandle]);
-
   // Bulk Conflict State
   const [bulkConflictState, setBulkConflictState] = useState<{
     targetSlotId: number;
@@ -515,7 +541,7 @@ function App() {
   // Visual Filters State
   const [visualFilters, setVisualFilters] = useState<import('./types').VisualFilters>(() => {
     try {
-      const saved = localStorage.getItem('spotykach_visual_filters');
+      const saved = appStorage.getItem('spotykach_visual_filters');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn('Failed to load visual filters', e);
@@ -535,7 +561,7 @@ function App() {
 
   // Sync Visual Filters to CSS Variables
   useEffect(() => {
-    localStorage.setItem('spotykach_visual_filters', JSON.stringify(visualFilters));
+    appStorage.setItem('spotykach_visual_filters', JSON.stringify(visualFilters));
     const root = document.documentElement;
     root.style.setProperty('--master-invert', String(visualFilters.invert));
     root.style.setProperty('--master-grayscale', String(visualFilters.grayscale));
@@ -578,111 +604,94 @@ function App() {
   const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
   const isSlotSampleImportInFlightRef = useRef(false);
 
-  // Handle Reset
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const isFirstRender = useRef(true);
-  const isSystemUpdate = useRef(false);
 
-  useEffect(() => {
-    logger.setWorkHandle(workHandle);
-  }, [workHandle]);
+  // Escape closes the topmost studio panel. This is one layer of the shell's escape
+  // stack (see shell/escapeStack.ts) — returning false lets anything below it try.
+  // Don't grow this chain: new surfaces register their own layer instead.
+  useEscapeLayer(true, () => {
+    // Priority order for closing (inner/layered modals first)
+    if (confirmAction) {
+      setConfirmAction(null);
+      return true;
+    }
+    if (projectNameModal) {
+      setProjectNameModal(null);
+      return true;
+    }
+    if (syncModalState) {
+      setSyncModalState(null);
+      return true;
+    }
+    if (bulkConflictState) {
+      setBulkConflictState(null);
+      return true;
+    }
+    if (importAnalysis) {
+      setImportAnalysis(null);
+      return true;
+    }
+    if (missingFilesWarning) {
+      setMissingFilesWarning(null);
+      return true;
+    }
 
-  // Global Escape Key Listener for UI Panels
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Priority order for closing (inner/layered modals first)
-        if (confirmAction) {
-          setConfirmAction(null);
-          return;
-        }
-        if (projectNameModal) {
-          setProjectNameModal(null);
-          return;
-        }
-        if (syncModalState) {
-          setSyncModalState(null);
-          return;
-        }
-        if (bulkConflictState) {
-          setBulkConflictState(null);
-          return;
-        }
-        if (importAnalysis) {
-          setImportAnalysis(null);
-          return;
-        }
-        if (missingFilesWarning) {
-          setMissingFilesWarning(null);
-          return;
-        }
-
-        // Major panels
-        if (showSampleBrowser) {
-          setShowSampleBrowser(false);
-          setTargetSlotForUpload(null);
-          return;
-        }
-        if (showLibraryManager) {
-          setShowLibraryManager(false);
-          return;
-        }
-        if (showProjectNotes) {
-          setShowProjectNotes(false);
-          setIsProjectNotesMinimized(false);
-          return;
-        }
-        if (showNews) {
-          setShowNews(false);
-          return;
-        }
-        if (showAboutHelp) {
-          setShowAboutHelp(false);
-          return;
-        }
-        if (showExport) {
-          setShowExport(false);
-          return;
-        }
-        if (isLogModalOpen) {
-          setIsLogModalOpen(false);
-          return;
-        }
-        if (showPresetsPanel) {
-          setShowPresetsPanel(false);
-          return;
-        }
-        if (showConfigModal) {
-          setShowConfigModal(false);
-          return;
-        }
-        if (showCleanupModal) {
-          setShowCleanupModal(false);
-          return;
-        }
-        if (showSettings) {
-          setShowSettings(false);
-          return;
-        }
-        if (showProjectManager) {
-          setShowProjectManager(false);
-          return;
-        }
-        if (showLibrarySyncModal) {
-          setShowLibrarySyncModal(false);
-          return;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    confirmAction, projectNameModal, syncModalState, bulkConflictState, importAnalysis,
-    missingFilesWarning, showSampleBrowser, showLibraryManager, showProjectNotes,
-    showAboutHelp, showExport, isLogModalOpen, showPresetsPanel,
-    showConfigModal, showCleanupModal, showSettings, showProjectManager, showLibrarySyncModal
-  ]);
+    // Major panels
+    if (showSampleBrowser) {
+      setShowSampleBrowser(false);
+      setTargetSlotForUpload(null);
+      return true;
+    }
+    if (showLibraryManager) {
+      setShowLibraryManager(false);
+      return true;
+    }
+    if (showProjectNotes) {
+      setShowProjectNotes(false);
+      setIsProjectNotesMinimized(false);
+      return true;
+    }
+    if (showNews) {
+      setShowNews(false);
+      return true;
+    }
+    if (showAboutHelp) {
+      setShowAboutHelp(false);
+      return true;
+    }
+    if (showExport) {
+      setShowExport(false);
+      return true;
+    }
+    if (isLogModalOpen) {
+      setIsLogModalOpen(false);
+      return true;
+    }
+    if (showPresetsPanel) {
+      setShowPresetsPanel(false);
+      return true;
+    }
+    if (showConfigModal) {
+      setShowConfigModal(false);
+      return true;
+    }
+    if (showCleanupModal) {
+      setShowCleanupModal(false);
+      return true;
+    }
+    if (showSettings) {
+      setShowSettings(false);
+      return true;
+    }
+    if (showProjectManager) {
+      setShowProjectManager(false);
+      return true;
+    }
+    if (showLibrarySyncModal) {
+      setShowLibrarySyncModal(false);
+      return true;
+    }
+    return false;
+  });
 
   const handleReset = () => {
     setConfirmAction({
@@ -699,7 +708,7 @@ function App() {
         try {
           const { clearState } = await import('./utils/persistence');
           await clearState();
-          localStorage.removeItem('spotykach_state');
+          appStorage.removeItem('spotykach_state');
           setState(getInitialState());
           showToast("Application Reset", "success");
           window.location.reload();
@@ -711,20 +720,26 @@ function App() {
     });
   };
 
-  useEffect(() => {
-    // Only check for news after the user has left the setup wizard
-    if (isWelcomeActive) return;
-
-    const checkNewsPreference = () => {
-      const showOnStart = localStorage.getItem('spotykach_show_news_on_start') !== 'false';
-      if (showOnStart) {
-        setShowNews(true);
-      }
-    };
-    checkNewsPreference();
-  }, [isWelcomeActive]);
-
-  const checkUnsavedChanges = (action: () => void) => {
+  /**
+   * The guard in front of anything that replaces the open project.
+   *
+   * `offerSave` adds the way out a plain "continue anyway" can't give: save to the
+   * project folder first, then carry on. It is opt-in because it only makes sense
+   * where the action itself doesn't already deal with the save — and it is only
+   * actually offered when there is somewhere to save to (a work folder and a
+   * project name), since without those `executeSaveProject` starts prompting for
+   * one, which is not what "save first" should mean here.
+   */
+  const checkUnsavedChanges = (
+    action: () => void,
+    options?: {
+      offerSave?: boolean;
+      /** What is about to happen, as one sentence. Shown above the unsaved-changes line. */
+      consequence?: string;
+      /** Label for going ahead without saving. */
+      proceedLabel?: string;
+    }
+  ) => {
     // Determine if the project is effectively empty
     const hasAnyFiles = Object.keys(state.files).length > 0;
     const hasProjectNotes = !!(state.projectNotes && state.projectNotes.trim() !== '');
@@ -732,12 +747,57 @@ function App() {
     const isProjectEmpty = !hasAnyFiles && !hasProjectNotes && !hasTapeNotes;
 
     // Only warn if something changed AND the project isn't empty (we don't care about saving empty projects)
-    if ((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty) {
-      const confirmed = window.confirm("You have unsaved changes. These will be lost. Continue anyway?");
-      if (confirmed) action();
-    } else {
+    if (!((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty)) {
       action();
+      return;
     }
+
+    // With auto-save on the work is not actually lost — it is in the browser's
+    // recovery slot, just not in the project folder. Saying "these will be lost"
+    // in that case would be a lie the app can be caught in.
+    const changesLine = getDurabilityPref('autoSave')
+      ? "You have changes that haven't been saved to the project folder. They're kept in this browser and will come back, but the folder on disk won't have them."
+      : "You have unsaved changes. These will be lost.";
+    const canSave = !!(workHandle && currentProjectName);
+    const offerSave = !!options?.offerSave && canSave;
+    const proceedLabel = options?.proceedLabel || 'Continue anyway';
+
+    const message = (
+      <>
+        {options?.consequence && <p>{options.consequence}</p>}
+        <p>{changesLine}</p>
+      </>
+    );
+
+    if (!offerSave) {
+      setConfirmAction({
+        title: 'Unsaved changes',
+        message,
+        isDestructive: true,
+        confirmLabel: proceedLabel,
+        onConfirm: () => { setConfirmAction(null); action(); },
+      });
+      return;
+    }
+
+    setConfirmAction({
+      title: 'Unsaved changes',
+      message,
+      // Saving first is the safe answer, so it takes the primary button and the
+      // discard sits off to the side in red.
+      confirmLabel: `Save "${currentProjectName}" first`,
+      discardLabel: proceedLabel,
+      onDiscard: () => { setConfirmAction(null); action(); },
+      onConfirm: async () => {
+        setConfirmAction(null);
+        const saved = await handleSaveProject();
+        // A save can stop short — missing assets put the resolver up instead, and a
+        // write can fail. Going ahead then would throw away exactly what the user
+        // just asked to keep, so the action waits for another try.
+        if (saved) action();
+        else showToast('Nothing was replaced — the save didn\'t finish.', 'warning');
+      },
+    });
   };
 
   // ==========================================
@@ -745,7 +805,7 @@ function App() {
   // ==========================================
 
   const handleScanProjects = async () => {
-    await scanProjects(workHandle, backupHandle);
+    await scanProjects(workHandle, sdHandle);
     setShowProjectManager(true);
   };
 
@@ -769,11 +829,12 @@ function App() {
 
       // Merge with current running state specifics if needed? 
       // No, replace state.
-      isSystemUpdate.current = true;
+      markSystemUpdate();
       setState(loadedState);
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false); // Clean state after load
       setShowProjectManager(false);
+      setViewMode('all'); // A different project opens on the overview, not on whichever tape the last one left behind.
 
       // --- NEW: Load Visual Settings from Workspace ---
       try {
@@ -796,14 +857,14 @@ function App() {
         const missingRefsUnique = Array.from(new Set(missingAssets.map(m => m.blobRef)));
 
         const resolveBackupProjectDir = async (): Promise<FileSystemDirectoryHandle | null> => {
-          if (!backupHandle) return null;
+          if (!sdHandle) return null;
           try {
-            const wbHandle = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+            const wbHandle = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
             const projects = await wbHandle.getDirectoryHandle('Projects', { create: false });
             return await projects.getDirectoryHandle(projectName, { create: false });
           } catch {
             try {
-              const projects = await backupHandle.getDirectoryHandle('Projects', { create: false });
+              const projects = await sdHandle.getDirectoryHandle('Projects', { create: false });
               return await projects.getDirectoryHandle(projectName, { create: false });
             } catch {
               return null;
@@ -812,7 +873,7 @@ function App() {
         };
 
         let recoverableRefs = new Set<string>();
-        if (backupHandle) {
+        if (sdHandle) {
           try {
             const backupProjectDir = await resolveBackupProjectDir();
             if (backupProjectDir) {
@@ -904,6 +965,7 @@ function App() {
       setState(emptyState);
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
+      setViewMode('all');
       showToast("Empty Project Created", "success");
 
       handleSmartScan(activeWorkHandle);
@@ -941,8 +1003,10 @@ function App() {
 
       // 4. Save
       const { saveProjectToDirectory } = await import('./utils/exportUtils');
-      // @ts-ignore
-      const exportedFiles = await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+      await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+
+      // Match the live state to what went to disk — see executeSaveProject.
+      setState(prev => collapseVersionHistoryOnSave(prev));
 
       setCurrentProjectName(projectName);
       setHasUnsavedChanges(false);
@@ -962,7 +1026,7 @@ function App() {
   };
 
   const handleImportBackupProject = async (projectName: string) => {
-    if (!workHandle || !backupHandle) {
+    if (!workHandle || !sdHandle) {
       showToast("Both Project Folder and SD Card must be connected.", 'error');
       return;
     }
@@ -971,25 +1035,32 @@ function App() {
     setProgressMsg(`Importing "${projectName}" from backup...`);
 
     try {
-      // 1. Get the backup project directory handle
-      const wavBuilderDir = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
-      const backupProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: false });
-      const backupProjectDir = await backupProjectsDir.getDirectoryHandle(projectName, { create: false });
+      // 1. Locate the project on the card. scanForProjects reads both the standard
+      //    WAV_Builder/Projects/ layout and a bare Projects/ at the card root, so
+      //    the import has to accept either or it throws on cards it just listed.
+      const sourceProjectDir = await (async () => {
+        try {
+          const wavBuilderDir = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
+          const dir = await wavBuilderDir.getDirectoryHandle('Projects', { create: false });
+          return await dir.getDirectoryHandle(projectName, { create: false });
+        } catch {
+          const dir = await sdHandle.getDirectoryHandle('Projects', { create: false });
+          return await dir.getDirectoryHandle(projectName, { create: false });
+        }
+      })();
 
       // 2. Get/create the local projects directory handle
       const localProjectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
       const localProjectDir = await localProjectsDir.getDirectoryHandle(projectName, { create: true });
 
       // 3. Recursive directory copy helper
+      const { safeWriteBlob } = await import('./utils/exportUtils');
       const copyDirRecursive = async (src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle) => {
         // @ts-ignore
         for await (const [name, entry] of src.entries()) {
           if (entry.kind === 'file') {
             const file = await src.getFileHandle(name).then(h => h.getFile());
-            const dstFile = await dst.getFileHandle(name, { create: true });
-            const writer = await dstFile.createWritable();
-            await writer.write(file);
-            await writer.close();
+            await safeWriteBlob(dst, name, file);
           } else if (entry.kind === 'directory') {
             const srcSub = await src.getDirectoryHandle(name);
             const dstSub = await dst.getDirectoryHandle(name, { create: true });
@@ -999,12 +1070,12 @@ function App() {
       };
 
       // 4. Perform recursive copy
-      await copyDirRecursive(backupProjectDir, localProjectDir);
+      await copyDirRecursive(sourceProjectDir, localProjectDir);
 
       showToast(`Project "${projectName}" imported successfully.`, 'success');
 
       // 5. Rescan projects to update state
-      await scanProjects(workHandle, backupHandle);
+      await scanProjects(workHandle, sdHandle);
 
     } catch (e: any) {
       console.error(e);
@@ -1039,7 +1110,7 @@ function App() {
             setHasUnsavedChanges(false);
           }
 
-          await scanProjects(workHandle, backupHandle);
+          await scanProjects(workHandle, sdHandle);
         } catch (e: any) {
           console.error(e);
           showToast("Delete Failed: " + e.message, 'error');
@@ -1125,6 +1196,7 @@ function App() {
           (msg) => setProgressMsg(msg || ''),
           currentProjectName
         );
+        setState(prev => collapseVersionHistoryOnSave(prev));
         setHasUnsavedChanges(false);
       }
 
@@ -1138,7 +1210,10 @@ function App() {
     }
   };
 
-  const handleRenameProject = async (oldName: string, rawNewName: string, renameBackup: boolean = false) => {
+  // Renames the project in the workspace, and only there. The "also rename it on the
+  // backup drive?" prompt went with the mirror in Phase 7 — a copy sitting on a card
+  // is a copy, not a linked second location the app is responsible for keeping in step.
+  const handleRenameProject = async (oldName: string, rawNewName: string) => {
     if (!workHandle) return;
     const newName = sanitizeFilename(rawNewName);
     try {
@@ -1147,20 +1222,7 @@ function App() {
       const { renameProject } = await import('./utils/exportUtils');
       // @ts-ignore
       await renameProject(workHandle, oldName, newName);
-
-      if (renameBackup && backupHandle) {
-        try {
-          setProgressMsg("Renaming Backup...");
-          // @ts-ignore
-          await renameProject(backupHandle, oldName, newName);
-          showToast(`Renamed Local & Backup to "${newName}"`, 'success');
-        } catch (e) {
-          console.error("Backup rename failed", e);
-          showToast(`Renamed Local, but Backup failed`, 'info');
-        }
-      } else {
-        showToast(`Renamed to "${newName}"`, 'success');
-      }
+      showToast(`Renamed to "${newName}"`, 'success');
 
       if (currentProjectName === oldName) {
         setCurrentProjectName(newName);
@@ -1175,7 +1237,7 @@ function App() {
   };
 
   const handleSKRefresh = async () => {
-    if (!backupHandle || !syncModalState) return;
+    if (!sdHandle || !syncModalState) return;
 
     setIsProcessing(true);
     setProgressMsg('Scanning SK folder on SD...');
@@ -1189,7 +1251,7 @@ function App() {
         projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
       }
 
-      const structureMap = await scanSKStructure(backupHandle);
+      const structureMap = await scanSKStructure(sdHandle);
       const diff = await calculateSyncDiff(projectState, structureMap);
 
       setSyncModalState(prev => prev ? { ...prev, diff } : null);
@@ -1207,21 +1269,7 @@ function App() {
   // EFFECTS
   // ==========================================
 
-  // Track Unsaved Changes
-  // Track Unsaved Changes
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-
-    if (isSystemUpdate.current) {
-      isSystemUpdate.current = false;
-      return;
-    }
-
-    setHasUnsavedChanges(true);
-  }, [state]);
+  // Dirty tracking moved into useProjectSession — see session/ProjectSession.tsx.
 
   // Load manifest (packs + presets) on mount
   useEffect(() => {
@@ -1234,46 +1282,51 @@ function App() {
       });
   }, []);
 
-  // Handle loading a preset into the app
-  const handleLoadPreset = async (entry: PresetManifestEntry) => {
-    try {
-      // 1. Fetch the descriptor JSON
-      const url = resolveAssetPath(entry.descriptorPath);
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Failed to fetch preset descriptor: HTTP ${resp.status}`);
-      const json = await resp.json();
-      const { parseProjectDescriptor, hydrateDescriptor } = await import('./utils/projectDescriptorUtils');
-      const descriptor = parseProjectDescriptor(json);
+  // Preset handling is three separable things, and only Studio does all three:
+  // `hydratePreset` (shared, in utils/presetLoader) fetches the descriptor and its
+  // audio; `adoptPresetAsProject` below writes it to the work folder and takes it
+  // over as the current project; `writeToSD` (shared) puts it on the card. Tier 2
+  // at `#/presets` calls the first and the third and never touches this file.
+  // See V4_PERVAK.md, Phase 3.
 
-      // 2. Hydrate (fetch blobs from R2)
-      const newState = await hydrateDescriptor(descriptor, undefined, (msg, pct) => {
+  /** Tier 3: make the hydrated state the live project, on disk and on screen. */
+  const adoptPresetAsProject = async (newState: AppState, baseName: string) => {
+    // Deduplicate against the projects already in the work folder
+    let finalName = baseName;
+    let counter = 1;
+    while (foundProjects.some(p => p.name === finalName)) {
+      finalName = `${baseName}_${counter++}`;
+    }
+
+    if (workHandle) {
+      setIsProcessing(true);
+      setProgressMsg(`Saving "${finalName}"…`);
+      const { saveProjectToDirectory } = await import('./utils/exportUtils');
+      await saveProjectToDirectory(newState, workHandle, (msg) => setProgressMsg(msg || ''), finalName);
+      await scanProjects(workHandle, sdHandle);
+    }
+
+    markSystemUpdate();
+    setState(newState);
+    setCurrentProjectName(finalName);
+    setHasUnsavedChanges(false);
+    setShowPresetsPanel(false);
+    setViewMode('all'); // A preset fills all six tapes — show them.
+
+    const missing = missingAssetCount(newState);
+    showToast(
+      `Preset "${finalName}" loaded${missing ? ' (some samples missing, check internet connection)' : ' successfully'}`,
+      missing ? 'warning' : 'success'
+    );
+  };
+
+  const handleLoadPreset = async (entry: PresetManifestEntry, onProgress: PresetProgress) => {
+    try {
+      const { state: newState, name } = await hydratePreset(entry, (msg, pct) => {
+        onProgress(msg, pct);
         setProgressMsg(`${msg} (${Math.round(pct)}%)`);
       });
-
-      // 3. Deduplicate project name
-      let baseName = descriptor.name || entry.name || 'Preset';
-      let finalName = baseName;
-      let counter = 1;
-      while (foundProjects.some(p => p.name === finalName)) {
-        finalName = `${baseName}_${counter++}`;
-      }
-
-      // 4. Save as a new local project (if workHandle available)
-      if (workHandle) {
-        setIsProcessing(true);
-        setProgressMsg(`Saving "${finalName}"…`);
-        const { saveProjectToDirectory } = await import('./utils/exportUtils');
-        await saveProjectToDirectory(newState, workHandle, (msg) => setProgressMsg(msg || ''), finalName);
-        await scanProjects(workHandle, backupHandle);
-      }
-
-      // 5. Load into UI
-      isSystemUpdate.current = true;
-      setState(newState);
-      setCurrentProjectName(finalName);
-      setHasUnsavedChanges(false);
-      setShowPresetsPanel(false);
-      showToast(`Preset "${finalName}" loaded${newState.loadIssues?.missingAssets?.length ? ' (some samples missing — check internet connection)' : ' successfully'}`, newState.loadIssues?.missingAssets?.length ? 'warning' : 'success');
+      await adoptPresetAsProject(newState, name);
     } catch (e: any) {
       console.error('[handleLoadPreset]', e);
       throw e; // Let PresetsPanel surface the error inline
@@ -1283,30 +1336,55 @@ function App() {
     }
   };
 
-  // Initial Load
-  useEffect(() => {
-    import('./utils/persistence').then(({ loadStateFromDB }) => {
-      loadStateFromDB().then(saved => {
-      if (saved) {
-        isSystemUpdate.current = true;
-        setState(saved);
-      } else {
-        // Fallback to localStorage if IDB is empty? 
-        const savedLS = localStorage.getItem('spotykach_state');
-        if (savedLS) {
-          try {
-            const parsed = JSON.parse(savedLS);
-            if (parsed.files && parsed.tapes) {
-              isSystemUpdate.current = true;
-              setState(parsed);
-            }
-          } catch (e) { console.error(e); }
-        }
-      }
-    });
-  });
+  /**
+   * Studio's card write. Same two calls Tier 2 makes, but aimed at the card that's
+   * already connected — no second picker when the SD handle is in hand. The current
+   * project is left alone: nothing here touches `state`.
+   */
+  const handleWritePresetToSD = async (
+    entry: PresetManifestEntry,
+    onProgress: PresetProgress,
+    destination?: FileSystemDirectoryHandle,
+  ) => {
+    try {
+      const { state: presetState, name } = await hydratePreset(entry, (msg, pct) => {
+        onProgress(msg, pct * 0.55);
+        setProgressMsg(`${msg} (${Math.round(pct)}%)`);
+      });
 
-  // Load User Library
+      await writeToSD(
+        presetState,
+        // The panel asked for the card before any of this downloaded, so `destination`
+        // is normally set; `sdHandle` stays as the fallback for callers that didn't.
+        { projectName: name, destinationHandle: destination ?? sdHandle ?? undefined },
+        (msg, pct) => {
+          const scaled = 55 + ((pct ?? 0) * 0.45);
+          onProgress(msg || 'Writing to card…', scaled);
+          if (msg) setProgressMsg(msg);
+        }
+      );
+
+      const missing = missingAssetCount(presetState);
+      showToast(
+        `"${name}" written to the SD card${missing ? `, ${missing} sample(s) missing` : ''}`,
+        missing ? 'warning' : 'success'
+      );
+      if (missing > 0) {
+        return `${missing} sample${missing === 1 ? '' : 's'} could not be downloaded, so ${missing === 1 ? 'that slot is' : 'those slots are'} empty.`;
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') console.error('[handleWritePresetToSD]', e);
+      throw e;
+    } finally {
+      // Deliberately not touching `isProcessing`: the card write is the preset
+      // panel's own business and shouldn't drop Studio's blocking overlay over it.
+      setProgressMsg('');
+    }
+  };
+
+  // The project state's own initial load moved into useProjectSession. The user
+  // library is a separate IDB store with a separate lifetime, so it stays here.
+  useEffect(() => {
     import('./utils/persistence').then(({ loadUserLibraryFromDB }) => {
       loadUserLibraryFromDB().then(saved => {
         if (saved) {
@@ -1314,7 +1392,7 @@ function App() {
         } else {
           // Fallback for old sessions that may have used localStorage only
           try {
-            const raw = localStorage.getItem('spotykach_user_library');
+            const raw = appStorage.getItem('spotykach_user_library');
             if (raw) {
               const parsed = JSON.parse(raw);
               if (parsed && parsed.files && parsed.metadata) {
@@ -1329,21 +1407,8 @@ function App() {
     });
   }, []);
 
-  // Check for persistent handles on mount
-  useEffect(() => {
-    const checkHandles = async () => {
-      try {
-        const savedWork = await getDirectoryHandle('work');
-        const savedBackup = await getDirectoryHandle('backup');
-
-        if (savedWork) {
-          setRestorableHandles({ work: savedWork, backup: savedBackup });
-        }
-      } catch (e) { console.error("Error loading handles", e); }
-    };
-    checkHandles();
-  }, []);
-
+  // Looking for stored handles on mount moved into useProjectSession; asking for
+  // their permission back stays here, because it needs a user gesture and a toast.
   const handleRestoreSession = async () => {
     if (!restorableHandles) return;
 
@@ -1385,13 +1450,57 @@ function App() {
     }
   };
 
+  /**
+   * Walk straight in when the permission is still live.
+   *
+   * The setup wizard is the right screen for someone who has to grant something —
+   * `requestPermission` needs a user gesture, so the Restore button exists to
+   * provide one. But arriving from Browse's "Import into a project", the folder was
+   * picked seconds ago and permission is *already* granted: the wizard then asked
+   * the user to re-announce a decision they had just made, and put a setup screen
+   * between them and the project they had asked for.
+   *
+   * `queryPermission` needs no gesture, so a still-granted handle can restore
+   * itself. A reload drops permission back to `prompt`, where this does nothing and
+   * the wizard behaves exactly as before.
+   */
+  const autoRestoreAttempted = useRef(false);
+  useEffect(() => {
+    if (autoRestoreAttempted.current) return;
+    // Nothing stored, or already in: either way there is no restore to do, and the
+    // wizard (or the studio) can render.
+    if (!isRestoreResolved) return;
+    if (!restorableHandles || workHandle) {
+      autoRestoreAttempted.current = true;
+      setIsAutoRestoring(false);
+      return;
+    }
+    autoRestoreAttempted.current = true;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        // @ts-ignore — permission methods are not in the TS DOM lib yet.
+        const permission = await restorableHandles.work.queryPermission({ mode: 'readwrite' });
+        if (cancelled) return;
+        if (permission === 'granted') await handleRestoreSession();
+      } catch (e) {
+        console.warn('Could not check the stored workspace permission', e);
+      } finally {
+        if (!cancelled) setIsAutoRestoring(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRestoreResolved, restorableHandles, workHandle]);
+
   // Autosave User Library (DB + Local Folder Sync)
   useEffect(() => {
     const handler = setTimeout(async () => {
       // 1. Always save to DB
       const { saveUserLibraryToDB } = await import('./utils/persistence');
       await saveUserLibraryToDB(userLibrary);
-      localStorage.setItem('spotykach_user_library', JSON.stringify(userLibrary));
+      appStorage.setItem('spotykach_user_library', JSON.stringify(userLibrary));
 
       // 2. Sync to local folder if connected
       if (workHandle) {
@@ -1635,7 +1744,7 @@ function App() {
       if (changed) {
         // Use functional update to avoid capturing stale state, 
         // though we are careful with nextFiles here.
-        isSystemUpdate.current = true; // Prevent "Unsaved Changes" toast for background hashing
+        markSystemUpdate(); // Prevent "Unsaved Changes" toast for background hashing
         setState(prev => ({ ...prev, files: { ...prev.files, ...nextFiles } }));
       }
     };
@@ -1813,7 +1922,7 @@ function App() {
     });
   };
 
-  const handleSetBackupFolder = async () => {
+  const handleSetSDFolder = async () => {
     try {
       // @ts-ignore
       const handle = await window.showDirectoryPicker({
@@ -1823,7 +1932,7 @@ function App() {
       if (!handle) return;
 
       setBackupHandle(handle);
-      saveDirectoryHandle('backup', handle).catch(console.error);
+      saveDirectoryHandle('sd', handle).catch(console.error);
       showToast(`Backup Folder Set: ${handle.name}`, 'success');
     } catch (e: any) {
       if (e.name !== 'AbortError') {
@@ -1833,14 +1942,14 @@ function App() {
   };
 
 
-  const scanProjects = async (localDir: FileSystemDirectoryHandle | null, backupDir: FileSystemDirectoryHandle | null) => {
+  const scanProjects = async (localDir: FileSystemDirectoryHandle | null, sdDir: FileSystemDirectoryHandle | null) => {
     // Lazy load utils
     // Lazy load utils
     const { scanForProjects, getActiveSKProject } = await import('./utils/exportUtils');
     const { scanDeviceChanges } = await import('./utils/importUtils');
 
     let localProjects: import('./types').ProjectSummary[] = [];
-    let backupProjects: import('./types').ProjectSummary[] = [];
+    let sdProjects: import('./types').ProjectSummary[] = [];
     let activeSK: string | null = null;
     let diff: import('./utils/importUtils').DeviceDiff | null = null;
 
@@ -1851,15 +1960,15 @@ function App() {
       } catch (e) { console.error("Local Scan Error", e); }
     }
 
-    if (backupDir) {
+    if (sdDir) {
       try {
-        console.log(`[scanProjects] Scanning Backup: ${backupDir.name}`);
-        backupProjects = await scanForProjects(backupDir);
-        activeSK = await getActiveSKProject(backupDir); // Get active project from SD
+        console.log(`[scanProjects] Scanning Backup: ${sdDir.name}`);
+        sdProjects = await scanForProjects(sdDir);
+        activeSK = await getActiveSKProject(sdDir); // Get active project from SD
 
         // Scan for Device Changes (SK Folder)
         try {
-          const skHandle = await backupDir.getDirectoryHandle('SK');
+          const skHandle = await sdDir.getDirectoryHandle('SK');
           diff = await scanDeviceChanges(skHandle);
           if (diff) {
             console.log("[DeviceDiff] Hardware state loaded:", diff);
@@ -1869,7 +1978,7 @@ function App() {
       } catch (e) { console.error("Backup Scan Error", e); }
     }
 
-    console.log(`[scanProjects] Local: ${localProjects.length}, Backup: ${backupProjects.length}, ActiveSK: ${activeSK}`);
+    console.log(`[scanProjects] Local: ${localProjects.length}, Backup: ${sdProjects.length}, ActiveSK: ${activeSK}`);
     setActiveSKProject(activeSK); // Update state
     setDeviceDiff(diff); // Update diff state
 
@@ -1880,7 +1989,7 @@ function App() {
       projectMap.set(p.name, { ...p, local: p });
     });
 
-    backupProjects.forEach(p => {
+    sdProjects.forEach(p => {
       const existing = projectMap.get(p.name);
       if (existing) {
         projectMap.set(p.name, { ...existing, backup: p });
@@ -1920,15 +2029,15 @@ function App() {
   const handleSmartScan = async (newWorkHandle?: FileSystemDirectoryHandle) => {
     // Use passed handle or fall back to state (state might be stale during setup)
     const effectiveWork = newWorkHandle || workHandle;
-    await scanProjects(effectiveWork, backupHandle);
+    await scanProjects(effectiveWork, sdHandle);
   };
 
   // Effect to rescan when handles change
   useEffect(() => {
-    if (workHandle || backupHandle) {
-      scanProjects(workHandle, backupHandle);
+    if (workHandle || sdHandle) {
+      scanProjects(workHandle, sdHandle);
     }
-  }, [workHandle, backupHandle]);
+  }, [workHandle, sdHandle]);
 
 
 
@@ -1948,6 +2057,7 @@ function App() {
       if (loadedState) {
         setState(loadedState);
         setImportAnalysis(null);
+        setViewMode('all'); // A restore replaces the whole project, so it lands like an open.
         showToast("Project Restored Successfully", 'success');
       } else {
         showToast("Failed to load project from backup.", 'error');
@@ -2097,29 +2207,44 @@ function App() {
       isParked: true
     };
 
-    // ALSO record this action in the source file's history
-    const sourceVersionId = generateId();
-    const sourceVersion: AudioVersion = {
-      id: sourceVersionId,
-      timestamp: Date.now(),
-      description: 'Saved to Pool',
-      blob: newBlob,
-      duration
-    };
+    /*
+     * Note the copy in the source's history without changing the source.
+     *
+     * This used to push `newBlob` - the *copy*, trim and fades baked in - onto the
+     * open file as its new current version, so asking for a copy silently applied the
+     * pending edit to the file you were still editing. The note carries the source's
+     * own current audio, so the history says what happened and the file is untouched.
+     */
+    setState(prev => {
+      const source = prev.files[activeFileId];
+      if (!source) return prev;
 
-    setState(prev => ({
-      ...prev,
-      files: {
-        ...prev.files,
-        [fileId]: newFile,
-        // Update active file history
-        [activeFileId]: {
-          ...prev.files[activeFileId],
-          versions: [sourceVersion, ...prev.files[activeFileId].versions],
-          currentVersionId: sourceVersionId
+      const sourceCurrent = source.versions.find(v => v.id === source.currentVersionId);
+      const sourceNote: AudioVersion = {
+        id: generateId(),
+        timestamp: Date.now(),
+        description: 'Copied to pool',
+        blob: sourceCurrent?.blob ?? null,
+        duration: sourceCurrent?.duration ?? 0
+      };
+
+      return {
+        ...prev,
+        files: {
+          ...prev.files,
+          [fileId]: newFile,
+          [activeFileId]: {
+            ...source,
+            // Appended, not prepended: `versions[0]` is the original by contract
+            // (see utils/versionHistory.ts), and the sidebar sorts by timestamp
+            // anyway. Prepending here used to make the note the file's "original",
+            // which is what the next save would have persisted.
+            versions: [...source.versions, sourceNote],
+            // currentVersionId stays where it was: nothing about this file changed.
+          }
         }
-      }
-    }));
+      };
+    });
     console.log(`[handleSaveAsCopy] Setting hasUnsavedChanges=true`);
     setHasUnsavedChanges(true);
     showToast("Saved copy to pool", 'success');
@@ -2231,7 +2356,8 @@ function App() {
   };
 
   // Save Project Handler
-  const handleSaveProject = async () => {
+  /** Resolves true only when the project actually reached disk — see checkUnsavedChanges. */
+  const handleSaveProject = async (): Promise<boolean> => {
     setIsProcessing(true);
     setProgressMsg("Checking files...");
     try {
@@ -2240,7 +2366,7 @@ function App() {
 
       if (missing.length > 0) {
         setMissingFilesWarning(missing);
-        return; // Pause save, wait for user resolution
+        return false; // Pause save, wait for user resolution
       }
     } catch (e) {
       console.error("Verification failed", e);
@@ -2249,7 +2375,7 @@ function App() {
       setProgressMsg('');
     }
 
-    await executeSaveProject();
+    return await executeSaveProject();
   };
 
   const handleSmartRelocate = async () => {
@@ -2307,7 +2433,7 @@ function App() {
       });
 
       if (resolvedCount > 0) {
-        isSystemUpdate.current = true;
+        markSystemUpdate();
         setState(prev => ({
           ...prev,
           files: nextFiles
@@ -2435,7 +2561,7 @@ function App() {
   };
 
   const handleRecoverProjectAssetFromSD = async (asset: MissingAsset) => {
-    if (!workHandle || !backupHandle || !currentProjectName) return;
+    if (!workHandle || !sdHandle || !currentProjectName) return;
 
     try {
       const projectsHandle = await workHandle.getDirectoryHandle('Projects', { create: true });
@@ -2445,12 +2571,12 @@ function App() {
       // Resolve backup dir again (cleanest approach for standalone function)
       let backupProjectDir: FileSystemDirectoryHandle | null = null;
       try {
-        const wb = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+        const wb = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
         const ps = await wb.getDirectoryHandle('Projects', { create: false });
         backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
       } catch {
         try {
-          const ps = await backupHandle.getDirectoryHandle('Projects', { create: false });
+          const ps = await sdHandle.getDirectoryHandle('Projects', { create: false });
           backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
         } catch { /* ignore */ }
       }
@@ -2483,7 +2609,7 @@ function App() {
   };
 
   const handleRecoverAllMissingAssetsFromSD = async () => {
-    if (!missingFilesWarning || !workHandle || !backupHandle || !currentProjectName) return;
+    if (!missingFilesWarning || !workHandle || !sdHandle || !currentProjectName) return;
 
     setIsProcessing(true);
     setProgressMsg("Restoring files from SD backup...");
@@ -2492,12 +2618,12 @@ function App() {
     try {
       let backupProjectDir: FileSystemDirectoryHandle | null = null;
       try {
-        const wb = await backupHandle.getDirectoryHandle('WAV_Builder', { create: false });
+        const wb = await sdHandle.getDirectoryHandle('WAV_Builder', { create: false });
         const ps = await wb.getDirectoryHandle('Projects', { create: false });
         backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
       } catch {
         try {
-          const ps = await backupHandle.getDirectoryHandle('Projects', { create: false });
+          const ps = await sdHandle.getDirectoryHandle('Projects', { create: false });
           backupProjectDir = await ps.getDirectoryHandle(currentProjectName, { create: false });
         } catch { /* ignore */ }
       }
@@ -2623,7 +2749,8 @@ function App() {
     }
   }, [userLibrary.files, missingLibraryFiles]);
 
-  const executeSaveProject = async () => {
+  /** Resolves true only when the project actually reached disk — see checkUnsavedChanges. */
+  const executeSaveProject = async (): Promise<boolean> => {
     // 1. If we have an active project handle (or Work Handle + Name), save
     if (workHandle && currentProjectName) {
       setIsProcessing(true);
@@ -2634,23 +2761,30 @@ function App() {
         // @ts-ignore
         await saveProjectToDirectory(state, workHandle, (msg) => setProgressMsg(msg || ''), currentProjectName);
 
+        // The save collapsed history to the two-version rule on its way to disk;
+        // collapse the live state to match, or memory and the IDB autosave keep the
+        // versions the disk no longer has. Applied to `prev` rather than to the
+        // returned state so an edit made mid-save isn't rolled back. Appendix E.2.
+        setState(prev => collapseVersionHistoryOnSave(prev));
+
         showToast("Project Saved Successfully", 'success');
         setHasUnsavedChanges(false);
+        return true;
       } catch (e: any) {
         console.error(e);
         showToast("Save Failed: " + e.message, 'error');
+        return false;
       } finally {
         setIsProcessing(false);
         setProgressMsg('');
       }
-      return;
     }
 
     // 2. If no active project handle, but we have a Work Folder -> Prompt to Create (Save As)
     if (workHandle) {
       const name = prompt("Enter Project Name to Save:");
       if (name) await handleSaveProjectAs(name);
-      return;
+      return false;
     }
 
     // 3. Fallback (Browser Mode) -> Prompt to Export
@@ -2660,6 +2794,7 @@ function App() {
         await exportSaveState(state, false, log);
       });
     }
+    return false;
   };
 
 
@@ -3188,7 +3323,7 @@ function App() {
     } else {
       // Empty slot -> Check preference 
       setTargetSlotForUpload(id);
-      const pref = localStorage.getItem('spotykach_emptySlotPreferredBrowser');
+      const pref = appStorage.getItem('spotykach_emptySlotPreferredBrowser');
       if (pref === 'os') {
         singleFileInputRef.current?.click();
       } else if (pref === 'sample-browser') {
@@ -3823,7 +3958,7 @@ function App() {
       // 3b. Open Upload
       setTargetSlotForUpload(slotId);
 
-      const pref = localStorage.getItem('spotykach_emptySlotPreferredBrowser');
+      const pref = appStorage.getItem('spotykach_emptySlotPreferredBrowser');
       if (pref === 'os') {
         singleFileInputRef.current?.click();
       } else if (pref === 'sample-browser') {
@@ -4133,16 +4268,16 @@ function App() {
   };
 
   const handleResetEmptySlotBrowserPreference = () => {
-    localStorage.removeItem('spotykach_emptySlotPreferredBrowser');
+    appStorage.removeItem('spotykach_emptySlotPreferredBrowser');
     showToast('Empty slot browser preference reset', 'success');
   };
   const handleOpenSyncModal = async (mode: 'push' | 'import' = 'push') => {
-    if (!backupHandle) return;
+    if (!sdHandle) return;
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
     try {
       const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-      const structureMap = await scanSKStructure(backupHandle);
+      const structureMap = await scanSKStructure(sdHandle);
       const diff = await calculateSyncDiff(state, structureMap);
       setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: mode });
     } catch (e: any) {
@@ -4155,9 +4290,18 @@ function App() {
 
   const missingFileIds = useMemo(() => new Set((missingFilesWarning || []).map(a => a.fileId)), [missingFilesWarning]);
 
+  const showSetupWizard = isWelcomeActive && !workHandle && !isAutoRestoring;
+
   return (
     <ErrorBoundary>
-      {isWelcomeActive && !workHandle && (
+      {/* Deciding whether a restore is possible. Neither screen is correct yet. */}
+      {isWelcomeActive && !workHandle && isAutoRestoring && (
+        <div className="h-screen w-full flex items-center justify-center bg-synthux-main text-gray-500">
+          <Loader size={20} className="animate-spin" />
+        </div>
+      )}
+
+      {showSetupWizard && (
         <SetupWizard
           onComplete={async (work, backup, projectName) => {
             setWorkHandle(work);
@@ -4167,7 +4311,7 @@ function App() {
 
             // Save handles
             saveDirectoryHandle('work', work);
-            if (backup) saveDirectoryHandle('backup', backup);
+            if (backup) saveDirectoryHandle('sd', backup);
 
             // Auto-scan projects
             await handleSmartScan(work);
@@ -4186,6 +4330,17 @@ function App() {
           restorableHandles={restorableHandles}
           onRestore={handleRestoreSession}
         />
+      )}
+
+      {/* The wizard covers everything, so the way back to the hub has to sit above it. */}
+      {showSetupWizard && onExitToHub && (
+        <button
+          onClick={onExitToHub}
+          className="fixed top-4 left-4 z-[110] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-black/50 backdrop-blur text-[11px] font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:bg-white/10 transition-all"
+        >
+          <ChevronLeft size={14} strokeWidth={2.5} />
+          Hub
+        </button>
       )}
 
       {(!isWelcomeActive || workHandle) && (
@@ -4217,6 +4372,17 @@ function App() {
 
               {/* LEFT — Logo + Context (Now just Logo + Name) */}
               <div className="flex items-center gap-3 min-w-0 shrink-0">
+                {onExitToHub && (
+                  <button
+                    // Leaving Studio unmounts it, so this is a real exit — it has to
+                    // ask the same question every other project-losing action asks.
+                    onClick={() => checkUnsavedChanges(onExitToHub)}
+                    title="Back to the hub"
+                    className="flex items-center px-1.5 py-1.5 rounded-md text-gray-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"
+                  >
+                    <ChevronLeft size={16} strokeWidth={2.5} />
+                  </button>
+                )}
                 <img src={logoImg} alt="Spotykach Logo" className="h-8 w-auto object-contain shrink-0" />
                 <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent hidden sm:block font-header leading-none">
                   Spotykach WAV.builder
@@ -4276,7 +4442,7 @@ function App() {
                 <div className="h-5 w-px bg-gray-800 mx-0.5" />
 
                 {/* Combined SD Action — only when SD connected */}
-                {backupHandle && (
+                {sdHandle && (
                   <button
                     onClick={() => handleOpenSyncModal('push')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
@@ -4313,14 +4479,22 @@ function App() {
                       icon: <FilePlus size={14} />,
                       onClick: async () => {
                         if (!workHandle) { handleSetWorkFolder(); return; }
-                        setProjectNameModal({
-                          isOpen: true,
-                          title: 'New Fresh Project',
-                          confirmLabel: 'Create Project',
-                          initialValue: 'New Project',
-                          onConfirm: async (name) => {
-                            await handleCreateEmptyProject(name);
-                          }
+                        // A fresh project replaces the open one, so it asks first — S1-6.
+                        // Before the name, not after: nothing is typed for nothing.
+                        checkUnsavedChanges(() => {
+                          setProjectNameModal({
+                            isOpen: true,
+                            title: 'New Fresh Project',
+                            confirmLabel: 'Create Project',
+                            initialValue: 'New Project',
+                            onConfirm: async (name) => {
+                              await handleCreateEmptyProject(name);
+                            }
+                          });
+                        }, {
+                          offerSave: true,
+                          consequence: `A new project replaces "${currentProjectName || 'the open project'}" in the studio.`,
+                          proceedLabel: 'New project without saving',
                         });
                       }
                     },
@@ -4352,7 +4526,8 @@ function App() {
                     {
                       label: 'Presets',
                       icon: <Package size={14} />,
-                      onClick: () => setShowPresetsPanel(true)
+                      // The whole list, so no card is singled out.
+                      onClick: () => { setFocusPresetId(null); setShowPresetsPanel(true); }
                     },
                     { type: 'divider' },
                     {
@@ -4363,6 +4538,16 @@ function App() {
                       label: 'Export Portable & Presets',
                       icon: <Download size={14} />,
                       onClick: () => setShowExport(true)
+                    },
+                    {
+                      // Cleanup's own entry point. It used to hang off the editor's
+                      // history sidebar, where a project-wide destructive action sat
+                      // inside a single file's panel (UX_Overhaul.md, "Other UX
+                      // thoughts"). Phase 6 moved it out here beside the other
+                      // project-level actions.
+                      label: 'Clean Up Project',
+                      icon: <Trash2 size={14} />,
+                      onClick: handleCleanupProject
                     }
                   ]}
                 />
@@ -4568,6 +4753,15 @@ function App() {
                           minHeight="150px"
                         />
                       </div>
+
+                      {/* Global Player Bar - All Tapes keeps its own inside the grid card.
+                          Here it rides the bottom of the scroll column, which pins it to the
+                          foot of the window without having to know how wide the browser panel
+                          has been dragged. */}
+                      <GlobalPlayerBar
+                        files={state.files}
+                        className="sticky bottom-4 md:bottom-6 z-[60] mt-8"
+                      />
                     </>
                   ) : (
                     <div className="bg-black/40 rounded-3xl p-4 border border-white/5 backdrop-blur-md">
@@ -4693,7 +4887,6 @@ function App() {
                           onClose={() => {
                             setActiveSlotId(null);
                           }}
-                          onCleanupProject={handleCleanupProject}
                           onRenameFile={handleRenameFile}
                           onDirtyStateChange={(dirty) => {
                             setIsEditorDirty(dirty);
@@ -4733,7 +4926,7 @@ function App() {
               onChoice={(choice, remember) => {
                 setShowBrowserChoiceModal(false);
                 if (remember) {
-                  localStorage.setItem('spotykach_emptySlotPreferredBrowser', choice);
+                  appStorage.setItem('spotykach_emptySlotPreferredBrowser', choice);
                 }
                 if (choice === 'os') {
                   singleFileInputRef.current?.click();
@@ -4769,7 +4962,23 @@ function App() {
               visualFilters={visualFilters}
               onUpdateVisualFilters={setVisualFilters}
               onSaveVisualSettings={handleSaveVisualSettings}
+              workHandle={workHandle}
+              sdHandle={sdHandle}
+              onChangeWorkFolder={handleSetWorkFolder}
+              onChangeSDFolder={handleSetSDFolder}
+              onOpenWorkspaceBackup={() => { setShowSettings(false); setShowWorkspaceBackup(true); }}
             />
+            {showWorkspaceBackup && (
+              <Suspense fallback={null}>
+                <WorkspaceBackupModal
+                  isOpen={showWorkspaceBackup}
+                  onClose={() => setShowWorkspaceBackup(false)}
+                  workHandle={workHandle}
+                  sdHandle={sdHandle}
+                  userLibrary={userLibrary}
+                />
+              </Suspense>
+            )}
             {showExport && (
               <Suspense fallback={null}>
                 <ExportModal
@@ -4858,9 +5067,15 @@ function App() {
             <Suspense fallback={null}>
               <PresetsPanel
                 isOpen={showPresetsPanel}
-                onClose={() => setShowPresetsPanel(false)}
+                onClose={() => { setShowPresetsPanel(false); setFocusPresetId(null); }}
                 presets={presets}
+                focusPresetId={focusPresetId}
                 onLoadPreset={handleLoadPreset}
+                onWriteToSD={handleWritePresetToSD}
+                knownCard={sdHandle}
+                writeHint={sdHandle
+                  ? 'Confirms the card, then writes SK/ · The open project is untouched'
+                  : 'Asks for your card, then writes SK/ · The open project is untouched'}
               />
             </Suspense>
 
@@ -4874,43 +5089,17 @@ function App() {
                 }}
                 onSaveProject={handleSaveProjectAs}
                 onCreateEmptyProject={(name) => {
-                  checkUnsavedChanges(() => handleCreateEmptyProject(name));
+                  checkUnsavedChanges(() => handleCreateEmptyProject(name), {
+                    offerSave: true,
+                    consequence: `"${name}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+                    proceedLabel: 'Create without saving',
+                  });
                 }}
                 onImportBackupProject={handleImportBackupProject}
                 currentProjectName={currentProjectName}
                 hasUnsavedChanges={hasUnsavedChanges}
                 onCleanupProject={handleCleanupProject}
                 onDeleteProject={handleDeleteProject}
-                onDeleteBackupProject={backupHandle ? async (name) => {
-                  setConfirmAction({
-                    title: 'Delete SD Backup?',
-                    message: (
-                      <span>
-                        This will permanently delete <strong>{name}</strong> from the SD card backup.<br /><br />
-                        The local copy in your Work Folder will <em>not</em> be affected.
-                      </span>
-                    ),
-                    isDestructive: true,
-                    confirmLabel: 'Delete from SD',
-                    onConfirm: async () => {
-                      try {
-                        setIsProcessing(true);
-                        setProgressMsg(`Deleting SD backup: ${name}...`);
-                        const projectsDir = await backupHandle!
-                          .getDirectoryHandle('WAV_Builder', { create: false })
-                          .then(d => d.getDirectoryHandle('Projects', { create: false }));
-                        await projectsDir.removeEntry(name, { recursive: true });
-                        showToast(`SD backup "${name}" deleted`, 'success');
-                        await scanProjects(workHandle, backupHandle);
-                      } catch (e: any) {
-                        showToast('Delete failed: ' + e.message, 'error');
-                      } finally {
-                        setIsProcessing(false);
-                        setProgressMsg('');
-                      }
-                    },
-                  });
-                } : undefined}
                 onRenameProject={handleRenameProject}
                 onDuplicateProject={handleDuplicateProject}
                 onScan={async () => {
@@ -4918,7 +5107,7 @@ function App() {
                   setIsProcessing(true);
                   try {
                     const startTime = Date.now();
-                    await scanProjects(workHandle, backupHandle);
+                    await scanProjects(workHandle, sdHandle);
 
                     // Ensure spinner shows for at least 500ms
                     const elapsed = Date.now() - startTime;
@@ -4938,14 +5127,13 @@ function App() {
                 onOpenHelp={() => { setAboutHelpTab('help'); setShowAboutHelp(true); }}
                 deviceDiff={deviceDiff || undefined}
                 workHandle={workHandle}
-                backupHandle={backupHandle}
+                sdHandle={sdHandle}
                 onChangeWorkFolder={handleSetWorkFolder}
-                onChangeBackupFolder={handleSetBackupFolder}
-                onSyncProject={(projectName) => setSyncProjectTarget(projectName)}
+                onChangeSDFolder={handleSetSDFolder}
                 onImportZip={handleImportZip}
                 onExportZip={handleExportZip}
                 onBuildProject={async (projectName) => {
-                  if (!workHandle || !backupHandle) {
+                  if (!workHandle || !sdHandle) {
                     showToast("Both Project Folder and SD Card must be connected.", 'error');
                     return;
                   }
@@ -4962,7 +5150,7 @@ function App() {
 
                     // 2. Scan SD Structure
                     setProgressMsg('Scanning SD Card...');
-                    const structureMap = await scanSKStructure(backupHandle);
+                    const structureMap = await scanSKStructure(sdHandle);
 
                     // 3. Calculate Diff
                     setProgressMsg('Calculating Differences...');
@@ -4979,7 +5167,7 @@ function App() {
                   }
                 }}
                 onImportSK={async () => {
-                  if (!backupHandle) {
+                  if (!sdHandle) {
                     showToast("SD card not connected.", 'error');
                     return;
                   }
@@ -4987,7 +5175,7 @@ function App() {
                   setProgressMsg('Scanning SK folder on SD...');
                   try {
                     const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-                    const structureMap = await scanSKStructure(backupHandle);
+                    const structureMap = await scanSKStructure(sdHandle);
                     const diff = await calculateSyncDiff(state, structureMap);
                     setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                   } catch (e: any) {
@@ -4998,67 +5186,9 @@ function App() {
                     setProgressMsg('');
                   }
                 }}
-                onSyncUserLibraryToSD={() => setShowLibrarySyncModal(true)}
                 activeSKProject={activeSKProject || undefined}
               />
             </Suspense>
-
-            {syncProjectTarget && workHandle && backupHandle && (
-              <ProjectSyncModal
-                projectName={syncProjectTarget}
-                localState={state}
-                backupHandle={backupHandle}
-                onChangeSDCard={handleSetBackupFolder}
-                onClose={() => setSyncProjectTarget(null)}
-                onApply={async (newState) => {
-                  if (!workHandle || !backupHandle || !syncProjectTarget) return;
-                  setIsProcessing(true);
-                  setProgressMsg('Saving sync changes locally...');
-                  try {
-                    // Stamp a shared saved-at timestamp so both copies have the same
-                    // metadata.exportDate — this prevents scanProjects from
-                    // marking the project as "modified" right after a sync.
-                    const savedAt = new Date().toISOString();
-                    const stampedState: AppState = {
-                      ...newState,
-                      metadata: {
-                        ...newState.metadata,
-                        exportDate: savedAt,
-                        appName: newState.metadata?.appName ?? 'WAV Builder',
-                        version: newState.metadata?.version ?? '1.0',
-                      },
-                    };
-
-                    const { saveProjectToDirectory } = await import('./utils/exportUtils');
-                    // Local: Work/Projects/{name}/
-                    await saveProjectToDirectory(stampedState, workHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
-
-                    // Backup: SD/WAV_Builder/ → Projects/{name}/
-                    setProgressMsg('Saving sync changes to SD backup...');
-                    const wavBuilderHandle = await backupHandle.getDirectoryHandle('WAV_Builder', { create: true });
-                    await saveProjectToDirectory(stampedState, wavBuilderHandle, (msg) => setProgressMsg(msg || ''), syncProjectTarget);
-
-                    // If this is the active project, update in-memory state without
-                    // triggering the hasUnsavedChanges watcher.
-                    if (currentProjectName === syncProjectTarget) {
-                      isSystemUpdate.current = true;
-                      setState(stampedState);
-                      setHasUnsavedChanges(false);
-                    }
-
-                    showToast(`${syncProjectTarget} synced successfully`, 'success');
-                    setSyncProjectTarget(null);
-                    await scanProjects(workHandle, backupHandle);
-                  } catch (e: any) {
-                    console.error(e);
-                    showToast('Sync failed: ' + e.message, 'error');
-                  } finally {
-                    setIsProcessing(false);
-                    setProgressMsg('');
-                  }
-                }}
-              />
-            )}
 
             {syncModalState?.diff && (
               <ExportPreviewModal
@@ -5066,7 +5196,7 @@ function App() {
                 projectName={syncModalState?.projectName || ''}
                 diff={syncModalState.diff}
                 defaultMode={syncModalState.defaultMode ?? 'push'}
-                onChangeSDCard={handleSetBackupFolder}
+                onChangeSDCard={handleSetSDFolder}
                 onRefresh={handleSKRefresh}
                 isRefreshing={isProcessing}
                 onClose={() => setSyncModalState(null)}
@@ -5175,14 +5305,14 @@ function App() {
                         // Commit state change early so export reflects the new slots if needed
                         // Though exportSDStructure uses projectState (shallow clone of current state), 
                         // we'll update it here to be sure.
-                        isSystemUpdate.current = true;
+                        markSystemUpdate();
                         setState(newState);
                       }
 
                       // ─── PHASE B: EXPORT / BUILD (Write to SD) ───
                       const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
                       if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
-                        if (!backupHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
+                        if (!sdHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
                         
                         const { exportSDStructure } = await import('./utils/exportUtils');
                         await exportSDStructure(newState, { // Use newState which includes pooled files
@@ -5191,8 +5321,8 @@ function App() {
                           smartSync: options.skMode === 'overwrite',
                           skMode: options.skMode,
                           userLibrary: userLibrary,
-                          backupSKToProject: options.backupSKToProject,
-                          destinationHandle: backupHandle,
+                          mirrorProjectToSD: getDurabilityPrefs().mirrorProjectsToSD,
+                          destinationHandle: sdHandle,
                           workHandle: workHandle,
                           projectName: projectName,
                           syncDecisions: finalDecisions,
@@ -5203,10 +5333,10 @@ function App() {
                       }
 
                       showToast("Hardware Sync Complete", "success");
-                      scanProjects(workHandle, backupHandle);
-                      // ── Background SK Backup (non-blocking) ──
-                      if (workHandle && backupHandle && projectName) {
-                        createSKBackup(projectName, workHandle, backupHandle)
+                      scanProjects(workHandle, sdHandle);
+                      // ── Background SK snapshot (non-blocking, opt-in per build) ──
+                      if (options.skSnapshot && workHandle && sdHandle && projectName) {
+                        createSKBackup(projectName, workHandle, sdHandle)
                           .then(() => {
                             if (currentProjectName === projectName) {
                               scanSKBackups(projectName, workHandle!);
@@ -5265,12 +5395,22 @@ function App() {
                   projects={foundProjects}
                   currentFiles={state.files}
                   workHandle={workHandle}
-                  mode={targetSlotForUpload !== null ? "slot-selection" : "global"}
+                  mode="project"
+                  selectionMode={targetSlotForUpload !== null ? "slot-selection" : "global"}
                   onOpenLibraryManager={handleOpenLibraryManager}
                   currentProjectName={currentProjectName}
                   onImportToPool={(files) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), 'pool')}
                   onImportToTape={(files, color) => handleBulkSampleImport(files.map(f => ({ file: f.file, name: f.file.name })), color)}
                   onRemoteBulkImport={(samples, target) => handleBulkSampleImport(samples, target)}
+                  // The presets modal renders under this window (z-50 against the
+                  // browser's z-[70]), so the browser gets out of the way rather than
+                  // opening a panel nobody can see.
+                  onOpenPreset={(preset) => {
+                    setShowSampleBrowser(false);
+                    setTargetSlotForUpload(null);
+                    setFocusPresetId(preset.id);
+                    setShowPresetsPanel(true);
+                  }}
                   forceStop={showEditor}
                 />
               </Suspense>
@@ -5320,7 +5460,11 @@ function App() {
                   mixBlendMode: 'overlay',
                 }}
               >
-                <source src="/vid/wavbuilderfullscreen_1.mp4" type="video/mp4" />
+                {/* S1-14: every other asset goes through resolveAssetPath, including the
+                    --master-texture-image line in the same feature. This one did not, so on
+                    Pages — where the app is served under a base path — it resolved off the
+                    site root and 404d, and texture 8 was dead there and only there. */}
+                <source src={resolveAssetPath("/vid/wavbuilderfullscreen_1.mp4")} type="video/mp4" />
               </video>
             )}
           </div>
@@ -5330,7 +5474,7 @@ function App() {
         <ConfigModal
           isOpen={showConfigModal}
           onClose={() => setShowConfigModal(false)}
-          config={state.projectConfig || { mid_ch_a: 1, mid_ch_b: 2, mid_ps_a: false, mid_ps_b: false, pre_load: true }}
+          config={state.projectConfig || { ...DEFAULT_PROJECT_CONFIG }}
           onChange={(config) => {
             setState(prev => ({ ...prev, projectConfig: config }));
             setHasUnsavedChanges(true);
@@ -5505,6 +5649,8 @@ function App() {
             isOpen={true}
             onClose={() => setConfirmAction(null)}
             onConfirm={confirmAction.onConfirm}
+            onDiscard={confirmAction.onDiscard}
+            discardLabel={confirmAction.discardLabel}
             title={confirmAction.title}
             message={confirmAction.message}
             isDestructive={confirmAction.isDestructive}
@@ -5525,6 +5671,9 @@ function App() {
         skBackups={skBackups}
         onDeleteSKBackup={handleDeleteSKBackup}
         skBackupLimit={SK_BACKUP_LIMIT}
+        // Read at render rather than held in state: opening the modal is a render, so
+        // a toggle flipped in Settings beforehand is always the one shown here.
+        collapseHistoryOnSave={getDurabilityPref('collapseHistoryOnSave')}
       />
 
       <Toast
@@ -5569,7 +5718,7 @@ function App() {
               }]
             });
             const file = await handle.getFile();
-            isSystemUpdate.current = true;
+            markSystemUpdate();
             setState((prev: AppState) => {
               const next = { ...prev, files: { ...prev.files } };
               const fileRecord = next.files[asset.fileId];
@@ -5625,8 +5774,8 @@ function App() {
           isOpen={showLibrarySyncModal}
           onClose={() => setShowLibrarySyncModal(false)}
           userLibrary={userLibrary}
-          backupHandle={backupHandle}
-          onSetBackupFolder={handleSetBackupFolder}
+          sdHandle={sdHandle}
+          onSetBackupFolder={handleSetSDFolder}
           onOpenProjectManager={() => {
             setShowLibrarySyncModal(false);
             setShowLibraryManager(false);

@@ -1,5 +1,14 @@
 [
   {
+    "id": "400",
+    "title": "v4 \"Pervak\" - five doors",
+    "date": "2026-08-19",
+    "file": "4.0.0-pervak.md",
+    "image": "images/WAVbuilder_SampleBrowser_geminimockup.jpg",
+    "pinned": true,
+    "category": "Major Update"
+  },
+  {
     "id": "373",
     "title": "Documentation Hub & Tab Reorganization (v3.7.3)",
     "date": "2026-06-30",
@@ -54,7 +63,6 @@
     "date": "2026-04-28",
     "file": "hainbach-pack.md",
     "image": "images/hainbach-pack.jpg",
-    "pinned": true,
     "category": "Sample Pack & Preset"
   },
   {

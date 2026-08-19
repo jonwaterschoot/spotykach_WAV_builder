@@ -1496,7 +1496,7 @@ export const LibraryManager = ({
                                                     onClick={toggleSelectAllFiltered}
                                                     className="text-[10px] font-bold uppercase tracking-wider text-synthux-orange hover:underline"
                                                 >
-                                                    {filteredLibraryFiles.length > 0 && filteredLibraryFiles.every(file => selectedLibraryIds.has(file.id)) ? 'Unselect All' : 'Select All'}
+                                                    {filteredLibraryFiles.length > 0 && filteredLibraryFiles.every(file => selectedLibraryIds.has(file.id)) ? 'Deselect All' : 'Select All'}
                                                 </button>
                                                 <div className="text-[10px] text-gray-500 font-mono">{filteredLibraryFiles.length} shown</div>
                                             </div>

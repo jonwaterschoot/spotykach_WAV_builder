@@ -73,13 +73,46 @@ export interface Tape {
     notes?: string;
 }
 
+/** One raw `config.txt` key/value pair this build has no field for. */
+export interface UnknownConfigSetting {
+    key: string;
+    value: string;
+}
+
 export interface ProjectConfig {
     mid_ch_a: number; // 1-16
     mid_ch_b: number; // 1-16
     mid_ps_a: boolean; // Start/stop deck A from MIDI
     mid_ps_b: boolean; // Start/stop deck B from MIDI
     pre_load: boolean; // Enable/disable pre-loading
+    slc_mn_a: boolean; // Disable polyphony in Slice mode, deck A
+    slc_mn_b: boolean; // Disable polyphony in Slice mode, deck B
+    /**
+     * Pairs read from a `config.txt` that this build doesn't recognise — newer
+     * firmware settings, most likely. Carried through untouched and written back
+     * after the known keys, so a round-trip through the app can't silently strip
+     * settings it was never taught about. Absent when there were none.
+     */
+    unknown?: UnknownConfigSetting[];
 }
+
+/**
+ * The device's own defaults, per the manual's config.txt table.
+ *
+ * The single definition: everywhere that used to spell these out — the initial
+ * state, two backward-compatibility fills in `exportUtils`, the parser's starting
+ * point, Config mode — spreads this instead, so adding the next firmware setting
+ * is one line here rather than a hunt through six files.
+ */
+export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
+    mid_ch_a: 1,
+    mid_ch_b: 2,
+    mid_ps_a: false,
+    mid_ps_b: false,
+    pre_load: true,
+    slc_mn_a: false,
+    slc_mn_b: false,
+};
 
 // Normalized State
 export interface AppState {
@@ -140,5 +173,10 @@ export interface ExportOptions {
     configDecision: SKPrimaryDecision;
     includeConfig: boolean;
     forceOverwrite: boolean;
-    backupSKToProject: boolean;
+    /**
+     * Per-build opt-in: snapshot the card's SK folder into the project folder
+     * (`_sk_backups/<timestamp>/`). Seeded from the saved durability preference,
+     * which defaults off. Replaces `backupSKToProject`, which nothing ever read.
+     */
+    skSnapshot: boolean;
 }

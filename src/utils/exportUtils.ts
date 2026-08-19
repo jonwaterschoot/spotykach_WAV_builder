@@ -1,7 +1,8 @@
 import type JSZip from 'jszip';
-import { TAPE_COLORS } from '../types';
+import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from '../types';
 import type { AppState, ProjectConfig } from '../types';
 import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
+import { collapseVersionHistoryOnSave } from './versionHistory';
 
 // ==========================================
 // SHARED HELPERS
@@ -17,7 +18,12 @@ export type SlotSyncDecision = 'export' | 'skip' | 'delete' | 'keep_local' | 'us
 
 export interface ExportSDOptions {
     skMode: 'overwrite' | 'clean';
-    backupSKToProject?: boolean;
+    /**
+     * Copy the project source (project.json + Assets) onto the card alongside the
+     * build. Off unless explicitly enabled — the card is a build target, not a
+     * backup. Replaces `backupSKToProject`, which was declared here but never read.
+     */
+    mirrorProjectToSD?: boolean;
     workHandle?: FileSystemDirectoryHandle | null;
     projectName?: string;
     includeProject?: boolean;
@@ -32,6 +38,18 @@ export interface ExportSDOptions {
     onConvert?: (blob: Blob, metadata?: import('../types').WavMetadata) => Promise<Blob>;
 }
 
+/**
+ * The keys this build understands. Also the filter that decides what counts as an
+ * *unknown* pair on the way in — matched case-insensitively by prefix, because the
+ * format pads every key to 8 characters.
+ */
+export const KNOWN_CONFIG_KEYS = [
+    'MID_CH_A', 'MID_CH_B', 'MID_PS_A', 'MID_PS_B', 'PRE_LOAD', 'SLC_MN_A', 'SLC_MN_B',
+] as const;
+
+const isKnownConfigKey = (key: string): boolean =>
+    KNOWN_CONFIG_KEYS.some(known => key.trim().toUpperCase().startsWith(known));
+
 export const generateConfigText = (config: ProjectConfig): string => {
     const lines: string[] = [];
     const appendSetting = (key: string, value: any) => {
@@ -43,12 +61,21 @@ export const generateConfigText = (config: ProjectConfig): string => {
         lines.push(valStr);
         lines.push(''); // Empty line separator
     };
-    // Use defaults if missing (for older projects)
-    appendSetting('mid_ch_a', config?.mid_ch_a ?? 1);
-    appendSetting('mid_ch_b', config?.mid_ch_b ?? 2);
-    appendSetting('mid_ps_a', config?.mid_ps_a ?? false);
-    appendSetting('mid_ps_b', config?.mid_ps_b ?? false);
-    appendSetting('pre_load', config?.pre_load ?? true);
+    // Use defaults if missing (for older projects). Order follows the manual's table.
+    appendSetting('mid_ch_a', config?.mid_ch_a ?? DEFAULT_PROJECT_CONFIG.mid_ch_a);
+    appendSetting('mid_ch_b', config?.mid_ch_b ?? DEFAULT_PROJECT_CONFIG.mid_ch_b);
+    appendSetting('mid_ps_a', config?.mid_ps_a ?? DEFAULT_PROJECT_CONFIG.mid_ps_a);
+    appendSetting('mid_ps_b', config?.mid_ps_b ?? DEFAULT_PROJECT_CONFIG.mid_ps_b);
+    appendSetting('pre_load', config?.pre_load ?? DEFAULT_PROJECT_CONFIG.pre_load);
+    appendSetting('slc_mn_a', config?.slc_mn_a ?? DEFAULT_PROJECT_CONFIG.slc_mn_a);
+    appendSetting('slc_mn_b', config?.slc_mn_b ?? DEFAULT_PROJECT_CONFIG.slc_mn_b);
+    // Pairs a previous read didn't recognise, written back verbatim after the known
+    // ones. A key that has since *become* known is dropped rather than emitted
+    // twice — the field above is the current truth for it.
+    for (const setting of config?.unknown ?? []) {
+        if (!setting?.key || isKnownConfigKey(setting.key)) continue;
+        appendSetting(setting.key.trim(), setting.value);
+    }
     return lines.join('\n');
 };
 
@@ -88,38 +115,155 @@ export const downloadBlob = (blob: Blob, name: string) => {
     URL.revokeObjectURL(url);
 };
 
-// Helper: Safely write a blob to a file handle. Checks size to skip redundant writes,
-// and buffers File objects into memory to prevent NotReadableError due to file locks.
-export const safeWriteBlob = async (fileHandle: FileSystemFileHandle, blob: Blob, force: boolean = false) => {
-    let shouldWrite = true;
-    if (!force) {
+// Suffix for the scratch file an atomic write goes through. Stays in the same
+// directory as the target, because a swap can only happen within one directory.
+const TEMP_WRITE_SUFFIX = '.wbtmp';
+
+// `move()` renames/replaces within a directory. It ships in Chromium but is not
+// in the DOM lib, hence the local shape.
+type MovableFileHandle = FileSystemFileHandle & { move(newName: string): Promise<void> };
+
+// Whether `move()` *exists* and whether it *works here* are two different questions.
+// The method is on the prototype in every Chromium, because it shipped first for the
+// origin-private file system; on a user-picked folder it is a later, separate feature
+// and can still reject a plain same-directory rename with `InvalidModificationError:
+// The object can not be modified in this way`. Nothing observable distinguishes the
+// two in advance, so the first real attempt is the feature test, and its verdict is
+// latched: a 36-file card write must not pay for a doomed temp copy of every file.
+// A one-off rejection (a destination another app has locked, say) costs the rest of
+// the session its swap, which is the cheaper mistake of the two.
+let handleMoveRejected = false;
+
+const supportsHandleMove = (): boolean =>
+    !handleMoveRejected &&
+    typeof (globalThis as { FileSystemFileHandle?: { prototype?: { move?: unknown } } })
+        .FileSystemFileHandle?.prototype?.move === 'function';
+
+// A scratch file is never worth failing a write over.
+const discardTemp = async (dirHandle: FileSystemDirectoryHandle, tempName: string) => {
+    try { await dirHandle.removeEntry(tempName); } catch { /* already gone */ }
+};
+
+// Byte-compare two blobs of equal size in chunks, so we never hold two full
+// copies in memory. Used to decide whether a write can be skipped.
+const blobsAreIdentical = async (a: Blob, b: Blob): Promise<boolean> => {
+    if (a.size !== b.size) return false;
+    const CHUNK = 1024 * 1024;
+    for (let offset = 0; offset < a.size; offset += CHUNK) {
+        const end = Math.min(offset + CHUNK, a.size);
+        const [aBuf, bBuf] = await Promise.all([
+            a.slice(offset, end).arrayBuffer(),
+            b.slice(offset, end).arrayBuffer(),
+        ]);
+        const aBytes = new Uint8Array(aBuf);
+        const bBytes = new Uint8Array(bBuf);
+        for (let i = 0; i < aBytes.length; i++) {
+            if (aBytes[i] !== bBytes[i]) return false;
+        }
+    }
+    return true;
+};
+
+/**
+ * How to decide whether an existing file already holds what we're about to write.
+ *
+ * - `content` — byte-compare when the sizes match. Correct everywhere, and the
+ *   only safe choice for SD writes: two different WAVs of equal length are not
+ *   the same file, which the old size-only check assumed.
+ * - `size` — skip when the sizes match, without reading. Valid *only* where the
+ *   filename already determines the content, e.g. `Assets/<versionId>.wav`, whose
+ *   id is minted per version and never rewritten with different bytes. Avoids
+ *   re-reading every asset on every project save.
+ * - `always` — never skip.
+ */
+export type WriteCompare = 'content' | 'size' | 'always';
+
+// Helper: Safely write a blob into a directory under `fileName`.
+//
+// The write is **atomic**: the bytes land in a temp file that is swapped onto the
+// target name once it has closed cleanly. `createWritable()` on the target would
+// expose a truncated or partial file if the write were interrupted — and the
+// original is gone by then, which no amount of snapshotting recovers.
+//
+// Takes the parent directory rather than a file handle because a swap needs a
+// sibling to swap with. File objects are buffered into memory first to prevent
+// NotReadableError from OS-level file locks.
+export const safeWriteBlob = async (
+    dirHandle: FileSystemDirectoryHandle,
+    fileName: string,
+    blob: Blob,
+    compare: WriteCompare = 'content'
+): Promise<boolean> => {
+    if (compare !== 'always') {
         try {
-            const existingFile = await fileHandle.getFile();
-            if (existingFile.size === blob.size) {
-                shouldWrite = false;
-            }
-        } catch (e) {
-            // Doesn't exist, proceed
+            const existingFile = await (await dirHandle.getFileHandle(fileName)).getFile();
+            const same = compare === 'size'
+                ? existingFile.size === blob.size
+                : await blobsAreIdentical(existingFile, blob);
+            if (same) return false; // Skipped
+        } catch {
+            // Doesn't exist or is unreadable — write it.
         }
     }
 
-    if (shouldWrite) {
-        let dataToWrite: Blob | ArrayBuffer = blob;
-        if (blob instanceof File) {
-            try {
-                dataToWrite = await blob.arrayBuffer();
-            } catch (e: any) {
-                console.error(`[SafeWrite] NotReadableError for ${fileHandle.name}. Ref:`, blob);
-                throw new Error(`File "${fileHandle.name}" is unreadable. It may have been moved, deleted, or locked by another app.`);
-            }
+    let dataToWrite: Blob | ArrayBuffer = blob;
+    if (blob instanceof File) {
+        try {
+            dataToWrite = await blob.arrayBuffer();
+        } catch {
+            console.error(`[SafeWrite] NotReadableError for ${fileName}. Ref:`, blob);
+            throw new Error(`File "${fileName}" is unreadable. It may have been moved, deleted, or locked by another app.`);
         }
-        // @ts-ignore
-        const w = await fileHandle.createWritable();
+    }
+
+    // The old behaviour: `createWritable()` truncates the target on open, so an
+    // interrupted write leaves it partial.
+    const writeInPlace = async () => {
+        const target = await dirHandle.getFileHandle(fileName, { create: true });
+        const w = await target.createWritable();
         await w.write(dataToWrite);
         await w.close();
-        return true; // Wrote
+    };
+
+    if (!supportsHandleMove()) {
+        await writeInPlace();
+        return true;
     }
-    return false; // Skipped
+
+    const tempName = `${fileName}${TEMP_WRITE_SUFFIX}`;
+    let tempHandle: MovableFileHandle;
+    try {
+        tempHandle = await dirHandle.getFileHandle(tempName, { create: true }) as MovableFileHandle;
+        const w = await tempHandle.createWritable();
+        await w.write(dataToWrite);
+        await w.close();
+    } catch (e) {
+        // Nothing has touched the target yet. Leave the original intact and take the
+        // scratch file with us.
+        await discardTemp(dirHandle, tempName);
+        throw e;
+    }
+
+    try {
+        // Only now does the target change. move() replaces an existing destination.
+        await tempHandle.move(fileName);
+        return true; // Wrote
+    } catch (e) {
+        // The swap is how the write is made safe, not the write itself. The bytes are
+        // already on the card and complete, so copy them onto the target the plain way
+        // rather than fail an operation this engine can perfectly well do. Still ahead
+        // of the plain path on durability: if *this* write is interrupted, the whole
+        // file is sitting in `<name>.wbtmp`, which is why the scratch file is only
+        // removed once the copy has closed cleanly.
+        handleMoveRejected = true;
+        console.info(
+            `[SafeWrite] move() rejected on this file system (${e instanceof Error ? e.name : String(e)}); ` +
+            `writing in place for the rest of the session.`,
+        );
+        await writeInPlace();
+        await discardTemp(dirHandle, tempName);
+        return true;
+    }
 };
 
 // Generic recursive copy/sync (Additive)
@@ -161,8 +305,7 @@ export const syncDirectory = async (
                 }
 
                 if (shouldCopy) {
-                    const targetFileHandle = await targetDir.getFileHandle(name, { create: true });
-                    await safeWriteBlob(targetFileHandle, sourceFile);
+                    await safeWriteBlob(targetDir, name, sourceFile);
                 }
 
             } else if (entry.kind === 'directory') {
@@ -198,8 +341,7 @@ export const saveUserLibraryToDirectory = async (
 
             if (version?.blob) {
                 try {
-                    const fileHandle = await userLibDir.getFileHandle(file.name, { create: true });
-                    await safeWriteBlob(fileHandle, version.blob);
+                    await safeWriteBlob(userLibDir, file.name, version.blob);
                 } catch (e) {
                     console.warn(`Failed to write library file: ${file.name}`, e);
                 }
@@ -598,8 +740,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 if (finalConfig) {
                     onProgress?.("Writing config.txt...", 18);
                     const configText = generateConfigText(finalConfig);
-                    const configHandle = await skHandle.getFileHandle('config.txt', { create: true });
-                    await safeWriteBlob(configHandle, new Blob([configText], { type: 'text/plain' }), options.forceOverwrite);
+                    await safeWriteBlob(skHandle, 'config.txt', new Blob([configText], { type: 'text/plain' }), options.forceOverwrite ? 'always' : 'content');
                 }
             }
 
@@ -664,8 +805,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                 }
                             }
 
-                            const fileHandle = await tapeHandle.getFileHandle(fileName, { create: true });
-                            const wrote = await safeWriteBlob(fileHandle, blobToWrite, options.forceOverwrite);
+                            const wrote = await safeWriteBlob(tapeHandle, fileName, blobToWrite, options.forceOverwrite ? 'always' : 'content');
                             if (wrote) writtenCount++; else skippedCount++;
                         }
                     }
@@ -702,9 +842,9 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             await identityWritable.write(JSON.stringify(projectIdentity, null, 2));
             await identityWritable.close();
 
-            // 5. Source Backup
-            if (options.workHandle && options.projectName) {
-                onProgress?.("Backing up Project Source...", 85);
+            // 5. Project source mirror — opt-in only (locked decision 6).
+            if (options.mirrorProjectToSD && options.workHandle && options.projectName) {
+                onProgress?.("Mirroring Project Source to card...", 85);
                 try {
                     const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
                     const wbProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: true });
@@ -714,10 +854,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
                     // Copy project.json
                     const sJson = await sourceProjectDir.getFileHandle('project.json');
-                    const tJson = await targetProjectDir.getFileHandle('project.json', { create: true });
-                    const sw = await tJson.createWritable();
-                    await sw.write(await sJson.getFile());
-                    await sw.close();
+                    await safeWriteBlob(targetProjectDir, 'project.json', await sJson.getFile());
 
                     // Copy Assets
                     try {
@@ -727,15 +864,12 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         for await (const [name, entry] of sAssets.entries()) {
                             if (entry.kind === 'file') {
                                 const sf = await sAssets.getFileHandle(name);
-                                const tf = await tAssets.getFileHandle(name, { create: true });
-                                const tw = await tf.createWritable();
-                                await tw.write(await sf.getFile());
-                                await tw.close();
+                                await safeWriteBlob(tAssets, name, await sf.getFile());
                             }
                         }
                     } catch (e) { }
                 } catch (e) {
-                    console.warn("Backup failed", e);
+                    console.warn("Project source mirror failed", e);
                 }
             }
 
@@ -819,6 +953,12 @@ export interface ExportFilesOptions {
     fileIds: string[];
     keepStructure?: boolean;
     onConvert?: (blob: Blob) => Promise<Blob>;
+    /**
+     * Replaces the default project README. A loose export isn't a project build —
+     * Browse mode ships instructions for organising the files by hand instead of a
+     * listing of a 6×6 grid the user never assembled.
+     */
+    readme?: string;
 }
 
 export const exportFilesOnly = async (state: AppState, options: ExportFilesOptions, onProgress?: (msg: string | undefined, progress?: number) => void) => {
@@ -828,7 +968,7 @@ export const exportFilesOnly = async (state: AppState, options: ExportFilesOptio
 
     // Add README
     onProgress?.("Adding Information...", 5);
-    zip.file("README.md", generateReadme(state)); // Don't mention project bundle in this context
+    zip.file("README.md", options.readme ?? generateReadme(state)); // Don't mention project bundle in this context
 
     // Helper to find location
     const findFileLocation = (fileId: string): string | null => {
@@ -966,14 +1106,15 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                 if (name === '__MACOSX') continue;
                 console.log(`[scanForProjects] Checking entry: ${name}, kind: ${handle.kind}`);
                 if (handle.kind === 'directory') {
+                    const dirHandle = handle as FileSystemDirectoryHandle;
                     let hasMeta = false;
                     let fileCount = 0;
                     try {
                         let projectFileHandle: FileSystemFileHandle;
                         try {
-                            projectFileHandle = await handle.getFileHandle('project-descriptor.json', { create: false });
+                            projectFileHandle = await dirHandle.getFileHandle('project-descriptor.json', { create: false });
                         } catch (e) {
-                            projectFileHandle = await handle.getFileHandle('project.json', { create: false });
+                            projectFileHandle = await dirHandle.getFileHandle('project.json', { create: false });
                         }
                         
                         // Basic validation that it's a project
@@ -1018,11 +1159,7 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                                 tapes: json.tapes || {},
                                 projectNotes: json.projectNotes,
                                 projectConfig: {
-                                    mid_ch_a: 1,
-                                    mid_ch_b: 2,
-                                    mid_ps_a: false,
-                                    mid_ps_b: false,
-                                    pre_load: true,
+                                    ...DEFAULT_PROJECT_CONFIG,
                                     ...(json.projectConfig || {})
                                 }
                             } : undefined,
@@ -1079,8 +1216,25 @@ export const getActiveSKProject = async (rootHandle: FileSystemDirectoryHandle):
     }
 };
 
-export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSystemDirectoryHandle, onProgress?: (msg: string | undefined, progress?: number) => void, projectName?: string) => {
+/**
+ * Writes the project to `Projects/<projectName>/`, and returns the state as written.
+ *
+ * The return value matters: history is collapsed to the two-version rule (Appendix
+ * E.2) before anything is serialised, so the caller should adopt what comes back as
+ * its live state. Otherwise memory and the IDB autosave keep the versions the disk
+ * no longer has, and the next save re-collapses the same records.
+ *
+ * The collapse is the `collapseHistoryOnSave` preference (default on). With it off
+ * this writes the history it was given and the return value is the argument, so the
+ * same "adopt what comes back" contract holds either way.
+ */
+export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSystemDirectoryHandle, onProgress?: (msg: string | undefined, progress?: number) => void, projectName?: string): Promise<AppState> => {
     onProgress?.("Saving Project...", 0);
+
+    // Two versions per file — the original and the current, when the preference is on.
+    // This is the one place every save path funnels through, which is why the rule
+    // lives here.
+    state = collapseVersionHistoryOnSave(state);
 
     try {
         let targetHandle = rootHandle;
@@ -1188,8 +1342,9 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
             for (const asset of assetsPending) {
                 try {
                     // console.log(`[Save] Writing asset ${asset.id} (${asset.blob.size} bytes)`);
-                    const fileHandle = await assetsHandle.getFileHandle(asset.id, { create: true });
-                    await safeWriteBlob(fileHandle, asset.blob);
+                    // 'size': the filename is a per-version uuid, so an existing file of
+                    // the same size *is* this version. Saves re-reading every asset.
+                    await safeWriteBlob(assetsHandle, asset.id, asset.blob, 'size');
                 } catch (e: any) {
                     console.error(`[Save] Failed to write asset ${asset.id}`, e);
                     if (e.name === 'NotReadableError') {
@@ -1203,6 +1358,8 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
         }
 
         onProgress?.("Project Saved Successfully!", 100);
+
+        return state;
 
     } catch (e: any) {
         console.error("Save Project Failed", e);
@@ -1262,11 +1419,7 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
 
             // Ensure projectConfig is complete with defaults for backward compatibility
             state.projectConfig = {
-                mid_ch_a: 1,
-                mid_ch_b: 2,
-                mid_ps_a: false,
-                mid_ps_b: false,
-                pre_load: true,
+                ...DEFAULT_PROJECT_CONFIG,
                 ...(state.projectConfig || {})
             } as ProjectConfig;
         }
@@ -1444,13 +1597,12 @@ export const renameProject = async (rootHandle: FileSystemDirectoryHandle, oldNa
 
 export const parseConfigText = (text: string): ProjectConfig | null => {
     try {
-        const config: ProjectConfig = {
-            mid_ch_a: 1,
-            mid_ch_b: 2,
-            mid_ps_a: false,
-            mid_ps_b: false,
-            pre_load: true
-        };
+        const config: ProjectConfig = { ...DEFAULT_PROJECT_CONFIG };
+        // Strictly positional: blank lines drop out and what remains is walked as
+        // key/value pairs. An unknown key is still a *pair*, so it consumes two
+        // lines like any other — skipping it silently would shift everything after
+        // it. That is also why it can be carried through rather than dropped.
+        const unknown: import('../types').UnknownConfigSetting[] = [];
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
         for (let i = 0; i < lines.length; i += 2) {
             const rawKey = lines[i];
@@ -1463,7 +1615,13 @@ export const parseConfigText = (text: string): ProjectConfig | null => {
             else if (key.startsWith('MID_PS_A')) config.mid_ps_a = val === '1';
             else if (key.startsWith('MID_PS_B')) config.mid_ps_b = val === '1';
             else if (key.startsWith('PRE_LOAD')) config.pre_load = val === '1';
+            else if (key.startsWith('SLC_MN_A')) config.slc_mn_a = val === '1';
+            else if (key.startsWith('SLC_MN_B')) config.slc_mn_b = val === '1';
+            else unknown.push({ key: rawKey, value: val });
         }
+        // Left absent when there are none, so existing projects serialize and
+        // compare exactly as they did before.
+        if (unknown.length > 0) config.unknown = unknown;
         return config;
     } catch (e) {
         console.warn("Failed to parse config.txt", e);

@@ -1,4 +1,4 @@
-import { TAPE_COLORS } from '../types';
+import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from '../types';
 import type { AppState, Tape, Slot } from '../types';
 
 const createEmptySlot = (id: number): Slot => ({
@@ -20,12 +20,6 @@ export const getInitialState = (): AppState => {
     return {
         files: {},
         tapes: tapes as Record<keyof AppState['tapes'], Tape>,
-        projectConfig: {
-            mid_ch_a: 1,
-            mid_ch_b: 2,
-            mid_ps_a: false,
-            mid_ps_b: false,
-            pre_load: true,
-        },
+        projectConfig: { ...DEFAULT_PROJECT_CONFIG },
     };
 };

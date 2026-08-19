@@ -1,69 +1,39 @@
 import React, { useEffect, useState } from 'react';
 import { X, Newspaper, ChevronRight, ExternalLink, Calendar, Info } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import { resolveAssetPath } from '../utils/assetUtils';
-
-interface NewsItem {
-  id: string;
-  date: string;
-  title: string;
-  file: string;
-  image?: string;
-  pinned?: boolean;
-  category?: string;
-}
+import { fetchNewsFeed, featuredNewsItem, type NewsItem } from '../utils/newsFeed';
+import { NewsArticle } from './NewsArticle';
 
 interface NewsModalProps {
   onClose: () => void;
 }
 
+/**
+ * The Studio news reader, opened from the header button.
+ *
+ * It no longer auto-opens: since v4 the hub shows news inline beneath the doors
+ * (see HubNews), so there is one route to the same content instead of two, and
+ * no "don't show on start" preference to keep in sync.
+ */
 export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [content, setContent] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showOnStart, setShowOnStart] = useState<boolean>(() => {
-    return localStorage.getItem('spotykach_show_news_on_start') !== 'false';
-  });
 
   useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const response = await fetch(`${resolveAssetPath('/news/news-manifest.json')}?t=${Date.now()}`);
-        const manifest: NewsItem[] = await response.json();
-        setNews(manifest);
-
-        // Find featured (pinned) item or default to first
-        const featured = manifest.find(i => i.pinned) || manifest[0];
+    fetchNewsFeed()
+      .then(({ items, content }) => {
+        setNews(items);
+        setContent(content);
+        const featured = featuredNewsItem(items);
         if (featured) setSelectedId(featured.id);
-
-        // Fetch content for each news item
-        const contentMap: Record<string, string> = {};
-        for (const item of manifest) {
-          try {
-            const res = await fetch(resolveAssetPath(`/news/${item.file}`));
-            if (res.ok) {
-              const text = await res.text();
-              contentMap[item.id] = text;
-            }
-          } catch (e) {
-            console.error(`Failed to fetch content for ${item.id}`, e);
-          }
-        }
-        setContent(contentMap);
-      } catch (error) {
-        console.error('Failed to fetch news:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchNews();
+      })
+      .catch(error => console.error('Failed to fetch news:', error))
+      .finally(() => setLoading(false));
   }, []);
 
-  const featuredItem = news.find(i => i.pinned) || news[0];
+  const featuredItem = featuredNewsItem(news);
   // Show all items except featured in the history list
   const historyItems = news.filter(i => i.id !== (featuredItem?.id));
   const activeItem = news.find(i => i.id === selectedId);
@@ -71,7 +41,7 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-4 md:p-8">
       <div className="bg-synthux-panel border border-white/10 rounded-3xl w-full max-w-5xl h-[90vh] shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300">
-        
+
         {/* Header */}
         <div className="flex justify-between items-center p-5 border-b border-white/5 bg-white/5 shrink-0">
           <div className="flex items-center gap-4">
@@ -95,7 +65,7 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
         </div>
 
         {/* Main Content (Scrollable) */}
-        <div 
+        <div
           className="flex-1 overflow-y-auto bg-gradient-to-b from-transparent to-black/20"
         >
           {loading ? (
@@ -176,38 +146,7 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
                       <span className="text-gray-500">{activeItem.category || 'Update'}</span>
                     </div>
 
-                    <div className="prose prose-invert max-w-none 
-                      prose-h1:text-3xl prose-h1:font-bold prose-h1:text-synthux-yellow prose-h1:mt-8 prose-h1:mb-4 prose-h1:font-header prose-h1:uppercase prose-h1:tracking-tight
-                      prose-h2:text-xl prose-h2:font-bold prose-h2:text-synthux-orange prose-h2:mt-6 prose-h2:mb-3 prose-h2:font-header prose-h2:uppercase prose-h2:tracking-tight
-                      prose-p:text-gray-300 prose-p:leading-relaxed prose-p:text-lg prose-p:my-5
-                      prose-ul:list-disc prose-ul:pl-6 prose-ul:my-5
-                      prose-li:text-gray-300 prose-li:my-2
-                      prose-strong:text-white prose-strong:font-bold
-                      prose-em:italic prose-em:opacity-80
-                      prose-a:text-synthux-yellow prose-a:no-underline hover:prose-a:underline prose-a:font-bold
-                      prose-img:rounded-3xl prose-img:border prose-img:border-white/10 prose-img:shadow-2xl prose-img:my-10
-                      prose-video:rounded-3xl prose-video:border prose-video:border-white/10 prose-video:shadow-2xl prose-video:my-10 prose-video:w-full
-                    ">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
-                        components={{
-                          video: ({ node, ...props }) => {
-                            const resolvedSrc = props.src ? (props.src.startsWith('http') || props.src.startsWith('/') ? resolveAssetPath(props.src) : resolveAssetPath(`/news/${props.src}`)) : '';
-                            return <video {...props} src={resolvedSrc} />;
-                          },
-                          img: ({ node, ...props }) => {
-                            const resolvedSrc = props.src ? (props.src.startsWith('http') || props.src.startsWith('/') ? resolveAssetPath(props.src) : resolveAssetPath(`/news/${props.src}`)) : '';
-                            return <img {...props} src={resolvedSrc} />;
-                          },
-                          a: ({ node, ...props }) => {
-                            return <a {...props} target="_blank" rel="noreferrer" />;
-                          }
-                        }}
-                      >
-                        {content[activeItem.id] || ''}
-                      </ReactMarkdown>
-                    </div>
+                    <NewsArticle markdown={content[activeItem.id] || ''} />
                   </article>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-gray-500 py-20">
@@ -226,34 +165,15 @@ export const NewsModal: React.FC<NewsModalProps> = ({ onClose }) => {
             <div className="w-2 h-2 rounded-full bg-synthux-green animate-pulse" />
             <span>Stay up to date with my development</span>
           </div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <div className="relative flex items-center justify-center">
-                <input
-                  type="checkbox"
-                  checked={!showOnStart}
-                  onChange={(e) => {
-                    const newVal = !e.target.checked;
-                    setShowOnStart(newVal);
-                    localStorage.setItem('spotykach_show_news_on_start', String(newVal));
-                  }}
-                  className="peer appearance-none w-4 h-4 rounded border border-white/20 bg-white/5 checked:bg-synthux-orange checked:border-synthux-orange transition-all"
-                />
-                <X size={10} className="absolute text-black opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 group-hover:text-white transition-colors">Don't show on start</span>
-            </label>
-
-            <a
-              href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/CHANGELOG.md"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1.5 text-synthux-yellow hover:text-white text-[10px] font-bold uppercase tracking-widest transition-colors group"
-            >
-              Full Changelog
-              <ExternalLink size={12} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-            </a>
-          </div>
+          <a
+            href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/CHANGELOG.md"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-synthux-yellow hover:text-white text-[10px] font-bold uppercase tracking-widest transition-colors group"
+          >
+            Full Changelog
+            <ExternalLink size={12} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </a>
         </div>
       </div>
     </div>

@@ -10,6 +10,8 @@ interface ConfirmModalProps {
     message: React.ReactNode;
     confirmLabel?: string;
     discardLabel?: string;
+    /** The way out that isn't the confirm. "Cancel" is wrong after the deed is done. */
+    cancelLabel?: string;
     isDestructive?: boolean;
     showCancel?: boolean;
 }
@@ -23,6 +25,7 @@ export const ConfirmModal = ({
     message,
     confirmLabel = "Confirm",
     discardLabel = "Discard",
+    cancelLabel = "Cancel",
     isDestructive = false,
     showCancel = true
 }: ConfirmModalProps) => {
@@ -76,7 +79,7 @@ export const ConfirmModal = ({
                             onClick={onClose}
                             className="px-4 py-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white font-bold text-sm transition-colors border border-transparent hover:border-gray-700"
                         >
-                            Cancel
+                            {cancelLabel}
                         </button>
                     )}
                     <button

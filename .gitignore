@@ -27,3 +27,6 @@ dist-ssr
 Thumbs.db
 *.private.md
 
+
+# Windows folder settings
+desktop.ini

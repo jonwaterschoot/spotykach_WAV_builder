@@ -2,6 +2,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Hover, ungated. Tailwind v4 wraps every `hover:` and `group-hover:` utility in
+   `@media (hover: hover)`, so on a machine whose primary pointer reports no hover —
+   a touchscreen laptop driven by a mouse, most obviously — the entire hover layer of
+   the app goes dead. That is ~340 rules, and it read as "hover does nothing anywhere".
+   This restores the v3 behaviour the styling was written against. The cost is the one
+   v4 is guarding against: a real finger tap can leave an element stuck in its hover
+   look until you tap elsewhere. See S1-15 in roadmap-bugs.md. */
+@custom-variant hover (&:hover);
+
 /* mobile-drag-drop polyfill override */
 .dnd-drag-image-translate-override {
     transform: translate(-50%, -50%) !important; 
@@ -86,6 +95,13 @@ img {
     --font-body: var(--font-body);
 
     --texture-noise: var(--master-texture-image);
+
+    /*
+     * One breakpoint below Tailwind's `sm` (40rem). Phones in portrait sit under
+     * it — that is where Browse drops its second word and its second column, and
+     * where a label has to become an icon rather than wrap.
+     */
+    --breakpoint-xs: 26rem;
 }
 
 @keyframes pulse-glow-anim {
