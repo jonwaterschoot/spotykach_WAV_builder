@@ -114,7 +114,28 @@ npm uninstall @ffmpeg/core
 It is not a dependency the rest of the time: nothing imports it, and leaving it installed costs
 62 MB in `node_modules` for a copy step done once a release at most.
 
-## 6. Deployment size
+## 6. Self-hosted fonts
+
+[`public/fonts/`](../public/fonts/) holds Funnel Display, Space Mono and Syne Mono as woff2,
+with `fonts.css` linked from [`index.html`](../index.html). They were served from Google Fonts
+until 2026-08-20; self-hosting removed the last third-party request needed to render the page,
+which matters for a tool that otherwise keeps everything local, and removes two DNS+TLS
+round-trips to Google before first paint.
+
+- **Licensing is fine.** All three are SIL OFL 1.1, which permits redistribution provided the
+  license travels with the fonts — hence `OFL.txt` in that directory, carrying each family's
+  copyright line and the refresh procedure.
+- **The `url()` paths are relative**, so they resolve against `fonts.css` itself and work under
+  both `/` and the Pages subpath without any base handling. The `<link>` in `index.html` uses an
+  absolute path, which Vite rewrites with the build base.
+- **Google's unicode-range subsetting is kept as-is.** 16 files, 218 KB in total, but a browser
+  only downloads the subsets a page actually needs — in practice the three latin files, ~50 KB.
+- Funnel Display is a variable font (`font-weight: 300 800`), which is why it is one file per
+  subset rather than one per weight.
+
+`OFL.txt` records the css2 URL to refetch and what to do with the response.
+
+## 7. Deployment size
 
 Audio is not in the bundle. Samples are fetched on demand from R2, which is what keeps the
 published site well inside Pages' limits. If you find yourself adding audio to `public/`,

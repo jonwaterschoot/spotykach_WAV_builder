@@ -24,7 +24,6 @@ export const useAudioConverter = () => {
         const localCoreBaseURL = withBase('ffmpeg-core');
         const localWorkerURL = withBase('ffmpeg-worker/worker.js');
         const ffmpeg = ffmpegRef.current;
-        const loadTimeoutMs = 20000;
 
         ffmpeg.on('log', ({ message }) => {
             console.log('[FFmpeg Log]', message);
@@ -36,31 +35,21 @@ export const useAudioConverter = () => {
         });
 
         loadPromiseRef.current = (async () => {
-            const loadWithTimeout = async (
-                config: { coreURL: string; wasmURL: string; classWorkerURL?: string; workerURL?: string },
-                sourceLabel: string
-            ) => {
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(() => controller.abort(), loadTimeoutMs);
-                try {
-                    await ffmpeg.load(config, { signal: controller.signal });
-                    console.log(`[FFmpeg] Loaded ${sourceLabel} core.`);
-                } finally {
-                    window.clearTimeout(timeoutId);
-                }
-            };
-
             try {
                 console.log('[FFmpeg] Cross-Origin Isolated:', window.crossOriginIsolated);
                 console.log('[FFmpeg] Initializing with local assets:', localCoreBaseURL);
 
-                await loadWithTimeout({
+                // No abort timeout. The core is a 32 MB same-origin download, and a
+                // fetch still running after twenty seconds is slow, not hung — the
+                // old timeout mostly punished bad connections. The browser's own
+                // network timeouts are the right judge of a dead request.
+                await ffmpeg.load({
                     coreURL: `${localCoreBaseURL}/ffmpeg-core.js`,
                     wasmURL: `${localCoreBaseURL}/ffmpeg-core.wasm`,
                     classWorkerURL: localWorkerURL,
-                }, 'local');
+                });
 
-                console.log('[FFmpeg] Core loaded successfully.');
+                console.log('[FFmpeg] Loaded local core.');
                 setIsLoaded(true);
             } catch (err) {
                 console.error('[FFmpeg] Failed to load:', err);

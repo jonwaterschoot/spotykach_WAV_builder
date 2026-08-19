@@ -161,7 +161,9 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 <div className="bg-black/20 p-4 rounded-lg border border-gray-800 text-sm text-gray-300">
                                     Built with <span className="text-white font-bold">React</span>, <span className="text-white font-bold">Vite</span>, and <span className="text-white font-bold">TailwindCSS</span>.
                                     <br />
-                                    Assisted by <span className="text-synthux-pink font-bold">Google Deepmind</span>'s experimental agentic coding models.
+                                    Written with LLM assistance — set up in <span className="text-synthux-pink font-bold">Google Antigravity</span>, continued with <span className="text-synthux-blue font-bold">Claude Code</span> in <span className="text-white font-bold">VS Code</span>.
+                                    <br />
+                                    <span className="text-gray-400">Fonts are self-hosted under the SIL Open Font License; nothing is fetched from a third party to render this page.</span>
                                 </div>
                             </div>
 

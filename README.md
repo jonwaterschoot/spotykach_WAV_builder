@@ -86,6 +86,18 @@ This project is built using:
 
 Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV_builder/](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
 
+## Privacy
+
+The app runs entirely in your browser. Audio, projects and settings live in IndexedDB and — if
+you grant access — in folders you pick yourself through the File System Access API. Nothing is
+uploaded, and there is no analytics or telemetry of any kind.
+
+Rendering the page contacts no third party: **fonts are self-hosted** from
+[`public/fonts/`](public/fonts/) under the SIL Open Font License 1.1, and the ffmpeg core is
+served from this origin rather than a CDN. The only outbound requests the app makes on your
+behalf are downloading sample and preset packs from Cloudflare R2, and those happen only when
+you choose to add one.
+
 ## Publishing (maintainers)
 
 The live site is published **manually, from a maintainer's machine**. There is no Actions
