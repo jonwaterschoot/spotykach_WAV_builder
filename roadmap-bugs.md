@@ -14,7 +14,13 @@
 > 2026-08-19: the texture plays, and on the phone the hub, the Sample Browser, the sources drawer and
 > the full-screen pool sheet all behave as they do on a desktop. Both left the open list.
 >
-> *Last reconciled against the code: 2026-08-19.*
+> **`optimize` is in flight.** A branch for code health rather than features — nine commits so far,
+> including fifteen genuine `rules-of-hooks` bugs in the editor overlays, five unused dependencies,
+> and the last third-party request needed to render the page. What is left is ranked in
+> [docs/optimization-plan.md](docs/optimization-plan.md); the summary lives under
+> [Roadmap ▸ Code health](#code-health--the-optimize-branch).
+>
+> *Last reconciled against the code: 2026-08-20.*
 
 ---
 
@@ -51,6 +57,58 @@ call, not a bug fix.
 ---
 
 ## Roadmap — beyond v4
+
+### Code health — the `optimize` branch
+
+Active work, not speculation: the branch exists and carries nine commits. Each item below has its
+survey already done in [docs/optimization-plan.md](docs/optimization-plan.md) — measurements, file
+and line references, and the reason it is shaped the way it is. Ranked by payoff against risk.
+**Take one per session**; the plan says explicitly which ones cannot be batched.
+
+**One `useEscapeKey` hook.** Eighteen components hand-roll the same keydown effect — check
+`e.key === 'Escape'`, call `onClose`, remove the listener. About 100 lines, but the point is that
+the pattern stops being re-implemented; three of the copies already carry lint findings. Best
+payoff-to-risk on the list, and the failure mode (Escape stops closing a modal) is obvious the
+moment you click it.
+
+**One ffmpeg instance instead of two.** `useAudioConverter` does `useRef(new FFmpeg())`, so
+[App.tsx](src/App.tsx) and [LibraryManager.tsx](src/components/LibraryManager.tsx) each download,
+compile and hold the 32 MB wasm — confirmed in a console log showing the core load twice in one
+session. **Not a straight hoist to module scope:** one instance cannot run two `exec` calls at
+once, the log/progress listeners are registered inside `load()` and would accumulate, and the
+progress state has to fan out to every mounted subscriber. Keep the hook's returned API identical
+so neither call site changes.
+
+**Four byte formatters that disagree** — `B/kB/MB/GB/TB` at one decimal, `B/KB/MB/GB` at two, and
+always-MB twice over (byte-identical, in the two comparison tables). Same story for
+`formatDuration` / `formatTime`, where one formats a timestamp and the other a duration under
+near-identical names. ⚠️ **A decision, not a refactor:** standardising changes what users see
+(`1.50 MB` → `1.5 MB`, and small files stop reading as `0.00 MB`).
+
+**Three `sanitize*` functions**, two differing only in capitalisation — `sanitizeFilename`,
+`sanitizeFileName`, `sanitizeProjectName`. ⚠️ These decide names written to the user's disk and SD
+card, so diff the bodies before merging; the right fix may be better names rather than one
+function.
+
+**The two ComparisonTables.** `ExportComparisonTable` (200 lines) and `SyncComparisonTable` (143)
+are the same component with different decision vocabularies, but they have genuinely diverged —
+240 diff lines across 343. Extract the shared audio-preview logic and row layout rather than
+attempting a generic merge. Low priority.
+
+**`exportUtils.ts`, then `App.tsx`.** [App.tsx](src/App.tsx) is 5,805 lines and
+[WaveformEditor.tsx](src/components/WaveformEditor.tsx) 5,058 — a quarter of `src/` between them,
+and about half of all lint findings. **Do not attempt either in one pass.** Start with
+[exportUtils.ts](src/utils/exportUtils.ts): pure functions, no JSX, a third the size, and its 27
+exports have obvious pairs (`exportSDStructure` / `exportFilesOnly`, `exportSingleTape` /
+`exportSingleFile`) where a shared directory-walk core probably hides.
+
+**Make lint mean something again.** 339 problems, 303 of them errors — at that volume a new
+violation is invisible, which is how fifteen hook bugs accumulated unnoticed. Demote
+`no-explicit-any` (172), `no-unused-vars` (50) and `ban-ts-comment` (47) to warnings so `error`
+means "something is broken". Five React findings survive triage as code-health rather than bugs
+and are listed individually in the plan; the genuine one is
+[SmartTagInput.tsx:49](src/components/SmartTagInput.tsx#L49), deriving suggestions in an effect
+instead of during render.
 
 ### Editor
 
@@ -185,6 +243,16 @@ link it from the info section.
   Project ▸ Advanced, not in one file's history sidebar.
 - **Non-destructive editing is a different data model, not an extension.** It stays under *Under
   consideration* until someone decides to build it deliberately.
+- **No GitHub Actions deploy workflow.** Weighed on 2026-08-19 and declined: every merge would
+  publish, ~100 MB of `public/` would move through CI per run, and the Pages source would have to
+  leave the `gh-pages` branch — killing `npm run deploy` as a local escape hatch. The merge and the
+  publish stay separate acts. A full build is ~29 s cold, ~5 s warm, so there is also **no such
+  thing as a change too small to redeploy** and no asset-only fast path is wanted. Reasoning in
+  [docs/deployment_guidelines.md](docs/deployment_guidelines.md) §2.
+- **`storageNamespace.ts` stays as it is.** The namespace resolves to empty on the live site, so
+  the derivation looks like dead code — it is not worth unpicking. 41 call sites across 10 files,
+  and it is the boundary for `SpotykachDB`'s saved directory handles, so a mistake there changes
+  real users' storage keys. The misleading comments were rewritten instead.
 
 ## Where the closed work went
 
