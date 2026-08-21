@@ -37,6 +37,13 @@ interface FadeOverlayProps {
 }
 
 const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active = true, onFadeChange, onRegionChange }: FadeOverlayProps) => {
+    // Hooks first: `duration` is 0 until the audio loads, so guarding above these
+    // would change the hook count on the render where it arrives, and throw.
+    const [dragging, setDragging] = useState<'in' | 'out' | 'move' | 'resize-start' | 'resize-end' | null>(null);
+    const [dragStart, setDragStart] = useState<{ x: number, regionStart: number, regionEnd: number } | null>(null);
+    // Ref for the SVG to calculate drag positions
+    const svgRef = useRef<SVGSVGElement>(null);
+
     if (duration <= 0) return null;
 
     const pxPerSec = width / duration;
@@ -53,13 +60,6 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
     const limitDuration = 42;
     const limitStartPx = regionStartPx + (limitDuration * pxPerSec);
     const isOverLimit = regionDuration > limitDuration;
-
-    // Drag Logic
-    const [dragging, setDragging] = useState<'in' | 'out' | 'move' | 'resize-start' | 'resize-end' | null>(null);
-    const [dragStart, setDragStart] = useState<{ x: number, regionStart: number, regionEnd: number } | null>(null);
-
-    // Ref for the SVG to calculate drag positions
-    const svgRef = useRef<SVGSVGElement>(null);
 
     const handlePointerDown = (type: 'in' | 'out' | 'move' | 'resize-start' | 'resize-end', e: React.PointerEvent) => {
         if (!active) return;
@@ -367,6 +367,12 @@ interface LoopOverlayProps {
 }
 
 const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeChange, active = true, isPreview = false }: LoopOverlayProps) => {
+    // Hooks first: both the guard below and the isPreview branch return early, and
+    // `duration`, `active` and `isPreview` all change while this stays mounted.
+    const [dragging, setDragging] = useState<boolean>(false);
+    const [dragStart, setDragStart] = useState<{ x: number, initialXf: number } | null>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
+
     if (duration <= 0 || !active) return null;
 
     const pxPerSec = width / duration;
@@ -398,10 +404,6 @@ const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeCh
     const regionStartPx = region.start * pxPerSec;
     const regionEndPx = region.end * pxPerSec;
     const xfPx = crossfade * pxPerSec;
-
-    const [dragging, setDragging] = useState<boolean>(false);
-    const [dragStart, setDragStart] = useState<{ x: number, initialXf: number } | null>(null);
-    const svgRef = useRef<SVGSVGElement>(null);
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (!active) return;
@@ -2004,7 +2006,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
         // Map Y position (0 to height) to dB (+24 to -24)
         // Y=0 is +24dB, Y=height is -24dB
-        let rawVal = 24 - (y / height) * 48;
+        const rawVal = 24 - (y / height) * 48;
         let val = Math.round(rawVal * 2) / 2; // Step 0.5
         val = Math.max(-24, Math.min(24, val));
 
@@ -2622,7 +2624,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const { start, end } = getEditRegion();
             const trimmed = await audioProcessor.trim(originalBuffer, start, end);
 
-            let looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = await audioProcessor.toWav(looped, meta);
 
@@ -2712,7 +2714,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
             if (!isDirty) {
                 // Not dirty -> Assign to Tape
-                let processed = await audioProcessor.trim(bufferToProcess, start, end);
+                const processed = await audioProcessor.trim(bufferToProcess, start, end);
                 finalDuration = processed.duration;
                 // Preserve metadata and recalculate slice points for trim
                 const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);

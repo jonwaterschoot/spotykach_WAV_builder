@@ -1,6 +1,6 @@
 export const mdToHtml = (md: string) => {
     if (!md) return '';
-    let escaped = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escaped = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const lines = escaped.split('\n');
     let html = '';
     let inList = false;

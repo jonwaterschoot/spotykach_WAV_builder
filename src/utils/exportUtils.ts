@@ -1437,7 +1437,7 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
             }
 
             if (assetsHandle) {
-                let totalFiles = Object.keys(state.files).length;
+                const totalFiles = Object.keys(state.files).length;
                 let processed = 0;
 
                 for (const [, fileRecord] of Object.entries(state.files)) {

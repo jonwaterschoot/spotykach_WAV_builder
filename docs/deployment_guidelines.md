@@ -1,9 +1,8 @@
 # Deployment & Asset Management Guidelines
 
 How this app gets built, where it gets published, and how asset paths resolve once it is
-sitting in a subdirectory. Rewritten 2026-08-14 during v4 Phase 7 — the previous version
-documented `scripts/build-versioned-pages.mjs`, a build step that no longer exists, and a
-sample host the app stopped using.
+sitting in a subdirectory. Rewritten 2026-08-14 during v4 Phase 7; revised 2026-08-19 when the
+`/next/` preview deploy and the `/v2` redirect stub were removed.
 
 ---
 
@@ -13,53 +12,62 @@ sample host the app stopped using.
 |---|---|---|
 | `npm run build` | `/spotykach_WAV_builder/` | The real thing, published at the repo's Pages root. |
 | `npm run build:local` | `/` | Serving `dist/` from a local static server or a custom domain root. |
-| `npm run build:next` | `/spotykach_WAV_builder/next/` | A preview build, published alongside the real one. |
 
 `--base` on the command line overrides [`vite.config.ts`](../vite.config.ts). `tsc -b` runs
-first in all three, so a type error fails the build rather than shipping.
+first in both, so a type error fails the build rather than shipping.
 
-## 2. Publishing — one Pages source, subfolders inside it
+## 2. Publishing — manual, from your machine
 
-Two branches **cannot** each publish to their own URL. The old v1/v2 setup was never two
-branches; it was one `gh-pages` branch with subfolders, and that still works:
+There is no Actions workflow. **Pushing to `main` does not update the live site.** The site is
+published only when you run the deploy script locally:
 
 ```bash
-npm run deploy        # root
-npm run deploy:next   # -> gh-pages/next/
+npm run deploy        # predeploy runs `npm run build`, then gh-pages -d dist
 ```
 
-`gh-pages -d dist --dest next` runs its delete glob with `cwd` set to the destination, so
-`--dest next` only clears `next/`.
+That builds into `dist/` and pushes it to the `gh-pages` branch, which is the Pages source. The
+full cycle is about half a minute, so there is no such thing as a change too small to redeploy —
+adding one image to a news article is the same `npm run deploy` as a release.
 
-> [!IMPORTANT]
-> **The trap runs the other way.** Deploying to root uses the default `remove: '.'` at the
-> branch root, which wipes everything **including `next/`**. If you redeploy the stable app
-> while a preview is live, redeploy `next` afterwards.
+The usual sequence: work on a branch, `npm run build` locally to check it, merge to `main` when
+it is ready, then `npm run deploy`. The merge and the deploy are separate acts on purpose — main
+can be ahead of the live site, and that is fine.
 
-## 3. Storage namespacing — required, not optional
+> [!NOTE]
+> **Deploy publishes your working tree, not `main`.** `gh-pages -d dist` ships whatever the build
+> just produced, including uncommitted edits. Commit first, so what is live matches what is in git.
 
-Root and `/next/` are **the same origin**, so without this both builds would read and write
-the same IndexedDB — including `SpotykachDB`, which holds **live directory handles pointing at
-the user's real work folder and SD card**. A preview build could destroy real project state on
-a real disk.
+On Windows, if PowerShell blocks the script, use `npm.cmd run deploy`.
 
-[`src/utils/storageNamespace.ts`](../src/utils/storageNamespace.ts) is the single place every
-DB name and localStorage key passes through. The namespace is derived once at module load:
+**Deploying is deliberately a decision, not automatic.** An Actions workflow was considered and
+turned down: it would publish on every merge to `main`, push ~100 MB through CI each run, and
+require switching the Pages source away from the `gh-pages` branch. For a project this size the
+manual step is cheaper than the machinery.
+
+## 3. Storage namespacing — a seatbelt, currently idle
+
+**On the live site the namespace is empty and every storage key is unchanged.** This section is
+about what would happen if a second build were ever published, not about anything running today.
+
+GitHub Pages serves one origin per repo, so a second build at a subpath would share
+`jonwaterschoot.github.io` with the real app — the same IndexedDB, including `SpotykachDB`, which
+holds **live directory handles pointing at the user's real work folder and SD card**. A second
+build could destroy real project state on a real disk.
+
+[`src/utils/storageNamespace.ts`](../src/utils/storageNamespace.ts) is the single place every DB
+name and localStorage key passes through. The namespace is derived once at module load:
 
 1. `VITE_STORAGE_NS` if set at build time, else
-2. the last path segment of `BASE_URL` when there is more than one — so
-   `/spotykach_WAV_builder/next/` yields `next` with no extra configuration — else
-3. empty.
+2. the last path segment of `BASE_URL` when there is more than one — so a subpath build
+   namespaces itself with no extra configuration — else
+3. empty, which is the live site and dev.
 
-An empty namespace leaves every name exactly as it was, which is the point: the production
-build must keep reading the storage existing users already have. Only the preview moves, to
-`SpotykachDB--next` and `next:spotykach_state`.
+**If you add a new persisted key, route it through `appStorage` or `dbName`.** That is the part
+that still matters day to day: `appStorage` is also where private-mode and quota-exceeded throws
+get swallowed, so a raw `localStorage.setItem` is a bug even with one build published.
 
-**If you add a new persisted key, route it through `appStorage` or `dbName`.** A raw
-`localStorage.setItem` is a preview build reaching into production data.
-
-A fork would not help — it is still `jonwaterschoot.github.io`, the same origin. Only a
-different account or a custom domain isolates it.
+A fork would not isolate anything — it is still `jonwaterschoot.github.io`, the same origin. Only
+a different account or a custom domain would.
 
 ## 4. Asset path resolution
 
@@ -83,7 +91,51 @@ is deployed in a subdirectory.
 If you add a new folder under `public/`, add it to `internalPaths` in `assetUtils.ts` — a deep
 path that isn't listed there is treated as an R2 sample and sent to the bucket.
 
-## 5. Deployment size
+## 5. The vendored ffmpeg core
+
+[`public/ffmpeg-core/`](../public/ffmpeg-core/) holds `ffmpeg-core.js` and the 32 MB
+`ffmpeg-core.wasm`. They are a hand copy of **`@ffmpeg/core@0.12.10`, `dist/umd/`** — byte
+identical, verified 2026-08-19. The app loads them from there first and only falls back to
+jsdelivr if that fails, which is why `cdnBaseURL` in
+[`useAudioConverter.ts`](../src/utils/useAudioConverter.ts) must name the same version. It was
+pinned to `0.12.6` against a vendored `0.12.10` until 2026-08-19, so a local-load failure ran a
+different ffmpeg build than the normal path.
+
+To refresh the core, install the package, copy `dist/umd/ffmpeg-core.{js,wasm}` into
+`public/ffmpeg-core/`, update `cdnBaseURL` to match, then uninstall it again:
+
+```bash
+npm i @ffmpeg/core@<version>
+cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js  public/ffmpeg-core/
+cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm public/ffmpeg-core/
+npm uninstall @ffmpeg/core
+```
+
+It is not a dependency the rest of the time: nothing imports it, and leaving it installed costs
+62 MB in `node_modules` for a copy step done once a release at most.
+
+## 6. Self-hosted fonts
+
+[`public/fonts/`](../public/fonts/) holds Funnel Display, Space Mono and Syne Mono as woff2,
+with `fonts.css` linked from [`index.html`](../index.html). They were served from Google Fonts
+until 2026-08-20; self-hosting removed the last third-party request needed to render the page,
+which matters for a tool that otherwise keeps everything local, and removes two DNS+TLS
+round-trips to Google before first paint.
+
+- **Licensing is fine.** All three are SIL OFL 1.1, which permits redistribution provided the
+  license travels with the fonts — hence `OFL.txt` in that directory, carrying each family's
+  copyright line and the refresh procedure.
+- **The `url()` paths are relative**, so they resolve against `fonts.css` itself and work under
+  both `/` and the Pages subpath without any base handling. The `<link>` in `index.html` uses an
+  absolute path, which Vite rewrites with the build base.
+- **Google's unicode-range subsetting is kept as-is.** 16 files, 218 KB in total, but a browser
+  only downloads the subsets a page actually needs — in practice the three latin files, ~50 KB.
+- Funnel Display is a variable font (`font-weight: 300 800`), which is why it is one file per
+  subset rather than one per weight.
+
+`OFL.txt` records the css2 URL to refetch and what to do with the response.
+
+## 7. Deployment size
 
 Audio is not in the bundle. Samples are fetched on demand from R2, which is what keeps the
 published site well inside Pages' limits. If you find yourself adding audio to `public/`,
@@ -102,9 +154,13 @@ Kept because the reasoning still explains shapes in the code, not because any of
   now structurally impossible, because resolution happens once at runtime in `assetUtils.ts`
   instead of by rewriting built output. **External detection taking precedence over local
   prefixing is still the rule**, and is why the R2 branch comes first in `resolveAssetPath`.
-- **The v1/v2 subdirectory deploys are retired.** [`public/v2/index.html`](../public/v2/index.html)
-  is a redirect stub to the root and exists only so old links don't 404; `/v2` stays in
-  `internalPaths` for the same reason. Legacy HTML moved into a subdirectory needed its
-  root-relative `/assets/...` paths patched by hand — the reason `base` is set at build time
-  now rather than assumed.
+- **The v1/v2 subdirectory deploys are gone.** `public/v2/index.html` was a redirect stub kept so
+  old bookmarks wouldn't 404; it and its `/v2` entry in `internalPaths` were deleted
+  2026-08-19, and `/v2` now 404s by choice. Legacy HTML moved into a subdirectory needed its root-relative
+  `/assets/...` paths patched by hand — the reason `base` is set at build time now rather than
+  assumed.
+- **The `/next/` preview deploy never shipped.** v4 added `build:next` / `deploy:next` to publish a
+  second build alongside the real one; the idea was dropped in favour of branch-then-merge, the
+  scripts were removed 2026-08-19, and no `next/` directory was ever created on `gh-pages`. The
+  namespacing in `storageNamespace.ts` is what survives it, kept as a seatbelt (section 3).
 - **Samples used to live on GitHub Releases** (`samples-v1`). They are on R2 now.

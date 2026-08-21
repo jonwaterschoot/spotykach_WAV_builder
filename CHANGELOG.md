@@ -1,5 +1,65 @@
 # Changelog
 
+## [4.0.1] - 2026-08-22
+
+**Housekeeping, with three real bugs in it.** Nothing here changes what the app does — it is the
+first pass of a code-health branch. Two things are visible to you anyway.
+
+**The editor could drop into its error screen.** Three overlays — automation, fades and the loop
+preview — called React hooks after an early return, on values that change while the editor is
+open. Picking the automation tool, loading audio, or starting a loop preview could each take the
+hook count from zero to seven between renders, which React answers by throwing. It surfaced as the
+editor being replaced by the fallback screen rather than as anything obviously broken. Fifteen
+violations, all fixed.
+
+**Nothing is fetched from a third party to draw the page any more.** The fonts came from Google
+Fonts on every load, before anything rendered, for every visitor — which sent each visitor's IP to
+Google whether or not they ever touched a sample. They are self-hosted now, under the SIL Open
+Font License, and the page paints without two DNS and TLS round-trips to a third party first. The
+ffmpeg core likewise loads from this site instead of falling back to a CDN. Sample and preset
+packs still come from Cloudflare R2, and still only when you choose to download one.
+
+### Fixed
+- **Fifteen `rules-of-hooks` violations** across `AutomationOverlay`, `FadeOverlay` and
+  `LoopOverlay`. Guards now sit below the hook declarations; the automation overlay's effects gate
+  on `active` internally, so an inactive overlay still attaches no window listeners.
+- **A stray vertical divider** floating to the right of the Buy Me a Coffee button, left behind
+  when the QR code it used to separate was removed.
+- **The ffmpeg CDN fallback ran a different build** than the local one — pinned to core `0.12.6`
+  against a vendored `0.12.10` — so a failed local load silently switched binaries. Moot now that
+  the fallback is gone, but it was wrong for as long as it existed.
+
+### Changed
+- **Fonts are self-hosted** from `public/fonts/`. Google's unicode-range subsetting is kept, so a
+  browser still downloads only the subsets it needs — about 50 KB in practice.
+- **The ffmpeg core loads only from this origin.** If the site can serve the app it can serve the
+  core, so the CDN fallback was covering a deploy error at the cost of a permanent third-party
+  contact. Its 20-second load timeout is gone too: with no second attempt behind it, the timeout
+  was the only thing that could fail a legitimately slow download of a 32 MB file.
+- **The coffee button uses the app's own header font** rather than pulling a fourth family from
+  Google for one line of text.
+- **Credits name what actually built this** — set up in Google Antigravity, continued with Claude
+  Code in VS Code.
+
+### Removed
+- **Five dependencies nothing imported**, and 108 transitive packages with them: `@ffmpeg/core`
+  (62 MB, never imported — `public/ffmpeg-core/` is a hand copy of its build), `@aws-sdk/client-s3`
+  (left from a sample host the app no longer uses), `dotenv`, `@types/jszip` and `@types/uuid`.
+- **`InfoModal.tsx`** — 170 lines, unreferenced since the About/Help modals were unified, and
+  carrying its own stale copy of the credits.
+- **The `/v2` redirect stub and the `/next` preview-deploy scripts.** Neither was in use; `/v2`
+  now returns a 404 by choice, and no `next/` directory ever existed on the deployed branch.
+
+### Documentation
+- **The deploy workflow is in the README.** Pushing to `main` does not publish — `npm run deploy`
+  does. It was previously only in `CONTRIBUTING.md`, which is easy to miss when the question is
+  "why is the site not updating".
+- **A privacy section**, saying plainly what leaves the browser and when.
+- **[docs/optimization-plan.md](docs/optimization-plan.md)** — the ranked plan for the rest of this
+  work, with the survey already done, plus what was deliberately decided against.
+
+---
+
 ## [4.0.0 "Pervak"] - 2026-08-19
 
 **The app used to be one door.** A setup wizard demanded a work folder, an SD card and a project name

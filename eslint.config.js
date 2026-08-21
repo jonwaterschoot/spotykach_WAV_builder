@@ -6,7 +6,10 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // `public/` is static assets and vendored worker code (ffmpeg's own build
+  // output), not source we author. Linting it only produced fixes to third-party
+  // files.
+  globalIgnores(['dist', 'public']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

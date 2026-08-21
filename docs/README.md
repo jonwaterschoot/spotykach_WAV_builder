@@ -58,7 +58,8 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 | [style_guide_colors.md](style_guide_colors.md) | 🔵 | Tape colours and the app palette. |
 | [debugging/README.md](debugging/README.md) | 🔵 | What `DragDebug.tsx` was for and how to re-mount it. The component was removed from `App.tsx` deliberately and kept here beside its notes. |
 | [debugging/crossfade_technique.md](debugging/crossfade_technique.md) | 🔵 | Crossfade approach notes. |
-| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | Builds, Pages publishing (root + `next/`), **storage namespacing**, and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in — which is why the deployment story survived that file being archived. |
+| [optimization-plan.md](optimization-plan.md) | 🟢 | **The working plan for the `optimize` branch.** Ranked tasks with the survey already done — the ffmpeg singleton, an 18-copy Escape-handler duplication, four disagreeing byte formatters, and the `App.tsx` / `exportUtils.ts` approach. Pick a task up without re-deriving the measurements. Also records what was decided against, and why. |
+| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | **The deploy workflow** (`npm run deploy`, manual, from your machine — pushing to `main` does not publish), plus storage namespacing and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in — which is why the deployment story survived that file being archived. Revised 2026-08-19 when the `/next/` preview deploy and the `/v2` stub were removed. |
 
 ## Not in git
 
@@ -69,8 +70,6 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 ## Elsewhere in the repo
 
 - `public/news/*.md` — the in-app news feed. Content, not documentation; each release adds one.
-- `public/v2/index.html` — a redirect stub left from the versioned v1/v2 deploy. Retire it with the
-  deployment guidelines.
 
 ---
 

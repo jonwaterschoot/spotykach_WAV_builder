@@ -11,24 +11,23 @@ interface AboutHelpModalProps {
 }
 
 
+// Buy Me a Coffee's generator hands you a <script> from their CDN that renders the
+// button in the Cookie typeface. This is that button rebuilt in markup instead, so
+// no third-party script runs here — and it uses our own header font rather than
+// pulling a fourth family from Google for one line of text.
 const BuyMeACoffeeWidget = () => {
     return (
-        <>
-            <style>
-                {`@import url('https://fonts.googleapis.com/css2?family=Cookie&display=swap');`}
-            </style>
-            <a 
-                href="https://www.buymeacoffee.com/jonwtr" 
-                target="_blank" 
-                rel="noreferrer"
-                className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-[#FFDD00] hover:bg-[#FFDD00]/90 transition-all hover:scale-105 active:scale-95 shadow-lg group border border-black/5 no-underline h-[50px]"
-            >
-                <span className="text-2xl drop-shadow-sm group-hover:rotate-12 transition-transform">🧠</span>
-                <span className="text-black font-bold text-xl" style={{ fontFamily: "'Cookie', cursive" }}>
-                    Buy me a coffee
-                </span>
-            </a>
-        </>
+        <a
+            href="https://www.buymeacoffee.com/jonwtr"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-[#FFDD00] hover:bg-[#FFDD00]/90 transition-all hover:scale-105 active:scale-95 shadow-lg group border border-black/5 no-underline h-[50px]"
+        >
+            <span className="text-2xl drop-shadow-sm group-hover:rotate-12 transition-transform">🧠</span>
+            <span className="text-black font-bold text-lg" style={{ fontFamily: 'var(--font-header)' }}>
+                Buy me a coffee
+            </span>
+        </a>
     );
 };
 
@@ -162,7 +161,9 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 <div className="bg-black/20 p-4 rounded-lg border border-gray-800 text-sm text-gray-300">
                                     Built with <span className="text-white font-bold">React</span>, <span className="text-white font-bold">Vite</span>, and <span className="text-white font-bold">TailwindCSS</span>.
                                     <br />
-                                    Assisted by <span className="text-synthux-pink font-bold">Google Deepmind</span>'s experimental agentic coding models.
+                                    Written with LLM assistance — set up in <span className="text-synthux-pink font-bold">Google Antigravity</span>, continued with <span className="text-synthux-blue font-bold">Claude Code</span> in <span className="text-white font-bold">VS Code</span>.
+                                    <br />
+                                    <span className="text-gray-400">Fonts are self-hosted under the SIL Open Font License; nothing is fetched from a third party to render this page.</span>
                                 </div>
                             </div>
 
@@ -188,11 +189,8 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
 
                                 <div className="mt-6 flex flex-col items-center bg-gray-800/30 p-6 rounded-xl border border-gray-700/50">
                                     <p className="text-gray-300 text-sm mb-6 text-center">If you find this tool useful, consider supporting its development!</p>
-                                    <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-                                        <div className="hover:opacity-90 transition-opacity flex items-center h-[60px]">
-                                            <BuyMeACoffeeWidget />
-                                        </div>
-                                        <div className="hidden md:block w-px h-16 bg-gray-700"></div>
+                                    <div className="hover:opacity-90 transition-opacity flex items-center h-[60px]">
+                                        <BuyMeACoffeeWidget />
                                     </div>
                                 </div>
                             </div>

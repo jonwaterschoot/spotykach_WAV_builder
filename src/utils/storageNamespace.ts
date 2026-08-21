@@ -1,29 +1,32 @@
-// Storage namespacing — locked decision 9, Appendix F.3.
+// Storage namespacing — the single place every DB name and localStorage key in
+// the app passes through.
 //
-// GitHub Pages publishes one origin per repo, so a preview build at
-// `/spotykach_WAV_builder/next/` shares `jonwaterschoot.github.io` with the real
-// app at `/spotykach_WAV_builder/`. Same origin means the same IndexedDB and the
-// same localStorage — including `SpotykachDB`, which holds *live directory
-// handles* pointing at the user's real work folder and SD card. A preview build
-// could therefore write over real project state, on real disks.
+// **On the live site the namespace is always empty**, so every name is exactly
+// what it was before v4 — which is the point: the published build must keep
+// reading the storage existing users already have. Nothing here changes any key
+// unless someone deliberately publishes a second build.
 //
-// Every DB name and every localStorage key in the app goes through this module.
+// The mechanism exists because GitHub Pages serves one origin per repo. A second
+// build at a subpath — `/spotykach_WAV_builder/preview/`, say — would share
+// `jonwaterschoot.github.io` with the real app, and therefore share IndexedDB and
+// localStorage. That includes `SpotykachDB`, which holds *live directory handles*
+// pointing at the user's real work folder and SD card, so a second build could
+// write over real project state on a real disk. There is no such build today (the
+// v4 `/next/` preview deploy was dropped), but this is the seatbelt if one ever
+// returns.
+//
 // The namespace is derived once, at module load:
 //
 //   1. `VITE_STORAGE_NS` if set at build time — explicit, wins over everything.
 //   2. Otherwise the last path segment of `BASE_URL` when there is more than one,
-//      so `/spotykach_WAV_builder/next/` → `next` without any extra configuration.
-//   3. Otherwise empty.
-//
-// **An empty namespace leaves every name exactly as it was before v4**, which is
-// the point: the production build must keep reading the storage existing users
-// already have. Only the preview build moves.
+//      so a subpath build namespaces itself with no extra configuration.
+//   3. Otherwise empty — the live site, and dev.
 
 const segmentNamespace = (): string => {
     const base = import.meta.env.BASE_URL || '/';
     const segments = base.split('/').filter(Boolean);
     // '/' → [] · '/spotykach_WAV_builder/' → ['spotykach_WAV_builder'] (the repo
-    // root, not a namespace) · '/spotykach_WAV_builder/next/' → ['…','next'].
+    // root, not a namespace) · '/spotykach_WAV_builder/preview/' → ['…','preview'].
     return segments.length > 1 ? segments[segments.length - 1] : '';
 };
 
@@ -32,7 +35,7 @@ const explicitNamespace = (): string => {
     return typeof raw === 'string' ? raw.trim() : '';
 };
 
-/** '' for the production build; e.g. 'next' for a preview deploy. */
+/** '' on the live site; a subpath segment only if a second build is ever published. */
 export const STORAGE_NAMESPACE: string = explicitNamespace() || segmentNamespace();
 
 /** Namespace an IndexedDB database name. */
