@@ -20,7 +20,13 @@
 > [docs/optimization-plan.md](docs/optimization-plan.md); the summary lives under
 > [Roadmap ▸ Code health](#code-health--the-optimize-branch).
 >
-> *Last reconciled against the code: 2026-08-20.*
+> **The submission tool is in flight.** A sixth door, `#/submit`, on the `submission-tool` branch:
+> a guided form that collects a whole sample pack or preset submission, checks it, and hands back a
+> ZIP to send — replacing the step-by-step half of the submission guide, which is now a signpost. The
+> plan and the decisions behind it are
+> [docs/presets-samples/submission-tool-plan.md](docs/presets-samples/submission-tool-plan.md).
+>
+> *Last reconciled against the code: 2026-08-23.*
 
 ---
 
@@ -204,13 +210,13 @@ link it from the info section.
 
 ### Under consideration
 
-- **Preset & pack authoring, step 1 — the highest-value piece left.** The shape is settled and written up
-  in [docs/presets-samples/submission-workflow.md](docs/presets-samples/submission-workflow.md): the app
-  guides creation and hands back files, the submitter emails or Discords them, the maintainer commits
-  them. Step 0 is built — the Presets door says where presets come from and links the guide. **Step 1 is
-  making the export an actual submission:** today it downloads a ZIP the guides don't mention, names
-  every descriptor `"Untitled Project"`, derives no `requiredPacks` and validates nothing. Step 2 is the
-  same for a sample pack; step 3 is naming a destination at all.
+- **`generate-manifest.mjs` should emit the `presets[]` entry too.** The last piece of the submission
+  work — step 4 of the now-archived
+  [submission-workflow.md](docs/archive/submission-workflow.md). The script generates the `packs[]`
+  entry from a pack folder; the `presets[]` entry beside it is still written by hand. The submission
+  tool now hands the maintainer both as JSON, so this is a convenience for packs deployed without one,
+  not a gap. *(Its frontmatter parser also breaks on a `key: |` block whose continuation lines contain
+  a colon — which is why the tool emits single-line frontmatter and puts the long text in the body.)*
 - **Project images** — attach an image to a project, reused as the cover when it is shared as a preset.
   Cheap now if the sample manager carries it from the start.
 - **History & trashcan** — a trashcan for deleted files with restore, plus undo/redo. Three icons: undo,

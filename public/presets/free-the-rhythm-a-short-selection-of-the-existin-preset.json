@@ -1,0 +1,268 @@
+{
+  "schema": "spotykach-project/1.0",
+  "name": "Free the Rhythm - a short selection of the existing packs",
+  "description": "A small selection of percussive and / or rhythmical sounds from the sample packs.  Only two tapes filled, with the rest free for your own on device recording. Tape one, Blue,  are all sounds from the Hainbach Tapes pack, Tape 2, Green, are selection of 2 sounds from the Synthux Horror samples and 4 from my own sample pack. This preset only contains sounds from these sample packs, no new sounds were added.",
+  "tapes": {
+    "Blue": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "879220a5-d339-465c-a3d9-872b4cdc743f"
+        },
+        {
+          "id": 2,
+          "fileId": "4aaf3180-2668-45d7-8b67-6570f0769ef8"
+        },
+        {
+          "id": 3,
+          "fileId": "90b6a2e3-ac23-4636-8ae8-0466d3aea9c3"
+        },
+        {
+          "id": 4,
+          "fileId": "f29013e5-bc4c-4b53-842f-38df863c9684"
+        },
+        {
+          "id": 5,
+          "fileId": "a52a188e-7321-47eb-bfbc-33869bfe84ca"
+        },
+        {
+          "id": 6,
+          "fileId": "1877e26b-367a-4363-862c-0ef034d2c9a3"
+        }
+      ],
+      "notes": null
+    },
+    "Green": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": "3d01b80e-0662-469e-b70b-7142b2b9a302"
+        },
+        {
+          "id": 2,
+          "fileId": "b1f78343-5b27-4241-bc18-2be69fcc4483"
+        },
+        {
+          "id": 3,
+          "fileId": "235da1f5-e991-4e2a-ac61-f7ea8a56fd50"
+        },
+        {
+          "id": 4,
+          "fileId": "96ae2652-6235-498c-84e7-e362e79f9288"
+        },
+        {
+          "id": 5,
+          "fileId": "d5bd8210-61a7-47d2-9f6c-ac055ca5c525"
+        },
+        {
+          "id": 6,
+          "fileId": "66b6f30f-3830-4160-bf07-872dfe73bb40"
+        }
+      ],
+      "notes": null
+    },
+    "Pink": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": null
+        },
+        {
+          "id": 2,
+          "fileId": null
+        },
+        {
+          "id": 3,
+          "fileId": null
+        },
+        {
+          "id": 4,
+          "fileId": null
+        },
+        {
+          "id": 5,
+          "fileId": null
+        },
+        {
+          "id": 6,
+          "fileId": null
+        }
+      ],
+      "notes": null
+    },
+    "Red": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": null
+        },
+        {
+          "id": 2,
+          "fileId": null
+        },
+        {
+          "id": 3,
+          "fileId": null
+        },
+        {
+          "id": 4,
+          "fileId": null
+        },
+        {
+          "id": 5,
+          "fileId": null
+        },
+        {
+          "id": 6,
+          "fileId": null
+        }
+      ],
+      "notes": null
+    },
+    "Turquoise": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": null
+        },
+        {
+          "id": 2,
+          "fileId": null
+        },
+        {
+          "id": 3,
+          "fileId": null
+        },
+        {
+          "id": 4,
+          "fileId": null
+        },
+        {
+          "id": 5,
+          "fileId": null
+        },
+        {
+          "id": 6,
+          "fileId": null
+        }
+      ],
+      "notes": null
+    },
+    "Yellow": {
+      "slots": [
+        {
+          "id": 1,
+          "fileId": null
+        },
+        {
+          "id": 2,
+          "fileId": null
+        },
+        {
+          "id": 3,
+          "fileId": null
+        },
+        {
+          "id": 4,
+          "fileId": null
+        },
+        {
+          "id": 5,
+          "fileId": null
+        },
+        {
+          "id": 6,
+          "fileId": null
+        }
+      ],
+      "notes": null
+    }
+  },
+  "files": {
+    "879220a5-d339-465c-a3d9-872b4cdc743f": {
+      "originalName": "MASSIVE.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/MASSIVE.flac"
+    },
+    "4aaf3180-2668-45d7-8b67-6570f0769ef8": {
+      "originalName": "Organic-Drums.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/Organic-Drums.flac"
+    },
+    "90b6a2e3-ac23-4636-8ae8-0466d3aea9c3": {
+      "originalName": "Photophone-Tape.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/Photophone-Tape.flac"
+    },
+    "f29013e5-bc4c-4b53-842f-38df863c9684": {
+      "originalName": "Relay-Pulses.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/Relay-Pulses.flac"
+    },
+    "a52a188e-7321-47eb-bfbc-33869bfe84ca": {
+      "originalName": "Tape-Feedback.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/Tape-Feedback.flac"
+    },
+    "1877e26b-367a-4363-862c-0ef034d2c9a3": {
+      "originalName": "The-Wall.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/The-Wall.flac"
+    },
+    "3d01b80e-0662-469e-b70b-7142b2b9a302": {
+      "originalName": "Uher-Tape-Beat.flac",
+      "license": "free to use in your music, no reselling as part of sample pack or instrument.",
+      "origin": "Hainbach's Spotykach Tapes",
+      "samplePackId": "hainbach-tapes",
+      "samplePath": "/Hainbach/Uher-Tape-Beat.flac"
+    },
+    "b1f78343-5b27-4241-bc18-2be69fcc4483": {
+      "originalName": "NKT_Arhythmic.flac",
+      "license": "CC-BY 4.0\nThe author keeps full ownership of the recordings.\nSynthux Academy and others can share, remix, or use these sounds — including commercially — as long as they give credit.\nCrediting can be done by linking to author or mentioning the name.\nNobody else can claim this work as their own.",
+      "origin": "Synthux Horror Sample Pack 2025",
+      "samplePackId": "synthux-horror",
+      "samplePath": "/SynthuxHorror25/NKT/NKT_Arhythmic.flac"
+    },
+    "235da1f5-e991-4e2a-ac61-f7ea8a56fd50": {
+      "originalName": "drainpipeUZ.flac",
+      "license": "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nCopyright (C) 2026 @jonwtr\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.",
+      "origin": "Jonwtr Explorations",
+      "samplePackId": "jonwtr-explorations",
+      "samplePath": "/jonwtr/drainpipeUZ.flac"
+    },
+    "96ae2652-6235-498c-84e7-e362e79f9288": {
+      "originalName": "tricklingstones_dense.flac",
+      "license": "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nCopyright (C) 2026 @jonwtr\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.",
+      "origin": "Jonwtr Explorations",
+      "samplePackId": "jonwtr-explorations",
+      "samplePath": "/jonwtr/tricklingstones_dense.flac"
+    },
+    "d5bd8210-61a7-47d2-9f6c-ac055ca5c525": {
+      "originalName": "noise_trickle_distorted1.flac",
+      "license": "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nCopyright (C) 2026 @jonwtr\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.",
+      "origin": "Jonwtr Explorations",
+      "samplePackId": "jonwtr-explorations",
+      "samplePath": "/jonwtr/noise_trickle_distorted1.flac"
+    },
+    "66b6f30f-3830-4160-bf07-872dfe73bb40": {
+      "originalName": "Vinyl_crackle21.flac",
+      "license": "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n\nCopyright (C) 2026 @jonwtr\n\nEveryone is permitted to copy and distribute verbatim or modified copies of this license document, and changing it is allowed as long as the name is changed.",
+      "origin": "Jonwtr Explorations",
+      "samplePackId": "jonwtr-explorations",
+      "samplePath": "/jonwtr/Vinyl_crackle/Vinyl_crackle21.flac"
+    }
+  },
+  "projectNotes": "# Free the Rhythm - a short selection of the existing packs\n\nA small selection of percussive and / or rhythmical sounds from the sample packs.\nOnly two tapes filled, with the rest free for your own on device recording. \n- Tape one, Blue,  are all sounds from the Hainbach Tapes pack\n- Tape 2, Green, 1 more Hainbach Sample, a selection of 2 sounds from the Synthux Horror samples and 4 from my own sample pack. \n\nThis preset only contains sounds from these sample packs, no new sounds were added."
+}

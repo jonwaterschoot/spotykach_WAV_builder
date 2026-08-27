@@ -1,13 +1,14 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioWaveform, Check, ChevronDown, ChevronLeft, ChevronUp, Database, Download, FilePlus,
-  FileStack, FolderPlus, GripVertical, HardDrive, Layers, Loader, Pause, Play, Trash2, Upload, X,
+  FileStack, FolderPlus, GripVertical, HardDrive, Layers, Loader, Pause, Play, Send, Trash2, Upload, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
   buildDetachedState, slotLabelForIndex, tapeForIndex, GRID_CAPACITY, type DetachedSample,
 } from '../utils/detachedState';
 import { useEscapeLayer } from '../shell/escapeStack';
+import { paramsFromHash } from '../shell/useAppMode';
 import {
   clearBrowsePoolFromDB, loadBrowsePoolCopiesFromDB, loadBrowsePoolFromDB, loadUserLibraryFromDB,
   saveBrowsePoolCopiesToDB, saveBrowsePoolToDB,
@@ -181,6 +182,8 @@ interface BrowseModeProps {
    * the pool survives the trip, so this is a plain route and not a warning.
    */
   onEnterPresets?: (presetId?: string) => void;
+  /** The submission tool, with this pool sent ahead of it. */
+  onEnterSubmit?: () => void;
 }
 
 /**
@@ -192,7 +195,16 @@ interface BrowseModeProps {
  * here writes IndexedDB's app-state slot (locked decision 5) — the pool lives and
  * dies with the mode.
  */
-export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStudio, onEnterPresets }) => {
+export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStudio, onEnterPresets, onEnterSubmit }) => {
+  /**
+   * `#/browse?pack=<id>` - a link to one pack rather than to the browser.
+   *
+   * Read once, the same way the Presets door reads `?preset=`: the hash is where a
+   * mode points at something inside another, and a shared link that opened on the
+   * wrong pack would read as having gone nowhere.
+   */
+  const [initialPackId] = useState(() => paramsFromHash(window.location.hash).get('pack') || undefined);
+
   const [pool, setPool] = useState<PoolItem[]>([]);
   const [isPoolOpen, setIsPoolOpen] = useState(false);
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
@@ -852,6 +864,45 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   });
 
   /**
+   * The fourth exit — the pool, sent to the submission tool.
+   *
+   * A pool is often exactly what a submission is: files gathered, auditioned,
+   * sometimes edited, and now worth sharing. Asking the artist to download it and
+   * drop it back into the next screen would be the app failing to talk to itself,
+   * so the parcel goes through IndexedDB and the tool picks it up on arrival.
+   *
+   * The pool stays. This is a copy, like the project exit beside it.
+   */
+  const sendPoolToSubmission = async () => {
+    if (poolRef.current.length === 0 || !onEnterSubmit) return;
+    try {
+      const { sendToSubmissionTool } = await import('../submission/handoff');
+      const { filesFromPool } = await import('../submission/intake');
+      await sendToSubmissionTool({
+        source: 'pool',
+        files: filesFromPool(poolRef.current.map(item => ({
+          id: item.id,
+          name: item.name,
+          fileName: item.fileName,
+          duration: item.duration ?? 0,
+          originalDuration: item.originalDuration,
+          origin: item.origin,
+          license: item.license,
+          sourceSamplePath: item.sourceSamplePath,
+          sourcePath: item.sourcePath,
+          edited: item.edited,
+          original: item.originalBlob,
+          current: item.blob,
+        }))),
+      });
+      onEnterSubmit();
+    } catch (e) {
+      console.error('[Browse] Could not hand the pool to the submission tool', e);
+      showToast('That could not be sent to the submission tool.', 'error');
+    }
+  };
+
+  /**
    * The third exit — open question 5's "import into project".
    *
    * It reuses the same `buildDetachedState(pool)` the two downloads use, so the
@@ -1017,6 +1068,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               // route is a hash, so coming back lands on the same pack.
               onOpenPreset={onEnterPresets ? (preset) => onEnterPresets(preset.id) : undefined}
               onSampleDrag={handleSampleDrag}
+              initialPackId={initialPackId}
               hostPlayback={playRequest}
               onPlaybackChange={handlePlaybackChange}
               onLocateInPool={locateInPool}
@@ -1365,6 +1417,26 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                       <span className="block text-xs font-bold">Import into a project</span>
                       <span className="block text-[10px] opacity-70">
                         The whole pool, layout kept, on a folder you pick, then carry on in Studio
+                      </span>
+                    </span>
+                  </button>
+                </>
+              )}
+
+              {onEnterSubmit && (
+                <>
+                  <div className="h-px bg-white/10 my-1" />
+                  <button
+                    onClick={sendPoolToSubmission}
+                    disabled={pool.length === 0 || isExporting}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-turquoise/40 bg-synthux-turquoise/10
+                      text-synthux-turquoise text-left transition-all hover:bg-synthux-turquoise/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Send size={16} className="shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold">Send to the submission tool</span>
+                      <span className="block text-[10px] opacity-70">
+                        Turn this pool into a sample pack others can browse. The pool stays here.
                       </span>
                     </span>
                   </button>

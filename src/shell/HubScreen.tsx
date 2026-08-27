@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone } from 'lucide-react';
+import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, Send } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
 
@@ -86,6 +86,19 @@ const DOORS: Door[] = [
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(255,185,0,0.45)]',
     ready: true,
     desktopOnly: true,
+  },
+  {
+    mode: 'submit',
+    label: 'Submit a Pack',
+    tagline: 'Share your work',
+    body: 'Turn a folder of your own sounds into a sample pack for this app — or a preset from a project. Guided, and nothing is uploaded.',
+    icon: <Send size={26} strokeWidth={1.75} />,
+    accentText: 'text-synthux-turquoise',
+    accentBorder: 'hover:border-synthux-turquoise/60',
+    accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(45,212,191,0.45)]',
+    ready: true,
+    // The only door here that is a form. It reads folders on a desktop, but every
+    // field in it works on a phone, so this one is not fenced off.
   },
 ];
 

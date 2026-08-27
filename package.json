@@ -1,13 +1,14 @@
 {
   "name": "spotykach-wav-builder",
   "private": true,
-  "version": "4.0.1",
+  "version": "4.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:local": "tsc -b && vite build --base=/",
     "lint": "eslint .",
+    "submission": "node scripts/import-submission.mjs",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

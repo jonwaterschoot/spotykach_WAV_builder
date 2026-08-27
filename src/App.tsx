@@ -413,8 +413,58 @@ function App({ onExitToHub }: AppProps) {
       const JSZip = (await import('jszip')).default;
       const zip = await JSZip.loadAsync(file);
 
+      /*
+       * Know what this is before writing a single byte.
+       *
+       * This used to unpack any ZIP straight into `Projects/<name>/` and only then
+       * try to load it — so the wrong archive left a folder of somebody else's files
+       * on disk and a "Failed to load project" with nothing to act on. The commonest
+       * wrong archive is a submission built by the Submit tool, which is a genuinely
+       * reasonable mistake: it holds a descriptor and audio, it just isn't a project.
+       */
+      if (zip.file('submission.json')) {
+        setConfirmAction({
+          title: 'That is a submission, not a project',
+          message: (
+            <>
+              <p className="mb-3">
+                This archive was built by the <strong className="text-white">Submit</strong> tool. It holds a
+                sample pack and its details for a maintainer to publish — not a project this app can open.
+                Nothing has been written to your work folder.
+              </p>
+              <p className="mb-3">
+                To carry on working on the submission, open the Submit tool and drop this same ZIP onto its
+                audio step. Everything comes back: the files, the details, the licence and the preset.
+              </p>
+              <p className="text-gray-400 text-sm">
+                To share a <em>project</em> with someone instead, that is Export → Project Preset: the
+                settings-only <code>.json</code> if you both have the same sample packs, or the full backup{' '}
+                <code>.zip</code> if it uses audio of your own. Those are what Import reads.
+              </p>
+            </>
+          ),
+          confirmLabel: 'Open the Submit tool',
+          onConfirm: () => {
+            setConfirmAction(null);
+            window.location.hash = '#/submit';
+          },
+        });
+        return;
+      }
+
       // Determine project name from zip (top-level folder or filename)
       const entries = Object.keys(zip.files);
+      const looksLikeProject = entries.some(path =>
+        path.endsWith('project.json') || path.endsWith('project-descriptor.json'),
+      );
+      if (!looksLikeProject) {
+        showToast(
+          'That ZIP holds no project.json or project-descriptor.json, so there is nothing here to import.',
+          'error',
+        );
+        return;
+      }
+
       const topFolders = [...new Set(entries.map(e => e.split('/')[0]).filter(Boolean))];
       
       // If ZIP was created with spaces in title but filename has -, use filename as fallback?
@@ -5004,6 +5054,24 @@ function App({ onExitToHub }: AppProps) {
                       const { exportSaveState } = await import('./utils/exportUtils');
                       await exportSaveState(state, false, log, opts.settingsOnly);
                     });
+                  }}
+                  onPrepareSubmission={async () => {
+                    setShowExport(false);
+                    try {
+                      // The parcel goes through IndexedDB and the hash change unmounts
+                      // this whole shell, so nothing is passed across — the tool reads
+                      // it on arrival. `hashForMode` rather than a literal so the one
+                      // definition of a mode's URL stays in `useAppMode`.
+                      const { handoffFromAppState, sendToSubmissionTool } = await import('./submission/handoff');
+                      const { hashForMode } = await import('./shell/useAppMode');
+                      await sendToSubmissionTool(
+                        await handoffFromAppState(state, currentProjectName || 'Untitled Project')
+                      );
+                      window.location.hash = hashForMode('submit');
+                    } catch (e) {
+                      console.error('[Studio] Could not open the submission tool', e);
+                      showToast('The submission tool could not be opened.', 'error');
+                    }
                   }}
                 />
               </Suspense>

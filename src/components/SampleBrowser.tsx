@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, ChevronRight, Layers, Menu, Package } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { PresetManifestEntry, SamplePack } from '../data/samplePacks';
-import { resolveAssetPath } from '../utils/assetUtils';
+import { resolveAssetPath, toSampleKey } from '../utils/assetUtils';
 import { SAMPLE_DRAG_TYPE } from '../utils/dragTypes';
 import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../types';
 import { TAPE_COLORS, COLOR_MAP } from '../types';
@@ -15,6 +15,15 @@ const NO_PROJECTS: ProjectSummary[] = [];
 interface SampleBrowserProps {
     isOpen: boolean;
     onClose: () => void;
+    /**
+     * Open on this pack instead of the first one.
+     *
+     * How `#/browse?pack=<id>` arrives: an artist sends someone a link to *their*
+     * pack, and landing on the alphabetically-first one instead would make the link
+     * look broken. Read once, at mount - changing it later would yank the selection
+     * out from under someone mid-browse.
+     */
+    initialPackId?: string;
     onImport: (url: string, name: string, origin?: string, license?: string, sourcePath?: string) => Promise<void>;
     /**
      * Paths the *caller* considers already taken, unioned with the browser's own
@@ -124,6 +133,7 @@ interface CustomFolder {
 export const SampleBrowser = ({
     isOpen,
     onClose,
+    initialPackId,
     onImport,
     addedPaths,
     mode = 'project',
@@ -153,7 +163,7 @@ export const SampleBrowser = ({
     const showUserLibrary = !isStandalone || hasUserLibrary;
 
     // Core Selection State
-    const [selectedPackId, setSelectedPackId] = useState<string>(SAMPLE_PACKS[0]?.id || 'my-library');
+    const [selectedPackId, setSelectedPackId] = useState<string>(initialPackId || SAMPLE_PACKS[0]?.id || 'my-library');
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
     const [selectedCustomFolderId, setSelectedCustomFolderId] = useState<string | null>(null);
     const [remotePacks, setRemotePacks] = useState<SamplePack[]>([]);
@@ -256,16 +266,31 @@ export const SampleBrowser = ({
     const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
     const [showActionMenu, setShowActionMenu] = useState(false);
 
-    // Track added samples globally based on the project's current files
+    /**
+     * Everything already taken, under every spelling it might arrive in.
+     *
+     * Each path goes in twice: as stored, and collapsed through `toSampleKey`. The
+     * raw form is what `LocalFolderBrowser` compares against, since a folder's keys
+     * are its own; the collapsed form is what makes a preset's samples match the
+     * pack rows they came from. A preset descriptor stores `/Hainbach/MASSIVE.flac`
+     * while the manifest hands this browser the absolute R2 URL for the same file,
+     * so loading a preset used to leave its own samples looking un-added.
+     */
     const allAddedPaths = useMemo(() => {
-        const paths = new Set<string>(addedSamples);
-        addedPaths?.forEach(path => paths.add(path));
+        const paths = new Set<string>();
+        const remember = (path: string) => {
+            paths.add(path);
+            paths.add(toSampleKey(path));
+        };
+
+        addedSamples.forEach(remember);
+        addedPaths?.forEach(remember);
         const addedNames = new Set<string>();
 
         if (currentFiles) {
             Object.values(currentFiles).forEach(file => {
                 if (file.sourceSamplePath) {
-                    paths.add(file.sourceSamplePath);
+                    remember(file.sourceSamplePath);
                 } else if (file.origin && file.origin !== 'SD Card' && file.origin !== 'User Library') {
                     if (file.originalName) addedNames.add(file.originalName);
                 }
@@ -273,6 +298,27 @@ export const SampleBrowser = ({
         }
         return { paths, addedNames };
     }, [currentFiles, addedSamples, addedPaths]);
+
+    /**
+     * The pack's own address, built rather than routed.
+     *
+     * Always `#/browse`, whichever host this browser is mounted in: a link handed to
+     * someone else has to land them somewhere that exists without a project, and
+     * Studio's copy of this browser lives behind a work folder they do not have.
+     */
+    const [copiedPackLink, setCopiedPackLink] = useState<string | null>(null);
+    const copyPackLink = async (packId: string) => {
+        const { origin, pathname } = window.location;
+        const url = `${origin}${pathname}#/browse?pack=${encodeURIComponent(packId)}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopiedPackLink(packId);
+            window.setTimeout(() => setCopiedPackLink(null), 2000);
+        } catch {
+            // Clipboard access can be refused outright; a prompt still lets them copy.
+            window.prompt('Copy this link', url);
+        }
+    };
 
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';
@@ -292,7 +338,10 @@ export const SampleBrowser = ({
                 setIsManifestLoading(false);
 
                 // If no pack is selected yet and we have remote packs, select the first one
-                if (selectedPackId === 'my-library' && packs.length > 0) {
+                // A deep link names a pack the manifest had not delivered yet at mount.
+                if (initialPackId && packs.some(pack => pack.id === initialPackId)) {
+                    setSelectedPackId(initialPackId);
+                } else if (selectedPackId === 'my-library' && packs.length > 0) {
                     setSelectedPackId(packs[0].id);
                 }
 
@@ -314,7 +363,10 @@ export const SampleBrowser = ({
                     }
                     setCustomFolders(validFolders);
                 }
-                if (selectedPackId === 'my-library' && packs.length > 0) {
+                // A deep link names a pack the manifest had not delivered yet at mount.
+                if (initialPackId && packs.some(pack => pack.id === initialPackId)) {
+                    setSelectedPackId(initialPackId);
+                } else if (selectedPackId === 'my-library' && packs.length > 0) {
                     setSelectedPackId(packs[0].id);
                 }
             } catch (e) {
@@ -695,10 +747,27 @@ export const SampleBrowser = ({
      * A preset names the packs it draws from, so the pack page can say so without
      * anything new in the manifest. The library, a project's samples and a mounted
      * folder can't match — no preset requires an id that only exists in this session.
+     *
+     * Two kinds turn up here and they are not the same offer. A preset that requires
+     * *only* this pack is this pack, arranged. One that requires others too merely
+     * borrows from it — and printing "this pack already spread across the 6×6 grid"
+     * under both names is how the page came to look like it repeated itself.
      */
-    const packPresets = selectedPack
+    const packPresets: PresetManifestEntry[] = selectedPack
         ? remotePresets.filter(p => p.requiredPacks.includes(selectedPack.id))
         : [];
+    const presetsOfPack = packPresets.filter(p => p.requiredPacks.length === 1);
+    const presetsUsingPack = packPresets.filter(p => p.requiredPacks.length > 1);
+
+    /** "Synthux Horror Sample Pack 2025 and Jonwtr Explorations" — the packs *besides* this one. */
+    const otherPacksIn = (preset: PresetManifestEntry): string => {
+        const names = preset.requiredPacks
+            .filter(id => id !== selectedPack?.id)
+            .map(id => allPacks.find(p => p.id === id)?.name || id);
+        if (names.length === 0) return '';
+        if (names.length === 1) return names[0];
+        return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    };
 
     /** Drawn only when the host has somewhere to send the click. */
     const showPresetLink = packPresets.length > 0 && !!onOpenPreset;
@@ -1189,6 +1258,29 @@ export const SampleBrowser = ({
                                                 <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tighter drop-shadow-2xl">
                                                     {selectedPack.name}
                                                 </h1>
+                                                {/*
+                                                  * A link straight to this pack - the thing an artist
+                                                  * wants the moment their pack is published, and the
+                                                  * thing the browser could not give them, because which
+                                                  * pack is open was internal state and the URL never
+                                                  * said. Only for real packs: the local folder and the
+                                                  * curated library are this machine's, and a link to
+                                                  * either would open someone else's empty one.
+                                                  */}
+                                                {!isUserLibrarySelected && !isProjectSamplesSelected && !isCustomFolderSelected && (
+                                                    <button
+                                                        onClick={() => copyPackLink(selectedPack.id)}
+                                                        className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                                                            bg-black/40 border border-white/10 text-[11px] font-bold uppercase
+                                                            tracking-widest text-gray-400 hover:text-white hover:border-white/30
+                                                            transition-colors"
+                                                        title="Copy a link that opens this pack"
+                                                    >
+                                                        {copiedPackLink === selectedPack.id
+                                                            ? <><Check size={12} className="text-synthux-green" /> Link copied</>
+                                                            : <><LinkIcon size={12} /> Copy link to this pack</>}
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1262,7 +1354,7 @@ export const SampleBrowser = ({
                                                           * differs by host, so the wording does too: Browse leaves for the
                                                           * preset screen, Studio swaps this window for its presets panel.
                                                           */}
-                                                        {showPresetLink && packPresets.map(preset => (
+                                                        {showPresetLink && presetsOfPack.map(preset => (
                                                             <button
                                                                 key={preset.id}
                                                                 onClick={() => onOpenPreset!(preset)}
@@ -1283,6 +1375,41 @@ export const SampleBrowser = ({
                                                                 <ChevronRight size={16} className="shrink-0 text-violet-300/60 group-hover:text-violet-200 group-hover:translate-x-0.5 transition-all" />
                                                             </button>
                                                         ))}
+
+                                                        {/*
+                                                          * The other kind: presets that take some of these sounds and mix them
+                                                          * with other packs'. Worth naming — it is how an artist's pack gets
+                                                          * discovered — but it is not this pack in ready-made form, so it is a
+                                                          * quiet list under the offer rather than a second copy of it.
+                                                          */}
+                                                        {showPresetLink && presetsUsingPack.length > 0 && (
+                                                            <div className="mt-4">
+                                                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-2">
+                                                                    Also used in
+                                                                </p>
+                                                                <div className="flex flex-col gap-1.5">
+                                                                    {presetsUsingPack.map(preset => (
+                                                                        <button
+                                                                            key={preset.id}
+                                                                            onClick={() => onOpenPreset!(preset)}
+                                                                            className="group w-full max-w-full sm:max-w-[620px] flex items-center gap-3 px-4 py-2.5 rounded-lg
+                                                                                border border-white/10 hover:border-violet-500/30 hover:bg-violet-500/[0.07] text-left transition-all"
+                                                                        >
+                                                                            <Package size={14} className="shrink-0 text-gray-500 group-hover:text-violet-300 transition-colors" />
+                                                                            <span className="min-w-0 flex-1">
+                                                                                <span className="block text-xs font-bold text-gray-300 tracking-tight truncate">
+                                                                                    {preset.name}
+                                                                                </span>
+                                                                                <span className="block text-[11px] text-gray-500 leading-relaxed mt-0.5">
+                                                                                    Mixes these sounds with {otherPacksIn(preset)}.
+                                                                                </span>
+                                                                            </span>
+                                                                            <ChevronRight size={14} className="shrink-0 text-gray-600 group-hover:text-violet-300 group-hover:translate-x-0.5 transition-all" />
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -1394,7 +1521,7 @@ export const SampleBrowser = ({
                                                             {samples.map((sample: any, idx: number) => {
                                                                 const isPlaying = playingSample === sample.path;
                                                                 const isImporting = importingSample === sample.path;
-                                                                const isAdded = allAddedPaths.paths.has(sample.path) || allAddedPaths.addedNames.has(sample.name);
+                                                                const isAdded = allAddedPaths.paths.has(toSampleKey(sample.path)) || allAddedPaths.addedNames.has(sample.name);
                                                                 const isSelected = selectedSamplePaths.has(sample.path);
                                                                 const isLocated = locatedSamplePath === sample.path;
 

@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Play, Download, Loader, ChevronRight, Package, Check, HardDrive, AlertTriangle, ExternalLink } from 'lucide-react';
+import { X, Play, Download, Loader, ChevronRight, Package, Check, HardDrive, AlertTriangle, ExternalLink, Send } from 'lucide-react';
 import type { PresetManifestEntry } from '../data/samplePacks';
 import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL } from '../data/links';
+import { hashForMode } from '../shell/useAppMode';
+import { presetGradient } from '../utils/presetGradients';
 import { canWriteToSDDirectly, type PresetProgress } from '../utils/presetLoader';
 import { SDCardWriteModal, type SDCardWriteStage } from './modals/SDCardWriteModal';
 // Static, not lazy: `requestPermission` needs the click's transient activation, and
@@ -309,9 +311,15 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                             <p className="text-[11px] font-bold text-violet-200 uppercase tracking-wider mb-0.5">
                                 {isStandalone ? 'Straight to the Card' : 'Create & Share'}
                             </p>
+                            {/*
+                              * Why this tier has no "Load into App" button, said once here rather
+                              * than as an explanation repeated on every card. Adopting a preset as
+                              * a project needs a work folder to save into and a project list to
+                              * name against, and this tier deliberately has neither.
+                              */}
                             <p className="text-[11px] text-violet-300/70 leading-normal">
                                 {isStandalone
-                                    ? 'The card is asked for at the moment of writing, never before.'
+                                    ? <>The card is asked for at the moment of writing, never before. To keep a preset and change it — swap samples, re-slot, retitle — open <span className="font-bold text-violet-200">Studio</span> and load it from the presets panel there; that needs a work folder, which is what this door does without.</>
                                     : 'Save your own projects or share them through the Project Manager.'}
                             </p>
                         </div>
@@ -364,8 +372,12 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                                             <div className="absolute inset-0 bg-gradient-to-t from-[#161616] via-transparent to-transparent" />
                                         </div>
                                     ) : (
-                                        <div className="h-36 bg-gradient-to-br from-violet-900/30 to-indigo-900/30 relative shrink-0 flex items-center justify-center">
-                                            <Package size={40} className="text-violet-400/30" />
+                                        // Keyed to the preset's own id rather than one wash for
+                                        // everything: a list of unillustrated presets should still
+                                        // look like a list of different things.
+                                        <div className={`h-36 bg-gradient-to-br ${presetGradient(entry.id)}
+                                            relative shrink-0 flex items-center justify-center`}>
+                                            <Package size={40} className="text-white/20" />
                                         </div>
                                     )}
 
@@ -511,8 +523,9 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                 {/*
                   * Where presets come from — the door never said, and one card in an empty
                   * screen reads like a catalogue that ended rather than one that hasn't
-                  * started. A signpost, not a form: authoring a preset needs Studio, and this
-                  * tier has no project. Step 0 of docs/presets-samples/submission-workflow.md.
+                  * started. It was a signpost to a guide; now the destination is a tool in
+                  * the app, so the panel points there and keeps the guide as the second link
+                  * for anyone who wants to read before they start.
                   */}
                 {isStandalone && (
                     <div className="mt-6 rounded-xl border border-white/8 bg-[#141414] px-5 py-4
@@ -520,21 +533,30 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                         <div className="min-w-0">
                             <p className="text-sm font-bold text-gray-200">Want yours here?</p>
                             <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                                Presets are projects built in Studio, then sent in over Discord
-                                (<span className="text-gray-400">{DISCORD_HANDLE}</span>) or email. Sample packs
-                                come from artists the same way.
+                                Presets are projects built in Studio; sample packs come from artists. Either way the
+                                submission tool collects what is needed and hands you the files to send over Discord
+                                (<span className="text-gray-400">{DISCORD_HANDLE}</span>) or email.
                             </p>
                         </div>
-                        <a
-                            href={SUBMISSION_GUIDE_URL}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/10
-                                bg-white/5 hover:bg-white/10 text-xs font-bold uppercase tracking-wide text-gray-300
-                                hover:text-white transition-colors no-underline"
-                        >
-                            How to submit <ExternalLink size={12} />
-                        </a>
+                        <div className="shrink-0 flex items-center gap-2">
+                            <a
+                                href={hashForMode('submit')}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-synthux-turquoise/40
+                                    bg-synthux-turquoise/10 hover:bg-synthux-turquoise/20 text-xs font-bold uppercase tracking-wide
+                                    text-synthux-turquoise transition-colors no-underline"
+                            >
+                                <Send size={12} /> Submit
+                            </a>
+                            <a
+                                href={SUBMISSION_GUIDE_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold uppercase
+                                    tracking-wide text-gray-500 hover:text-white transition-colors no-underline"
+                            >
+                                Read first <ExternalLink size={12} />
+                            </a>
+                        </div>
                     </div>
                 )}
             </div>

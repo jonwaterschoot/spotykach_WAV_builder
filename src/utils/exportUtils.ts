@@ -507,7 +507,12 @@ This is required by the Spotykach firmware.
             // User requested them under project notes, so I'll keep this section focused on the files.
             activeSlots.forEach(slot => {
                 const file = state.files[slot.fileId!];
-                content += `  Slot ${slot.id}: ${slot.id}.WAV  (Source: "${file?.originalName || file?.name || 'Unknown'}")\n`;
+                // Origin on the same line as the file it belongs to. A card built from
+                // three packs used to list its licences in one place and its filenames
+                // in another, leaving the reader to work out which sound came from
+                // which — which is exactly what a credit is for.
+                const origin = file?.origin ? `  [${file.origin}]` : '';
+                content += `  Slot ${slot.id}: ${slot.id}.WAV  (Source: "${file?.originalName || file?.name || 'Unknown'}")${origin}\n`;
             });
             content += '\n';
         }
@@ -562,8 +567,14 @@ LEGAL / LICENSES
     if (licenses.size > 0) {
         content += "This project uses samples with the following licenses:\n\n";
         licenses.forEach(l => content += `${l}\n\n---\n\n`);
+    } else if (usedFileIds.size === 0) {
+        // Distinguishable from "files with no licence": a card with nothing on it is a
+        // different problem, and reporting it as a licensing gap sent at least one
+        // reader looking in the wrong place.
+        content += "No files are assigned to any slot, so there is nothing to license.\n";
     } else {
-        content += "No specific license information found for samples.\n";
+        content += "No license information is attached to these samples.\n" +
+            "They are most likely your own recordings or files imported from disk.\n";
     }
 
     if (origins.size > 0) {

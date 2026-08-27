@@ -140,7 +140,7 @@ Full detail in [docs/deployment_guidelines.md](docs/deployment_guidelines.md).
 Whether you are a musician contributing a sample pack, a user sharing a project layout, or a developer/maintainer working on the app, check out the relevant guides below:
 
 *   **For Musicians & Preset Creators**:
-    *   [Sample & Preset Submission Guide](docs/presets-samples/README.md) – How to package, name, and license samples and presets before submitting them.
+    *   [Sample & Preset Submission Guide](docs/presets-samples/README.md) – What to know before opening the app's submission tool, which collects and checks the rest for you.
 *   **For Developers & Maintainers**:
     *   [Preset Upload & Integration Guide](public/presets/README.md) – Developer instructions on integrating presets, JSON schema specs, and deploying sample packs.
     *   [Audio Processing & Normalization Scripts](scripts/normalize-audio.md) – Documentation for running scripts to normalize, FLAC-compress, and tag audio files.

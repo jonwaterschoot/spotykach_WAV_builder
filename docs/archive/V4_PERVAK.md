@@ -55,7 +55,7 @@ is **not** among them — it needs the editor round.
 | G | ~~**The editor can only be reached from the pool.**~~ ✅ **A pen on the sample row** pools the file and opens the editor on it in one step. | New, this round | Done |
 | H | **The mirror vocabulary survives in the types.** `status: 'synced'\|'local'\|'backup'\|'modified'` + `.local`/`.backup` are still there, because existing cards still carry projects that `scanProjects` merges. **Phase 7 took the recommended half:** the dead states are no longer *rendered* — the Project Manager reads only "in the workspace" vs "only on the card". Renaming the vocabulary is still open, as one mechanical commit. | D.3, deferred by Phase 4, 6 *and* 7 | A mechanical rename, whenever |
 | I | **The SD-import compare view was not built** — the `SyncDashboard`-derived per-slot view. `ProjectManager`'s import button covers the case for now. | Phase 4, "deliberately not built" | Only when SD import gets real use |
-| J | ~~**Open question 6 — preset & pack authoring.**~~ ✅ **Answered 2026-08-16.** The app guides the creation of presets and packs and hands back files; the submitter sends them over email or Discord; the maintainer commits them. No PRs, no CI, no backend, no authoring surface. Plan and findings: [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md) — step 0 built, **step 1 (make the preset export actually submittable) is the next piece.** | Open questions | Answered; step 1 is post-v4 work |
+| J | ~~**Open question 6 — preset & pack authoring.**~~ ✅ **Answered 2026-08-16.** The app guides the creation of presets and packs and hands back files; the submitter sends them over email or Discord; the maintainer commits them. No PRs, no CI, no backend, no authoring surface. Plan and findings: [docs/presets-samples/submission-workflow.md](submission-workflow.md) — step 0 built, **step 1 (make the preset export actually submittable) is the next piece.** | Open questions | Answered; step 1 is post-v4 work |
 | K | **Open question 7 — multiple projects per card (`SK1/`, `SK2/`).** Firmware question first. `'SK'` is hardcoded in 13 places across 6 files and would need to become a parameter before any feature work. | Open questions | Blocked on @Vlad |
 | L | **Does the device tolerate an unknown key/value pair?** The app now preserves them either way; writing the *project title* into `config.txt` waits on this answer. | Phase 5 notes | Blocked on the hardware developer |
 | M | **Non-destructive editing / op log.** `AudioVersion.processing[]` is a flat tag set and a real model is a different data model, not an extension. | Appendix E.3 | **Explicitly not a v4 goal.** Don't let it creep in |
@@ -1180,7 +1180,7 @@ blocks a phase: 6 needs a product decision, 7 needs an answer from the firmware 
    **The consequence is that the app is the form**, so what it hands back has to be complete —
    which today it is not: the settings-only export downloads an unmentioned ZIP, names every descriptor
    `"Untitled Project"` and derives no `requiredPacks`. Findings and the staged plan are in
-   [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md); its
+   [docs/presets-samples/submission-workflow.md](submission-workflow.md); its
    step 0, a signpost on the Preset door, is built. **No dedicated authoring surface** is planned.
 
 7. **Multiple projects on one card — `SK1/`, `SK2/`, …?** *(new, from the community thread, 2026-08-14)*
