@@ -1,8 +1,9 @@
-import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Copy, Check } from 'lucide-react';
+import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film } from 'lucide-react';
 import { version } from '../../package.json';
 import { useEffect, useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
 import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL, submissionEmail, submissionMailto } from '../data/links';
+import { hashForMode } from '../shell/useAppMode';
 
 interface AboutHelpModalProps {
     onClose: () => void;
@@ -11,31 +12,76 @@ interface AboutHelpModalProps {
 }
 
 
+// Buy Me a Coffee's generator hands you a <script> from their CDN that renders the
+// button in the Cookie typeface. This is that button rebuilt in markup instead, so
+// no third-party script runs here — and it uses our own header font rather than
+// pulling a fourth family from Google for one line of text.
 const BuyMeACoffeeWidget = () => {
     return (
-        <>
-            <style>
-                {`@import url('https://fonts.googleapis.com/css2?family=Cookie&display=swap');`}
-            </style>
-            <a 
-                href="https://www.buymeacoffee.com/jonwtr" 
-                target="_blank" 
-                rel="noreferrer"
-                className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-[#FFDD00] hover:bg-[#FFDD00]/90 transition-all hover:scale-105 active:scale-95 shadow-lg group border border-black/5 no-underline h-[50px]"
-            >
-                <span className="text-2xl drop-shadow-sm group-hover:rotate-12 transition-transform">🧠</span>
-                <span className="text-black font-bold text-xl" style={{ fontFamily: "'Cookie', cursive" }}>
-                    Buy me a coffee
-                </span>
-            </a>
-        </>
+        <a
+            href="https://www.buymeacoffee.com/jonwtr"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-[#FFDD00] hover:bg-[#FFDD00]/90 transition-all hover:scale-105 active:scale-95 shadow-lg group border border-black/5 no-underline h-[50px]"
+        >
+            <span className="text-2xl drop-shadow-sm group-hover:rotate-12 transition-transform">🧠</span>
+            <span className="text-black font-bold text-lg" style={{ fontFamily: 'var(--font-header)' }}>
+                Buy me a coffee
+            </span>
+        </a>
+    );
+};
+
+/**
+ * One screenshot or video in the contribute tab.
+ *
+ * `pending` means the capture does not exist yet: the slot draws what belongs there
+ * instead of a broken image, so the tab ships while the shot list is worked through.
+ * Filling one in is dropping the file at the path already named here and deleting the
+ * word `pending` — the path never changes, so re-shooting an existing capture is an
+ * overwrite with no code change at all.
+ */
+const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
+    src: string;
+    alt: string;
+    note: string;
+    kind?: 'image' | 'video';
+    pending?: boolean;
+}) => {
+    if (pending) {
+        const Icon = kind === 'video' ? Film : Camera;
+        return (
+            <div className="rounded-lg border border-dashed border-gray-700 bg-black/30 px-4 py-5 flex items-start gap-3">
+                <Icon size={16} className="shrink-0 mt-0.5 text-gray-600" />
+                <div className="min-w-0 space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 font-header">
+                        {kind === 'video' ? 'Video to come' : 'Screenshot to come'}
+                    </p>
+                    <p className="text-xs text-gray-500 leading-relaxed">{note}</p>
+                    <p className="text-[10px] font-mono text-gray-600 break-all">{src}</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (kind === 'video') {
+        return (
+            <div className="rounded-lg overflow-hidden border border-gray-800 bg-black/50 flex items-center">
+                <video src={resolveAssetPath(src)} controls className="w-full h-auto max-h-96 object-contain mx-auto" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black/40">
+            <img src={resolveAssetPath(src)} alt={alt} className="w-full h-auto object-contain max-h-96 mx-auto" />
+        </div>
     );
 };
 
 export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: AboutHelpModalProps) => {
     const [activeTab, setActiveTab] = useState<'about' | 'help' | 'contribute'>(initialTab);
     const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
-    const [templateCopied, setTemplateCopied] = useState(false);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -162,7 +208,9 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 <div className="bg-black/20 p-4 rounded-lg border border-gray-800 text-sm text-gray-300">
                                     Built with <span className="text-white font-bold">React</span>, <span className="text-white font-bold">Vite</span>, and <span className="text-white font-bold">TailwindCSS</span>.
                                     <br />
-                                    Assisted by <span className="text-synthux-pink font-bold">Google Deepmind</span>'s experimental agentic coding models.
+                                    Written with LLM assistance — set up in <span className="text-synthux-pink font-bold">Google Antigravity</span>, continued with <span className="text-synthux-blue font-bold">Claude Code</span> in <span className="text-white font-bold">VS Code</span>.
+                                    <br />
+                                    <span className="text-gray-400">Fonts are self-hosted under the SIL Open Font License; nothing is fetched from a third party to render this page.</span>
                                 </div>
                             </div>
 
@@ -188,11 +236,8 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
 
                                 <div className="mt-6 flex flex-col items-center bg-gray-800/30 p-6 rounded-xl border border-gray-700/50">
                                     <p className="text-gray-300 text-sm mb-6 text-center">If you find this tool useful, consider supporting its development!</p>
-                                    <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-                                        <div className="hover:opacity-90 transition-opacity flex items-center h-[60px]">
-                                            <BuyMeACoffeeWidget />
-                                        </div>
-                                        <div className="hidden md:block w-px h-16 bg-gray-700"></div>
+                                    <div className="hover:opacity-90 transition-opacity flex items-center h-[60px]">
+                                        <BuyMeACoffeeWidget />
                                     </div>
                                 </div>
                             </div>
@@ -522,6 +567,33 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 </p>
                             </div>
 
+                            {/*
+                              * The tool, above the explanation of it. Everything below this box is
+                              * background — worth reading, and not worth reading first. The tool asks
+                              * for each of these things at the moment it needs them.
+                              */}
+                            <a
+                                href={hashForMode('submit')}
+                                onClick={onClose}
+                                className="block rounded-xl border border-synthux-turquoise/40 bg-synthux-turquoise/10 p-5
+                                    hover:bg-synthux-turquoise/15 transition-colors no-underline"
+                            >
+                                <span className="flex items-start gap-3">
+                                    <Send size={20} className="shrink-0 mt-0.5 text-synthux-turquoise" />
+                                    <span className="min-w-0">
+                                        <strong className="block text-synthux-turquoise text-sm mb-1">
+                                            Open the submission tool
+                                        </strong>
+                                        <span className="block text-xs text-gray-400 leading-relaxed">
+                                            Drop in your folder and the tool collects everything a submission needs —
+                                            titles, categories, artist details, links, licence, and the preset if you
+                                            are making one — then hands you a small ZIP to send. Nothing is uploaded,
+                                            and it remembers where you got to.
+                                        </span>
+                                    </span>
+                                </span>
+                            </a>
+
                             {/* Concepts Table */}
                             <div className="overflow-x-auto border border-gray-800 rounded-xl bg-black/20">
                                 <table className="w-full text-xs text-left border-collapse">
@@ -540,7 +612,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         </tr>
                                         <tr className="bg-white/5">
                                             <td className="px-4 py-3 font-semibold text-white">Slot Limit</td>
-                                            <td className="px-4 py-3"><strong className="text-synthux-blue">Unlimited</strong>. A pack can contain 50, 100, or more files; users choose what to load.</td>
+                                            <td className="px-4 py-3"><strong className="text-synthux-blue">No ceiling</strong> — 50, 100, 300; users choose what to load. Ten files at minimum, and above a hundred the tool asks for a word about categories.</td>
                                             <td className="px-4 py-3"><strong className="text-synthux-orange">Maximum of 36 slots</strong> (6 tapes × 6 slots) corresponding to the hardware.</td>
                                         </tr>
                                         <tr>
@@ -550,21 +622,85 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         </tr>
                                         <tr className="bg-white/5">
                                             <td className="px-4 py-3 font-semibold text-white">Sharing Method</td>
-                                            <td className="px-4 py-3">Handled by maintainers updating the catalog in the web app database.</td>
-                                            <td className="px-4 py-3">Can be exported/imported as a settings-only JSON or shared as a full ZIP archive.</td>
+                                            <td className="px-4 py-3">Built in the <strong>submission tool</strong> and sent as one archive; a maintainer normalizes the audio and adds the entry to the catalogue.</td>
+                                            <td className="px-4 py-3">The same tool. Also shareable privately, straight out of Studio’s Export, as a settings-only JSON or a full backup ZIP.</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
 
-                            {/* Visual Showcase */}
+                            {/*
+                              * The captures. Everything below predates v4 — no hub, no submission
+                              * tool — so each one is a <Shot>: a slot that draws the media when it
+                              * has a path and says what belongs there when it does not. Filling a
+                              * pending slot is deleting the word `pending`, once the file is in
+                              * `public/img/docs/` or `public/vid/docs/` under the path already named.
+                              *
+                              * Steps 1, 3 and 4, and the two handoff screens, are on the shot list
+                              * and deliberately not slotted here: this is a help tab, not a gallery.
+                              */}
                             <div className="space-y-6 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">📷</span> Visual Showcase: Sample Browser & Project Presets
+                                    <span className="text-lg">📷</span> What It Looks Like
                                 </h4>
-                                
+
                                 <div className="flex flex-col gap-6">
-                                    {/* 1. Sample Browser */}
+                                    {/* 1. The submission tool */}
+                                    <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
+                                        <div className="space-y-1">
+                                            <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-synthux-turquoise"></span>
+                                                The Submission Tool
+                                            </h5>
+                                            <p className="text-xs text-gray-400 leading-relaxed">
+                                                Six steps, each one leaveable and returnable: what you are sending, the audio,
+                                                your details, your links, the licence and preset, then review. Nothing leaves
+                                                your machine until you send the archive yourself.
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-col gap-4">
+                                            <Shot
+                                                pending
+                                                src="/img/docs/submit-hub-door.png"
+                                                alt="The hub, with the Submit a Pack door"
+                                                note="The hub with all six doors, Submit a Pack among them."
+                                            />
+                                            <Shot
+                                                pending
+                                                src="/img/docs/submit-step2-audio.png"
+                                                alt="Step 2, the audio"
+                                                note="Step 2: the file list with editable titles, categories read from subfolders, a 42-second flag, a borrowed row carrying its link mark, and the player bar docked below."
+                                            />
+                                            <Shot
+                                                pending
+                                                src="/img/docs/submit-step5-preset.png"
+                                                alt="Step 5, the preset grid"
+                                                note="Step 5: the 6×6 grid with borrowed slots marked and a tape's notes open."
+                                            />
+                                            <Shot
+                                                pending
+                                                src="/img/docs/submit-step6-review.png"
+                                                alt="Step 6, review and send"
+                                                note="Step 6: the review checklist with one item still failing, and the download panel."
+                                            />
+                                            <Shot
+                                                pending
+                                                kind="video"
+                                                src="/vid/docs/submit-pack-walkthrough.mp4"
+                                                alt="A pack, end to end"
+                                                note="A pack end to end (60–90s): drop a folder, fix two titles, fill in details and links, pick a licence, download the archive."
+                                            />
+                                            <Shot
+                                                pending
+                                                kind="video"
+                                                src="/vid/docs/submit-preset-from-packs.mp4"
+                                                alt="A preset built from published packs"
+                                                note="A preset from published packs (60–90s): pool in Browse, send across, drag slots on the grid, write notes, download."
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Sample Browser */}
                                     <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
                                         <div className="space-y-1">
                                             <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
@@ -572,28 +708,26 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                                 Sample Pack Browser
                                             </h5>
                                             <p className="text-xs text-gray-400 leading-relaxed">
-                                                Browse and preview cataloged packs (like Hainbach, Jonwtr, or Horror) or local/uploaded samples. Open via the slot (+) or sidebar folder icon.
+                                                Where a published pack ends up. Browse and preview cataloged packs or your own
+                                                local folders, pool what you like, and send the pool straight to the tool.
                                             </p>
                                         </div>
                                         <div className="flex flex-col gap-4">
-                                            <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black/40">
-                                                <img 
-                                                    src={resolveAssetPath('/img/docs/samplebrowser_sidebar.jpg')} 
-                                                    alt="Sample Browser Sidebar" 
-                                                    className="w-full h-auto object-contain max-h-96 mx-auto"
-                                                />
-                                            </div>
-                                            <div className="rounded-lg overflow-hidden border border-gray-800 bg-black/40 flex items-center bg-black/50">
-                                                <video 
-                                                    src={resolveAssetPath('/vid/docs/samplepackbrowser.mp4')} 
-                                                    controls 
-                                                    className="w-full h-auto max-h-96 object-contain mx-auto"
-                                                />
-                                            </div>
+                                            <Shot
+                                                src="/img/docs/samplebrowser_sidebar.jpg"
+                                                alt="Sample Browser Sidebar"
+                                                note="Browse mode's sidebar, with the pool visible."
+                                            />
+                                            <Shot
+                                                kind="video"
+                                                src="/vid/docs/samplepackbrowser.mp4"
+                                                alt="Browsing a sample pack"
+                                                note="A pack page, Copy link to this pack, and pooling a sample."
+                                            />
                                         </div>
                                     </div>
 
-                                    {/* 2. Preset Manager */}
+                                    {/* 3. Preset Manager */}
                                     <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
                                         <div className="space-y-1">
                                             <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
@@ -601,24 +735,22 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                                 Preset Manager
                                             </h5>
                                             <p className="text-xs text-gray-400 leading-relaxed">
-                                                Load pre-mapped community configurations to instantly fill all 36 slots, apply custom names, and load any written tape notes.
+                                                Where a published preset ends up: load a community layout to fill all 36 slots
+                                                at once, with its names and its tape notes.
                                             </p>
                                         </div>
                                         <div className="flex flex-col gap-4">
-                                            <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black/40">
-                                                <img 
-                                                    src={resolveAssetPath('/img/docs/presets_menu.png')} 
-                                                    alt="Presets Menu" 
-                                                    className="w-full h-auto object-contain max-h-96 mx-auto"
-                                                />
-                                            </div>
-                                            <div className="rounded-lg overflow-hidden border border-gray-800 bg-black/40 flex items-center bg-black/50">
-                                                <video 
-                                                    src={resolveAssetPath('/vid/docs/presetsbrowser_1.mp4')} 
-                                                    controls 
-                                                    className="w-full h-auto max-h-96 object-contain mx-auto"
-                                                />
-                                            </div>
+                                            <Shot
+                                                src="/img/docs/presets_menu.png"
+                                                alt="Presets Menu"
+                                                note="The Preset door, with its id-keyed gradients and the contribute panel."
+                                            />
+                                            <Shot
+                                                kind="video"
+                                                src="/vid/docs/presetsbrowser_1.mp4"
+                                                alt="Loading a preset"
+                                                note="The Preset door: load a preset, then write it to a card."
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -629,7 +761,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 <div>
                                     <strong className="text-synthux-blue block mb-1 text-sm">Need to share this guide?</strong>
                                     <p className="text-xs text-gray-400">
-                                        Send a direct link to the GitHub guide for anyone wishing to contribute their custom samples or presets.
+                                        Send a direct link to the GitHub page for anyone wishing to contribute their custom samples or presets. It points back at the tool above.
                                     </p>
                                 </div>
                                 <a
@@ -671,7 +803,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         Audio Scripts <ExternalLink size={10} />
                                     </a>
                                     <a 
-                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" 
+                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md#4-the-descriptor-schema-spotykach-project10" 
                                         target="_blank" 
                                         rel="noreferrer"
                                         className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
@@ -684,10 +816,13 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                             {/* Artists Guidelines */}
                             <div className="space-y-4 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">🎨</span> 1. For External Artists (Contributing a Sample Pack)
+                                    <span className="text-lg">🎨</span> 1. Contributing a Sample Pack — what to have ready
                                 </h4>
                                 <p className="text-sm leading-relaxed">
-                                    Guest artists contributing their first sample pack to Spotykach <strong>do not need to own a device or know how to use the web app!</strong>
+                                    Guest artists contributing their first sample pack <strong className="text-white">do not
+                                    need to own a device, and do not need to know this app.</strong> The tool asks for each of
+                                    these at the moment it needs them and saves your draft as you go, so this is a packing
+                                    list rather than homework.
                                 </p>
                                 <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
                                     <h5 className="font-bold text-white flex items-center gap-2">
@@ -695,11 +830,13 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         Audio & Hardware Guidelines:
                                     </h5>
                                     <ul className="list-disc list-inside space-y-2 text-gray-300">
-                                        <li><strong>Duration Limit:</strong> Strictly <strong>42 seconds per sample</strong> is used by the hardware. You can submit longer files (the editor allows users to crop/select sections), but the hardware only plays the first 42 seconds by default.</li>
-                                        <li><strong>Decks & Slots:</strong> A complete project preset maps to 36 slots (6 color decks × 6 slots). However, your submitted <strong>sample pack is unlimited</strong> and can contain more than 36 files.</li>
-                                        <li><strong>Format:</strong> High-quality 24-bit <code>.wav</code> or <code>.flac</code>. App maintainers normalize them to -1dB, convert to FLAC for streaming, and sanitize filenames.</li>
-                                        <li><strong>Organization:</strong> Group files into subfolders if you want them categorized (e.g. Drums, FX, Melodies) in the browser.</li>
-                                        <li><strong>Cover Image:</strong> A landscape image (approx. 3:2, 4:3, or 16:9, e.g. min 1200x800px) that will display in the hero banner.</li>
+                                        <li><strong>Your audio:</strong> high-quality 24-bit <code>.wav</code> or <code>.flac</code>. Maintainers normalize to −1 dB, convert to FLAC for streaming and sanitize filenames — the tool itself never re-encodes what you give it.</li>
+                                        <li><strong>How many:</strong> ten at the least, and a hundred before the tool says anything. A pack gets its own page with cover art, a bio and a licence, which three sounds cannot fill; a hundred is a conversation about categories, not a refusal.</li>
+                                        <li><strong>Duration:</strong> the hardware plays the first <strong>42 seconds</strong> of a sample. Longer files are welcome and simply flagged — the editor shows all of a file, so users can pick a different part of it.</li>
+                                        <li><strong>Organization:</strong> subfolder names become the category chips in the browser (Drums, FX, Melodies). No subfolders means everything lands under <em>General</em>.</li>
+                                        <li><strong>Cover image:</strong> landscape (approx. 3:2, 4:3 or 16:9, min 1200×800px). It runs as a wide hero banner across the pack's page.</li>
+                                        <li><strong>Your links:</strong> usernames, not URLs. Eleven platforms are built in and the tool assembles the addresses; paste a whole URL in and it unwraps it.</li>
+                                        <li><strong>A licence:</strong> CC0, CC-BY, CC-BY-SA, CC-BY-NC, the usual "free for music, no resale as samples" terms, or your own wording.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -707,96 +844,69 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                             {/* Users Guidelines */}
                             <div className="space-y-4 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">🎛️</span> 2. For Spotykach Users (Contributing a Preset)
+                                    <span className="text-lg">🎛️</span> 2. Contributing a Preset — a layout, not a library
                                 </h4>
                                 <p className="text-sm leading-relaxed">
-                                    If you own a Spotykach and want to share your custom tape configuration, mappings, and notes:
+                                    A preset is which sample sits in which slot, plus what you have to say about each tape.
+                                    Same tool, two ways in:
                                 </p>
                                 <div className="space-y-2 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
                                     <ol className="list-decimal list-inside space-y-2 text-gray-300">
-                                        <li>Open the Export menu and select <strong>Settings-Only Preset (JSON)</strong> to download your project configuration.</li>
-                                        <li>If you use custom samples not in the default library, package those sample files too.</li>
-                                        <li>Attach the exported <code>.json</code> file along with the preset metadata (Name, short description, optional cover image).</li>
-                                        <li>Optionally, export the <strong>Portable SK Folder (ZIP)</strong> to share a ready-to-copy SD Card backup with the community.</li>
+                                        <li><strong>From a project you already built:</strong> open it in Studio and choose <strong>Export ▸ Prepare a submission</strong>. Slots, config and notes all come across.</li>
+                                        <li><strong>From packs already in the app:</strong> pool the samples in the Sample Browser and press <strong>Send to the submission tool</strong>. Build the 6×6 grid there — slots drag the way Studio's do, and Ctrl or Alt copies instead of moving.</li>
                                     </ol>
+                                </div>
+                                <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
+                                    <ul className="list-disc list-inside space-y-2 text-gray-300">
+                                        <li><strong>You never type a dependency list.</strong> The tool works out which packs a preset needs from whatever ends up in the slots, so one mixing your own sounds with Hainbach's declares both.</li>
+                                        <li><strong>A preset holds paths, not audio.</strong> A slot pointing at a recording of your own only resolves once that recording is published — so using your own sounds means the pack half comes with it. The tool requires that, rather than letting the preset arrive with holes in exactly the slots you cared about.</li>
+                                        <li><strong>The pack half is optional.</strong> Thirty-six slots arranged out of packs already in the app is a complete submission with no audio to send at all.</li>
+                                        <li><strong>Several layouts, one pack.</strong> A submission can carry more than one preset over the same audio, rather than sending the files twice.</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-synthux-green/10 border border-synthux-green/30 p-4 rounded-lg text-xs text-gray-300 leading-relaxed">
+                                    <strong className="text-synthux-green block mb-1 text-sm">Just sending it to one person?</strong>
+                                    Then you need none of this — no licence, no bio, nobody's permission. Use Studio's{' '}
+                                    <strong className="text-gray-200">Export ▸ Project Preset</strong> (the settings-only{' '}
+                                    <code>.json</code> if you both have the same packs, the full backup <code>.zip</code> if it
+                                    uses audio of your own) and they open it with <strong className="text-gray-200">Import</strong>.
+                                </div>
+                                <div className="bg-black/20 border border-gray-800 p-4 rounded-lg text-xs text-gray-400 leading-relaxed">
+                                    <strong className="text-gray-200 block mb-1 text-sm">Hear it on the hardware first</strong>
+                                    The last step also builds a ready-to-copy <code>SK/</code> folder for your card, from the
+                                    same draft — the best check there is on a pack before you send it. That folder is yours; it
+                                    is not part of the submission.
                                 </div>
                             </div>
 
-                            {/* Submission Template */}
+                            {/*
+                              * What comes back out. This replaced a copy-paste template that asked
+                              * for the artist name, the licence, the categories and the cover — every
+                              * one of which the form now asks for at the moment it needs it. A second
+                              * copy of the same fields was a second copy to keep true.
+                              */}
                             <div className="space-y-4 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">📋</span> 3. Submission Checklist & Template
+                                    <span className="text-lg">📦</span> 3. What the Tool Hands You
                                 </h4>
-                                <p className="text-sm">
-                                    Copy and fill in this template when sending in your submission:
+                                <p className="text-sm leading-relaxed">
+                                    <strong className="text-white">One archive</strong>, named after your pack. There is no
+                                    template to fill in and no checklist to keep track of: the review step says what is still
+                                    missing while you are there to fix it.
                                 </p>
-                                <div className="relative group">
-                                    <pre className="bg-gray-900/80 p-4 rounded-lg border border-gray-800 text-[10px] font-mono text-gray-400 overflow-x-auto whitespace-pre select-all pr-24">
-{`# Submission Template
-
-## 👤 Artist & Pack Info
-* Artist Name: [Your Moniker]
-* Sample Pack Name: [e.g., Tape Loops]
-* Short Description: [1-2 sentences for app card]
-* Full Bio / Pack Description: [Detailed gear/vibe description]
-
-## 🔗 Links (Socials & Bio)
-* Website/Socials: [Links]
-
-## 📄 Licensing
-* License: [e.g., CC-BY 4.0 / Free to use, no resale]
-
-## 📁 Sample Organization
-* Categories: [Yes/No] (e.g. Drums, Synths)
-
-## 🖼️ Cover Art
-* [ ] Included landscape cover image (e.g. min 1200x800px)
-
-## 🎛️ Preset Details (Optional)
-* [ ] Exported settings-only .json preset file attached`}
-                                    </pre>
-                                    <button
-                                        onClick={() => {
-                                            const text = `# Submission Template
-
-## 👤 Artist & Pack Info
-* Artist Name: [Your Moniker]
-* Sample Pack Name: [e.g., Tape Loops]
-* Short Description: [1-2 sentences for app card]
-* Full Bio / Pack Description: [Detailed gear/vibe description]
-
-## 🔗 Links (Socials & Bio)
-* Website/Socials: [Links]
-
-## 📄 Licensing
-* License: [e.g., CC-BY 4.0 / Free to use, no resale]
-
-## 📁 Sample Organization
-* Categories: [Yes/No] (e.g. Drums, Synths)
-
-## 🖼️ Cover Art
-* [ ] Included landscape cover image (e.g. min 1200x800px)
-
-## 🎛️ Preset Details (Optional)
-* [ ] Exported settings-only .json preset file attached`;
-                                            navigator.clipboard.writeText(text);
-                                            setTemplateCopied(true);
-                                            setTimeout(() => setTemplateCopied(false), 2000);
-                                        }}
-                                        className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 text-[10px] font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-md cursor-pointer"
-                                    >
-                                        {templateCopied ? (
-                                            <>
-                                                <Check size={12} className="text-synthux-green" />
-                                                <span className="text-synthux-green">Copied!</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Copy size={12} />
-                                                <span>Copy</span>
-                                            </>
-                                        )}
-                                    </button>
+                                <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
+                                    <ul className="list-disc list-inside space-y-2 text-gray-300">
+                                        <li>A covering letter, your details, and the licence written out in full.</li>
+                                        <li>The finished catalogue entries — the JSON a maintainer would otherwise have had to write by hand from your message.</li>
+                                        <li>Your preset descriptors and their artwork, if you made any.</li>
+                                        <li>Your audio under <code>audio/</code>, categories as folders, <strong className="text-gray-200">untouched</strong> — so normalization happens from your masters. Filenames can be your originals or the titles you typed in the tool.</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-synthux-blue/10 border border-synthux-blue/30 p-4 rounded-lg text-xs text-gray-300 leading-relaxed">
+                                    <strong className="text-synthux-blue block mb-1 text-sm">Keep the archive.</strong>
+                                    Drop it back into the tool on any machine and the whole form comes back — files, titles,
+                                    categories, details, links, licence, preset, notes, and the step you were on. That is how
+                                    you pick a submission up after clearing your browser, or change one title six months later.
                                 </div>
                             </div>
 
@@ -826,10 +936,10 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     </div>
                                 </div>
                                 <p className="text-xs text-gray-400 leading-relaxed">
-                                    Send the small files directly: the preset <code>.json</code>, the cover image,
-                                    the filled-in template. <strong className="text-gray-200">Audio goes by link</strong>:
-                                    WeTransfer, Drive, Dropbox, anything. A sample pack is far too big to attach, and
-                                    nothing is uploaded through this app.
+                                    <strong className="text-gray-200">One link, not a pile of attachments.</strong> Put the
+                                    archive on WeTransfer, Drive or Dropbox and send the link. Nothing is uploaded from this
+                                    app, so the link has to come from you — a preset-only submission carries no audio and is
+                                    usually small enough to attach to the message directly. Expect a reply rather than silence.
                                 </p>
                             </div>
                         </div>

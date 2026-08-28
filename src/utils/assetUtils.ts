@@ -37,7 +37,7 @@ export const resolveAssetPath = (path: string): string => {
     // Any path that isn't a known internal asset or the root is treated as an R2 candidate.
     const internalPaths = [
         '/manifest.json', '/favicon.ico', '/vite.svg', '/assets', 
-        '/img', '/vid', '/v2', '/ffmpeg-core', '/ffmpeg-worker', 
+        '/img', '/vid', '/ffmpeg-core', '/ffmpeg-worker', 
         '/spotykachtapeicon.svg', '/spotytape.svg', '/og-image.png',
         '/presets', '/news'
     ];
@@ -76,6 +76,40 @@ export const resolveAssetPath = (path: string): string => {
     }
 
     return `${appBaseUrl}${normalizedPath}`;
+};
+
+/**
+ * The manifest's own spelling of a sample path — `/Hainbach/MASSIVE.flac`.
+ *
+ * The same sample reaches us under three spellings. `fetchSampleManifest` resolves
+ * every path to an absolute R2 URL on the way in, so anything the browser holds is
+ * absolute. A project descriptor written by the submission tool stores the portable
+ * relative form. And `hainbach-tapes.json`, written by hand years earlier, has the
+ * bucket's hostname baked into it.
+ *
+ * Comparing those spellings by string is what made a loaded preset's samples show
+ * as un-added in the browser: the audio fetched perfectly, because `resolveAssetPath`
+ * accepts all three, but `paths.has(sample.path)` saw two unrelated strings. Anything
+ * asking "is this the same sample?" collapses both sides through here first.
+ *
+ * A path that is not recognisably a sample path — a local folder's relative
+ * `Drums/kick.wav` — is returned untouched, so folder browsing keeps comparing the
+ * keys it built.
+ */
+export const toSampleKey = (path: string): string => {
+    if (!path) return path;
+
+    const base = externalSampleAssetBaseUrl;
+    if (base && path.startsWith(base)) {
+        const rest = path.slice(base.length);
+        return rest.startsWith('/samples/') ? rest.slice('/samples'.length) : rest;
+    }
+
+    // Only strip `/samples` where it is the bucket's own prefix, never a pack that
+    // happens to be named that.
+    if (path.startsWith('/samples/')) return path.slice('/samples'.length);
+
+    return path;
 };
 
 export const hashBlob = async (source: Blob | File): Promise<string> => {

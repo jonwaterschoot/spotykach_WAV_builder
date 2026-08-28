@@ -1,5 +1,249 @@
 # Changelog
 
+## [4.1.0] - 2026-08-29
+
+**A submission tool, for the few people who need one.** Almost everything in this app arrived because
+somebody sent in a sample pack or a preset, and until now that meant reading a 175-line guide, copying
+a template into a Discord message and filling it in from memory — after which the maintainer
+translated the result into the JSON the app actually reads. The translation step is where things went
+missing. `#/submit` now does the collecting and the checking while the author is still there to fix
+what it finds, and hands back one archive to send. Nothing is uploaded and no account exists: the
+audio still travels by a WeTransfer or Drive link, as it always did.
+
+**Nothing changes for everyone else.** This is a sixth door most visitors will never open — the packs
+and the presets it produces are the part they see. It knows what the rest of the app knows, though: a
+pool assembled in Browse and a project open in Studio are both already a submission in everything but
+name, so both can be sent straight into it, and an artist can build the `SK/` folder for their own
+card from the same draft — the best check there is on a pack, and previously something only a Studio
+user could do.
+
+### Added
+- **Submit mode (`#/submit`)** — a six-step guided form: what you're sending, the audio, the details,
+  links, licence and preset, then review and send. Reached from a new hub door, from Browse's pool,
+  from Studio's Export modal, from the Preset door and from the help modal's contribute tab.
+- **The draft survives everything.** Held in a new IndexedDB store with its blobs, written on a
+  debounce from the first keystroke. Closing the tab mid-way loses nothing, which matters more here
+  than anywhere else in the app.
+- **Folders come in as folders.** Drop or pick one and subfolder names become the browser's
+  categories, titles are derived from filenames and editable in place, and durations are read on the
+  way in. Files over 42 seconds are flagged and allowed; anything that can't be decoded is *named*,
+  not counted.
+- **Username in, URL out.** Eleven platforms — Bandcamp, SoundCloud, Spotify, YouTube, Instagram,
+  Patreon, GitHub, Mastodon, X, TikTok, Discord — each take a bare handle and build the address. A
+  pasted URL is unwrapped rather than refused.
+- **A licence menu instead of a text box.** CC0, CC-BY, CC-BY-SA, CC-BY-NC, the usual sample-pack
+  terms, or your own wording — each carrying the full statement that ends up on the pack's page.
+- **The outputs a maintainer would otherwise write by hand:** the `packs[]` entry with its sample
+  paths, `README.md` frontmatter for `generate-manifest.mjs`, the preset descriptor, the `presets[]`
+  entry with `requiredPacks` derived, a `SUBMISSION.md` covering letter, and the cover image.
+- **Send to the submission tool** in Browse's pool panel, and **Prepare a submission** in Studio's
+  Export modal — both hand the files across without a download-and-re-upload round trip.
+- **One download, with everything in it.** "Send the audio separately" used to mean finding the folder
+  again, zipping it by hand and hoping the subfolders survived. The tool now builds a single archive —
+  the details, the licence, the preset and `audio/` with the categories as folders — to put on
+  WeTransfer or Drive and send as a link. The audio goes in untouched, so the maintainer normalizes
+  from the masters, and filenames can be either the originals or the titles typed in step 2, for an
+  artist who wants their renamed files back to use elsewhere.
+- **The archive reopens.** It carries a `submission.json` holding the draft itself, so dropping the
+  ZIP back on step 2 restores the entire form — files, titles, categories, details, links, licence,
+  preset, notes, and the step you were on. Everything else in the archive is a projection of the draft
+  and could never be read back, which made the download a one-way door. Restoring over work in
+  progress asks first.
+- **A preset can mix its own samples with packs already in the app.** Samples pooled in Browse arrive
+  as *references*: marked as such in the file list and in the 6×6 grid, kept out of the archive, and
+  pointed at where they already live, so nothing is deployed twice. `requiredPacks` follows from
+  whatever ends up in the slots.
+- **A preset can carry its own image**, in three levels: its own, the submitted pack's cover, or
+  nothing. Presets built on packs **already in the app never inherit their artwork** — an image is a
+  credit as much as a decoration, and hanging somebody else's photograph over a layout they had no
+  hand in claims something untrue on both sides.
+- **Unillustrated presets get a gradient of their own**, keyed to the preset id and drawn from the six
+  tape colours. Every one used to show the same violet wash, so a list of three read as one thing
+  repeated.
+- **Preset slots drag**, the way Studio's grids do: onto an empty slot it moves, onto a filled one the
+  two swap so nothing is destroyed, and Ctrl or Alt copies — one sound under two fingers without four
+  trips through the picker.
+- **Preset notes, written in the tool.** The general note and one per tape, in the app's own
+  `NotesEditor`, so an artist who never opened Studio can write the half of a preset that isn't the
+  grid. The fields were always in the format and always survived a Studio handoff — there was just no
+  way to fill them in from here.
+- **A signpost for the thing this tool is wrong for.** Sending a project to one person needs no
+  submission, no licence and nobody's permission — Studio's Export and Import already do it. Step 1
+  says so, rather than letting someone fill in a bio to reach a friend.
+- **Browse a folder instead of taking all of it.** The same folder tree the Sample Browser uses for
+  local folders, so an artist with a drive full of recordings can listen and pick forty rather than
+  submitting four hundred.
+- **Play and edit from the file list.** Rows audition through the app's own transport and open in the
+  app's own editor. An applied edit *is* the submission from that point, and is what the SK folder is
+  built from.
+- **One player bar for the whole tool** — the app's `GlobalPlayerBar`, sticky above the step footer,
+  with its interactive timeline. Everything lands there: rows in the pack, and files auditioned out of
+  a folder before they are picked. Leaving the tool stops playback.
+- **A shareable link to a single pack.** `#/browse?pack=<id>` opens the Sample Browser on that pack,
+  with a **Copy link to this pack** button on its page. Which pack was open used to be internal state
+  the URL never mentioned, so an artist had no way to send anyone to their own work.
+
+- **`npm run submission -- <archive.zip>`** — a maintainer-side importer. It reads a submission
+  archive, runs fourteen checks against the live manifest (every `samplePath` resolves, `requiredPacks`
+  matches the slots, no `blobRef` in a published preset, slots are 1–6 across six colours, cover files
+  exist, ids are free), prints the plan, and writes nothing until asked. `--apply` copies descriptors
+  and covers into `public/presets/` and merges the entries into `public/manifest.json` — preserving its
+  indentation and CRLF so the diff is the change and nothing else. `--normalize` runs `normalize.py`
+  once per category folder, reassembles the output, and verifies the produced filenames against the
+  paths the submission promised. Everything R2-bound is assembled in a working folder beside the
+  archive — outside the repo, in a tree that mirrors the bucket, so publishing a pack is dragging one
+  folder in rather than working out where each file goes.
+
+### Changed
+- **The submission guide is a signpost now.** `docs/presets-samples/README.md` keeps what is true
+  before you open the tool — pack versus preset, the 42-second and 36-slot limits, what to have ready
+  — and drops both step-by-step sections and the copy-paste template, which the form has replaced. Two
+  places stating the same fields was one place too many.
+- **The Preset door's contribute panel** offers the tool first and the guide second.
+- **The Preset door says why it has no "Load into App".** Adopting a preset as a project needs a work
+  folder to save into and a project list to name against, and this tier deliberately has neither — so
+  the absence looked like a missing button rather than a decision. Its info strip now names Studio as
+  where a preset goes to be kept and changed.
+- **The maintainer guide was rewritten** around the submission archive. It described exporting from
+  Studio and hand-writing the manifest entry, which the tool has done for you since; it now covers
+  what is in an archive, what to verify before trusting a descriptor, and the split between files that
+  are committed (preset descriptors and covers) and files that are uploaded (pack audio and covers).
+- **Sample packs have a size band: 10 to 100.** Ten is required — a pack gets its own page, and three
+  sounds cannot fill one. A hundred is a warning, not a refusal. Below the floor the tool offers the
+  route it was quietly hiding: Studio's full backup ZIP carries audio inside the file, so a preset
+  built around a few personal recordings can be shared directly rather than published.
+- **A submission can carry several presets over one pack.** Step 5 became a list — add, name, fill,
+  write notes, remove. The archive emits one descriptor per preset under `presets/` plus a single
+  `preset-entries.json`, each preset works out its own `requiredPacks`, and the SK build asks which
+  layout goes on the card. The alternative was two submissions carrying the same audio twice.
+- **A preset using your own audio now requires the pack half.** A published preset holds paths, not
+  audio, so a slot pointing at an unpublished sound resolved to nothing — the preset validated cleanly
+  and arrived with holes in exactly the slots the artist cared most about.
+- **Every route into the tool starts at step 1.** Arriving from Browse's pool or Studio's Export used
+  to skip to the file list, which left the pack-or-preset choice made silently on the visitor's
+  behalf. A Studio project now arrives with the preset half pre-ticked and the question still asked.
+- **A preset's description defaults to its pack's**, and says so, until the first edit — the same way
+  the pack id follows the pack name. A preset built on a pack is usually described by the same
+  sentence, and asking twice got either a paste or a blank.
+
+### Fixed
+- **`requiredPacks` held pack names where ids belong.** `SampleBrowser` hands a pooled sample its
+  pack's *display name* — right for a credit, wrong for `samplePackId` — and both were filled from
+  that one field, so a preset built from Browse declared `"Hainbach's Spotykach Tapes"` as a
+  dependency and no manifest has a pack by that name. Rows now carry the display name and the id
+  separately, and the id is resolved from `samplePath` against the manifest, which is the only value
+  guaranteed exact. Drafts and archives made before the distinction are repaired when they are
+  opened, and the maintainer script names this case specifically instead of reporting a missing pack.
+- **The SK folder came out empty for a preset built from published packs.** Those rows are *pointers* —
+  their audio lives in the sample bucket, not in the draft — so the empty placeholder blob failed to
+  decode, every file was skipped, and the card got the right folders with nothing in them. It took the
+  README down with it: the file list and the licences are read off the files that made it, which is
+  why the export also claimed no licence information existed. The SK build now downloads published
+  samples as it goes, and names anything it could not fetch instead of dropping it silently.
+- **The SK README credits each slot.** The origin sits on the same line as the file it belongs to, so a
+  card built from three packs no longer lists its licences in one place and its filenames in another.
+  "No specific license information found" now distinguishes an empty card from files that genuinely
+  carry no licence.
+- **Cover previews went blank under StrictMode.** The preview URL was minted in a `useMemo` and
+  revoked by an effect — but a memo is not recomputed on StrictMode's second mount while the effect's
+  cleanup runs on the first, so the `<img>` was left pointing at a URL that had already been revoked
+  (`ERR_FILE_NOT_FOUND`, dev only). Creating and revoking now happen in the same effect, so neither
+  can outlive the other. Affected both the pack cover and, once it existed, the preset cover.
+- **Preset artwork survives a reopened archive.** The image went into the ZIP correctly and was never
+  asked for on the way back out, so restoring a draft returned every field except the one that had
+  taken a decision. The reader now requests each preset's cover alongside the audio and the pack
+  cover, artwork is written for every preset holding some rather than only the submittable ones — a
+  half-built second layout keeps its image — and covers carry the artist's own filename across the
+  trip instead of the archive's generated one.
+- **Deployed sample paths now hyphenate the way `normalize.py` does.** The tool wrote
+  `/pack/Roaring Drone.flac` while normalization produces `Roaring-Drone.flac`, so any sample with a
+  space in its name would have deployed to a path nothing pointed at — and the preset built on it
+  would have resolved to nothing, months later, with no obvious cause.
+- **A submission archive dropped into project import is now refused by name.** It used to unpack any
+  ZIP straight into `Projects/<name>/` and only then try to load it, so the wrong archive left a
+  folder of someone else's files on disk and a bare "Failed to load project". Both import routes now
+  look before they write, say plainly that a submission is not a project, and point at the two exits:
+  the Submit tool to carry on with it, Export → Project Preset to share a project with someone.
+- **The step rail ticks what is done, not what is behind you.** It marked every step before the
+  current one complete, so clicking through to step 3 without typing a word showed two green checks
+  and a form that looked finished. A tick now means the step has what it needs; a step walked past
+  with a hole in it shows an amber mark instead of waiting until the review page to mention it.
+- **A loaded preset's samples showed as un-added in the Sample Browser.** The same file reaches the
+  app under three spellings — the absolute R2 URL the manifest resolves to, the portable relative
+  path a submitted preset stores, and the hostname baked into `hainbach-tapes.json` years ago. All
+  three fetch correctly, because `resolveAssetPath` accepts all three, but the browser's
+  already-added check compared them as strings and saw three unrelated values. A new `toSampleKey`
+  in `assetUtils` collapses them, and both sides of the comparison go through it. Local folder
+  paths are deliberately left alone, so folder browsing keeps comparing the keys it built.
+- **A pack page repeated its preset offer once per preset.** Every preset naming the pack in
+  `requiredPacks` got the same "this pack already spread across the 6×6 grid" card — true of the
+  preset built *from* the pack, false of one that merely borrows a few sounds from it, and read as a
+  duplicate either way. The two are now told apart by whether a preset requires this pack alone: the
+  ready-made one keeps the offer, the rest become a quiet "Also used in" list that names the other
+  packs they mix with. Both still open their own preset, which is what the repeated card obscured.
+
+---
+
+## [4.0.1] - 2026-08-22
+
+**Housekeeping, with three real bugs in it.** Nothing here changes what the app does — it is the
+first pass of a code-health branch. Two things are visible to you anyway.
+
+**The editor could drop into its error screen.** Three overlays — automation, fades and the loop
+preview — called React hooks after an early return, on values that change while the editor is
+open. Picking the automation tool, loading audio, or starting a loop preview could each take the
+hook count from zero to seven between renders, which React answers by throwing. It surfaced as the
+editor being replaced by the fallback screen rather than as anything obviously broken. Fifteen
+violations, all fixed.
+
+**Nothing is fetched from a third party to draw the page any more.** The fonts came from Google
+Fonts on every load, before anything rendered, for every visitor — which sent each visitor's IP to
+Google whether or not they ever touched a sample. They are self-hosted now, under the SIL Open
+Font License, and the page paints without two DNS and TLS round-trips to a third party first. The
+ffmpeg core likewise loads from this site instead of falling back to a CDN. Sample and preset
+packs still come from Cloudflare R2, and still only when you choose to download one.
+
+### Fixed
+- **Fifteen `rules-of-hooks` violations** across `AutomationOverlay`, `FadeOverlay` and
+  `LoopOverlay`. Guards now sit below the hook declarations; the automation overlay's effects gate
+  on `active` internally, so an inactive overlay still attaches no window listeners.
+- **A stray vertical divider** floating to the right of the Buy Me a Coffee button, left behind
+  when the QR code it used to separate was removed.
+- **The ffmpeg CDN fallback ran a different build** than the local one — pinned to core `0.12.6`
+  against a vendored `0.12.10` — so a failed local load silently switched binaries. Moot now that
+  the fallback is gone, but it was wrong for as long as it existed.
+
+### Changed
+- **Fonts are self-hosted** from `public/fonts/`. Google's unicode-range subsetting is kept, so a
+  browser still downloads only the subsets it needs — about 50 KB in practice.
+- **The ffmpeg core loads only from this origin.** If the site can serve the app it can serve the
+  core, so the CDN fallback was covering a deploy error at the cost of a permanent third-party
+  contact. Its 20-second load timeout is gone too: with no second attempt behind it, the timeout
+  was the only thing that could fail a legitimately slow download of a 32 MB file.
+- **The coffee button uses the app's own header font** rather than pulling a fourth family from
+  Google for one line of text.
+- **Credits name what actually built this** — set up in Google Antigravity, continued with Claude
+  Code in VS Code.
+
+### Removed
+- **Five dependencies nothing imported**, and 108 transitive packages with them: `@ffmpeg/core`
+  (62 MB, never imported — `public/ffmpeg-core/` is a hand copy of its build), `@aws-sdk/client-s3`
+  (left from a sample host the app no longer uses), `dotenv`, `@types/jszip` and `@types/uuid`.
+- **`InfoModal.tsx`** — 170 lines, unreferenced since the About/Help modals were unified, and
+  carrying its own stale copy of the credits.
+- **The `/v2` redirect stub and the `/next` preview-deploy scripts.** Neither was in use; `/v2`
+  now returns a 404 by choice, and no `next/` directory ever existed on the deployed branch.
+
+### Documentation
+- **The deploy workflow is in the README.** Pushing to `main` does not publish — `npm run deploy`
+  does. It was previously only in `CONTRIBUTING.md`, which is easy to miss when the question is
+  "why is the site not updating".
+- **A privacy section**, saying plainly what leaves the browser and when.
+- **[docs/optimization-plan.md](docs/optimization-plan.md)** — the ranked plan for the rest of this
+  work, with the survey already done, plus what was deliberately decided against.
+
+---
+
 ## [4.0.0 "Pervak"] - 2026-08-19
 
 **The app used to be one door.** A setup wizard demanded a work folder, an SD card and a project name

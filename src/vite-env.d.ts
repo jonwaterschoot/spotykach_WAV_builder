@@ -5,9 +5,10 @@ declare const __APP_VERSION__: string;
 interface ImportMetaEnv {
   readonly VITE_SAMPLE_ASSET_BASE_URL?: string;
   /**
-   * Overrides the storage namespace derived from BASE_URL. See
-   * `src/utils/storageNamespace.ts` and locked decision 9 — a preview build must
-   * not share IndexedDB (or its saved directory handles) with the real app.
+   * Overrides the storage namespace derived from BASE_URL. Unset on the live
+   * site. See `src/utils/storageNamespace.ts` — a second build published at a
+   * subpath must not share IndexedDB (or its saved directory handles) with the
+   * real app.
    */
   readonly VITE_STORAGE_NS?: string;
 }

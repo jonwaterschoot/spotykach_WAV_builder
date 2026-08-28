@@ -2,10 +2,11 @@
  * Outward-facing URLs and contact details, in one place.
  *
  * The submission guide is linked from the Presets door and from the help modal's
- * contribute tab, and the plan
- * ([docs/presets-samples/submission-workflow.md](../../docs/presets-samples/submission-workflow.md),
- * step 3) adds more places as the submission flow grows. It is a GitHub URL rather
- * than a route because the guide lives in the repo, not in the app.
+ * contribute tab, both of which now lead with the in-app tool at `#/submit` and keep
+ * this as the read-before-you-start page
+ * ([docs/presets-samples/submission-tool-plan.md](../../docs/presets-samples/submission-tool-plan.md)).
+ * It is a GitHub URL rather than a route because the guide lives in the repo, not in
+ * the app.
  */
 export const SUBMISSION_GUIDE_URL =
     'https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/docs/presets-samples/README.md';

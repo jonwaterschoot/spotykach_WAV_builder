@@ -3,6 +3,21 @@
 *Written 2026-08-16, against the code as it is on `v4-pervak`. §1–2 are findings; §3 onward is the
 plan, revised the same day against the answer to open question 6.*
 
+> **Archived 2026-08-23 — steps 0 through 3 are built.** They were built as one surface rather than
+> three separate changes: the submission tool at `#/submit`, planned in
+> [submission-tool-plan.md](../presets-samples/submission-tool-plan.md) and shipped on the
+> `submission-tool` branch. The tool asks for name and description, emits a `.json` descriptor rather
+> than a dated ZIP, derives `requiredPacks`, checks the descriptor before it downloads, collects a
+> pack's whole metadata, and names a destination — §2 items 1 through 6, and steps 1 through 3.
+>
+> **What is left of this document is step 4:** extending
+> [`generate-manifest.mjs`](../../scripts/generate-manifest.mjs) to emit the `presets[]` entry as well
+> as the `packs[]` one, so both halves of a `manifest.json` update come out of the same script. That
+> is a maintainer-side convenience and is carried on the roadmap. §2 item 7 is the same thing.
+>
+> Kept for the reasoning in §3 — why a pack and a preset have different physics — which is still what
+> the tool's shape is built on.
+
 This is the answer to **open question 6** in [V4_PERVAK.md](../archive/V4_PERVAK.md) — *preset & pack
 authoring: who makes them, and where.*
 

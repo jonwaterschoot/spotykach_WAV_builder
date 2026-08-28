@@ -3,7 +3,18 @@ import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { hashBlob } from './assetUtils';
 
-export type ImportType = 'PROJECT_BACKUP' | 'SD_STRUCTURE' | 'SD_WITH_BACKUP' | 'LOOSE_FILES' | 'UNKNOWN';
+export type ImportType =
+    | 'PROJECT_BACKUP'
+    | 'SD_STRUCTURE'
+    | 'SD_WITH_BACKUP'
+    | 'LOOSE_FILES'
+    /**
+     * A ZIP built by the Submit tool. Recognised so it can be *refused by name*
+     * rather than falling through to the loose-file scanner, which would offer to
+     * import somebody's submission as a heap of untitled samples.
+     */
+    | 'SUBMISSION_ARCHIVE'
+    | 'UNKNOWN';
 
 export interface ImportAnalysis {
     type: ImportType;
@@ -97,9 +108,29 @@ export const loadProjectFromZip = async (zipFile: File, onProgress?: (msg: strin
     }
 };
 
+/** Cheap enough to run before anything else: reads the index, not the contents. */
+const isSubmissionArchive = async (zipFile: File): Promise<boolean> => {
+    try {
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(zipFile);
+        return !!zip.file('submission.json');
+    } catch {
+        return false;
+    }
+};
+
 export const analyzeImport = async (inputFiles: File[], onProgress?: (msg: string) => void): Promise<ImportAnalysis> => {
     // 1. Check for Single ZIP Project Backup
     if (inputFiles.length === 1 && inputFiles[0].name.endsWith('.zip')) {
+        // Before anything else: a submission archive holds a descriptor and audio and
+        // is not a project. Left to fall through, the loose-file scanner would happily
+        // offer to import the pack as untitled samples.
+        if (await isSubmissionArchive(inputFiles[0])) {
+            return {
+                type: 'SUBMISSION_ARCHIVE',
+                summary: 'This ZIP was built by the Submit tool.',
+            };
+        }
         const state = await loadProjectFromZip(inputFiles[0], onProgress);
         if (state) {
             return {

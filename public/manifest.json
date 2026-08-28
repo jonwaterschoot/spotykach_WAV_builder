@@ -593,6 +593,18 @@
       "coverImage": "/Hainbach/Hainbach.jpg",
       "descriptorPath": "/presets/hainbach-tapes.json",
       "sdExportUrl": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/presets/Spotykach_SD_Hainbach-Tapes.zip"
+    },
+    {
+      "id": "free-the-rhythm-a-short-selection-of-the-existin-preset",
+      "name": "Free the Rhythm - a short selection of the existing packs",
+      "description": "A small selection of percussive and / or rhythmical sounds from the sample packs.  Only two tapes filled, with the rest free for your own on device recording. Tape one, Blue,  are all sounds from the Hainbach Tapes pack, Tape 2, Green, are selection of 2 sounds from the Synthux Horror samples and 4 from my own sample pack. This preset only contains sounds from these sample packs, no new sounds were added.",
+      "requiredPacks": [
+        "hainbach-tapes",
+        "synthux-horror",
+        "jonwtr-explorations"
+      ],
+      "descriptorPath": "/presets/free-the-rhythm-a-short-selection-of-the-existin-preset.json",
+      "coverImage": "/presets/free-the-rhythm-a-short-selection-of-the-existin-preset-cover.png"
     }
   ]
 }

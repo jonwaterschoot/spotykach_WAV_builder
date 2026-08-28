@@ -203,6 +203,55 @@ export const ImportModal = ({ analysis, onClose, onRestoreProject, onRestoreAndS
                         </div>
                     )}
 
+                    {/* TYPE: SUBMISSION ARCHIVE — a near miss worth naming */}
+                    {analysis.type === 'SUBMISSION_ARCHIVE' && (
+                        <div className="space-y-6">
+                            <div className="bg-synthux-turquoise/10 border border-synthux-turquoise/25 p-4 rounded-lg flex gap-3">
+                                <AlertTriangle className="text-synthux-turquoise shrink-0 mt-1" size={24} />
+                                <div className="min-w-0">
+                                    <h3 className="text-lg font-bold text-synthux-turquoise">That is a submission, not a project</h3>
+                                    <p className="text-sm text-gray-300 mt-1 leading-relaxed">
+                                        This archive was built by the <strong className="text-white">Submit</strong> tool.
+                                        It holds a sample pack and its details for a maintainer to publish — not a
+                                        project this app can open. Nothing has been imported.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="text-sm text-gray-400 leading-relaxed space-y-3">
+                                <p>
+                                    <strong className="text-gray-200">Still working on the submission?</strong> Open the
+                                    Submit tool and drop this same ZIP onto its audio step — the files, the details, the
+                                    licence and the preset all come back.
+                                </p>
+                                <p>
+                                    <strong className="text-gray-200">Sharing a project with someone?</strong> That is
+                                    Export → Project Preset: the settings-only <code>.json</code> if you both have the
+                                    same sample packs, or the full backup <code>.zip</code> if it uses audio of your own.
+                                    Those are the two this window reads.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <a
+                                    href="#/submit"
+                                    onClick={onClose}
+                                    className="flex-1 py-3 bg-synthux-turquoise/15 border border-synthux-turquoise/40
+                                        text-synthux-turquoise hover:bg-synthux-turquoise/25 font-bold rounded-lg
+                                        transition-colors text-center no-underline"
+                                >
+                                    Open the Submit tool
+                                </a>
+                                <button
+                                    onClick={onClose}
+                                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-lg transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* TYPE: UNKNOWN */}
                     {analysis.type === 'UNKNOWN' && (
                         <div className="space-y-6">

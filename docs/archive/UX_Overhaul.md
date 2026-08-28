@@ -32,7 +32,7 @@ This document outlines the high-level wireflows, user journeys, and potential UX
 >   without ever being sketched, and drawing them now would be documenting backwards — the
 >   Home/Dashboard box *is* the five-door hub, the browser-to-grid box *is* the temporary pool, and the
 >   guest-artist box was answered in writing by
->   [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md). The
+>   [docs/presets-samples/submission-workflow.md](submission-workflow.md). The
 >   fourth — independent editor vs Studio's tape editor — is not a drawing debt either: it is a question
 >   the editor round answers by walking the component with a project behind it, and it lives there in
 >   [roadmap-bugs.md](../../roadmap-bugs.md). **Nothing in this document is open.**
@@ -142,4 +142,4 @@ Project management is the core of the experience for Power Users and those worki
       "import into a project". **Closed as built.***
 - [x] Sketch the **"Guest Artist Pack"** discovery and loading flow.
       *Answered rather than sketched — the app is the form and the channel stays human. **Closed.** See
-      [docs/presets-samples/submission-workflow.md](../presets-samples/submission-workflow.md).*
+      [docs/presets-samples/submission-workflow.md](submission-workflow.md).*

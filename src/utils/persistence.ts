@@ -3,11 +3,12 @@ import type { AppState } from '../types';
 import { dbName } from './storageNamespace';
 
 const DB_NAME = dbName('spotykach-wav-builder');
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_NAME = 'app-state';
 const USER_LIBRARY_STORE = 'user-library';
 const CUSTOM_FOLDERS_STORE = 'custom-folders';
 const BROWSE_POOL_STORE = 'browse-pool';
+const SUBMISSION_STORE = 'submission-draft';
 
 const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -23,6 +24,9 @@ const initDB = async () => {
             }
             if (!db.objectStoreNames.contains(BROWSE_POOL_STORE)) {
                 db.createObjectStore(BROWSE_POOL_STORE);
+            }
+            if (!db.objectStoreNames.contains(SUBMISSION_STORE)) {
+                db.createObjectStore(SUBMISSION_STORE);
             }
         },
     });
@@ -206,6 +210,75 @@ export const clearBrowsePoolFromDB = async () => {
         await db.delete(BROWSE_POOL_STORE, 'summary');
     } catch (e) {
         console.error('Failed to clear the temporary pool', e);
+    }
+};
+
+/**
+ * The submission draft — the one long-lived thing the submit tool owns.
+ *
+ * Kept here rather than in localStorage because a draft carries blobs: the audio
+ * the artist dropped in, and the cover image. It is written on a debounce as the
+ * form is filled, and read once on mount, so a closed tab costs nothing. Cleared
+ * only when the artist says so, or when a submission is finished and dismissed.
+ *
+ * Deliberately typed as `unknown` at this layer: the shape belongs to the tool
+ * (`src/submission/draft.ts`), and persistence has no business knowing it. What
+ * this module guarantees is that whatever went in comes back out, blobs intact.
+ */
+export const saveSubmissionDraftToDB = async (draft: unknown) => {
+    try {
+        const db = await initDB();
+        await db.put(SUBMISSION_STORE, draft, 'current');
+    } catch (e) {
+        console.error('Failed to save the submission draft', e);
+    }
+};
+
+export const loadSubmissionDraftFromDB = async <T = unknown>(): Promise<T | null> => {
+    try {
+        const db = await initDB();
+        return (await db.get(SUBMISSION_STORE, 'current')) || null;
+    } catch (e) {
+        console.error('Failed to load the submission draft', e);
+        return null;
+    }
+};
+
+export const clearSubmissionDraftFromDB = async () => {
+    try {
+        const db = await initDB();
+        await db.delete(SUBMISSION_STORE, 'current');
+        await db.delete(SUBMISSION_STORE, 'handoff');
+    } catch (e) {
+        console.error('Failed to clear the submission draft', e);
+    }
+};
+
+/**
+ * A one-shot parcel from another mode — Studio's export modal, or Browse's pool.
+ *
+ * Separate from the draft itself because a handoff must not silently overwrite work
+ * in progress: the tool reads this slot on arrival, asks what to do when a draft is
+ * already open, and deletes the parcel either way. Nothing else ever reads it.
+ */
+export const saveSubmissionHandoffToDB = async (handoff: unknown) => {
+    try {
+        const db = await initDB();
+        await db.put(SUBMISSION_STORE, handoff, 'handoff');
+    } catch (e) {
+        console.error('Failed to hand off to the submission tool', e);
+    }
+};
+
+export const takeSubmissionHandoffFromDB = async <T = unknown>(): Promise<T | null> => {
+    try {
+        const db = await initDB();
+        const parcel = (await db.get(SUBMISSION_STORE, 'handoff')) || null;
+        if (parcel) await db.delete(SUBMISSION_STORE, 'handoff');
+        return parcel;
+    } catch (e) {
+        console.error('Failed to read the submission handoff', e);
+        return null;
     }
 };
 

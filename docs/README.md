@@ -2,7 +2,7 @@
 
 Every documentation file in the repository, what it is for, and whether it is still true.
 
-*Last reconciled 2026-08-19, when v4 shipped and the two v4 documents moved to `archive/`.*
+*Last reconciled 2026-08-25, on the `submission-tool` branch.*
 
 **Status key** — 🟢 current · 🔵 reference (stable, rarely changes) · 🟡 partly stale · 🗄️ archived ·
 ⚠️ **load-bearing — code or the app links to it, do not move**
@@ -45,11 +45,12 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 
 | File | Status | What it is |
 |---|---|---|
-| [presets-samples/README.md](presets-samples/README.md) | ⚠️ 🟢 | Submission guide for guest artists and users sharing presets. **Linked from inside the app** (`AboutHelpModal`) and from the root README by absolute GitHub URL — moving it breaks both. Its `img/` folder holds the screenshots and videos the help modal embeds. |
-| [../public/presets/README.md](../public/presets/README.md) | 🟢 | The maintainer-side counterpart: manifest descriptors, R2 deployment, normalization scripts. |
-| [presets-samples/submission-workflow.md](presets-samples/submission-workflow.md) | 🟢 | Where the submission workflow stands, the seven things in its way, and the staged plan. **Holds the answer to `V4_PERVAK.md`'s open question 6:** the app guides creation, the submitter sends files over email or Discord, the maintainer commits them. |
+| [presets-samples/README.md](presets-samples/README.md) | 🟢 | What to know *before* opening the submission tool: pack versus preset, the 42 s and 36-slot limits, what to have ready. Cut down to a signpost on 2026-08-23 when the tool at `#/submit` took over the step-by-step half. **Linked from inside the app** (`AboutHelpModal`, `PresetsPanel`) and from the root README by absolute GitHub URL — moving it breaks both. Its `img/` folder is a **leftover**: the media the help modal embeds is served from `public/img/docs/` and `public/vid/docs/`, and nothing has referenced these copies since the page was cut down. |
+| [../public/presets/README.md](../public/presets/README.md) | 🟢 | The maintainer-side counterpart, rewritten 2026-08-24 around the submission tool: what is inside a submission archive, what to check before trusting a descriptor, where each file goes (preset covers to this repo, pack audio to R2), the descriptor and manifest schemas, and the by-hand route for a preset that never went through the tool. |
+| [presets-samples/submission-tool-plan.md](presets-samples/submission-tool-plan.md) | 🟢 | The plan the submission tool was built from: what it is, the six steps, where it is reached from, and what it deliberately does not do. The record of four decisions taken on 2026-08-23 — a door not a link, preset-only allowed, the old guide cut to a stub, exported projects accepted as input. |
 | [WAV-CUE/guide/videotutorial/videotutorialscript.md](WAV-CUE/guide/videotutorial/videotutorialscript.md) | 🔵 | Draft scripts for a long tutorial and a short reel. Starting point, not a commitment. |
-| [../scripts/normalize-audio.md](../scripts/normalize-audio.md) | 🔵 | How the normalization script is used. |
+| [../scripts/normalize-audio.md](../scripts/normalize-audio.md) | 🔵 | How the normalization script is used. **Not recursive** — one directory per run. |
+| [../scripts/import-submission.mjs](../scripts/import-submission.mjs) | 🟢 | `npm run submission -- <zip>` — unpacks a submission archive, checks it against the live manifest, and applies it. Dry run by default. |
 
 ## Development notes
 
@@ -58,7 +59,8 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 | [style_guide_colors.md](style_guide_colors.md) | 🔵 | Tape colours and the app palette. |
 | [debugging/README.md](debugging/README.md) | 🔵 | What `DragDebug.tsx` was for and how to re-mount it. The component was removed from `App.tsx` deliberately and kept here beside its notes. |
 | [debugging/crossfade_technique.md](debugging/crossfade_technique.md) | 🔵 | Crossfade approach notes. |
-| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | Builds, Pages publishing (root + `next/`), **storage namespacing**, and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in — which is why the deployment story survived that file being archived. |
+| [optimization-plan.md](optimization-plan.md) | 🟢 | **The working plan for the `optimize` branch.** Ranked tasks with the survey already done — the ffmpeg singleton, an 18-copy Escape-handler duplication, four disagreeing byte formatters, and the `App.tsx` / `exportUtils.ts` approach. Pick a task up without re-deriving the measurements. Also records what was decided against, and why. |
+| [deployment_guidelines.md](deployment_guidelines.md) | 🟢 | **The deploy workflow** (`npm run deploy`, manual, from your machine — pushing to `main` does not publish), plus storage namespacing and asset-path resolution. Rewritten in v4 Phase 7: the stale `build-versioned-pages.mjs` and GitHub-Releases-samples material moved to a historical notes section, and Appendix F.2/F.3 of `V4_PERVAK.md` was folded in — which is why the deployment story survived that file being archived. Revised 2026-08-19 when the `/next/` preview deploy and the `/v2` stub were removed. |
 
 ## Not in git
 
@@ -69,8 +71,6 @@ Slow-moving, and the only written record of several device behaviours. Keep.
 ## Elsewhere in the repo
 
 - `public/news/*.md` — the in-app news feed. Content, not documentation; each release adds one.
-- `public/v2/index.html` — a redirect stub left from the versioned v1/v2 deploy. Retire it with the
-  deployment guidelines.
 
 ---
 

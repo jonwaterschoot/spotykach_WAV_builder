@@ -1,4 +1,4 @@
-import { X, HardDrive, FileAudio, Archive, Download, Info } from 'lucide-react';
+import { X, HardDrive, FileAudio, Archive, Download, Info, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { type FileRecord } from '../types';
 // dynamic utility imports
@@ -9,11 +9,18 @@ interface ExportModalProps {
     onExportSD: (options: { includeProject: boolean; directWrite: boolean; smartSync?: boolean; skMode: 'clean' | 'overwrite'; includeConfig?: boolean }) => void;
     onExportFiles: (options: { keepStructure: boolean; fileIds: string[] }) => void;
     onExportProject: (options: { settingsOnly: boolean }) => void;
+    /**
+     * Hand this project to the submission tool instead of downloading it.
+     *
+     * Optional so the modal keeps working for any caller that has no route to the
+     * tool — the button is simply absent then.
+     */
+    onPrepareSubmission?: () => void;
 }
 
 type ExportTab = 'sd' | 'preset' | 'files';
 
-export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject }: ExportModalProps) => {
+export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, onPrepareSubmission }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('sd');
 
     useEffect(() => {
@@ -279,9 +286,33 @@ export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExpor
                                     <Download size={20} />
                                     Export Preset
                                 </button>
-                                <div className="text-center mt-3 text-xs text-gray-500">
-                                    See the <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" target="_blank" rel="noreferrer" className="text-synthux-action hover:underline">Preset Upload Guide</a> for submission instructions.
-                                </div>
+                                {onPrepareSubmission && (
+                                    <>
+                                        <div className="flex items-center gap-3 my-4">
+                                            <span className="flex-1 h-px bg-gray-800" />
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-600">or</span>
+                                            <span className="flex-1 h-px bg-gray-800" />
+                                        </div>
+                                        {/*
+                                          * The download above is a file; this is the whole submission.
+                                          * Sharing a preset used to mean exporting one of these, reading a
+                                          * guide, and writing a message that named the packs it needed —
+                                          * all of which the tool now does from the same project state.
+                                          */}
+                                        <button
+                                            onClick={onPrepareSubmission}
+                                            className="w-full py-3 border border-synthux-turquoise/40 bg-synthux-turquoise/10 text-synthux-turquoise
+                                                hover:bg-synthux-turquoise/20 font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <Send size={18} />
+                                            Prepare a submission
+                                        </button>
+                                        <div className="text-center mt-2 text-xs text-gray-500">
+                                            Takes this project into the submission tool, where the details, the licence
+                                            and the required packs are collected and checked for you.
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}

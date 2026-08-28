@@ -30,3 +30,8 @@ Thumbs.db
 
 # Windows folder settings
 desktop.ini
+
+# The backup the import script writes before it edits the manifest — it exists for
+# the minute between applying an import and reading `git diff`. Staged audio does not
+# appear here at all: it goes to a working folder outside the repo, on purpose.
+public/manifest.json.bak

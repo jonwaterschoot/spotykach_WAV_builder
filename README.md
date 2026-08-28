@@ -86,6 +86,33 @@ This project is built using:
 
 Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV_builder/](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
 
+## Privacy
+
+The app runs entirely in your browser. Audio, projects and settings live in IndexedDB and — if
+you grant access — in folders you pick yourself through the File System Access API. Nothing is
+uploaded, and there is no analytics or telemetry of any kind.
+
+Rendering the page contacts no third party: **fonts are self-hosted** from
+[`public/fonts/`](public/fonts/) under the SIL Open Font License 1.1, and the ffmpeg core is
+served from this origin rather than a CDN. The only outbound requests the app makes on your
+behalf are downloading sample and preset packs from Cloudflare R2, and those happen only when
+you choose to add one.
+
+## Publishing (maintainers)
+
+The live site is published **manually, from a maintainer's machine**. There is no Actions
+workflow, so **pushing to `main` does not update the site** — main can be ahead of what is live.
+
+```bash
+npm run deploy        # builds, then pushes dist/ to the gh-pages branch
+```
+
+Commit first: the deploy ships the working tree, not `main`. It takes about half a minute end to
+end, so small changes — one new screenshot in a news article — are deployed the same way as a
+release. On Windows, use `npm.cmd run deploy` if PowerShell blocks the script.
+
+Full detail in [docs/deployment_guidelines.md](docs/deployment_guidelines.md).
+
 
 ## Roadmap
 
@@ -113,7 +140,7 @@ Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV
 Whether you are a musician contributing a sample pack, a user sharing a project layout, or a developer/maintainer working on the app, check out the relevant guides below:
 
 *   **For Musicians & Preset Creators**:
-    *   [Sample & Preset Submission Guide](docs/presets-samples/README.md) – How to package, name, and license samples and presets before submitting them.
+    *   [Sample & Preset Submission Guide](docs/presets-samples/README.md) – What to know before opening the app's submission tool, which collects and checks the rest for you.
 *   **For Developers & Maintainers**:
     *   [Preset Upload & Integration Guide](public/presets/README.md) – Developer instructions on integrating presets, JSON schema specs, and deploying sample packs.
     *   [Audio Processing & Normalization Scripts](scripts/normalize-audio.md) – Documentation for running scripts to normalize, FLAC-compress, and tag audio files.

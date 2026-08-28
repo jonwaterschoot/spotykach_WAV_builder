@@ -129,16 +129,25 @@ If you're coming from an embedded or C++ background, here is how to map your kno
 These steps are for the core maintainers responsible for updating the live GitHub Pages site.
 
 ### Deployment Workflow
-1.  **Commit all changes**: Ensure the working directory is clean.
+
+There is no Actions workflow — **pushing to `main` does not publish anything**. The site goes live
+only when a maintainer runs the deploy script.
+
+1.  **Commit all changes**: the deploy ships the working tree, not `main`, so a dirty directory
+    means the live site won't match what's in git.
 2.  **Run Deploy Script**:
     ```bash
     npm run deploy
     ```
+    `predeploy` builds first (`tsc -b && vite build`), then `gh-pages -d dist` pushes `dist/` to
+    the `gh-pages` branch. About half a minute end to end.
 3.  **Windows PowerShell Users**:
     If you see scripts disabled errors, use:
     ```powershell
     npm.cmd run deploy
     ```
+
+See [docs/deployment_guidelines.md](docs/deployment_guidelines.md) for the full picture.
 
 ---
 

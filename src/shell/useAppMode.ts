@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
  * every other mode runs without a project and without filesystem permission.
  * See V4_PERVAK.md, Appendix C.
  */
-export type AppMode = 'hub' | 'browse' | 'presets' | 'config' | 'editor' | 'studio';
+export type AppMode = 'hub' | 'browse' | 'presets' | 'config' | 'editor' | 'studio' | 'submit';
 
-const MODES: readonly AppMode[] = ['hub', 'browse', 'presets', 'config', 'editor', 'studio'];
+const MODES: readonly AppMode[] = ['hub', 'browse', 'presets', 'config', 'editor', 'studio', 'submit'];
 
 const isAppMode = (value: string): value is AppMode => (MODES as readonly string[]).includes(value);
 
