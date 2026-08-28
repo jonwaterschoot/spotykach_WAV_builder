@@ -1,6 +1,6 @@
 # Changelog
 
-## [4.1.0] - 2026-08-27
+## [4.1.0] - 2026-08-29
 
 **A submission tool, for the few people who need one.** Almost everything in this app arrived because
 somebody sent in a sample pack or a preset, and until now that meant reading a 175-line guide, copying
@@ -181,6 +181,8 @@ user could do.
   duplicate either way. The two are now told apart by whether a preset requires this pack alone: the
   ready-made one keeps the offer, the rest become a quiet "Also used in" list that names the other
   packs they mix with. Both still open their own preset, which is what the repeated card obscured.
+
+---
 
 ## [4.0.1] - 2026-08-22
 
