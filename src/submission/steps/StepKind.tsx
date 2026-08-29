@@ -1,12 +1,79 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-    Download, FileArchive, FolderTree, HardDrive, Layers, Library, RotateCcw, Send, Sliders, Users,
+    BookOpen, Download, FileArchive, Film, FolderTree, HardDrive, Layers, Library, Play, RotateCcw,
+    Send, Sliders, Users,
 } from 'lucide-react';
 import { ChoiceCard, Note, StepHeading, StepPanel } from '../ui';
 import { ACCENTS } from '../accents';
 import { ownFiles } from '../draft';
+import { SUBMISSION_VIDEO_ID } from '../../data/links';
 import { PACK_MAXIMUM_SAMPLES, PACK_MINIMUM_SAMPLES } from '../validate';
 import type { StepProps } from './types';
+
+/**
+ * The walkthrough video, or the space it will occupy.
+ *
+ * Two states and no third: a dashed placeholder while `SUBMISSION_VIDEO_ID` is null,
+ * and a click-to-play facade once it isn't. The facade matters — an `<iframe>` on
+ * step 1 would have YouTube setting cookies and running scripts for every visitor
+ * who never pressed play, in a tool whose whole promise is that nothing leaves the
+ * machine. Nothing is requested from Google until someone asks for the video, and
+ * `youtube-nocookie.com` is the host even then.
+ */
+const IntroVideo: React.FC = () => {
+    const [playing, setPlaying] = useState(false);
+
+    if (!SUBMISSION_VIDEO_ID) {
+        return (
+            <div className="aspect-video w-full rounded-lg border border-dashed border-white/15 bg-black/30
+                flex flex-col items-center justify-center gap-2 text-center px-4">
+                <Film size={20} className="text-gray-600" />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                    Short walkthrough, coming here
+                </p>
+                <p className="text-[11px] text-gray-600 leading-relaxed max-w-xs">
+                    A couple of minutes, start to finish. The written guide covers the same ground now.
+                </p>
+            </div>
+        );
+    }
+
+    if (!playing) {
+        return (
+            <button
+                onClick={() => setPlaying(true)}
+                className="group relative aspect-video w-full overflow-hidden rounded-lg border border-white/10
+                    bg-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-synthux-turquoise"
+            >
+                <img
+                    src={`https://i.ytimg.com/vi/${SUBMISSION_VIDEO_ID}/hqdefault.jpg`}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity"
+                />
+                <span className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <span className="w-12 h-12 rounded-full bg-black/70 border border-white/20 flex items-center justify-center
+                        group-hover:scale-110 transition-transform">
+                        <Play size={18} className="text-white translate-x-0.5" fill="currentColor" />
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-300">
+                        Watch the walkthrough
+                    </span>
+                </span>
+            </button>
+        );
+    }
+
+    return (
+        <iframe
+            src={`https://www.youtube-nocookie.com/embed/${SUBMISSION_VIDEO_ID}?autoplay=1&rel=0`}
+            title="Submitting a pack — a walkthrough"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="aspect-video w-full rounded-lg border border-white/10 bg-black"
+        />
+    );
+};
 
 /**
  * Step 1 — what are you sending?
@@ -17,7 +84,7 @@ import type { StepProps } from './types';
  * outputs, different things that have to travel — and the guide's habit of
  * explaining both to everyone is most of why it ran to 175 lines.
  */
-export const StepKind: React.FC<StepProps> = ({ draft, update, goToStep }) => {
+export const StepKind: React.FC<StepProps> = ({ draft, update, goToStep, openGuide }) => {
     const { wants } = draft;
     const arrived = draft.files.length;
     const own = ownFiles(draft).length;
@@ -36,6 +103,43 @@ export const StepKind: React.FC<StepProps> = ({ draft, update, goToStep }) => {
                     Dropbox, etc., and send as a link.
                 </span>
             </StepHeading>
+
+            {/*
+              * Watch it, or read it — before anything is asked.
+              *
+              * Every step explains itself as you reach it, which answers "what goes in
+              * this field" and never answers "what am I signing up for". That answer
+              * lived in Studio's help modal, behind the one door this tool exists so
+              * that a guest artist never has to open. It is two clicks from here now,
+              * and it does not take the visitor out of the app or lose the draft.
+              */}
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 items-stretch">
+                <IntroVideo />
+
+                <div className="rounded-lg border border-white/10 bg-synthux-panel/60 p-4 flex flex-col justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            First time here?
+                        </p>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                            The written guide is the whole picture in one read: what to have ready before you
+                            start, what the audio and cover art need to be, how a preset differs from a pack,
+                            what the tool hands you at the end, and where to send it.
+                        </p>
+                        <p className="text-xs text-gray-500 leading-relaxed mt-2">
+                            You don’t need it to get through this form — but it is the fastest way to find out
+                            whether what you have is what we’re asking for.
+                        </p>
+                    </div>
+                    <button
+                        onClick={openGuide}
+                        className="self-start flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold
+                            bg-white/10 hover:bg-white/15 transition-colors"
+                    >
+                        <BookOpen size={13} /> Read the guide
+                    </button>
+                </div>
+            </div>
 
             {/*
               * Said before the checkboxes, because "can I use what I already have?" is the

@@ -1,11 +1,18 @@
-import React, { Suspense } from 'react';
-import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, Send } from 'lucide-react';
+import React, { Suspense, useState } from 'react';
+import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, Send, HelpCircle } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
 
 // The news section pulls in the markdown renderer. Lazy so the hub's own bundle
 // stays small — nothing above the fold waits on it.
 const HubNews = React.lazy(() => import('./HubNews'));
+
+// Same reasoning, and it matters more here: the help modal is the longest single
+// component in the app and most visitors never open it. Nothing in it is needed to
+// draw a door.
+const AboutHelpModal = React.lazy(() =>
+  import('../components/AboutHelpModal').then(m => ({ default: m.AboutHelpModal })),
+);
 
 interface Door {
   mode: AppMode;
@@ -107,13 +114,24 @@ interface HubScreenProps {
 }
 
 /**
- * The landing screen: five doors, no project, no permission prompts.
+ * The landing screen: six doors, no project, no permission prompts.
  * Doors whose mode isn't built yet still route to their own hash — the router
  * falls back to Studio until the matching phase lands.
  */
 export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
+  /*
+   * Which tab the help modal opens on, or null for closed.
+   *
+   * It lived only in Studio until now, behind a header menu, which meant the three
+   * things a first-time visitor most needs — what this app is, how to format a card,
+   * how to submit a pack — were reachable only from the one door that first asks for
+   * a folder. No `onReset` is passed: wiping every project is Studio's to offer,
+   * where the projects are.
+   */
+  const [helpTab, setHelpTab] = useState<'about' | 'help' | 'contribute' | null>(null);
+
   return (
-    <div className="min-h-screen w-full bg-synthux-main text-white font-sans noise-texture overflow-y-auto">
+    <div className="min-h-screen w-full bg-synthux-main text-white font-sans noise-texture texture-viewport">
       <div className="mx-auto max-w-5xl px-6 py-12 sm:py-20">
 
         <header className="flex items-center gap-4 mb-10 sm:mb-14">
@@ -126,6 +144,18 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
               What do you want to do?
             </p>
           </div>
+
+          <button
+            onClick={() => setHelpTab('about')}
+            title="About this app, formatting a card, and the submission guide"
+            className="ml-auto shrink-0 flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2
+              text-[11px] font-bold uppercase tracking-widest text-gray-400
+              hover:text-white hover:bg-white/5 hover:border-white/20 transition-colors
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            <HelpCircle size={15} />
+            <span className="hidden sm:inline">About &amp; Help</span>
+          </button>
         </header>
 
         {/*
@@ -196,6 +226,12 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
           <HubNews />
         </Suspense>
       </div>
+
+      {helpTab && (
+        <Suspense fallback={null}>
+          <AboutHelpModal initialTab={helpTab} onClose={() => setHelpTab(null)} />
+        </Suspense>
+      )}
     </div>
   );
 };

@@ -11,6 +11,20 @@
 export const SUBMISSION_GUIDE_URL =
     'https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/docs/presets-samples/README.md';
 
+/**
+ * The submission walkthrough, as a YouTube video id — `null` until one is shot.
+ *
+ * An id rather than a URL because nothing here should be able to embed an arbitrary
+ * page: the id is dropped into a `youtube-nocookie.com/embed/` address, and setting
+ * this constant is the whole of publishing the video. Step 1 draws a placeholder
+ * while it is null, so the layout the video lands in already exists.
+ *
+ * Nothing from YouTube is fetched until the visitor clicks play — see `IntroVideo`
+ * in StepKind. Same reasoning as the Buy Me a Coffee button in the help modal: no
+ * third-party script runs in this app unless someone asks for it.
+ */
+export const SUBMISSION_VIDEO_ID: string | null = null;
+
 /** Public, and carries no spam cost — Discord won't take a DM from a stranger unasked. */
 export const DISCORD_HANDLE = 'jonwtr';
 
