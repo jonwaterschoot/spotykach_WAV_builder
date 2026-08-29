@@ -1,1 +1,0 @@
-import{T as s,D as n}from"./utils-io-f-0ju2_f.js";const o=t=>({id:t,fileId:null}),a=t=>({color:t,slots:Array.from({length:6},(r,e)=>o(e+1))}),i=()=>{const t=s.reduce((r,e)=>(r[e]=a(e),r),{});return{files:{},tapes:t,projectConfig:{...n}}};export{i as g};
