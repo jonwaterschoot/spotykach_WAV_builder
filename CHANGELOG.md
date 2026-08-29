@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.1.2] - 2026-08-29
+
+**News articles can be linked to.** `#/?news=4.1.0-submit` opens the hub on that post,
+the way `#/presets?preset=<id>` opens on one card. A Copy link button sits in each
+article's meta row — in the Studio modal too, where it hands back a hub link rather
+than one that would ask the reader for a work folder first.
+
+### Fixed
+- **`useAppMode` stripped the query from hub links.** Any hash resolving to the hub was
+  normalised to a bare `#/`, before the lazy hub had mounted to read it. `#/garbage`
+  still becomes `#/`; `#/garbage?news=410` keeps its parameter now.
+
+---
+
 ## [4.1.1] - 2026-08-29
 
 **The guide was behind the one door that asks for a folder first.** About & Help lived in Studio, so
