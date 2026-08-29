@@ -54,10 +54,18 @@ export function useAppMode() {
 
   // A hash we don't recognise renders the hub, so rewrite the URL to match what's
   // on screen. replaceState keeps it out of the history stack.
+  //
+  // The query survives the rewrite. `#/?news=<slug>` is a hub hash carrying a
+  // parameter, not an unrecognised mode, and this effect runs before the lazy hub
+  // has mounted to read it — normalising the whole hash away would have made every
+  // link to a news post land on the featured one instead.
   useEffect(() => {
     const raw = window.location.hash;
-    if (raw && raw !== '#/' && modeFromHash(raw) === 'hub') {
-      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`);
+    if (!raw || modeFromHash(raw) !== 'hub') return;
+    const query = raw.slice(raw.indexOf('?') + 1);
+    const canonical = raw.includes('?') && query ? `#/?${query}` : '#/';
+    if (raw !== canonical) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${canonical}`);
     }
   }, []);
 

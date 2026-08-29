@@ -44,3 +44,36 @@ export const fetchNewsFeed = async (): Promise<NewsFeed> => {
 /** The item a reader should land on: the pinned one, else the newest listed. */
 export const featuredNewsItem = (items: NewsItem[]): NewsItem | undefined =>
     items.find(i => i.pinned) || items[0];
+
+/**
+ * The readable half of an article's link: `4.1.0-submit.md` → `4.1.0-submit`.
+ *
+ * Not the manifest `id`, which is a mix of version numbers with the dots taken
+ * out ("410") and slugs ("hainbach"). A link is something a person pastes into a
+ * message, so it should say which article it points at.
+ */
+export const newsSlug = (item: NewsItem): string => item.file.replace(/\.md$/i, '');
+
+/**
+ * Resolve a `?news=` value to an item, by slug or by manifest id.
+ *
+ * Both are accepted because the id is the older identity — anything already
+ * linked by id keeps working — while the slug is what `newsPermalink` writes.
+ * An unknown value returns undefined, and the caller falls back to the featured
+ * post rather than showing an empty reader.
+ */
+export const newsItemFromParam = (items: NewsItem[], param: string | null): NewsItem | undefined => {
+    if (!param) return undefined;
+    const wanted = param.toLowerCase();
+    return items.find(i => newsSlug(i).toLowerCase() === wanted || i.id.toLowerCase() === wanted);
+};
+
+/**
+ * The absolute link to one article, on the hub.
+ *
+ * Always the hub, even when it's copied from the Studio modal: the hub is the
+ * one surface that shows news to somebody who has never opened this app, and a
+ * link that first demands a work folder is not a link you can send anyone.
+ */
+export const newsPermalink = (item: NewsItem): string =>
+    `${window.location.origin}${window.location.pathname}#/?news=${encodeURIComponent(newsSlug(item))}`;
