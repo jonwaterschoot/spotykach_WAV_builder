@@ -613,10 +613,24 @@ function App({ onExitToHub }: AppProps) {
   useEffect(() => {
     appStorage.setItem('spotykach_visual_filters', JSON.stringify(visualFilters));
     const root = document.documentElement;
-    root.style.setProperty('--master-invert', String(visualFilters.invert));
-    root.style.setProperty('--master-grayscale', String(visualFilters.grayscale));
-    root.style.setProperty('--master-contrast', String(visualFilters.contrast));
-    root.style.setProperty('--master-brightness', String(visualFilters.brightness));
+    /*
+     * One `filter` value, and `none` when there is nothing to filter.
+     *
+     * An identity filter is still a filter as far as the containing block goes: it
+     * makes #root the anchor for every `position: fixed` descendant in the app, which
+     * on a page taller than the viewport means modals centre themselves in the whole
+     * document. Nobody was asking for a filter by default, so nobody should pay for
+     * one — the four channels are composed here and collapse to `none` at rest.
+     * See the `#root` rule in index.css.
+     */
+    const { invert, grayscale, contrast, brightness } = visualFilters;
+    const isFiltered = invert !== 0 || grayscale !== 0 || contrast !== 1 || brightness !== 1;
+    root.style.setProperty(
+      '--master-filter',
+      isFiltered
+        ? `invert(${invert}) grayscale(${grayscale}) contrast(${contrast}) brightness(${brightness})`
+        : 'none',
+    );
     root.style.setProperty('--master-texture-opacity', String(visualFilters.textureOpacity));
     root.style.setProperty('--master-font-size', `${visualFilters.fontSize * 16}px`);
     const imgDir = visualFilters.textureImage.endsWith('.mp4') || visualFilters.textureImage.endsWith('.gif') ? '/vid/' : '/img/';

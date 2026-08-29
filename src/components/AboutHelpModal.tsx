@@ -1,13 +1,22 @@
-import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film } from 'lucide-react';
+import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film, Maximize2 } from 'lucide-react';
 import { version } from '../../package.json';
 import { useEffect, useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
 import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL, submissionEmail, submissionMailto } from '../data/links';
-import { hashForMode } from '../shell/useAppMode';
+import { hashForMode, modeFromHash } from '../shell/useAppMode';
 
 interface AboutHelpModalProps {
     onClose: () => void;
-    onReset: () => void;
+    /**
+     * Wipe every project, file and setting, then reload.
+     *
+     * Optional because the modal opens from three places now and only one of them
+     * can honour it: Studio owns the project state the reset replaces. The hub and
+     * the submission tool open the same modal for the same reading, and simply
+     * don't draw the button — better than handing them a destructive action that
+     * half-works from outside the workspace it belongs to.
+     */
+    onReset?: () => void;
     initialTab?: 'about' | 'help' | 'contribute';
 }
 
@@ -40,6 +49,11 @@ const BuyMeACoffeeWidget = () => {
  * Filling one in is dropping the file at the path already named here and deleting the
  * word `pending` — the path never changes, so re-shooting an existing capture is an
  * overwrite with no code change at all.
+ *
+ * Captures are WebP, and not out of tidiness: these are full-window shots of a dark
+ * UI over a noise texture, which is close to the worst case for PNG. The four
+ * submission ones come out around 60 kB each as WebP against 700 kB as PNG, on a tab
+ * that shows six of them at once.
  */
 const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
     src: string;
@@ -48,6 +62,27 @@ const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
     kind?: 'image' | 'video';
     pending?: boolean;
 }) => {
+    const [zoomed, setZoomed] = useState(false);
+
+    /*
+     * Escape closes the zoom, not the modal underneath it.
+     *
+     * The modal's own Escape listener is on `window` and was registered first, so a
+     * bubble-phase listener here would run second and close both at once. Capture
+     * runs before every bubble-phase window listener, which makes stopping it here
+     * the whole of the fix.
+     */
+    useEffect(() => {
+        if (!zoomed) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            setZoomed(false);
+        };
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
+    }, [zoomed]);
+
     if (pending) {
         const Icon = kind === 'video' ? Film : Camera;
         return (
@@ -72,16 +107,60 @@ const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
         );
     }
 
+    /*
+     * Clickable, because a full-window app capture letterboxed into `max-h-96`
+     * inside an already-constrained modal lands at roughly 600px wide — enough to
+     * recognise the screen, not enough to read a single label on it. The caption
+     * carries the meaning; the zoom is there for when someone wants the detail.
+     */
     return (
-        <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black/40">
-            <img src={resolveAssetPath(src)} alt={alt} className="w-full h-auto object-contain max-h-96 mx-auto" />
-        </div>
+        <>
+            <figure className="space-y-2">
+                <button
+                    type="button"
+                    onClick={() => setZoomed(true)}
+                    title="Click to enlarge"
+                    className="group relative block w-full rounded-lg overflow-hidden border border-gray-800 bg-black/40
+                        hover:border-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-synthux-blue"
+                >
+                    <img src={resolveAssetPath(src)} alt={alt} className="w-full h-auto object-contain max-h-96 mx-auto" />
+                    <span className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-md bg-black/70 px-2 py-1
+                        text-[10px] font-bold uppercase tracking-wider text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Maximize2 size={11} /> Enlarge
+                    </span>
+                </button>
+                <figcaption className="text-[11px] text-gray-500 leading-relaxed">{note}</figcaption>
+            </figure>
+
+            {zoomed && (
+                <div
+                    onClick={() => setZoomed(false)}
+                    className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-10 cursor-zoom-out"
+                >
+                    <img src={resolveAssetPath(src)} alt={alt} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                    <button
+                        onClick={() => setZoomed(false)}
+                        className="absolute top-4 right-4 p-2 rounded-full bg-black/60 text-gray-300 hover:text-white hover:bg-black/80 transition-colors"
+                    >
+                        <X size={22} />
+                    </button>
+                </div>
+            )}
+        </>
     );
 };
 
 export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: AboutHelpModalProps) => {
     const [activeTab, setActiveTab] = useState<'about' | 'help' | 'contribute'>(initialTab);
     const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
+
+    /*
+     * The submission tool opens this modal itself now, which makes the "open the
+     * submission tool" card below into a link back to the screen it is covering.
+     * Read once at mount rather than tracked: this modal is remounted per open, and
+     * the hash cannot change underneath a modal that is holding focus.
+     */
+    const inSubmitTool = modeFromHash(window.location.hash) === 'submit';
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -261,14 +340,16 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     <span>Built by <a href="https://github.com/jonwaterschoot" target="_blank" rel="noreferrer" className="text-synthux-yellow hover:text-synthux-yellow-light hover:underline">@jonwaterschoot</a></span>
                                 </div>
 
-                                <div className="pt-4 pb-8">
-                                    <button
-                                        onClick={onReset}
-                                        className="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-wider hover:underline transition-colors"
-                                    >
-                                        Reset Application
-                                    </button>
-                                </div>
+                                {onReset && (
+                                    <div className="pt-4 pb-8">
+                                        <button
+                                            onClick={onReset}
+                                            className="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-wider hover:underline transition-colors"
+                                        >
+                                            Reset Application
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                         </div>
@@ -322,17 +403,40 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                                     The editor is <strong className="text-white">destructive</strong>: every save writes a new WAV file. A history of bounced files is kept, but overwritten files cannot be recovered. Back up samples you care about.
                                                 </td>
                                             </tr>
+                                            {/*
+                                              * This row said "Build vs. Sync" until v4, and described a
+                                              * two-way mirror between the work folder and the card that no
+                                              * longer exists. The card is a build target now; backup is one
+                                              * deliberate act to a folder picked at the time. See the v4
+                                              * entry in CHANGELOG.md and `durabilityPrefs.ts`.
+                                              */}
                                             <tr>
                                                 <td className="px-3 py-3 align-top">
                                                     <span className="flex items-center gap-2 text-purple-400 font-semibold">
-                                                        <UploadCloud size={14} /> Build vs. Sync
+                                                        <UploadCloud size={14} /> Build vs. Backup
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> exports your project into the hardware folder structure. <span className="text-synthux-orange font-semibold">Sync</span> copies a backup of the full project folder between your work folder and the SD card. These are <strong className="text-white">two different operations</strong>.
+                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> writes your project into the hardware folder structure on the card — the <code className="bg-gray-800 px-1 rounded text-synthux-orange">SK/</code> folder, and by default <strong className="text-white">nothing else</strong>. The card is a build target, not a backup: it holds what the device plays, and you can rebuild it at any time.
+                                                    <span className="block mt-2">
+                                                        <span className="text-synthux-orange font-semibold">Backup</span> is a separate, deliberate act — <em>Settings ▸ Files ▸ Workspace backup</em>. It shows what it contains and what it weighs, then copies it to a folder you pick <strong className="text-white">at that moment</strong>; there is no remembered location and nothing is ever written behind your back.
+                                                    </span>
                                                 </td>
                                             </tr>
                                             <tr className="bg-white/5">
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-sky-400 font-semibold">
+                                                        <Save size={14} /> Saving
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    <strong className="text-white">Save</strong> writes the project to its folder on your drive — that is the copy that counts. <strong className="text-white">Auto-save</strong> is something else: a crash-recovery snapshot in the browser's own storage, on by default, so a closed tab or a crash doesn't cost you the session. It never writes to your drive.
+                                                    <span className="block mt-2 text-gray-400">
+                                                        Two extra copies are available in <em>Settings ▸ Files</em> and are <strong className="text-white">off by default</strong>: mirroring the project source onto the card, and snapshotting the card's <code className="bg-gray-800 px-1 rounded">SK/</code> folder back into the project folder after a build.
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            <tr>
                                                 <td className="px-3 py-3 align-top">
                                                     <span className="flex items-center gap-2 text-teal-400 font-semibold">
                                                         <Library size={14} /> Library
@@ -572,27 +676,48 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                               * background — worth reading, and not worth reading first. The tool asks
                               * for each of these things at the moment it needs them.
                               */}
-                            <a
-                                href={hashForMode('submit')}
-                                onClick={onClose}
-                                className="block rounded-xl border border-synthux-turquoise/40 bg-synthux-turquoise/10 p-5
-                                    hover:bg-synthux-turquoise/15 transition-colors no-underline"
-                            >
-                                <span className="flex items-start gap-3">
-                                    <Send size={20} className="shrink-0 mt-0.5 text-synthux-turquoise" />
-                                    <span className="min-w-0">
-                                        <strong className="block text-synthux-turquoise text-sm mb-1">
-                                            Open the submission tool
-                                        </strong>
-                                        <span className="block text-xs text-gray-400 leading-relaxed">
-                                            Drop in your folder and the tool collects everything a submission needs —
-                                            titles, categories, artist details, links, licence, and the preset if you
-                                            are making one — then hands you a small ZIP to send. Nothing is uploaded,
-                                            and it remembers where you got to.
+                            {inSubmitTool ? (
+                                <button
+                                    onClick={onClose}
+                                    className="w-full text-left rounded-xl border border-synthux-turquoise/40 bg-synthux-turquoise/10 p-5
+                                        hover:bg-synthux-turquoise/15 transition-colors"
+                                >
+                                    <span className="flex items-start gap-3">
+                                        <Send size={20} className="shrink-0 mt-0.5 text-synthux-turquoise" />
+                                        <span className="min-w-0">
+                                            <strong className="block text-synthux-turquoise text-sm mb-1">
+                                                You’re already in the tool — back to the form
+                                            </strong>
+                                            <span className="block text-xs text-gray-400 leading-relaxed">
+                                                Nothing here is lost by reading: your draft is saved as you go, and this
+                                                closes back onto the step you were on.
+                                            </span>
                                         </span>
                                     </span>
-                                </span>
-                            </a>
+                                </button>
+                            ) : (
+                                <a
+                                    href={hashForMode('submit')}
+                                    onClick={onClose}
+                                    className="block rounded-xl border border-synthux-turquoise/40 bg-synthux-turquoise/10 p-5
+                                        hover:bg-synthux-turquoise/15 transition-colors no-underline"
+                                >
+                                    <span className="flex items-start gap-3">
+                                        <Send size={20} className="shrink-0 mt-0.5 text-synthux-turquoise" />
+                                        <span className="min-w-0">
+                                            <strong className="block text-synthux-turquoise text-sm mb-1">
+                                                Open the submission tool
+                                            </strong>
+                                            <span className="block text-xs text-gray-400 leading-relaxed">
+                                                Drop in your folder and the tool collects everything a submission needs —
+                                                titles, categories, artist details, links, licence, and the preset if you
+                                                are making one — then hands you a small ZIP to send. Nothing is uploaded,
+                                                and it remembers where you got to.
+                                            </span>
+                                        </span>
+                                    </span>
+                                </a>
+                            )}
 
                             {/* Concepts Table */}
                             <div className="overflow-x-auto border border-gray-800 rounded-xl bg-black/20">
@@ -630,14 +755,15 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                             </div>
 
                             {/*
-                              * The captures. Everything below predates v4 — no hub, no submission
-                              * tool — so each one is a <Shot>: a slot that draws the media when it
+                              * The captures. Each is a <Shot>: a slot that draws the media when it
                               * has a path and says what belongs there when it does not. Filling a
                               * pending slot is deleting the word `pending`, once the file is in
                               * `public/img/docs/` or `public/vid/docs/` under the path already named.
                               *
-                              * Steps 1, 3 and 4, and the two handoff screens, are on the shot list
-                              * and deliberately not slotted here: this is a help tab, not a gallery.
+                              * The four submission stills are in; the two walkthrough videos are not
+                              * yet. Steps 1, 3 and 4, and the two handoff screens, are on the shot
+                              * list and deliberately not slotted here: this is a help tab, not a
+                              * gallery.
                               */}
                             <div className="space-y-6 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
@@ -660,26 +786,22 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         </div>
                                         <div className="flex flex-col gap-4">
                                             <Shot
-                                                pending
-                                                src="/img/docs/submit-hub-door.png"
+                                                src="/img/docs/submit-hub-door.webp"
                                                 alt="The hub, with the Submit a Pack door"
                                                 note="The hub with all six doors, Submit a Pack among them."
                                             />
                                             <Shot
-                                                pending
-                                                src="/img/docs/submit-step2-audio.png"
+                                                src="/img/docs/submit-step2-audio.webp"
                                                 alt="Step 2, the audio"
                                                 note="Step 2: the file list with editable titles, categories read from subfolders, a 42-second flag, a borrowed row carrying its link mark, and the player bar docked below."
                                             />
                                             <Shot
-                                                pending
-                                                src="/img/docs/submit-step5-preset.png"
+                                                src="/img/docs/submit-step5-preset.webp"
                                                 alt="Step 5, the preset grid"
                                                 note="Step 5: the 6×6 grid with borrowed slots marked and a tape's notes open."
                                             />
                                             <Shot
-                                                pending
-                                                src="/img/docs/submit-step6-review.png"
+                                                src="/img/docs/submit-step6-review.webp"
                                                 alt="Step 6, review and send"
                                                 note="Step 6: the review checklist with one item still failing, and the download panel."
                                             />

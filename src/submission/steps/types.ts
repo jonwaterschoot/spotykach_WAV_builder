@@ -17,4 +17,12 @@ export interface StepProps {
      * rows, so it is handed up here instead. `null` clears it.
      */
     registerPreview: (record: FileRecord | null) => void;
+    /**
+     * Open the written guide — the help modal's contribute tab — over the form.
+     *
+     * The shell owns it, because it is one modal for the whole tool rather than one
+     * per step, and because Escape has to reach it before the layer that walks the
+     * visitor back out to the hub.
+     */
+    openGuide: () => void;
 }

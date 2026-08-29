@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Check, ChevronLeft, ChevronRight, Loader, Trash2 } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, BookOpen, Check, ChevronLeft, ChevronRight, Loader, Trash2 } from 'lucide-react';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
@@ -23,6 +23,12 @@ import { StepDetails } from '../submission/steps/StepDetails';
 import { StepLinks } from '../submission/steps/StepLinks';
 import { StepLicense } from '../submission/steps/StepLicense';
 import { StepReview } from '../submission/steps/StepReview';
+
+// The written guide, which is the help modal's third tab. Lazy because it is the
+// longest component in the app and this tool is usable without ever opening it.
+const AboutHelpModal = React.lazy(() =>
+    import('../components/AboutHelpModal').then(m => ({ default: m.AboutHelpModal })),
+);
 
 /** How long a keystroke waits before the draft is written back. */
 const DRAFT_SAVE_DEBOUNCE_MS = 800;
@@ -55,6 +61,15 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
     const [draft, setDraft] = useState<SubmissionDraft>(emptyDraft);
     const [isLoaded, setIsLoaded] = useState(false);
     const [showDiscard, setShowDiscard] = useState(false);
+    /**
+     * The written guide, open over the form.
+     *
+     * The tool explains each step as you reach it, which is the right way round for
+     * filling one in and no use at all for the question people actually arrive with:
+     * what is being asked of me before I start. That answer was only ever in Studio's
+     * help modal, behind the one door this tool exists so you don't have to open.
+     */
+    const [showGuide, setShowGuide] = useState(false);
     const { toasts, showToast, removeToast } = useToasts();
     const { activeFileId, lastActiveFileId, pause } = useAudioPlayer();
 
@@ -210,9 +225,11 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
         document.getElementById('submit-scroll')?.scrollTo({ top: 0 });
     }, []);
 
-    // The confirm modal has its own Escape listener; the layer here is what makes
-    // the tool itself leave for the hub, which is what every other mode does.
-    useEscapeLayer(!showDiscard, () => {
+    // The confirm modal and the guide both have their own Escape listener; the layer
+    // here is what makes the tool itself leave for the hub, which is what every other
+    // mode does. It stands down while either is open, so Escape closes the thing on
+    // top rather than walking out of a half-filled form behind it.
+    useEscapeLayer(!showDiscard && !showGuide, () => {
         onExitToHub();
         return true;
     });
@@ -245,7 +262,11 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
         );
     }
 
-    const stepProps = { draft, update, goToStep, showToast, registerPreview: setPreviewRecord };
+    const stepProps = {
+        draft, update, goToStep, showToast,
+        registerPreview: setPreviewRecord,
+        openGuide: () => setShowGuide(true),
+    };
 
     return (
         <div className="h-screen w-full flex flex-col bg-synthux-main text-white overflow-hidden font-sans">
@@ -267,17 +288,29 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
                     </span>
                 </div>
 
-                <button
-                    onClick={() => setShowDiscard(true)}
-                    disabled={isDraftEmpty(draft)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
-                        text-gray-500 hover:text-synthux-red hover:bg-white/5 transition-colors
-                        disabled:opacity-30 disabled:hover:text-gray-500 disabled:hover:bg-transparent"
-                    title="Clear this draft"
-                >
-                    <Trash2 size={14} />
-                    <span className="hidden sm:inline">Clear</span>
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => setShowGuide(true)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+                            text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                        title="The written guide — what to have ready, and what happens after you send"
+                    >
+                        <BookOpen size={14} />
+                        <span className="hidden sm:inline">Guide</span>
+                    </button>
+
+                    <button
+                        onClick={() => setShowDiscard(true)}
+                        disabled={isDraftEmpty(draft)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+                            text-gray-500 hover:text-synthux-red hover:bg-white/5 transition-colors
+                            disabled:opacity-30 disabled:hover:text-gray-500 disabled:hover:bg-transparent"
+                        title="Clear this draft"
+                    >
+                        <Trash2 size={14} />
+                        <span className="hidden sm:inline">Clear</span>
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 min-h-0 flex">
@@ -390,6 +423,12 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
                     onClose={() => setShowDiscard(false)}
                     isDestructive
                 />
+            )}
+
+            {showGuide && (
+                <Suspense fallback={null}>
+                    <AboutHelpModal initialTab="contribute" onClose={() => setShowGuide(false)} />
+                </Suspense>
             )}
 
             <Toast toasts={toasts} onRemove={removeToast} />

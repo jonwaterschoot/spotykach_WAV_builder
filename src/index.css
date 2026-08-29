@@ -61,11 +61,18 @@ img {
     --font-header: "Syne Mono", monospace;
     --font-body: "Funnel Display", sans-serif;
 
-    /* Master Filters */
-    --master-invert: 0;
-    --master-grayscale: 0;
-    --master-contrast: 1;
-    --master-brightness: 1;
+    /*
+     * Master Filters — the whole `filter` value, composed by App.tsx, and `none`
+     * until the user actually turns one of the knobs in Settings ▸ Look.
+     *
+     * It is one variable rather than four because the difference that matters is
+     * between `none` and anything else, not between the four channels. A CSS filter
+     * makes its element the containing block for every `position: fixed` descendant,
+     * and an identity filter — `invert(0) grayscale(0) contrast(1) brightness(1)` —
+     * does that just as thoroughly as a real one while changing nothing on screen.
+     * Composed here, `filter: none` is the default and fixed means fixed.
+     */
+    --master-filter: none;
     --master-texture-opacity: 0.05;
     --master-font-size: 16px;
     --master-texture-image: url('/img/highrestexture_tapenoisevhs_whitetrans.png');
@@ -236,6 +243,30 @@ img {
         z-index: 0;
         mix-blend-mode: overlay;
     }
+
+    /*
+     * Texture on a screen that scrolls.
+     *
+     * Every texture layer above is `position: absolute; inset: 0` with
+     * `background-size: cover`, which is correct everywhere the app puts one: those
+     * screens are `h-screen` with their own inner scrollers, so the element is
+     * exactly one viewport and the grain is drawn at one viewport's scale.
+     *
+     * The hub is the exception — it is `min-h-screen` and the page itself scrolls,
+     * so the element is as tall as the whole document. `cover` then magnifies the
+     * grain to that height, and the enormous result scrolls along with the content.
+     * The hub also carries two of these layers at once (`bg-synthux-main::before`
+     * and `noise-texture::after`), so both are pinned here.
+     *
+     * Fixed positioning is the whole fix: `inset: 0` resolves against the viewport
+     * instead of the element, giving one screen of grain held still beneath the
+     * content — which is what every other screen already shows. Must stay last in
+     * this layer; it matches the rules above on specificity and wins on order.
+     */
+    .texture-viewport::before,
+    .texture-viewport::after {
+        position: fixed;
+    }
 }
 
 @layer base {
@@ -251,11 +282,30 @@ img {
 
     #root {
         min-height: 100vh;
-        filter: 
-            invert(var(--master-invert)) 
-            grayscale(var(--master-grayscale)) 
-            contrast(var(--master-contrast)) 
-            brightness(var(--master-brightness));
+
+        /*
+         * The stacking context the filter used to create, kept without the filter.
+         *
+         * `isolation` makes a stacking context and nothing else — no containing block
+         * for fixed descendants, which is the whole reason the filter is now `none`
+         * by default. Keeping it means the app's `mix-blend-mode: overlay` texture
+         * layers blend against the same backdrop they always did, instead of reaching
+         * past #root to `body::before` the moment the filter went away.
+         */
+        isolation: isolate;
+
+        /*
+         * `none` unless Settings ▸ Look has something switched on. See the note on
+         * `--master-filter`: while this was applied unconditionally, every modal and
+         * pinned overlay in the app anchored to #root rather than to the viewport.
+         * On the fixed-height screens those are the same box, so it never showed. On
+         * the hub, which is as tall as its content, a `fixed inset-0` modal centred
+         * itself in the whole document and the texture stretched to match.
+         *
+         * A filter the user *does* switch on still costs them that — it is what the
+         * property means — which is what `#unfiltered-portal-root` exists to escape.
+         */
+        filter: var(--master-filter);
     }
 
     body::before {

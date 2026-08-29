@@ -1,5 +1,47 @@
 # Changelog
 
+## [4.1.1] - 2026-08-29
+
+**The guide was behind the one door that asks for a folder first.** About & Help lived in Studio, so
+the three things a first-time visitor most needs — what this app is, how to format a card, how to
+send in a pack — were only reachable after committing to a work folder. They open from the hub header
+now, and from inside the submission tool. Both stay lazy, so nothing above the fold pays for them.
+
+**And a one-line CSS bug that made "fixed to the viewport" mean "fixed to the page".** It only showed
+where the page itself scrolls, which is why it survived four versions of an app that was all
+full-height modes until the hub arrived.
+
+### Added
+- **A Guide button in the hub header and in the submission tool's mode bar**, plus a "read the guide"
+  panel on step 1 beside a placeholder for the walkthrough video. Set `SUBMISSION_VIDEO_ID` in
+  [src/data/links.ts](src/data/links.ts) to publish it: it renders as a click-to-play facade against
+  youtube-nocookie, so no third-party request is made unless someone asks for the video.
+- **The four submission screenshots**, as WebP — full-window captures of a dark UI over a noise
+  texture, roughly the worst case for PNG, at ~60 kB each against ~700 kB. Shots are
+  click-to-enlarge now: one letterboxed into the modal reads at about 600px wide.
+- **A news item for the submission tool**, now the featured post.
+
+### Changed
+- **Core Concepts said "Build vs. Sync"** and described a two-way mirror v4 removed. It says Build vs.
+  Backup, with a Saving row covering explicit save against the browser-storage auto-save.
+- **One news reader instead of two.** The hub's news layout and the modal's were separate
+  implementations of the same reading; both use `NewsReader` now — index at the top as a list of
+  lines rather than a grid of bordered cards, full article below. The image belongs to the article, so
+  every post that has one shows it, not only the pinned one.
+
+### Fixed
+- **`#root` carried `filter: invert(0) grayscale(0) contrast(1) brightness(1)`.** An identity filter
+  changes nothing on screen but still makes its element the containing block for every
+  `position: fixed` descendant — so app-wide "fixed to the viewport" meant "fixed to `#root`", which
+  is `min-height: 100vh` and grows with content. Invisible on the `h-screen` modes, where the two are
+  the same box; on the hub, where the page scrolls, the help modal centred itself in the whole
+  document and the texture stretched to match. The filter is composed in
+  [src/App.tsx](src/App.tsx) now and collapses to `none` at rest, with `isolation: isolate` keeping
+  the stacking context it used to provide, so the `mix-blend-mode` texture layers blend against the
+  same backdrop as before.
+
+---
+
 ## [4.1.0] - 2026-08-29
 
 **A submission tool, for the few people who need one.** Almost everything in this app arrived because
