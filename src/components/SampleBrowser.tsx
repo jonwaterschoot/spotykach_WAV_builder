@@ -4,6 +4,7 @@ import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { PresetManifestEntry, SamplePack } from '../data/samplePacks';
 import { resolveAssetPath, toSampleKey } from '../utils/assetUtils';
 import { SAMPLE_DRAG_TYPE } from '../utils/dragTypes';
+import { hashForMode, modeFromHash, paramsFromHash } from '../shell/useAppMode';
 import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../types';
 import { TAPE_COLORS, COLOR_MAP } from '../types';
 // dynamic utility imports
@@ -319,6 +320,43 @@ export const SampleBrowser = ({
             window.prompt('Copy this link', url);
         }
     };
+
+    /**
+     * In Browse mode the address bar follows the open pack, so the URL on screen is
+     * the pack's link — bookmarkable, copyable, and still there after a reload.
+     *
+     * replaceState, not a new history entry: clicking through ten packs should not
+     * take ten presses of Back to leave the browser. It fires no hashchange either,
+     * so the listener below never hears its own writes. Nothing is written while the
+     * manifest is loading — a deep link names a pack that isn't in the list yet, and
+     * stripping it then would lose the pack the link was for.
+     */
+    useEffect(() => {
+        if (!isStandalone || isManifestLoading) return;
+        if (modeFromHash(window.location.hash) !== 'browse') return;
+        const isPack = [...SAMPLE_PACKS, ...remotePacks].some(pack => pack.id === selectedPackId);
+        const nextHash = hashForMode('browse', isPack ? { pack: selectedPackId } : undefined);
+        if (window.location.hash !== nextHash) {
+            const { pathname, search } = window.location;
+            window.history.replaceState(window.history.state, '', `${pathname}${search}${nextHash}`);
+        }
+    }, [isStandalone, isManifestLoading, remotePacks, selectedPackId]);
+
+    // A pack link pasted into the address bar while Browse is already open changes
+    // only the query, so the mode doesn't remount and `initialPackId` never hears it.
+    useEffect(() => {
+        if (!isStandalone) return;
+        const onHashChange = () => {
+            const packId = paramsFromHash(window.location.hash).get('pack');
+            if (packId && packId !== selectedPackId && [...SAMPLE_PACKS, ...remotePacks].some(pack => pack.id === packId)) {
+                setSelectedPackId(packId);
+                setSelectedProjectId(null);
+                setSelectedCustomFolderId(null);
+            }
+        };
+        window.addEventListener('hashchange', onHashChange);
+        return () => window.removeEventListener('hashchange', onHashChange);
+    }, [isStandalone, remotePacks, selectedPackId]);
 
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';

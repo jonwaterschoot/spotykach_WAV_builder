@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+**The address bar follows the open pack.** In Browse, picking a pack rewrites the URL to
+`#/browse?pack=<id>`, so the link to a pack is the one on screen — bookmarkable, copyable,
+and still there after a reload. The link existed since 4.1.0, but only behind the Copy link
+button; the address bar stayed on `#/browse` whatever was open.
+
+- The URL is replaced, not pushed: clicking through packs doesn't fill the Back history.
+- My Library and local folders reset it to a bare `#/browse` — they exist on one machine only.
+- A `?pack=` link pasted while Browse is already open now switches to that pack.
+
+---
+
 ## [4.1.2] - 2026-08-29
 
 **News articles can be linked to.** `#/?news=4.1.0-submit` opens the hub on that post,
