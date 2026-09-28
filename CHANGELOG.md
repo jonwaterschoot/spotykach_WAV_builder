@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [4.1.3] - 2026-09-28
 
 **The address bar follows the open pack.** In Browse, picking a pack rewrites the URL to
 `#/browse?pack=<id>`, so the link to a pack is the one on screen — bookmarkable, copyable,
