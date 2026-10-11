@@ -26,6 +26,7 @@ These came from reading `src/memory/wav.cpp`, `src/hw/card.cpp` and `src/ui/core
 | Does Vlad's page keep our metadata? | No. It decodes every file with WebAudio and re-encodes it with only `INAM` and `cue `. A WAV Builder file uploaded through his page loses `IART`, `ITMP` and `ICMT`; only the name survives. | `web/index.html` `encodeWav()` |
 | How do we tell old firmware apart? | Release firmware ignores SysEx. No reply within 3 s means the firmware has no USB transfer, which is what Vlad's page does too. | `main` `core.midi.cpp` |
 | Device re-save | `DeckStorage::save()` writes a bare 44-byte header, on both branches. A slot re-recorded on the device loses all our metadata. | `storage.cpp`, spec §10.2 |
+| Does the audio's start offset matter? | **Yes: it must be a multiple of 4** (found on hardware, Oct 11). `Card::init_read_audio` seeks to the audio and `f_read`s 32 KB at a time. FatFs fills the partial first sector itself, then has the SD DMA write whole sectors straight into the buffer at `buffer + (512 − start % 512)`. libDaisy's `SD_read` passes that address to the SDMMC IDMA unchanged, and the IDMA needs it word-aligned. Audio at 2 mod 4 shifts every sample by two bytes; the garbage floats (NaNs among them) give a burst of noise and then silence the whole engine, pass-through included, until a power cycle. The old 44-byte header was always aligned. | `uploader` `card.cpp`, `bleeptools/libDaisy` `sd_diskio.c` |
 
 **What the header change does to the current detection (card reader route):**
 
@@ -158,6 +159,7 @@ Move `LIST/INFO` before `data`, add `INAM`, and fill `ICMT.h` with the content h
 - `INAM` = `FileRecord.originalName`, UTF-8, at most 64 bytes cut at a character boundary, NUL-terminated, padded to even length. Leave it out when the name is empty. Use the same truncation rule as Vlad's `utf8Truncate()` so names match across both tools.
 - Encode `INAM` and `ICMT` with `TextEncoder`, and decode them with `TextDecoder` in `readWavMetadata`. Both encoders and the reader currently use `charCodeAt` / `fromCharCode`, which breaks on non-ASCII names.
 - Fill `h` with the SHA-256 of the current version's blob (the background scan already stores it on `AudioVersion.hash`). Hash the source version, not the converted WAV, since the header itself is part of the WAV.
+- Keep the audio on a multiple of 4 bytes (see Compatibility). The header is 44 bytes plus the `LIST` chunk, so `LIST` must be a multiple of 4; every sub-chunk is even, so it is off by 2 at most, and two extra NULs in `IART` fix it.
 - Keep the whole `LIST` chunk well under 4 KB (it is about 300 bytes with a full hash and a 64-byte name). Larger still works, but LIST then rereads 32 KB per slot, and above 32 KB release firmware would fail to find `data`.
 - Merge the two encoders' header code into one `buildWavHeader({ name, id, hash, processing, tempo, frames })` plus `buildCueChunk(points)`, so they can't drift.
 
@@ -198,13 +200,13 @@ The USB firmware is a separate, unreleased branch. Nothing we merge to `main` ma
 
 **Compatibility test checklist (run before each release that touches the header)**
 
-- [ ] New file loads on **release** firmware (`main` build): audio, length and cue points correct
-- [ ] New file loads on the **uploader** firmware, and its LIST shows the name
+- [x] New file loads on **release** firmware (`main` build): audio and length correct (Oct 11). Cue points are preserved in the file; the device doesn't use them yet
+- [x] New file loads on the **uploader** firmware (Oct 11, after the alignment fix). LIST name not yet seen on the device
 - [ ] Vlad's page lists our file with the right name and cue count
 - [ ] WAV Builder 4.1.3 imports the new file and still reads `ICMT` (id, processing, tempo)
-- [ ] New WAV Builder still matches a card written by 4.1.3 (`LIST` after `data`), over the card reader and over USB (tail read)
-- [ ] Non-ASCII name (e.g. `Ø café 音.wav`) round-trips, and a 70-byte name is cut at a character boundary
-- [ ] A `scripts/check-wav-header.mjs` parity check passes: a JS port of the firmware's `wav_header()` and `wav_info()` parses every encoder output and finds `fmt `, `data`, `INAM` and the cue count (the repo has no test runner, so a plain node script is enough)
+- [x] New WAV Builder still matches a card written by 4.1.3 (`LIST` after `data`) over the card reader: shown as **Sync · old header** and rewritten once by Standard Build (Oct 11). Over USB (tail read): covered by `check:wav`, to be tested in Phase 3
+- [x] Non-ASCII name (e.g. `Ø café 音.wav`) round-trips, and a 70-byte name is cut at a character boundary (card file read back, Oct 11)
+- [x] `npm run check:wav` passes: a JS port of the firmware's `wav_header()` and `wav_info()` parses every encoder output and finds `fmt `, `data`, `INAM` and the cue count (the repo has no test runner, so a plain node script is enough)
 
 ## Implementation plan
 
@@ -212,21 +214,38 @@ Start with the header changes: they help the card-reader path on their own and d
 
 **Phase 0 — Prep**
 
-- [ ] Commit this plan (it is untracked) and keep it current as the source of truth
-- [ ] `scripts/check-wav-header.mjs`: firmware-parity parser and test vectors (see checklist)
-- [ ] Note the upstream commit (`550d80b`) and protocol version in the plan and later in `src/lib/usb/`
+- [x] Commit this plan (it is untracked) and keep it current as the source of truth
+- [x] `scripts/check-wav-header.mjs` (`npm run check:wav`): firmware-parity parser and test vectors (see checklist). Ports the release load path, the uploader load path, and the uploader's LIST scan (`wav_info()`, `wav_cue_count()`, the 4 KB / 32 KB / 8 KB reads). It runs reference vectors in the target layout, edge cases, and the real `wavEncoder.ts` output. The ffmpeg path in `useAudioConverter.ts` is skipped until Phase 1 moves its header code into the shared builder. Phase 1 set `REQUIRE_LIST_BEFORE_DATA = true`.
+- [x] Note the upstream commit and protocol version: `uploader` `550d80b61043a25e83d90c6a7ec294f28c665286`, protocol 1.0 (`kProtoMajor = 1`, `kProtoMinor = 0`), firmware version string `1.3.1`; `main` `7da80618c7e051189c575e766ff40594e622e910`. Both pinned in the script header; copy them to `src/lib/usb/PROTOCOL.md` in Phase 3
+
+Phase 0 results (Oct 11):
+
+- The target layout (`fmt `, `LIST/INFO`, `data`, `cue `) loads on both firmwares with correct frames and cues, and the USB LIST shows the name, including non-ASCII names and a 71-byte name cut to 62 bytes at a character boundary. A full `LIST` with a 64-byte name and a full hash is about 310 bytes before audio, well inside the 4 KB LIST read.
+- Current `wavEncoder.ts` output loads on both firmwares. Over USB it shows no name, and the plan's tail read (`44 + frames × 8` to end of file) recovers `ICMT`, which confirms the legacy rule.
+- Confirmed limits: a `LIST` over about 4 KB makes LIST re-read 32 KB; one over 32 KB stops both firmwares from finding `data`. A `cue ` before `data` is filtered against bytes on release firmware and against frames on the uploader branch, so `cue ` stays after `data`.
 
 **Phase 1 — Header and identity (no firmware needed, ships on `main`)**
 
-- [ ] Shared `buildWavHeader()` / `buildCueChunk()` used by `wavEncoder.ts` and `useAudioConverter.ts`, with `TextEncoder`
-- [ ] Move `LIST/INFO` before `data` in both encoders; keep `cue ` after `data`
-- [ ] Write `INAM` from `originalName` (64-byte UTF-8 cut, same rule as Vlad's page). Thread `name` through `WavMetadata` and the `onConvert` call in `exportSDStructure`
-- [ ] Fill `ICMT.h` at export from `AudioVersion.hash` (hash it first if missing)
-- [ ] Extend `readWavMetadata`: return `name` (from `INAM`) and `frames`, decode with `TextDecoder`, and accept an `ArrayBuffer` (header or tail bytes), not only a `File`
-- [ ] Rewrite the match step of `calculateSyncDiff` as the four-step ladder; compare frames instead of file size; use `ICMT.h` before falling back to a full hash
-- [ ] Store a card snapshot in the project state on every export
-- [ ] Release notes: the first export after updating rewrites every slot once
-- [ ] Run the compatibility checklist, including the hardware check on release firmware
+- [x] Shared `buildWavHeader()` / `buildCueChunk()` used by `wavEncoder.ts` and `useAudioConverter.ts`, with `TextEncoder`. Both encoders go through `assembleWav(pcm, metadata, sampleRate)` in `src/lib/audio/wavHeader.ts`
+- [x] Move `LIST/INFO` before `data` in both encoders; keep `cue ` after `data`
+- [x] Write `INAM` from `originalName` (falls back to `name`; 64-byte UTF-8 cut, same rule as Vlad's page). `name` is on `WavMetadata`; `exportSDStructure` passes it on both the direct-write and the ZIP path (the ZIP path passed no metadata at all before), and `toHardwareWav` (presets) now forwards metadata too
+- [x] Fill `ICMT.h` at export from `AudioVersion.hash` (hashed first if missing)
+- [x] Extend the reader: `readWavHeaderInfo()` in `wavHeader.ts` returns `frames`, `sampleRate` and metadata including `name`, decodes with `TextDecoder`, and takes a `Blob` or an `ArrayBuffer`. A buffer without a RIFF header is read as a bare chunk run, which is the legacy tail read. `readWavMetadata` in `importUtils.ts` wraps it
+- [x] Rewrite the match step of `calculateSyncDiff` as the four-step ladder (`SyncSlotDiff.match`: `id`, `hash`, `bytes`, `name`); compare `ICMT.h`, then frames for hashless legacy files, instead of file size; the full-file hash is only the fallback when nothing of ours ties the files. Duplicates register a card file under `ICMT.h` when it has one
+- [x] Store a card snapshot in the project state on every export: `AppState.cardSnapshot`, returned by the direct-write `exportSDStructure`, kept by both App call sites and saved in `project.json`. Not in `project-descriptor.json` yet
+- [x] Release notes: the first export after updating rewrites every slot once (CHANGELOG, Unreleased)
+- [x] Run the compatibility checklist, including the hardware check on release firmware (Oct 11: release and uploader firmware play the new files; a 4.1.3 card is matched and upgraded; `check:wav` passes, with `REQUIRE_LIST_BEFORE_DATA = true` and the audio-alignment rule). Still open, not blocking: Vlad's page listing our names, and 4.1.3 importing a new file
+
+Phase 1 results (Oct 11):
+
+- **Hardware test 1 (uploader firmware) failed, fixed since.** One of four files loaded as loud noise, then the engine went silent. Its audio started at byte 234 (2 mod 4), which the SD DMA can't read into the buffer correctly; see the Compatibility row. `buildInfoChunk` now pads `IART` so the audio always starts on a multiple of 4. `npm run check:wav` fails any file that doesn't, sweeps name lengths 0–70, and takes real files as arguments: `node scripts/check-wav-header.mjs D:/SK/B/1.WAV`. Re-export and retest on both firmwares.
+- **Hardware test 3 passed (Oct 11):** release firmware plays the new files; Clean Mirror keeps non-WAV-Builder files in `SK`. A 4.1.3 card imported into an empty project pulls all slots, as it should. Imports now take the record name from `INAM` when the card file has one, and a slot matched by identical bytes (an import from a 4.1.3 card) is flagged `staleHeader` too, so the next build moves it to the current layout.
+- **Hardware test 2 passed** after cleaning the card by hand and rewriting: all four files load. Cue points are written and read back by the app; the device doesn't use them yet, so only their preservation was checked.
+- **Clean Mirror no longer deletes the `SK` folder.** It used `cleanDirectory(root, 'SK')`, which also removed the device's `MEM` file. Now it overwrites what WAV Builder owns (slots, `config.txt`, `project.json`, README) with no compare, deletes card-only slots through their decisions, and leaves the rest alone.
+- **The preview couldn't force a rewrite.** Hash matching marked every slot in sync, every preset skipped in-sync slots, and with all slots skipped App never ran the export. Fixed: `SyncSlotDiff.staleHeader` flags a MATCH whose card file has no `ICMT.h` (4.1.3 layout) or misaligned audio, and Standard Build pushes those; Clean Mirror pushes every project slot.
+- The sync preview shows the card file's `INAM` name, and a `name`-only match as "Same name?" instead of "Conflict".
+- `scanDeviceChanges` still uses `project.json` and `lastModified`. Switching it to the snapshot belongs with the backend layer in Phase 2, where it stops taking a directory handle.
+- Exports from Browse and the submission tool write pooled blobs without `onConvert`, so their files carry whatever header the editor wrote: the new layout, but no `INAM` or hash unless the blob had them.
 
 **Phase 2 — Storage backend layer (`main`, no behaviour change)**
 
@@ -261,6 +280,7 @@ Start with the header changes: they help the card-reader path on their own and d
 - **Protocol stability.** The spec is marked draft v1 and the branch is unreleased. Check `proto_major` in HELLO and keep the link code in two files so a v1.1 (pipelined uploads) is a contained change.
 - **Ask Vlad: return `ICMT` in LIST?** If LIST also returned the `ICMT` bytes (or a short hash field), the per-slot header reads would disappear. They cost about 36 × 4 KB, probably 1–2 s in total, so this is a nice-to-have.
 - **Ask Vlad: keep foreign `INFO` sub-chunks when re-encoding?** His page drops `ICMT`, so a WAV Builder file pushed through his page loses its id. Copying through any `LIST/INFO` sub-chunks other than `INAM` would keep both tools' identity intact.
+- **Tell Vlad: his page has the same alignment bug.** `encodeWav()` writes a header of `64 + INAM padded` bytes, so the audio lands on 2 mod 4 whenever the padded `INAM` size is 2 mod 4: names of 1, 5, 9… bytes, or 4, 8, 12… bytes (`kick.wav` puts the audio at byte 74). Either pad there too, or fix it once in the firmware: bounce unaligned buffers in `SD_read`, or have `init_read_audio` read from a sector-aligned offset and copy from inside the buffer.
 - **Ask Vlad: share the INAM encoder?** Using the exact same `INAM` rules as his page means files moved between the two tools keep their names. We copy `utf8Truncate()` for now.
 - **Device re-saves drop metadata.** `DeckStorage::save()` writes a bare 44-byte header (spec §10.2). Those slots land in step 4 of the ladder until that's fixed. A firmware fix that keeps the old `LIST` chunk on re-save would help both tools.
 - **One app at a time.** If Vlad's page or a DAW holds the serial or MIDI port, WAV Builder can't connect. Show a clear message rather than a generic error.

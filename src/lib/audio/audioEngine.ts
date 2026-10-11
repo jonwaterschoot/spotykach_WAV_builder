@@ -1,3 +1,4 @@
+import type { WavMetadata } from '../../types';
 
 
 export class AudioEngine {
@@ -7,7 +8,7 @@ export class AudioEngine {
         this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
 
-    async loadAndProcessAudio(file: Blob): Promise<{ buffer: AudioBuffer; blob: Blob }> {
+    async loadAndProcessAudio(file: Blob, metadata?: WavMetadata): Promise<{ buffer: AudioBuffer; blob: Blob }> {
         const arrayBuffer = await file.arrayBuffer();
         const originalBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
 
@@ -23,7 +24,7 @@ export class AudioEngine {
         }
 
         // Encode to WAV (using buffer that is now guaranteed 48k)
-        const blob = await audioProcessor.toWav(processedBuffer);
+        const blob = await audioProcessor.toWav(processedBuffer, metadata);
 
         return { buffer: processedBuffer, blob };
     }

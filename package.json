@@ -9,6 +9,7 @@
     "build:local": "tsc -b && vite build --base=/",
     "lint": "eslint .",
     "submission": "node scripts/import-submission.mjs",
+    "check:wav": "node scripts/check-wav-header.mjs",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

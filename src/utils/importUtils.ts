@@ -343,7 +343,40 @@ export interface SyncSlotDiff {
     status: SyncStatus;
     localFile?: FileRecord;
     remoteFile?: File; // Raw file from SD
+    /** Our metadata from the card file's header (id, hash, name, frames), if any. */
+    remoteMeta?: WavMetadata | null;
+    /** How the card file was tied to the project file. Absent when nothing tied them. */
+    match?: SlotMatch;
+    /**
+     * MATCH, but the card file's header is out of date: written by 4.1.3 or earlier
+     * (no `ICMT.h`, `LIST` after the audio), or with its audio off a multiple of 4,
+     * which the device can't play. Same audio, so not a conflict; a build should
+     * still rewrite it once.
+     */
+    staleHeader?: boolean;
 }
+
+/**
+ * The matching ladder, strongest first:
+ * - `id`: `ICMT.id` is this slot's file record (MATCH, or CONFLICT when it changed)
+ * - `hash`: `ICMT.h` is this slot's audio under another record (MATCH)
+ * - `bytes`: the files are identical, no metadata needed (MATCH)
+ * - `name`: only `INAM` and the length agree. Probably the same file, but left
+ *   as a CONFLICT for the user to confirm
+ */
+export type SlotMatch = 'id' | 'hash' | 'bytes' | 'name';
+
+/** Does a card file's INAM name this record? Compared after the same 64-byte cut. */
+const sameName = (inam: string, file: FileRecord): boolean => {
+    const decoder = new TextDecoder();
+    return [file.originalName, file.name].some(n => !!n && decoder.decode(utf8Truncate(n, MAX_INAM_BYTES)) === inam);
+};
+
+/** Frames of a local version, when it is a 48 kHz WAV and so has the card's length. */
+const localFrames = async (blob: Blob): Promise<number | undefined> => {
+    const info = await readWavHeaderInfo(blob).catch(() => null);
+    return info?.sampleRate === 48000 ? info.frames : undefined;
+};
 
 // Legacy Interface Support (to prevent build break until consumers are updated)
 export interface SyncDiffItemNew {
@@ -414,109 +447,19 @@ export interface SyncDiff {
 
 
 import type { WavMetadata } from '../types';
+import { MAX_INAM_BYTES, readWavHeaderInfo, utf8Truncate } from '../lib/audio/wavHeader';
 
-// Helper: Parse WAV Metadata (LIST INFO)
-export const readWavMetadata = async (file: File): Promise<WavMetadata | null> => {
+/**
+ * Our metadata from a WAV: `ICMT` (id, hash, processing, tempo), `INAM` (name),
+ * `ITMP`, cue points, and `frames`. Null when the file carries none of it.
+ *
+ * Takes a whole file or only part of one: the first few KB (a header read), or
+ * the bytes after the audio (the tail read for files that keep `LIST` after
+ * `data`). `LIST` is found wherever it sits.
+ */
+export const readWavMetadata = async (source: Blob | ArrayBuffer): Promise<WavMetadata | null> => {
     try {
-        const metadata: WavMetadata = {};
-        let foundAny = false;
-
-        // 1. Read RIFF header
-        const headerBlob = file.slice(0, 12);
-        const headerBuffer = await headerBlob.arrayBuffer();
-        if (headerBuffer.byteLength < 12) return null;
-        const headerView = new DataView(headerBuffer);
-
-        const riff = String.fromCharCode(headerView.getUint8(0), headerView.getUint8(1), headerView.getUint8(2), headerView.getUint8(3));
-        const wave = String.fromCharCode(headerView.getUint8(8), headerView.getUint8(9), headerView.getUint8(10), headerView.getUint8(11));
-
-        if (riff !== 'RIFF' || wave !== 'WAVE') return null;
-
-        // 2. Iterate through chunks
-        let offset = 12;
-        const fileSize = file.size;
-
-        while (offset < fileSize - 8) {
-            const chunkHeaderBlob = file.slice(offset, offset + 8);
-            const chunkHeaderBuffer = await chunkHeaderBlob.arrayBuffer();
-            if (chunkHeaderBuffer.byteLength < 8) break;
-            const view = new DataView(chunkHeaderBuffer);
-
-            const chunkId = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
-            const chunkSize = view.getUint32(4, true);
-
-            // Skip huge DATA chunks immediately without reading them
-            if (chunkId === 'data') {
-                offset += 8 + chunkSize + (chunkSize % 2);
-                continue;
-            }
-
-            // Read interested chunks
-            if (chunkId === 'LIST' || chunkId === 'cue ') {
-                const bodyBlob = file.slice(offset + 8, offset + 8 + chunkSize);
-                const bodyBuffer = await bodyBlob.arrayBuffer();
-                const bodyView = new DataView(bodyBuffer);
-
-                if (chunkId === 'LIST') {
-                    const listType = String.fromCharCode(bodyView.getUint8(0), bodyView.getUint8(1), bodyView.getUint8(2), bodyView.getUint8(3));
-                    if (listType === 'INFO') {
-                        let subOffset = 4;
-                        while (subOffset < chunkSize - 8) {
-                            const subId = String.fromCharCode(bodyView.getUint8(subOffset), bodyView.getUint8(subOffset + 1), bodyView.getUint8(subOffset + 2), bodyView.getUint8(subOffset + 3));
-                            const subSize = bodyView.getUint32(subOffset + 4, true);
-
-                            if (subId === 'ICMT') {
-                                let value = '';
-                                for (let i = 0; i < subSize; i++) {
-                                    const charCode = bodyView.getUint8(subOffset + 8 + i);
-                                    if (charCode !== 0) value += String.fromCharCode(charCode);
-                                }
-                                try {
-                                    const payload = JSON.parse(value);
-                                    if (payload.id) metadata.id = payload.id;
-                                    if (payload.h) metadata.hash = payload.h;
-                                    if (payload.p) metadata.processing = payload.p;
-                                    if (payload.t) metadata.tempo = payload.t;
-                                    foundAny = true;
-                                } catch (e) { }
-                            } else if (subId === 'ITMP') {
-                                let value = '';
-                                for (let i = 0; i < subSize; i++) {
-                                    const charCode = bodyView.getUint8(subOffset + 8 + i);
-                                    if (charCode !== 0) value += String.fromCharCode(charCode);
-                                }
-                                const t = parseFloat(value);
-                                if (!isNaN(t)) {
-                                    metadata.tempo = t;
-                                    foundAny = true;
-                                }
-                            }
-                            subOffset += 8 + subSize + (subSize % 2);
-                        }
-                    }
-                } else if (chunkId === 'cue ') {
-                    const numPoints = bodyView.getUint32(0, true);
-                    const points: number[] = [];
-                    // Sanity check numPoints to avoid infinite loops or memory issues
-                    const safeNumPoints = Math.min(numPoints, 100);
-                    for (let i = 0; i < safeNumPoints; i++) {
-                        const cueRecordOffset = 4 + (i * 24);
-                        if (cueRecordOffset + 24 <= chunkSize) {
-                            const sampleOffset = bodyView.getUint32(cueRecordOffset + 20, true);
-                            points.push(+(sampleOffset / 48000).toFixed(3));
-                        }
-                    }
-                    if (points.length > 0) {
-                        metadata.slicePoints = points;
-                        foundAny = true;
-                    }
-                }
-            }
-
-            offset += 8 + chunkSize + (chunkSize % 2);
-        }
-
-        return foundAny ? metadata : null;
+        return (await readWavHeaderInfo(source)).metadata;
     } catch (e) {
         console.warn('Failed to parse WAV metadata', e);
     }
@@ -610,60 +553,73 @@ export const calculateSyncDiff = async (
 
             let status: SyncStatus = 'EMPTY';
 
+            // Header of the card file: id, hash, name, frames. No audio is parsed.
+            const remoteInfo = remoteFile ? await readWavHeaderInfo(remoteFile).catch(() => null) : null;
+            const remoteMeta = remoteInfo?.metadata ?? null;
+            let match: SlotMatch | undefined;
+
             if (localFile && remoteFile) {
                 // Both exist - Compare
                 const currentVer = localFile.versions.find(v => v.id === localFile.currentVersionId);
 
-                // Read Metadata from Remote File
-                const remoteMeta = await readWavMetadata(remoteFile);
-
                 let isMatch = false;
-                let localHash: string | null = null;
+                // SHA-256 of the source version: what export writes into ICMT.h.
+                const localHash = currentVer?.blob ? (currentVer.hash ?? await hashBlob(currentVer.blob)) : null;
                 let remoteHash: string | null = null;
 
-                // 1. Check Metadata UUID (fast path — no hashing needed)
                 if (remoteMeta?.id && localFile.id === remoteMeta.id) {
-                    // UUID Match! Check for content changes.
-                    isMatch = true;
-
-                    // A. Compare Processing Flags (e.g. Normalized, Faded)
+                    // 1. Same file record. It changed if processing, audio or length differ.
+                    match = 'id';
                     const localProc = (currentVer?.processing || []).slice().sort();
                     const remoteProc = (remoteMeta.processing || []).slice().sort();
+                    isMatch = JSON.stringify(localProc) === JSON.stringify(remoteProc);
 
-                    if (JSON.stringify(localProc) !== JSON.stringify(remoteProc)) {
-                        isMatch = false; // Processing differs -> Update available
+                    if (isMatch && remoteMeta.hash && localHash) {
+                        isMatch = remoteMeta.hash === localHash;
+                    } else if (isMatch && currentVer?.blob) {
+                        // Written by 4.1.3 or earlier, without a hash: compare lengths
+                        // when both are known. File size would differ on header alone.
+                        const frames = await localFrames(currentVer.blob);
+                        if (frames !== undefined && remoteInfo?.frames !== undefined) {
+                            isMatch = frames === remoteInfo.frames;
+                        }
                     }
-
-                    // B. Compare Size (fast sanity check before full hash)
-                    if (isMatch && remoteFile.size !== currentVer?.blob?.size) {
-                        isMatch = false;
+                } else if (remoteMeta?.hash && localHash && remoteMeta.hash === localHash) {
+                    // 2. Same audio under another record.
+                    match = 'hash';
+                    isMatch = true;
+                } else if (currentVer?.blob) {
+                    // 3–4. Nothing of ours ties them: compare the bytes. This matches a
+                    // version that was itself imported from this card.
+                    remoteHash = await hashBlob(remoteFile);
+                    isMatch = localHash === remoteHash;
+                    if (isMatch) {
+                        match = 'bytes';
+                    } else if (!remoteMeta?.id && remoteMeta?.name && sameName(remoteMeta.name, localFile)) {
+                        // 3. Only INAM (Vlad's page, another tool). Probably the same file
+                        // when the length agrees too; the user confirms.
+                        const frames = await localFrames(currentVer.blob);
+                        if (frames === undefined || remoteInfo?.frames === undefined || frames === remoteInfo.frames) {
+                            match = 'name';
+                        }
                     }
-                } else {
-                    // No metadata or UUID mismatch — use SHA-256 hash comparison
-                    if (currentVer?.blob) {
-                        [localHash, remoteHash] = await Promise.all([
-                            hashBlob(currentVer.blob),
-                            hashBlob(remoteFile),
-                        ]);
-                        isMatch = localHash === remoteHash;
-                    }
-                    // If no local blob at all, we cannot confirm a match
                 }
+                // If no local blob at all, we cannot confirm a match
 
                 // Register hashes for duplicate detection
-                const localBlobToHash = currentVer?.blob;
-                if (localBlobToHash) {
-                    const lHash = localHash ?? await hashBlob(localBlobToHash);
-                    registerHash(lHash, { slotId, side: 'project', name: localFile.name ?? slotId });
+                if (localHash) {
+                    registerHash(localHash, { slotId, side: 'project', name: localFile.name ?? slotId });
                 }
-                
+
                 // If it's a MATCH, we don't need to register the SD side separately for the same slotId
-                // as it just adds redundant tags to the duplicates banner. 
-                // We only register the SD side if it's different (implies it won't be a MATCH/CONFLICT loop, 
+                // as it just adds redundant tags to the duplicates banner.
+                // We only register the SD side if it's different (implies it won't be a MATCH/CONFLICT loop,
                 // but usually this handles the REMOTE_ONLY case or actual CONFLICT content).
-                if (remoteFile && !isMatch) {
-                    const rHash = remoteHash ?? await hashBlob(remoteFile);
-                    registerHash(rHash, { slotId, side: 'sd', name: remoteFile.name });
+                if (!isMatch) {
+                    // ICMT.h when present, so a card file lines up with the project version
+                    // it was exported from; otherwise the bytes.
+                    const rHash = remoteMeta?.hash ?? remoteHash ?? await hashBlob(remoteFile);
+                    registerHash(rHash, { slotId, side: 'sd', name: remoteMeta?.name ?? remoteFile.name });
                 }
 
                 if (isMatch) {
@@ -675,7 +631,7 @@ export const calculateSyncDiff = async (
 
                     diff.updatedFiles.push({
                         slot: slotId,
-                        name: remoteFile.name,
+                        name: remoteMeta?.name ?? remoteFile.name,
                         file: remoteFile,
                         existingFileId: localFile.id,
                         existingName: localFile.name,
@@ -690,7 +646,7 @@ export const calculateSyncDiff = async (
                 diff.summary.remoteOnly++;
                 diff.newFiles.push({
                     slot: slotId,
-                    name: remoteFile.name,
+                    name: remoteMeta?.name ?? remoteFile.name,
                     file: remoteFile,
                     slotIndex: index,
                     color: color,
@@ -704,7 +660,13 @@ export const calculateSyncDiff = async (
                 index,
                 status,
                 localFile,
-                remoteFile
+                remoteFile,
+                remoteMeta,
+                match,
+                // `bytes` included: a slot imported from a 4.1.3 card matches its card file
+                // byte for byte, and should still move to the current layout once.
+                staleHeader: status === 'MATCH' && match !== 'name'
+                    && (!remoteMeta?.hash || (remoteInfo?.dataOffset ?? 0) % 4 !== 0),
             };
         }
     }
@@ -726,10 +688,10 @@ export const calculateSyncDiff = async (
             }
         }
         if (slotDiff.status === 'REMOTE_ONLY' && slotDiff.remoteFile) {
-            const h = await hashBlob(slotDiff.remoteFile);
+            const h = slotDiff.remoteMeta?.hash ?? await hashBlob(slotDiff.remoteFile);
             const existing = hashRegistry.get(h);
             if (!existing?.find(e => e.slotId === slotId && e.side === 'sd')) {
-                registerHash(h, { slotId, side: 'sd', name: slotDiff.remoteFile.name });
+                registerHash(h, { slotId, side: 'sd', name: slotDiff.remoteMeta?.name ?? slotDiff.remoteFile.name });
             }
         }
     }

@@ -1,5 +1,51 @@
 # Changelog
 
+## [Unreleased]
+
+**Card files say what they are in their first few hundred bytes.** Every WAV written to
+the card now carries the original file name, and our id and content hash sit *before* the
+audio instead of after it. A header read is enough to identify a slot, which is what the
+upcoming USB transfer needs, and what the firmware's own USB file list reads.
+
+> **The first build after updating rewrites every slot once.** The header layout changed,
+> so every file on the card differs from what the app would write now, even when the audio
+> is the same. The build preview marks these slots **Sync · old header** and pushes them;
+> after that one rewrite, unchanged slots are skipped again as before.
+
+- **Clean Mirror rewrites everything WAV Builder owns and nothing else.** Every project
+  slot, `config.txt`, `project.json` and the README are written without comparing first,
+  and card-only slots are deleted. It used to delete the whole `SK` folder before writing,
+  which took the device's own `MEM` file with it, and then skipped in-sync slots, so those
+  were deleted from the card instead of kept. In Advanced view an in-sync slot can now be
+  pushed by hand too.
+
+- **Original names on the card.** A standard `LIST/INFO/INAM` chunk holds the source file
+  name, cut to 64 bytes at a character boundary, the same rule as the firmware's uploader page.
+- **Non-ASCII names and metadata survive.** Headers are written and read as UTF-8; the old
+  code wrote one byte per UTF-16 unit and garbled anything outside ASCII.
+- **Sync matches by content hash.** Export now fills `ICMT.h` with the source version's
+  SHA-256, so the sync preview can tell a current card file from a stale one without
+  hashing either file. Files written by 4.1.3 and earlier still match by id and length.
+- **The sync preview shows card files by their original name** instead of `1.WAV` when
+  they have one. A card file tied to a project file only by name and length (written by
+  another tool) shows **Same name?** instead of **Conflict**.
+- **The project remembers what it last wrote to the card** (`cardSnapshot` in
+  `project.json`). Groundwork for USB, which can't read `SK/project.json`.
+- **ZIP and preset exports carry the same metadata** as a direct write. They wrote no
+  `LIST` chunk before.
+- Both encoders build their headers in one place (`src/lib/audio/wavHeader.ts`).
+  `npm run check:wav` runs every layout through a port of both firmwares' WAV parsers.
+
+- **The audio always starts on a multiple of 4 bytes.** The SD card's DMA can't read audio
+  that starts anywhere else into the firmware's buffer; such a file plays as a burst of noise
+  and then silences the device until it is restarted. The old 44-byte header was always
+  aligned; a `LIST` chunk with a name isn't, unless padded, which the encoder now does.
+
+Loads on the current release firmware unchanged: it skips chunks it doesn't know until it
+has found `fmt ` and `data`, and `cue ` stays after the audio.
+
+---
+
 ## [4.1.3] - 2026-09-28
 
 **The address bar follows the open pack.** In Browse, picking a pack rewrites the URL to

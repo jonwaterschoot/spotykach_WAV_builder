@@ -1,4 +1,4 @@
-import type { AppState } from '../types';
+import type { AppState, WavMetadata } from '../types';
 import type { PresetManifestEntry } from '../data/samplePacks';
 import { resolveAssetPath } from './assetUtils';
 
@@ -56,9 +56,9 @@ export const hydratePreset = async (
  * Passed to `exportSDStructure` as `onConvert`, so files convert one at a time as
  * they're written rather than all 36 sitting decoded in memory at once.
  */
-export const toHardwareWav = async (blob: Blob): Promise<Blob> => {
+export const toHardwareWav = async (blob: Blob, metadata?: WavMetadata): Promise<Blob> => {
     const { audioEngine } = await import('../lib/audio/audioEngine');
-    const { blob: processed } = await audioEngine.loadAndProcessAudio(blob);
+    const { blob: processed } = await audioEngine.loadAndProcessAudio(blob, metadata);
     return processed;
 };
 

@@ -5052,7 +5052,9 @@ function App({ onExitToHub }: AppProps) {
                     setShowExport(false); // Close settings modal
                     await handleExportProgress('SD Card Export', async (log) => {
                       const { exportSDStructure } = await import('./utils/exportUtils');
-                      await exportSDStructure(state, { ...opts, onConvert: convertAudioToWav }, log);
+                      const cardSnapshot = await exportSDStructure(state, { ...opts, onConvert: convertAudioToWav }, log);
+                      // Project data like any other: left unsaved so the next save keeps it.
+                      if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
                     });
                   }}
                   onExportFiles={async (opts) => {
@@ -5334,12 +5336,14 @@ function App({ onExitToHub }: AppProps) {
                         }
 
                         const { v4: uuidv4 } = await import('uuid');
+                        const { readWavMetadata } = await import('./utils/importUtils');
 
                         for (const [slotId, dec] of importEntries) {
                           if (!dec.file) continue;
                           const arrayBuffer = await dec.file.arrayBuffer();
                           const blob = new Blob([arrayBuffer], { type: dec.file.type || 'audio/wav' });
-                          const fileName = dec.file.name || `${slotId}.wav`;
+                          // The original name (INAM) when the card file has one, not `1.WAV`.
+                          const fileName = (await readWavMetadata(blob))?.name || dec.file.name || `${slotId}.wav`;
 
                           const versionId = uuidv4();
                           const fileId = uuidv4();
@@ -5397,7 +5401,7 @@ function App({ onExitToHub }: AppProps) {
                         if (!sdHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
                         
                         const { exportSDStructure } = await import('./utils/exportUtils');
-                        await exportSDStructure(newState, { // Use newState which includes pooled files
+                        const cardSnapshot = await exportSDStructure(newState, { // Use newState which includes pooled files
                           includeProject: true,
                           directWrite: true,
                           smartSync: options.skMode === 'overwrite',
@@ -5412,6 +5416,8 @@ function App({ onExitToHub }: AppProps) {
                           forceOverwrite: options.forceOverwrite,
                           onConvert: convertAudioToWav,
                         }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
+                        // Project data like any other: left unsaved so the next save keeps it.
+                        if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
                       }
 
                       showToast("Hardware Sync Complete", "success");

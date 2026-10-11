@@ -1,8 +1,10 @@
 import type JSZip from 'jszip';
 import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from '../types';
-import type { AppState, ProjectConfig } from '../types';
+import type { AppState, AudioVersion, CardSnapshot, FileRecord, ProjectConfig, WavMetadata } from '../types';
 import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
 import { collapseVersionHistoryOnSave } from './versionHistory';
+import { hashBlob } from './assetUtils';
+import { readWavHeaderInfo } from '../lib/audio/wavHeader';
 
 // ==========================================
 // SHARED HELPERS
@@ -372,18 +374,6 @@ export const saveUserLibraryToDirectory = async (
 };
 
 
-// Clean Directory Helper (Recursive Delete Content)
-export const cleanDirectory = async (rootHandle: FileSystemDirectoryHandle, dirName: string) => {
-    try {
-        // Try to get handle first to see if it exists
-        await rootHandle.getDirectoryHandle(dirName);
-        // Remove it
-        await rootHandle.removeEntry(dirName, { recursive: true });
-    } catch (e) {
-        // Doesn't exist, all good
-    }
-};
-
 // Clean Orphaned Assets Helper
 export const getOrphanedAssets = async (rootHandle: FileSystemDirectoryHandle, projectName: string, activeFilesState: AppState['files']) => {
     try {
@@ -650,6 +640,7 @@ export const exportSaveState = async (
             tapes: state.tapes,
             projectNotes: state.projectNotes,
             projectConfig: state.projectConfig, // Include project config
+            cardSnapshot: state.cardSnapshot,
             metadata: {
                 appName: "Spotykach WAV Builder",
                 version: __APP_VERSION__,
@@ -695,7 +686,25 @@ export const exportSaveState = async (
 // 2. SD CARD STRUCTURE (Strict)
 // ==========================================
 
-export const exportSDStructure = async (state: AppState, options: ExportSDOptions, onProgress?: (msg: string | undefined, progress?: number) => void) => {
+/**
+ * What the hardware WAV for one slot carries in its header: our id, the source
+ * name (INAM), and `h`, the SHA-256 of the source version. With `h` a later sync
+ * can tell whether a card file is current from a header read alone.
+ */
+const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
+    id: file.id,
+    name: file.originalName || file.name,
+    hash: version.hash ?? (version.blob ? await hashBlob(version.blob) : undefined),
+    processing: version.processing,
+    tempo: file.metadata?.tempo,
+    slicePoints: file.metadata?.slicePoints,
+});
+
+/**
+ * Writes the SK structure. On a direct write, returns the card snapshot: what
+ * every slot now holds, for the caller to keep in the project (`cardSnapshot`).
+ */
+export const exportSDStructure = async (state: AppState, options: ExportSDOptions, onProgress?: (msg: string | undefined, progress?: number) => void): Promise<CardSnapshot | undefined> => {
 
     // A. DIRECT WRITE (FileSystem API)
     if (options.directWrite) {
@@ -712,10 +721,11 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
             if (!rootHandle) throw new Error("No destination selected");
 
-            if (options.skMode === 'clean') {
-                onProgress?.("Cleaning old Sync...", 5);
-                await cleanDirectory(rootHandle, 'SK');
-            }
+            // A clean mirror overwrites everything WAV Builder owns (slot WAVs, config.txt,
+            // project.json, README) without comparing first. It deletes nothing wholesale:
+            // card-only slots go through their own 'delete' decisions, and anything else
+            // in SK (the device's MEM file, files of other tools) is left alone.
+            const compare: WriteCompare = options.forceOverwrite || options.skMode === 'clean' ? 'always' : 'content';
 
             const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
 
@@ -751,11 +761,17 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 if (finalConfig) {
                     onProgress?.("Writing config.txt...", 18);
                     const configText = generateConfigText(finalConfig);
-                    await safeWriteBlob(skHandle, 'config.txt', new Blob([configText], { type: 'text/plain' }), options.forceOverwrite ? 'always' : 'content');
+                    await safeWriteBlob(skHandle, 'config.txt', new Blob([configText], { type: 'text/plain' }), compare);
                 }
             }
 
             // 3. Process Tapes
+            // Slots this export leaves alone keep what the last snapshot said about them.
+            const now = new Date().toISOString();
+            const snapshot: CardSnapshot = {
+                updatedAt: now,
+                slots: { ...(state.cardSnapshot?.slots ?? {}) },
+            };
             let writtenCount = 0;
             let skippedCount = 0;
             const activeSlots = TAPE_COLORS.reduce((acc, c) => acc + state.tapes[c].slots.filter(s => s.fileId).length, 0);
@@ -782,6 +798,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
                     if (decision === 'delete' || decision === 'delete_local') {
                         try { await tapeHandle.removeEntry(fileName); } catch (e) { }
+                        delete snapshot.slots[slotRef];
                         continue;
                     }
 
@@ -800,15 +817,11 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             onProgress?.(`Writing ${color} Tape ${slot.id}...`, 20 + ((processed / Math.max(1, activeSlots)) * 50));
                             
                             let blobToWrite = version.blob;
+                            let metadata: WavMetadata | undefined;
                             if (options.onConvert && version.blob.type.startsWith('audio/')) {
                                 onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
                                 try {
-                                    const metadata: import('../types').WavMetadata = {
-                                        id: file.id,
-                                        processing: version.processing,
-                                        tempo: file.metadata?.tempo,
-                                        slicePoints: file.metadata?.slicePoints
-                                    };
+                                    metadata = await slotWavMetadata(file, version);
                                     blobToWrite = await options.onConvert(version.blob, metadata);
                                 } catch (e) {
                                     console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
@@ -816,8 +829,18 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                 }
                             }
 
-                            const wrote = await safeWriteBlob(tapeHandle, fileName, blobToWrite, options.forceOverwrite ? 'always' : 'content');
+                            const wrote = await safeWriteBlob(tapeHandle, fileName, blobToWrite, compare);
                             if (wrote) writtenCount++; else skippedCount++;
+
+                            // Written or already identical: either way the card now holds this.
+                            const written = await readWavHeaderInfo(blobToWrite).catch(() => null);
+                            snapshot.slots[slotRef] = {
+                                fileId: file.id,
+                                hash: metadata?.hash,
+                                frames: written?.frames,
+                                writtenAt: wrote ? now : (snapshot.slots[slotRef]?.writtenAt ?? now),
+                                via: 'reader',
+                            };
                         }
                     }
                 }
@@ -885,12 +908,12 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             }
 
             onProgress?.(`Sync Complete: ${writtenCount} written, ${skippedCount} skipped.`, 100);
+            return snapshot;
 
         } catch (e: any) {
             console.error("Direct Write Error:", e);
             throw e;
         }
-        return;
     }
 
     // B. ZIP EXPORT
@@ -926,7 +949,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         if (options.onConvert && version.blob.type.startsWith('audio/')) {
                             onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
                             try {
-                                blobToWrite = await options.onConvert(version.blob);
+                                blobToWrite = await options.onConvert(version.blob, await slotWavMetadata(file, version));
                             } catch (e) {
                                 console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
                                 throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted.`);
@@ -954,6 +977,8 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
     const dStr = new Date().toISOString().split('T')[0];
     downloadBlob(content, `Spotykach_SD_${dStr}.zip`);
     onProgress?.("Done.", 100);
+    // No snapshot: nothing says the ZIP ever reaches the card.
+    return undefined;
 };
 
 // ==========================================
@@ -1302,6 +1327,7 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
             tapes: state.tapes,
             projectNotes: state.projectNotes,
             projectConfig: state.projectConfig, // Fix: Include project config
+            cardSnapshot: state.cardSnapshot,
             metadata: {
                 appName: "Spotykach WAV Builder",
                 version: "1.2.0",

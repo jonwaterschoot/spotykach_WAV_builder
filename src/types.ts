@@ -49,6 +49,28 @@ export interface WavMetadata {
     tempo?: number; // BPM
     processing?: string[]; // Flags like ["NORMALIZED", "FADED"]
     slicePoints?: number[]; // Time in seconds
+    name?: string; // Original file name (INAM). Written at export, read back from any WAV
+    frames?: number; // Frames in `data`. Read only; the encoders take it from the audio
+}
+
+/** What WAV Builder last wrote to one card slot. */
+export interface CardSnapshotSlot {
+    fileId: string;
+    /** `ICMT.h`: SHA-256 of the source version. */
+    hash?: string;
+    frames?: number;
+    writtenAt: string; // ISO date
+    via: 'reader' | 'usb';
+}
+
+/**
+ * The card as WAV Builder last left it, keyed by slot ("Red1"). USB can't reach
+ * `SK/project.json`, so the project keeps its own record of the card. Updated on
+ * every export; compared with live header reads to spot changes made elsewhere.
+ */
+export interface CardSnapshot {
+    updatedAt: string; // ISO date
+    slots: Record<string, CardSnapshotSlot>;
 }
 
 export interface UserLibraryMetadata {
@@ -122,6 +144,7 @@ export interface AppState {
     metadata?: Record<string, any>;
     projectConfig?: ProjectConfig;
     userLibrary?: UserLibrary;
+    cardSnapshot?: CardSnapshot;
     loadIssues?: {
         missingAssets?: Array<{
             fileId: string;
@@ -169,6 +192,7 @@ export interface ExportOptions {
     preset: 'import_only' | 'erase_replace' | 'merge' | 'custom';
     moveDisplacedToPool: boolean;
     conflictMode: ConflictMode;
+    /** 'clean' (Clean Mirror) overwrites everything WAV Builder owns without comparing; it deletes nothing else. */
     skMode: 'overwrite' | 'clean';
     configDecision: SKPrimaryDecision;
     includeConfig: boolean;

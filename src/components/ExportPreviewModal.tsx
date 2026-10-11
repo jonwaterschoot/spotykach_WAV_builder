@@ -28,6 +28,10 @@ interface SlotRow {
     localBlob?: Blob | null;
     hardwareName?: string;
     hardwareBlob?: Blob | null;
+    /** Only the card file's name and length tie it to the project file (`match: 'name'`). */
+    probableMatch?: boolean;
+    /** Same audio, but the card file's header is out of date (see `SyncSlotDiff.staleHeader`). */
+    staleHeader?: boolean;
     size: number;
     primary: SKPrimaryDecision;
     toPool: boolean;
@@ -69,7 +73,7 @@ function parseTapeColor(slotId: string) {
     return m ? { color: m[1], num: parseInt(m[2]) } : { color: 'Gray', num: 0 };
 }
 
-function defaultPrimary(status: SlotRow['status'], preset: QuickPreset, _mode: 'import' | 'push' = 'push'): SKPrimaryDecision {
+function defaultPrimary(status: SlotRow['status'], preset: QuickPreset, _mode: 'import' | 'push' = 'push', staleHeader = false): SKPrimaryDecision {
     switch (preset) {
         case 'import_pool_only':
             return 'skip';
@@ -80,14 +84,20 @@ function defaultPrimary(status: SlotRow['status'], preset: QuickPreset, _mode: '
         case 'import_sync_merge':
             if (status === 'REMOTE_ONLY' || status === 'CONFLICT') return 'pull_to_slot';
             if (status === 'LOCAL_ONLY') return 'push_to_sk';
+            if (status === 'MATCH' && staleHeader) return 'push_to_sk';
             return 'skip';
         case 'push_clean':
-            if (status === 'LOCAL_ONLY' || status === 'CONFLICT') return 'push_to_sk';
+            // A mirror rewrites every project slot, in-sync ones included: it is the
+            // "force it" build, and the clean wipes the card's SK folder first, so a
+            // skipped MATCH would be deleted from the card rather than kept.
+            if (status === 'LOCAL_ONLY' || status === 'CONFLICT' || status === 'MATCH') return 'push_to_sk';
             if (status === 'REMOTE_ONLY') return 'delete_sk';
             return 'skip';
         case 'push_sync':
             if (status === 'LOCAL_ONLY' || status === 'CONFLICT') return 'push_to_sk';
             if (status === 'REMOTE_ONLY') return 'pull_to_slot';
+            // Same audio, outdated header: rewrite it once in the current layout.
+            if (status === 'MATCH' && staleHeader) return 'push_to_sk';
             return 'skip';
         default: return 'skip';
     }
@@ -186,7 +196,7 @@ function cardFate(r: SlotRow, moves: Record<string, string[]>): CardFate | null 
 
 function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset, rescueBeforeClean = false): boolean {
     const slotsMatch = rows.every(r =>
-        r.primary === defaultPrimary(r.status, preset) &&
+        r.primary === defaultPrimary(r.status, preset, 'push', r.staleHeader) &&
         r.toPool === defaultToPool(r.status, preset, 'push', rescueBeforeClean));
     if (!configStatus) return slotsMatch;
     const configMatch = configDecision === defaultPrimary(configStatus, preset);
@@ -524,10 +534,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 tapeColor: color, slotNum: num, status,
                 localName: lf?.name,
                 localBlob: lv?.blob || null,
-                hardwareName: sd.remoteFile?.name,
+                // The original name (INAM) when the card file has one, not `1.WAV`.
+                hardwareName: sd.remoteMeta?.name ?? sd.remoteFile?.name,
                 hardwareBlob: sd.remoteFile || null,
+                probableMatch: sd.match === 'name',
+                staleHeader: sd.staleHeader,
                 size: lv?.blob?.size || sd.remoteFile?.size || 0,
-                primary: defaultPrimary(status, preset, currentMode),
+                primary: defaultPrimary(status, preset, currentMode, sd.staleHeader),
                 toPool: defaultToPool(status, preset, currentMode),
             });
         });
@@ -644,7 +657,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         }
         setRows(prev => prev.map(r => ({
             ...r,
-            primary: defaultPrimary(r.status, preset, mode),
+            primary: defaultPrimary(r.status, preset, mode, r.staleHeader),
             toPool: defaultToPool(r.status, preset, mode, false),
         })));
         if (diff.config) {
@@ -825,7 +838,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
     rows.forEach(r => {
         const key = `${r.tapeColor}${r.slotNum}`;
-        const isUntouched = r.status === 'MATCH' || r.status === 'EMPTY';
+        const isUntouched = (r.status === 'MATCH' && r.primary === 'skip') || r.status === 'EMPTY';
 
         // ── CURRENT (BEFORE) ──────────────────────────────────────────────────
         if (r.localBlob) {
@@ -1392,10 +1405,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
                             {visibleRows.map(row => {
                                 const dotColor = TAPE_DOT_COLORS[row.tapeColor] || '#888';
-                                const isSame = row.status === 'MATCH' || row.status === 'EMPTY';
+                                // A MATCH can still be pushed (a mirror, a stale header, or by hand in Advanced).
+                                const isSame = row.status === 'EMPTY' || (row.status === 'MATCH' && row.primary === 'skip' && !isAdvanced);
 
                                 const canDeleteLocal = isAdvanced;
-                                const canPushRight = row.status === 'LOCAL_ONLY' || row.status === 'CONFLICT';
+                                const canPushRight = row.status === 'LOCAL_ONLY' || row.status === 'CONFLICT' || row.status === 'MATCH';
                                 const canPullSlot = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canDeleteSK = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canToPool = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
@@ -1472,9 +1486,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         </div>
 
                                         <div className="flex items-center justify-center p-2 border-r border-white/5">
-                                            {row.status === 'MATCH' && <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync</span>}
+                                            {row.status === 'MATCH' && (row.staleHeader
+                                                ? <span title="Same audio, but the card file has an outdated header. Rewriting it adds the name and moves our id before the audio." className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync · old header</span>
+                                                : <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync</span>)}
                                             {row.status === 'EMPTY' && <span className="text-[8px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded-full font-bold">Empty</span>}
-                                            {row.status === 'CONFLICT' && <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Conflict</span>}
+                                            {row.status === 'CONFLICT' && (row.probableMatch
+                                                ? <span title="Same name and length, but the card file has no WAV Builder id. Probably the same file." className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Same name?</span>
+                                                : <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Conflict</span>)}
                                             {row.status === 'LOCAL_ONLY' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
                                             {row.status === 'REMOTE_ONLY' && <span className="text-[8px] text-orange-300 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowLeft size={7} /> SK only</span>}
                                         </div>
