@@ -1306,7 +1306,8 @@ function App({ onExitToHub }: AppProps) {
     setIsProcessing(true);
     setProgressMsg('Scanning SK folder on SD...');
     try {
-      const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+      const { calculateSyncDiff } = await import('./utils/importUtils');
+      const { FolderBackend } = await import('./lib/card/folderBackend');
       const projectName = syncModalState.projectName;
 
       let projectState = state;
@@ -1315,8 +1316,8 @@ function App({ onExitToHub }: AppProps) {
         projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
       }
 
-      const structureMap = await scanSKStructure(sdHandle);
-      const diff = await calculateSyncDiff(projectState, structureMap);
+      const card = new FolderBackend(sdHandle);
+      const diff = await calculateSyncDiff(projectState, card);
 
       setSyncModalState(prev => prev ? { ...prev, diff } : null);
       showToast("SD Card rescanned", "success");
@@ -2032,8 +2033,8 @@ function App({ onExitToHub }: AppProps) {
 
         // Scan for Device Changes (SK Folder)
         try {
-          const skHandle = await sdDir.getDirectoryHandle('SK');
-          diff = await scanDeviceChanges(skHandle);
+          const { FolderBackend } = await import('./lib/card/folderBackend');
+          diff = await scanDeviceChanges(new FolderBackend(sdDir));
           if (diff) {
             console.log("[DeviceDiff] Hardware state loaded:", diff);
           }
@@ -4340,9 +4341,10 @@ function App({ onExitToHub }: AppProps) {
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
     try {
-      const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-      const structureMap = await scanSKStructure(sdHandle);
-      const diff = await calculateSyncDiff(state, structureMap);
+      const { calculateSyncDiff } = await import('./utils/importUtils');
+      const { FolderBackend } = await import('./lib/card/folderBackend');
+      const card = new FolderBackend(sdHandle);
+      const diff = await calculateSyncDiff(state, card);
       setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: mode });
     } catch (e: any) {
       showToast('SK scan failed: ' + e.message, 'error');
@@ -5227,18 +5229,19 @@ function App({ onExitToHub }: AppProps) {
 
                   try {
                     const { loadProjectFromDirectory } = await import('./utils/exportUtils');
-                    const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
+                    const { calculateSyncDiff } = await import('./utils/importUtils');
+                    const { FolderBackend } = await import('./lib/card/folderBackend');
 
                     // 1. Load Project State Headless
                     const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading project...'));
 
                     // 2. Scan SD Structure
                     setProgressMsg('Scanning SD Card...');
-                    const structureMap = await scanSKStructure(sdHandle);
+                    const card = new FolderBackend(sdHandle);
 
                     // 3. Calculate Diff
                     setProgressMsg('Calculating Differences...');
-                    const diff = await calculateSyncDiff(projectState, structureMap);
+                    const diff = await calculateSyncDiff(projectState, card);
 
                     setSyncModalState({ isOpen: true, projectName, diff, defaultMode: 'push' });
 
@@ -5258,9 +5261,10 @@ function App({ onExitToHub }: AppProps) {
                   setIsProcessing(true);
                   setProgressMsg('Scanning SK folder on SD...');
                   try {
-                    const { calculateSyncDiff, scanSKStructure } = await import('./utils/importUtils');
-                    const structureMap = await scanSKStructure(sdHandle);
-                    const diff = await calculateSyncDiff(state, structureMap);
+                    const { calculateSyncDiff } = await import('./utils/importUtils');
+                    const { FolderBackend } = await import('./lib/card/folderBackend');
+                    const card = new FolderBackend(sdHandle);
+                    const diff = await calculateSyncDiff(state, card);
                     setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                   } catch (e: any) {
                     console.error(e);

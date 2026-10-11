@@ -1,0 +1,119 @@
+/**
+ * The one way the app reaches the card. Export, the sync diff and device-change
+ * detection talk to a `CardBackend` and stop caring which route is in use:
+ *
+ * - `FolderBackend` — the card reader, through the File System Access API. Reaches
+ *   everything: slot WAVs, `config.txt`, `project.json`, README.
+ * - `UsbBackend` (Phase 3, `feat/usb-transfer`) — the Spotykach's rear USB. Reaches
+ *   the 36 slot files only, so every folder-only member is optional.
+ *
+ * Slots are addressed by tape colour and slot number; the backend owns the
+ * `SK/<T>/<N>.WAV` layout.
+ */
+import type { TapeColor, WavMetadata } from '../../types';
+import type { WriteCompare } from '../../utils/exportUtils';
+
+export type CardKind = 'folder' | 'usb';
+
+export interface CardInfo {
+    kind: CardKind;
+    /** What to call the card in the UI: the folder name, or the device. */
+    label: string;
+    /** USB only: HELLO reports the card size and free space. */
+    totalKiB?: number;
+    freeKiB?: number;
+}
+
+/**
+ * One occupied slot on the card, the same shape over either route. `listSlots()`
+ * fills the listing fields; `readHeader()` adds the header fields. Nothing here
+ * needs the audio.
+ */
+export interface SlotDescriptor {
+    tape: TapeColor;
+    slot: number;
+    /** The file's name on the card, e.g. `1.WAV`. */
+    fileName: string;
+    size: number;
+    /** Folder route only: USB has no timestamps. */
+    lastModified?: number;
+
+    /** True once `readHeader()` has filled the fields below. */
+    headerRead: boolean;
+    frames?: number;
+    sampleRate?: number;
+    /** Byte offset of the audio. Must be a multiple of 4 on the card. */
+    dataOffset?: number;
+    /** `INAM`, when the file has one. */
+    name?: string;
+    /** Our `ICMT` (id, hash, processing, tempo) and cue points, or null. */
+    meta: WavMetadata | null;
+
+    /**
+     * The card file itself, when the route has it without a download (the folder
+     * route). Absent over USB, where the bytes cost a `readFile()`.
+     */
+    file?: File;
+}
+
+export interface CardConfig {
+    text: string;
+    /** Where it was found: `SK/config.txt`, or a bare `config.txt` at the root. */
+    location: 'root' | 'sk';
+}
+
+export interface WriteSlotOptions {
+    /** How to decide that the slot already holds this blob. Default `content`. */
+    compare?: WriteCompare;
+    /** 0–1. */
+    onProgress?: (fraction: number) => void;
+    signal?: AbortSignal;
+}
+
+/**
+ * Files outside the slots, by `/`-separated path from the card root
+ * (`README.md`, `SK/project.json`, `WAV_Builder/Projects/...`). Folder route only.
+ */
+export interface CardFileStore {
+    /** Null when the file is missing or unreadable. */
+    read(path: string): Promise<File | null>;
+    /** Creates folders on the way. True when it wrote, false when `compare` skipped it. */
+    write(path: string, blob: Blob, compare?: WriteCompare): Promise<boolean>;
+}
+
+export interface CardBackend {
+    readonly kind: CardKind;
+    info(): Promise<CardInfo>;
+    /** Every occupied slot, header fields not yet read. */
+    listSlots(): Promise<SlotDescriptor[]>;
+    /** One slot with its header fields. Null when the slot is empty. */
+    readHeader(tape: TapeColor, slot: number): Promise<SlotDescriptor | null>;
+    /** The whole file. Over USB this is a download. */
+    readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void): Promise<File>;
+    /** True when it wrote, false when `compare` found the slot already holds `blob`. */
+    writeSlot(tape: TapeColor, slot: number, blob: Blob, options?: WriteSlotOptions): Promise<boolean>;
+    deleteSlot(tape: TapeColor, slot: number): Promise<void>;
+
+    /** Create whatever the card needs before a build (the folder route's `SK/<T>` folders). */
+    ensureLayout?(): Promise<void>;
+    readConfig?(): Promise<CardConfig | null>;
+    writeConfig?(text: string, compare?: WriteCompare): Promise<boolean>;
+    files?: CardFileStore;
+}
+
+/** "Red3", the key the sync diff and the card snapshot use. */
+export const slotKey = (tape: TapeColor, slot: number): string => `${tape}${slot}`;
+
+/** Every occupied slot with its header read, keyed by `slotKey`. */
+export const readCardSlots = async (card: CardBackend): Promise<Map<string, SlotDescriptor>> => {
+    const slots = new Map<string, SlotDescriptor>();
+    for (const listed of await card.listSlots()) {
+        const desc = await card.readHeader(listed.tape, listed.slot);
+        if (desc) slots.set(slotKey(desc.tape, desc.slot), desc);
+    }
+    return slots;
+};
+
+/** The slot's bytes: the file the descriptor already holds, or a `readFile()`. */
+export const slotFile = (card: CardBackend, desc: SlotDescriptor): Promise<File> =>
+    desc.file ? Promise.resolve(desc.file) : card.readFile(desc.tape, desc.slot);

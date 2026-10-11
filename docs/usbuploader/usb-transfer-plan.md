@@ -249,10 +249,20 @@ Phase 1 results (Oct 11):
 
 **Phase 2 — Storage backend layer (`main`, no behaviour change)**
 
-- [ ] Define `CardBackend`: `info()`, `listSlots()`, `readHeader(t, s)`, `readFile(t, s, onProgress)`, `writeSlot(t, s, blob, onProgress, signal)`, `deleteSlot(t, s)`, `readConfig()`, `writeConfig()` (the last two optional), returning slot descriptors
-- [ ] `FolderBackend`: wrap the existing `scanSKStructure`, `safeWriteBlob` and `removeEntry` code
-- [ ] Make `exportSDStructure`, `calculateSyncDiff` and `scanDeviceChanges` call the backend instead of a `FileSystemDirectoryHandle`
-- [ ] Regression test the card-reader export and sync before adding USB
+- [x] Define `CardBackend` in `src/lib/card/cardBackend.ts`: `info()`, `listSlots()`, `readHeader(t, s)`, `readFile(t, s, onProgress)`, `writeSlot(t, s, blob, { compare, onProgress, signal })`, `deleteSlot(t, s)`, returning `SlotDescriptor`s. Folder-only members are optional: `ensureLayout()`, `readConfig()`, `writeConfig()`, and `files` (read/write by path from the card root, for `README.md`, `SK/project.json` and the project mirror). Helpers: `readCardSlots()` (list + header per slot) and `slotFile()` (the descriptor's `File`, or a `readFile()`)
+- [x] `FolderBackend` in `src/lib/card/folderBackend.ts`: takes over `scanSKStructure` (removed from `importUtils.ts`), writes through `safeWriteBlob`, deletes with `removeEntry`. Keeps the `File`s from the last listing, so header reads and hashes see what was listed
+- [x] `exportSDStructure` takes `options.card`, falling back to a `FolderBackend` on `destinationHandle` or a picked folder, so its other callers are unchanged. `calculateSyncDiff(state, card)` and `scanDeviceChanges(card)` take the backend; App's five call sites build a `FolderBackend` from `sdHandle`
+- [x] Regression test the card-reader export and sync before adding USB (on hardware, release firmware, Oct 11)
+
+Phase 2 results (Oct 11):
+
+- **Same output as before, checked in code.** A mock-filesystem script ran one scenario through the Phase 1 commit (`7da427f`, handles) and the backend: an export, a card-side foreign file, a changed slot, a removed slot, a changed `config.txt`, then a clean-mirror export with a delete. Snapshot, diff (statuses, matches, `staleHeader`, new/updated files, duplicates), device diff and the final card tree were identical.
+- **Hardware regression test passed (Oct 11, release firmware).** Clean project on an empty card: the first Standard Build wrote every slot, `config.txt`, `project.json`, README and all six tape folders. A rebuild with no changes showed everything in sync and rewrote nothing. The files played on the device, which then wrote its `MEM` file. A foreign file added and a slot deleted on the computer showed up in the sync preview and imported. Clean Mirror with a delete removed the slot and kept `MEM`.
+- `SlotDescriptor` has `fileName`, `size`, `lastModified` (folder only), the header fields (`frames`, `sampleRate`, `dataOffset`, `name`, `meta`) and `file` when the route has the bytes without a download. `occupied` is implied (listings hold occupied slots only); `loadable` comes with USB LIST in Phase 3.
+- `SyncSlotDiff` gained `remote` (the descriptor). `remoteFile` is still filled on the folder route. The diff only needs bytes when nothing in the header ties the card file to the project file, but `newFiles` / `updatedFiles` still carry a `File` for `applySyncDiff`, so over USB they would download. Make those lazy in Phase 3.
+- README and `SK/project.json` are now written through `safeWriteBlob` (atomic where the browser allows), not `createWritable()` in place. Same bytes.
+- `scanDeviceChanges` still uses `project.json` and `lastModified`, now through `card.files` and the descriptors. Over USB it returns null, since `files` is folder-only. Switching it to the card snapshot is a behaviour change, so it is left for Phase 3, where USB needs it.
+- Not moved: `configFile.ts` (Config mode reads and writes `config.txt` itself; folder-only, and USB can't reach the file) and App's SK backup copy (folder-only by nature).
 
 **Phase 3 — USB backend (`feat/usb-transfer`, behind a flag)**
 

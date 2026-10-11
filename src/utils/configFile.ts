@@ -63,7 +63,7 @@ export const ensureWritable = async (handle: FileSystemDirectoryHandle): Promise
 
 /**
  * Read the card's own settings. `SK/config.txt` first, then a bare `config.txt` at
- * the root — the same order and the same fallback `scanSKStructure` already uses,
+ * the root — the same order and the same fallback `FolderBackend.readConfig` uses,
  * so a user who picks the `SK` folder itself is not told there is nothing there.
  *
  * Returns `null` when the card carries no config at all.

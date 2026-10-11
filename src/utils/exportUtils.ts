@@ -32,6 +32,8 @@ export interface ExportSDOptions {
     directWrite?: boolean;
     smartSync?: boolean;
     destinationHandle?: FileSystemDirectoryHandle;
+    /** The card to write to. Without it, a `FolderBackend` on `destinationHandle` or a picked folder. */
+    card?: import('../lib/card/cardBackend').CardBackend;
     syncUserLibrary?: boolean;
     userLibrary?: import('../types').UserLibrary;
     syncDecisions?: Record<string, SlotSyncDecision> | Array<{ id: string, decision: SlotSyncDecision } | ConfigSyncData>;
@@ -709,17 +711,22 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
     // A. DIRECT WRITE (FileSystem API)
     if (options.directWrite) {
         try {
-            // @ts-ignore
-            if (!('showDirectoryPicker' in window)) throw new Error("Browser not supported");
-
-            let rootHandle = options.destinationHandle;
-            if (!rootHandle) {
-                onProgress?.("Requesting directory access...", 0);
+            let card = options.card;
+            if (!card) {
                 // @ts-ignore
-                rootHandle = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
-            }
+                if (!('showDirectoryPicker' in window)) throw new Error("Browser not supported");
 
-            if (!rootHandle) throw new Error("No destination selected");
+                let rootHandle = options.destinationHandle;
+                if (!rootHandle) {
+                    onProgress?.("Requesting directory access...", 0);
+                    // @ts-ignore
+                    rootHandle = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+                }
+
+                if (!rootHandle) throw new Error("No destination selected");
+                const { FolderBackend } = await import('../lib/card/folderBackend');
+                card = new FolderBackend(rootHandle);
+            }
 
             // A clean mirror overwrites everything WAV Builder owns (slot WAVs, config.txt,
             // project.json, README) without comparing first. It deletes nothing wholesale:
@@ -727,14 +734,13 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             // in SK (the device's MEM file, files of other tools) is left alone.
             const compare: WriteCompare = options.forceOverwrite || options.skMode === 'clean' ? 'always' : 'content';
 
-            const skHandle = await rootHandle.getDirectoryHandle('SK', { create: true });
+            await card.ensureLayout?.();
 
-            // 1. Write Readme
-            onProgress?.("Writing README.md...", 15);
-            const readmeHandle = await rootHandle.getFileHandle('README.md', { create: true });
-            const readmeWritable = await readmeHandle.createWritable();
-            await readmeWritable.write(generateReadme(state));
-            await readmeWritable.close();
+            // 1. Write Readme (folder route only, like everything outside the slots)
+            if (card.files) {
+                onProgress?.("Writing README.md...", 15);
+                await card.files.write('README.md', new Blob([generateReadme(state)], { type: 'text/markdown' }), 'always');
+            }
 
             // 2. Config.txt Generation
             let configToUse: ProjectConfig | undefined = undefined;
@@ -756,12 +762,11 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 }
             }
 
-            if (configToUse) {
+            if (configToUse && card.writeConfig) {
                 const finalConfig = configToUse || state.projectConfig;
                 if (finalConfig) {
                     onProgress?.("Writing config.txt...", 18);
-                    const configText = generateConfigText(finalConfig);
-                    await safeWriteBlob(skHandle, 'config.txt', new Blob([configText], { type: 'text/plain' }), compare);
+                    await card.writeConfig(generateConfigText(finalConfig), compare);
                 }
             }
 
@@ -779,8 +784,6 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
             for (const color of TAPE_COLORS) {
                 const tape = state.tapes[color];
-                const folderName = color.charAt(0).toUpperCase();
-                const tapeHandle = await skHandle.getDirectoryHandle(folderName, { create: true });
 
                 for (const slot of tape.slots) {
                     const slotRef = `${color}${slot.id}`;
@@ -794,10 +797,8 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         decision = 'export';
                     }
 
-                    const fileName = `${slot.id}.WAV`;
-
                     if (decision === 'delete' || decision === 'delete_local') {
-                        try { await tapeHandle.removeEntry(fileName); } catch (e) { }
+                        try { await card.deleteSlot(color, slot.id); } catch (e) { }
                         delete snapshot.slots[slotRef];
                         continue;
                     }
@@ -829,7 +830,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                 }
                             }
 
-                            const wrote = await safeWriteBlob(tapeHandle, fileName, blobToWrite, compare);
+                            const wrote = await card.writeSlot(color, slot.id, blobToWrite, { compare });
                             if (wrote) writtenCount++; else skippedCount++;
 
                             // Written or already identical: either way the card now holds this.
@@ -839,15 +840,16 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                 hash: metadata?.hash,
                                 frames: written?.frames,
                                 writtenAt: wrote ? now : (snapshot.slots[slotRef]?.writtenAt ?? now),
-                                via: 'reader',
+                                via: card.kind === 'usb' ? 'usb' : 'reader',
                             };
                         }
                     }
                 }
             }
 
-            // 4. Project Identity
-            onProgress?.("Writing project identity...", 80);
+            // 4. Project Identity (folder route only: USB reaches the slots alone)
+            const cardFiles = card.files;
+            if (cardFiles) onProgress?.("Writing project identity...", 80);
             const projectIdentity = {
                 metadata: {
                     appName: "Spotykach WAV Builder",
@@ -871,34 +873,29 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     return acc;
                 }, {} as Record<string, any>)
             };
-            const identityHandle = await skHandle.getFileHandle('project.json', { create: true });
-            const identityWritable = await identityHandle.createWritable();
-            await identityWritable.write(JSON.stringify(projectIdentity, null, 2));
-            await identityWritable.close();
+            if (cardFiles) {
+                await cardFiles.write('SK/project.json', new Blob([JSON.stringify(projectIdentity, null, 2)], { type: 'application/json' }), 'always');
+            }
 
             // 5. Project source mirror — opt-in only (locked decision 6).
-            if (options.mirrorProjectToSD && options.workHandle && options.projectName) {
+            if (cardFiles && options.mirrorProjectToSD && options.workHandle && options.projectName) {
                 onProgress?.("Mirroring Project Source to card...", 85);
                 try {
-                    const wavBuilderDir = await rootHandle.getDirectoryHandle('WAV_Builder', { create: true });
-                    const wbProjectsDir = await wavBuilderDir.getDirectoryHandle('Projects', { create: true });
-                    const targetProjectDir = await wbProjectsDir.getDirectoryHandle(options.projectName, { create: true });
+                    const target = `WAV_Builder/Projects/${options.projectName}`;
                     const sourceProjectsDir = await options.workHandle.getDirectoryHandle('Projects');
                     const sourceProjectDir = await sourceProjectsDir.getDirectoryHandle(options.projectName);
 
                     // Copy project.json
                     const sJson = await sourceProjectDir.getFileHandle('project.json');
-                    await safeWriteBlob(targetProjectDir, 'project.json', await sJson.getFile());
+                    await cardFiles.write(`${target}/project.json`, await sJson.getFile());
 
                     // Copy Assets
                     try {
                         const sAssets = await sourceProjectDir.getDirectoryHandle('Assets');
-                        const tAssets = await targetProjectDir.getDirectoryHandle('Assets', { create: true });
-                        // @ts-ignore
                         for await (const [name, entry] of sAssets.entries()) {
                             if (entry.kind === 'file') {
                                 const sf = await sAssets.getFileHandle(name);
-                                await safeWriteBlob(tAssets, name, await sf.getFile());
+                                await cardFiles.write(`${target}/Assets/${name}`, await sf.getFile());
                             }
                         }
                     } catch (e) { }

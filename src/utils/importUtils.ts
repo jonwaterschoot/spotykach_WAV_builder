@@ -2,6 +2,8 @@ import type { AppState, TapeColor, FileRecord, AudioVersion, ProjectSummary } fr
 import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { hashBlob } from './assetUtils';
+import type { CardBackend, SlotDescriptor } from '../lib/card/cardBackend';
+import { readCardSlots, slotFile } from '../lib/card/cardBackend';
 
 export type ImportType =
     | 'PROJECT_BACKUP'
@@ -342,7 +344,10 @@ export interface SyncSlotDiff {
     index: number; // 0-5
     status: SyncStatus;
     localFile?: FileRecord;
-    remoteFile?: File; // Raw file from SD
+    /** The card slot as listed, header read. */
+    remote?: SlotDescriptor;
+    /** The card file, when the route has it without a download (card reader). */
+    remoteFile?: File;
     /** Our metadata from the card file's header (id, hash, name, frames), if any. */
     remoteMeta?: WavMetadata | null;
     /** How the card file was tied to the project file. Absent when nothing tied them. */
@@ -493,10 +498,23 @@ export const detectCueChunk = async (file: File): Promise<boolean> => {
 
 
 // 1. Calculate Diff
+/**
+ * Compares the project with the card. Runs on slot descriptors (header reads);
+ * the card file's bytes are only fetched when nothing in its header ties it to
+ * the project file, or when the diff has to hand the file over for an import.
+ */
 export const calculateSyncDiff = async (
     projectState: AppState,
-    structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string, configLocation?: 'root' | 'sk' }
+    card: CardBackend
 ): Promise<SyncDiff> => {
+    const cardConfig = await card.readConfig?.() ?? null;
+    const cardSlots = await readCardSlots(card);
+    const remoteBytes = new Map<string, Promise<File>>();
+    const remoteFileOf = (slotId: string, desc: SlotDescriptor): Promise<File> => {
+        if (!remoteBytes.has(slotId)) remoteBytes.set(slotId, slotFile(card, desc));
+        return remoteBytes.get(slotId)!;
+    };
+
     // hash → [{slotId, side, name}] — used for duplicate detection
     const hashRegistry = new Map<string, DuplicateEntry[]>();
 
@@ -516,7 +534,7 @@ export const calculateSyncDiff = async (
 
     // 0. Compare Config
     const localConfig = projectState.projectConfig;
-    const remoteConfigText = (structureMap as any).configText as string | undefined;
+    const remoteConfigText = cardConfig?.text;
     const { generateConfigText } = await import('./exportUtils');
 
     let configStatus: SyncStatus = 'EMPTY';
@@ -533,7 +551,7 @@ export const calculateSyncDiff = async (
         status: configStatus,
         localConfig,
         remoteConfigText,
-        location: structureMap.configLocation
+        location: cardConfig?.location
     };
 
     if (configStatus === 'MATCH') diff.summary.matches++;
@@ -543,22 +561,20 @@ export const calculateSyncDiff = async (
 
     for (const color of TAPE_COLORS) {
         const tape = projectState.tapes[color];
-        const remoteTape = structureMap[color] || {};
 
         for (const localSlot of tape.slots) { // Use for-of for async
             const index = localSlot.id - 1; // 0-indexed assumption from upstream logic
             const slotId = `${color}${localSlot.id}`;
-            const remoteFile = remoteTape[localSlot.id];
+            // The card slot, header already read: id, hash, name, frames. No audio is parsed.
+            const remote = cardSlots.get(slotId);
             const localFile = localSlot.fileId ? projectState.files[localSlot.fileId] : undefined;
 
             let status: SyncStatus = 'EMPTY';
 
-            // Header of the card file: id, hash, name, frames. No audio is parsed.
-            const remoteInfo = remoteFile ? await readWavHeaderInfo(remoteFile).catch(() => null) : null;
-            const remoteMeta = remoteInfo?.metadata ?? null;
+            const remoteMeta = remote?.meta ?? null;
             let match: SlotMatch | undefined;
 
-            if (localFile && remoteFile) {
+            if (localFile && remote) {
                 // Both exist - Compare
                 const currentVer = localFile.versions.find(v => v.id === localFile.currentVersionId);
 
@@ -580,8 +596,8 @@ export const calculateSyncDiff = async (
                         // Written by 4.1.3 or earlier, without a hash: compare lengths
                         // when both are known. File size would differ on header alone.
                         const frames = await localFrames(currentVer.blob);
-                        if (frames !== undefined && remoteInfo?.frames !== undefined) {
-                            isMatch = frames === remoteInfo.frames;
+                        if (frames !== undefined && remote.frames !== undefined) {
+                            isMatch = frames === remote.frames;
                         }
                     }
                 } else if (remoteMeta?.hash && localHash && remoteMeta.hash === localHash) {
@@ -591,7 +607,7 @@ export const calculateSyncDiff = async (
                 } else if (currentVer?.blob) {
                     // 3–4. Nothing of ours ties them: compare the bytes. This matches a
                     // version that was itself imported from this card.
-                    remoteHash = await hashBlob(remoteFile);
+                    remoteHash = await hashBlob(await remoteFileOf(slotId, remote));
                     isMatch = localHash === remoteHash;
                     if (isMatch) {
                         match = 'bytes';
@@ -599,7 +615,7 @@ export const calculateSyncDiff = async (
                         // 3. Only INAM (Vlad's page, another tool). Probably the same file
                         // when the length agrees too; the user confirms.
                         const frames = await localFrames(currentVer.blob);
-                        if (frames === undefined || remoteInfo?.frames === undefined || frames === remoteInfo.frames) {
+                        if (frames === undefined || remote.frames === undefined || frames === remote.frames) {
                             match = 'name';
                         }
                     }
@@ -618,8 +634,8 @@ export const calculateSyncDiff = async (
                 if (!isMatch) {
                     // ICMT.h when present, so a card file lines up with the project version
                     // it was exported from; otherwise the bytes.
-                    const rHash = remoteMeta?.hash ?? remoteHash ?? await hashBlob(remoteFile);
-                    registerHash(rHash, { slotId, side: 'sd', name: remoteMeta?.name ?? remoteFile.name });
+                    const rHash = remoteMeta?.hash ?? remoteHash ?? await hashBlob(await remoteFileOf(slotId, remote));
+                    registerHash(rHash, { slotId, side: 'sd', name: remoteMeta?.name ?? remote.fileName });
                 }
 
                 if (isMatch) {
@@ -631,26 +647,26 @@ export const calculateSyncDiff = async (
 
                     diff.updatedFiles.push({
                         slot: slotId,
-                        name: remoteMeta?.name ?? remoteFile.name,
-                        file: remoteFile,
+                        name: remoteMeta?.name ?? remote.fileName,
+                        file: await remoteFileOf(slotId, remote),
                         existingFileId: localFile.id,
                         existingName: localFile.name,
-                        size: remoteFile.size
+                        size: remote.size
                     });
                 }
-            } else if (localFile && !remoteFile) {
+            } else if (localFile && !remote) {
                 status = 'LOCAL_ONLY';
                 diff.summary.localOnly++;
-            } else if (!localFile && remoteFile) {
+            } else if (!localFile && remote) {
                 status = 'REMOTE_ONLY';
                 diff.summary.remoteOnly++;
                 diff.newFiles.push({
                     slot: slotId,
-                    name: remoteMeta?.name ?? remoteFile.name,
-                    file: remoteFile,
+                    name: remoteMeta?.name ?? remote.fileName,
+                    file: await remoteFileOf(slotId, remote),
                     slotIndex: index,
                     color: color,
-                    size: remoteFile.size
+                    size: remote.size
                 });
             }
 
@@ -660,13 +676,14 @@ export const calculateSyncDiff = async (
                 index,
                 status,
                 localFile,
-                remoteFile,
+                remote,
+                remoteFile: remote?.file,
                 remoteMeta,
                 match,
                 // `bytes` included: a slot imported from a 4.1.3 card matches its card file
                 // byte for byte, and should still move to the current layout once.
                 staleHeader: status === 'MATCH' && match !== 'name'
-                    && (!remoteMeta?.hash || (remoteInfo?.dataOffset ?? 0) % 4 !== 0),
+                    && (!remoteMeta?.hash || (remote?.dataOffset ?? 0) % 4 !== 0),
             };
         }
     }
@@ -687,11 +704,11 @@ export const calculateSyncDiff = async (
                 }
             }
         }
-        if (slotDiff.status === 'REMOTE_ONLY' && slotDiff.remoteFile) {
-            const h = slotDiff.remoteMeta?.hash ?? await hashBlob(slotDiff.remoteFile);
+        if (slotDiff.status === 'REMOTE_ONLY' && slotDiff.remote) {
+            const h = slotDiff.remoteMeta?.hash ?? await hashBlob(await remoteFileOf(slotId, slotDiff.remote));
             const existing = hashRegistry.get(h);
             if (!existing?.find(e => e.slotId === slotId && e.side === 'sd')) {
-                registerHash(h, { slotId, side: 'sd', name: slotDiff.remoteMeta?.name ?? slotDiff.remoteFile.name });
+                registerHash(h, { slotId, side: 'sd', name: slotDiff.remoteMeta?.name ?? slotDiff.remote.fileName });
             }
         }
     }
@@ -822,12 +839,12 @@ export const applySyncDiff = async (
 // Helper for Legacy Wrapper
 export const restoreProjectAndSync = async (
     backupFile: File,
-    structureMap: { [key in TapeColor]?: { [slotId: number]: File } }
+    card: CardBackend
 ): Promise<{ state: AppState, report: string } | null> => {
     const projectState = await loadProjectFromZip(backupFile);
     if (!projectState) return null;
 
-    const diff = await calculateSyncDiff(projectState, structureMap);
+    const diff = await calculateSyncDiff(projectState, card);
     const finalState = await applySyncDiff(projectState, diff); // Uses defaults
 
     return {
@@ -847,15 +864,14 @@ export interface DeviceDiff {
     syncedFiles: DeviceFileChange[];
 }
 
-export const scanDeviceChanges = async (skHandle: FileSystemDirectoryHandle): Promise<DeviceDiff | null> => {
+export const scanDeviceChanges = async (card: CardBackend): Promise<DeviceDiff | null> => {
     try {
-        // 1. Read Project Manifest
+        // 1. Read Project Manifest (folder route only: USB can't reach project.json)
         let projectIdentity: any = null;
         try {
-            const jsonHandle = await skHandle.getFileHandle('project.json');
-            const file = await jsonHandle.getFile();
-            const text = await file.text();
-            projectIdentity = JSON.parse(text);
+            const file = await card.files?.read('SK/project.json');
+            if (!file) throw new Error('No SK/project.json');
+            projectIdentity = JSON.parse(await file.text());
         } catch (e) {
             console.warn("No project.json found in SK folder. Cannot verify device changes.");
             return null;
@@ -874,64 +890,27 @@ export const scanDeviceChanges = async (skHandle: FileSystemDirectoryHandle): Pr
         const exportDate = new Date(projectIdentity.metadata.exportDate).getTime();
         const TOLERANCE = 2000; // 2 seconds tolerance
 
-        // 2. Scan SK Folders
-        for (const color of TAPE_COLORS) {
-            const folderName = color.charAt(0).toUpperCase(); // "R", "B"
-            try {
-                const tapeHandle = await skHandle.getDirectoryHandle(folderName);
-                // @ts-ignore
-                for await (const [name, entry] of tapeHandle.entries()) {
-                    if (entry.kind === 'file' && name.toUpperCase().endsWith('.WAV')) {
-                        const match = name.match(/^(\d+)\.WAV$/i);
-                        if (match) {
-                            const slotId = parseInt(match[1]);
-                            const fileHandle = entry as FileSystemFileHandle;
-                            const file = await fileHandle.getFile();
+        // 2. Scan the card's slots
+        for (const desc of await card.listSlots()) {
+            const { tape: color, slot: slotId } = desc;
+            const file = await slotFile(card, desc);
+            const lastModified = desc.lastModified ?? file.lastModified;
 
-                            // 3. Compare with Manifest
-                            // Manifest structure: tapes[color].slots[index].fileId
-                            // And files[fileId]
+            // 3. Compare with Manifest
+            // Manifest structure: tapes[color].slots[index].fileId
+            // And files[fileId]
+            const tape = projectIdentity.tapes?.[color];
+            const slot = tape?.slots.find((s: any) => s.id === slotId);
+            const originalFileId = slot?.fileId;
 
-                            const tape = projectIdentity.tapes[color];
-                            const slot = tape?.slots.find((s: any) => s.id === slotId);
-                            const originalFileId = slot?.fileId;
-
-                            // Check if this slot was supposed to be empty
-                            if (!originalFileId) {
-                                // NEW FILE
-                                diff.newFiles.push({
-                                    slot: `${color}${slotId}`,
-                                    file,
-                                    color,
-                                    slotId
-                                });
-                            } else {
-                                // SLOT WAS OCCUPIED
-                                // Check if modified
-                                // Logic: If file.lastModified > exportDate -> Modified
-                                if (file.lastModified > (exportDate + TOLERANCE)) {
-                                    diff.updatedFiles.push({
-                                        slot: `${color}${slotId}`,
-                                        file,
-                                        color,
-                                        slotId,
-                                        originalFileId
-                                    });
-                                } else {
-                                    diff.syncedFiles.push({
-                                        slot: `${color}${slotId}`,
-                                        file,
-                                        color,
-                                        slotId,
-                                        originalFileId
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                // Folder might not exist, skip
+            if (!originalFileId) {
+                // NEW FILE: this slot was supposed to be empty
+                diff.newFiles.push({ slot: `${color}${slotId}`, file, color, slotId });
+            } else if (lastModified > (exportDate + TOLERANCE)) {
+                // SLOT WAS OCCUPIED and changed since the export
+                diff.updatedFiles.push({ slot: `${color}${slotId}`, file, color, slotId, originalFileId });
+            } else {
+                diff.syncedFiles.push({ slot: `${color}${slotId}`, file, color, slotId, originalFileId });
             }
         }
 
@@ -941,67 +920,4 @@ export const scanDeviceChanges = async (skHandle: FileSystemDirectoryHandle): Pr
         console.error("Failed to scan device changes", e);
         return null;
     }
-};
-
-/**
- * Scans the root SD handle for the 'SK' folder and reads its Tape structure.
- * This ensures we iterate correctly using the master TAPE_COLORS.
- */
-export const scanSKStructure = async (rootHandle: FileSystemDirectoryHandle): Promise<{ [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string, configLocation?: 'root' | 'sk' }> => {
-    const structureMap: { [key in TapeColor]?: { [slotId: number]: File } } & { configText?: string, configLocation?: 'root' | 'sk' } = {};
-
-    try {
-        let skRoot: FileSystemDirectoryHandle | null = null;
-        try {
-            skRoot = await rootHandle.getDirectoryHandle('SK', { create: false });
-        } catch { /* SK folder entirely missing */ }
-
-        // 1. Read config.txt (Priority: SK/config.txt, Fallback: root/config.txt)
-        if (skRoot) {
-            try {
-                const configHandle = await skRoot.getFileHandle('config.txt', { create: false });
-                const configFile = await configHandle.getFile();
-                structureMap.configText = await configFile.text();
-                structureMap.configLocation = 'sk';
-            } catch { /* No config.txt in SK */ }
-        }
-
-        if (!structureMap.configText) {
-
-            try {
-                const configHandle = await rootHandle.getFileHandle('config.txt', { create: false });
-                const configFile = await configHandle.getFile();
-                structureMap.configText = await configFile.text();
-                structureMap.configLocation = 'root';
-            } catch { /* No config.txt at root */ }
-        }
-
-        if (!skRoot) return structureMap;
-
-
-        for (const color of TAPE_COLORS) {
-            const letter = color.charAt(0).toUpperCase();
-            structureMap[color] = {};
-
-            try {
-                const tapeDir = await skRoot.getDirectoryHandle(letter, { create: false });
-
-                // @ts-ignore
-                for await (const [name, entry] of tapeDir.entries()) {
-                    if (entry.kind === 'file' && name.toUpperCase().endsWith('.WAV')) {
-                        const match = name.match(/^(\d+)\.WAV$/i);
-                        if (match) {
-                            structureMap[color]![parseInt(match[1])] = await (entry as FileSystemFileHandle).getFile();
-                        }
-                    }
-                }
-            } catch (e) {
-                // Tape folder missing, safe to skip
-            }
-        }
-    } catch (e) {
-        // Broad error
-    }
-
-    return structureMap;
 };
