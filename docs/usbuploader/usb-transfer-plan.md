@@ -1,7 +1,6 @@
 # WAV Builder — USB transfer integration plan
 
 Oct 10, 2026 · Jon · revised Oct 11, 2026 (checked against the firmware source of both branches)
-Living version: https://claude.ai/code/artifact/ef36bc98-f555-403d-8085-fbdf852e8c3e (not yet updated with this revision)
 
 ## Summary
 
