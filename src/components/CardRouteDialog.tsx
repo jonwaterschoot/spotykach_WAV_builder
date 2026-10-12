@@ -18,12 +18,16 @@ interface CardRouteDialogProps {
     usbSlots: number | null;
     reader: ReaderCheck;
     projectName?: string;
+    /** The open project has nothing in it: offer the whole card into it, not a build or a new project. */
+    projectEmpty: boolean;
     onConnect: () => void;
     onAuthorize: () => void;
     onPickFolder: () => void;
     onBuild: () => void;
     onImportHere: () => void;
-    onImportNew: () => void;
+    onImportWholeHere: () => void;
+    onImportWholeNew: () => void;
+    onChooseSlotsNew: () => void;
     onClose: () => void;
 }
 
@@ -38,8 +42,8 @@ const slotsText = (n: number) => n === 0 ? 'no slots in use' : `${n} slot${n ===
  * checks the card folder), then asks what to do with the card.
  */
 export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
-    route, usb, usbSlots, reader, projectName,
-    onConnect, onAuthorize, onPickFolder, onBuild, onImportHere, onImportNew, onClose,
+    route, usb, usbSlots, reader, projectName, projectEmpty,
+    onConnect, onAuthorize, onPickFolder, onBuild, onImportHere, onImportWholeHere, onImportWholeNew, onChooseSlotsNew, onClose,
 }) => {
     useEscapeLayer(true, () => { onClose(); return true; });
     const busy = route === 'usb' && usb.status === 'connecting';
@@ -122,19 +126,32 @@ export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
         }
     }
 
-    const action = (icon: React.ReactNode, title: string, detail: string, onClick: () => void) => (
-        <button
-            onClick={onClick}
-            disabled={!ready}
-            className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 text-left transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
-        >
-            <span className="p-2 rounded-lg bg-white/5 text-orange-400 shrink-0">{icon}</span>
-            <span>
-                <span className="block text-sm font-bold text-white">{title}</span>
-                <span className="block text-xs text-gray-400 mt-0.5">{detail}</span>
-            </span>
-        </button>
+    const action = (icon: React.ReactNode, title: string, detail: string, onClick: () => void, secondary?: { label: string; onClick: () => void }) => (
+        <div className="flex items-stretch rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+            <button
+                onClick={onClick}
+                disabled={!ready}
+                className="flex-1 flex items-start gap-3 p-4 hover:bg-white/[0.06] text-left transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+            >
+                <span className="p-2 rounded-lg bg-white/5 text-orange-400 shrink-0">{icon}</span>
+                <span>
+                    <span className="block text-sm font-bold text-white">{title}</span>
+                    <span className="block text-xs text-gray-400 mt-0.5">{detail}</span>
+                </span>
+            </button>
+            {secondary && (
+                <button
+                    onClick={secondary.onClick}
+                    disabled={!ready}
+                    className="px-4 border-l border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-35 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                    {secondary.label}
+                </button>
+            )}
+        </div>
     );
+
+    const timeNote = route === 'usb' ? ' Over USB each full slot takes 20–40 s; you see the progress.' : '';
 
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -152,12 +169,19 @@ export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
 
                 <div className="px-6 py-5 flex flex-col gap-2">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">What do you want to do?</p>
-                    {action(<ArrowRight size={16} />, 'Build to the card',
-                        `Write ${projectName ? `"${projectName}"` : 'this project'} to the card. You review every slot first.`, onBuild)}
-                    {action(<ArrowLeft size={16} />, 'Import into this project',
-                        'Bring the card\'s files into this project, into the pool or its slots. You review every slot first.', onImportHere)}
-                    {action(<FilePlus size={16} />, 'Import into a new project',
-                        'Start a clean project with every card slot in its place.', onImportNew)}
+                    {projectEmpty ? (
+                        action(<ArrowLeft size={16} />, 'Import the whole card',
+                            `${projectName ? `"${projectName}"` : 'This project'} is empty: every card slot goes into the same slot here, without a review.${timeNote}`,
+                            onImportWholeHere, { label: 'Choose slots…', onClick: onImportHere })
+                    ) : (<>
+                        {action(<ArrowRight size={16} />, 'Build to the card',
+                            `Write ${projectName ? `"${projectName}"` : 'this project'} to the card. You review every slot first.`, onBuild)}
+                        {action(<ArrowLeft size={16} />, 'Import into this project',
+                            'Add the card\'s files to this project, into the pool or into slots. You review every slot first.', onImportHere)}
+                        {action(<FilePlus size={16} />, 'Import into a new project',
+                            `A clean project with every card slot in the same slot, without a review.${timeNote}`,
+                            onImportWholeNew, { label: 'Choose slots…', onClick: onChooseSlotsNew })}
+                    </>)}
                 </div>
             </div>
         </div>

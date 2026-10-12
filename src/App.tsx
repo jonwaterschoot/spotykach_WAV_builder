@@ -316,6 +316,9 @@ function App({ onExitToHub }: AppProps) {
   const [routeDialog, setRouteDialog] = useState<CardSource | null>(null);
   const [readerCheck, setReaderCheck] = useState<ReaderCheck>({ status: 'checking' });
   const [usbSlots, setUsbSlots] = useState<number | null>(null);
+  /** Nothing in the open project: no files, no slots. */
+  const projectIsEmpty = Object.keys(state.files).length === 0
+    && TAPE_COLORS.every(c => state.tapes[c].slots.every(slot => !slot.fileId));
 
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
@@ -1379,11 +1382,23 @@ function App({ onExitToHub }: AppProps) {
   const startFromCardRoute = (mode: 'push' | 'import') => {
     const source = routeDialog ?? cardSource;
     setRouteDialog(null);
-    void handleOpenSyncModal(mode, { source });
+    // Into an empty project, every card slot goes to its own place.
+    void handleOpenSyncModal(mode, { source, preset: mode === 'import' && projectIsEmpty ? 'import_merge_project' : undefined });
   };
 
-  /** A clean project, then the import with every card slot pulled into its place. */
-  const importCardIntoNewProject = () => {
+  /** The open project, when it is empty: the whole card can go straight in. */
+  const importWholeCardHere = () => {
+    const source = routeDialog ?? cardSource;
+    setRouteDialog(null);
+    if (!currentProjectName) { importCardIntoNewProject(true); return; }
+    void importWholeCard(source, state, currentProjectName);
+  };
+
+  /**
+   * A clean project, then the card into it: `whole` copies every slot into its
+   * place straight away, otherwise the import opens to choose slots.
+   */
+  const importCardIntoNewProject = (whole: boolean) => {
     const source = routeDialog ?? cardSource;
     setRouteDialog(null);
     if (!workHandle) { handleSetWorkFolder(); return; }
@@ -1395,7 +1410,9 @@ function App({ onExitToHub }: AppProps) {
         initialValue: `Card import ${new Date().toISOString().slice(0, 10)}`,
         onConfirm: async (name) => {
           const created = await handleCreateEmptyProject(name);
-          if (created) await handleOpenSyncModal('import', { source, state: created.state, projectName: created.projectName, preset: 'import_merge_project' });
+          if (!created) return;
+          if (whole) await importWholeCard(source, created.state, created.projectName);
+          else await handleOpenSyncModal('import', { source, state: created.state, projectName: created.projectName, preset: 'import_merge_project' });
         },
       });
     }, {
@@ -4554,6 +4571,294 @@ function App({ onExitToHub }: AppProps) {
     }
   };
 
+  /**
+   * Applies a sync: pulls (downloads over USB) and pools card files, then builds
+   * the card, in the transfer window. `baseState` is the project the imports land
+   * in: the open one, or a project created a moment ago, before React re-renders.
+   */
+  const runSync = async (
+    projectName: string | undefined,
+    syncDiff: import('./utils/importUtils').SyncDiff | null | undefined,
+    decisions: Record<string, import('./components/ExportPreviewModal').LegacyDecision>,
+    options: ExportOptions,
+    importDecisions: Record<string, import('./components/ExportPreviewModal').ImportDecision>,
+    baseState: AppState = state,
+    source: CardSource = cardSource,
+  ) => {
+
+    if (!workHandle || !projectName) return;
+
+    setIsProcessing(true);
+    setProgressMsg(`Syncing ${projectName}...`);
+
+    // Every slot this sync moves, for the transfer window.
+    const MB = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+    const slotText = (slot: string) => slot.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
+    const localName = (slot: string) => syncDiff?.slots[slot]?.localFile?.name ?? slot;
+    const localSize = (slot: string) => {
+      const lf = syncDiff?.slots[slot]?.localFile;
+      return lf?.versions.find(v => v.id === lf.currentVersionId)?.blob?.size ?? 0;
+    };
+    const cardName = (slot: string) => {
+      const sd = syncDiff?.slots[slot];
+      return sd?.remoteMeta?.name ?? sd?.remote?.name ?? sd?.remote?.fileName ?? slot;
+    };
+    const signal = transfer.start(`Syncing ${projectName}`, source, [
+      ...Object.entries(importDecisions).map(([slot, dec]) => ({
+        slot, direction: 'down' as const, name: cardName(slot),
+        bytes: syncDiff?.slots[slot]?.remote?.size ?? dec.file?.size ?? 0,
+      })),
+      ...Object.entries(decisions).filter(([slot, d]) => slot !== 'config' && d !== 'skip').map(([slot, d]) => ({
+        slot, direction: d === 'delete' ? 'delete' as const : 'up' as const,
+        name: d === 'delete' ? cardName(slot) : localName(slot),
+        bytes: d === 'delete' ? 0 : localSize(slot),
+      })),
+    ]);
+    const started = new Map<string, number>();
+    const rate = (slot: string, bytes: number) => {
+      const seconds = (Date.now() - (started.get(slot) ?? Date.now())) / 1000;
+      return seconds >= 0.5 ? ` in ${seconds.toFixed(1)} s (${Math.round(bytes / 1024 / seconds)} KB/s)` : '';
+    };
+
+      try {
+        const { loadProjectFromDirectory, verifyProjectBlobs } = await import('./utils/exportUtils');
+        const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
+
+        // 1. Verify Blobs (Pre-sync check for NotReadableError)
+        const unreadable = await verifyProjectBlobs(projectState);
+        if (unreadable.length > 0) {
+          const fileList = unreadable.map(u => u.fileName).slice(0, 3).join(', ') + (unreadable.length > 3 ? '...' : '');
+          showToast(`Unreadable files detected: ${fileList}. Please refresh or re-link project folder.`, 'error');
+          transfer.close();
+          setIsProcessing(false);
+          setProgressMsg('');
+          return;
+        }
+
+        // 2. Prepare decisions and state
+        const finalDecisions = { ...decisions };
+        if (options.includeConfig && options.configDecision === 'push_to_sk') {
+          finalDecisions['config'] = 'export';
+        }
+
+        const TAPE_COLORS_ORDERED = ['Blue', 'Green', 'Pink', 'Red', 'Turquoise', 'Yellow'] as const;
+        // Deep-clone state to mutate safely for imports
+        const newState = JSON.parse(JSON.stringify(baseState)) as typeof baseState;
+        for (const [id, fr] of Object.entries(baseState.files)) {
+          if (newState.files[id]) newState.files[id].versions = fr.versions;
+        }
+
+        // ─── PHASE A: IMPORT / POOL (Read from SD) ───
+        const importEntries = Object.entries(importDecisions);
+        if (importEntries.length > 0) {
+          setProgressMsg('Preserving & Importing SK files...');
+
+          // Verification check for import files
+          for (const [slotId, dec] of importEntries) {
+            if (!dec.file) continue;
+            try {
+              await dec.file.slice(0, 1).arrayBuffer();
+            } catch (e: any) {
+              throw new Error(`SD file unreadable: ${dec.file.name || slotId}. Hardware connection may have been interrupted.`);
+            }
+          }
+
+          const { v4: uuidv4 } = await import('uuid');
+          const { readWavMetadata } = await import('./utils/importUtils');
+          // Over USB the card files aren't at hand: download each one now.
+          const usbCard = source === 'usb' ? await cardFor('usb') : null;
+          if (source === 'usb' && !usbCard) throw new Error('Spotykach is not connected. Connect it and try again.');
+
+          for (const [slotId, dec] of importEntries) {
+            signal.throwIfAborted();
+            started.set(slotId, Date.now());
+            transfer.update(slotId, 'down', { status: 'active', fraction: 0 });
+            let cardFile = dec.file;
+            if (!cardFile && usbCard) {
+              cardFile = await usbCard.readFile(dec.color as TapeColor, dec.slotIndex,
+                (fraction) => transfer.update(slotId, 'down', { fraction }), signal);
+            }
+            if (!cardFile) {
+              transfer.update(slotId, 'down', { status: 'skipped' });
+              continue;
+            }
+            transfer.update(slotId, 'down', { status: 'done', fraction: 1, bytes: cardFile.size });
+            transfer.log(`↓ ${slotText(slotId)}  ${cardName(slotId)}  ${MB(cardFile.size)}${usbCard ? rate(slotId, cardFile.size) : ''}`);
+            const arrayBuffer = await cardFile.arrayBuffer();
+            const blob = new Blob([arrayBuffer], { type: cardFile.type || 'audio/wav' });
+            // The original name (INAM) when the card file has one, not `1.WAV`.
+            const fileName = (await readWavMetadata(blob))?.name || cardFile.name || `${slotId}.wav`;
+
+            const versionId = uuidv4();
+            const fileId = uuidv4();
+            const version = {
+              id: versionId,
+              timestamp: Date.now(),
+              description: `Imported from SK (${slotId})`,
+              blob,
+              duration: 0,
+              processing: [] as ('normalized' | 'trimmed' | 'looped')[],
+            };
+            const fileRecord = {
+              id: fileId,
+              name: fileName,
+              originalName: fileName,
+              versions: [version],
+              currentVersionId: versionId,
+              isParked: true,
+              origin: 'SK Import',
+            };
+            newState.files[fileId] = fileRecord;
+
+            if (dec.pullToSlot) {
+              const color = dec.color as typeof TAPE_COLORS_ORDERED[number];
+              const slotIdx = dec.slotIndex - 1;
+              if (newState.tapes[color]?.slots[slotIdx] != null) {
+                newState.tapes[color].slots[slotIdx].fileId = fileId;
+                fileRecord.isParked = false;
+              }
+            }
+          }
+
+          // Apply config import if requested
+          const currentDiff = syncDiff;
+          if (options.includeConfig && options.configDecision === 'pull_to_slot' && currentDiff?.config?.remoteConfigText) {
+            try {
+              const { parseConfigText } = await import('./utils/exportUtils');
+              const parsedConfig = parseConfigText(currentDiff.config.remoteConfigText);
+              if (parsedConfig) newState.projectConfig = parsedConfig;
+            } catch (e) {
+              console.warn("Failed to parse remote config during import", e);
+            }
+          }
+
+          // Commit state change early so export reflects the new slots if needed
+          // Though exportSDStructure uses projectState (shallow clone of current state), 
+          // we'll update it here to be sure.
+          markSystemUpdate();
+          setState(newState);
+        }
+
+        // ─── PHASE B: EXPORT / BUILD (Write to SD) ───
+        const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
+        if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
+          const card = await cardFor(source);
+          if (!card) throw new Error(source === 'usb'
+            ? 'Spotykach is not connected. Connect it and try again.'
+            : "Hardware folder access lost. Please re-select SD folder.");
+
+          const { exportSDStructure } = await import('./utils/exportUtils');
+          const cardSnapshot = await exportSDStructure(newState, { // Use newState which includes pooled files
+            card,
+            includeProject: true,
+            directWrite: true,
+            smartSync: options.skMode === 'overwrite',
+            skMode: options.skMode,
+            userLibrary: userLibrary,
+            mirrorProjectToSD: getDurabilityPrefs().mirrorProjectsToSD,
+            destinationHandle: sdHandle ?? undefined,
+            workHandle: workHandle,
+            projectName: projectName,
+            syncDecisions: finalDecisions,
+            includeConfig: options.includeConfig,
+            forceOverwrite: options.forceOverwrite,
+            onConvert: convertAudioToWav,
+            signal,
+            onSlot: (e) => {
+              if (e.phase === 'start') {
+                started.set(e.slot, Date.now());
+                transfer.update(e.slot, 'up', { status: 'active', fraction: 0 });
+              } else if (e.phase === 'progress') {
+                transfer.update(e.slot, 'up', { fraction: e.fraction ?? 0 });
+              } else if (e.phase === 'done') {
+                transfer.update(e.slot, 'up', { status: 'done', fraction: 1, bytes: e.bytes });
+                transfer.log(`↑ ${slotText(e.slot)}  ${localName(e.slot)}  ${MB(e.bytes ?? 0)}${rate(e.slot, e.bytes ?? 0)}`);
+              } else if (e.phase === 'skipped') {
+                transfer.update(e.slot, 'up', { status: 'skipped', bytes: e.bytes });
+                transfer.log(`= ${slotText(e.slot)}  ${localName(e.slot)}  already on the card`);
+              } else if (e.phase === 'deleted') {
+                transfer.update(e.slot, 'delete', { status: 'done' });
+                transfer.log(`× ${slotText(e.slot)}  removed from the card`);
+              }
+            },
+          }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
+          // Project data like any other: left unsaved so the next save keeps it.
+          if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
+        }
+
+        transfer.log('Sync complete.', 'ok');
+        transfer.finish();
+        scanProjects(workHandle, sdHandle);
+        if (source === 'usb') void usbSession.refreshInfo();
+        // ── Background SK snapshot (non-blocking, opt-in per build) ──
+        if (options.skSnapshot && source === 'reader' && workHandle && sdHandle && projectName) {
+          createSKBackup(projectName, workHandle, sdHandle)
+            .then(() => {
+              if (currentProjectName === projectName) {
+                scanSKBackups(projectName, workHandle!);
+              }
+            })
+            .catch(e => console.warn('SK backup error (non-fatal):', e));
+        }
+      } catch (e: any) {
+        if (signal.aborted) {
+          transfer.log('Cancelled. Slots already written stay on the card; the slot being written keeps its old file.', 'warn');
+          transfer.finish();
+        } else {
+          console.error(e);
+          transfer.log(`Error: ${e.message}`, 'error');
+          transfer.finish(e.message);
+        }
+      } finally {
+        setIsProcessing(false);
+        setProgressMsg('');
+      }
+  };
+
+  /**
+   * Every card slot into its place in an empty project, without the review: there
+   * is nothing in the project to weigh it against.
+   */
+  const importWholeCard = async (source: CardSource, projectState: AppState, projectName: string) => {
+    setIsProcessing(true);
+    setProgressMsg('Reading the card...');
+    let diff: import('./utils/importUtils').SyncDiff;
+    try {
+      diff = await scanSyncDiff(projectState, source);
+    } catch (e) {
+      showToast('Could not read the card: ' + (e instanceof Error ? e.message : String(e)), 'error');
+      setIsProcessing(false);
+      setProgressMsg('');
+      return;
+    }
+    const importDecisions: Record<string, import('./components/ExportPreviewModal').ImportDecision> = {};
+    const decisions: Record<string, import('./components/ExportPreviewModal').LegacyDecision> = {};
+    for (const sd of Object.values(diff.slots)) {
+      decisions[sd.slotId] = 'skip';
+      if (sd.status === 'REMOTE_ONLY') {
+        importDecisions[sd.slotId] = { pullToSlot: true, toPool: false, file: sd.remoteFile ?? null, color: sd.color, slotIndex: sd.index + 1 };
+      }
+    }
+    if (!Object.keys(importDecisions).length) {
+      setIsProcessing(false);
+      setProgressMsg('');
+      showToast('The card has no slots in use.', 'neutral');
+      return;
+    }
+    const takeConfig = source === 'reader' && diff.config?.status === 'REMOTE_ONLY';
+    const options: ExportOptions = {
+      preset: 'merge',
+      moveDisplacedToPool: false,
+      conflictMode: 'manual',
+      skMode: 'overwrite',
+      configDecision: takeConfig ? 'pull_to_slot' : 'skip',
+      includeConfig: takeConfig,
+      forceOverwrite: false,
+      skSnapshot: false,
+    };
+    await runSync(projectName, diff, decisions, options, importDecisions, projectState, source);
+  };
+
   const missingFileIds = useMemo(() => new Set((missingFilesWarning || []).map(a => a.fileId)), [missingFilesWarning]);
 
   const showSetupWizard = isWelcomeActive && !workHandle && !isAutoRestoring;
@@ -5532,239 +5837,11 @@ function App({ onExitToHub }: AppProps) {
                   );
                 })() : undefined}
                 onClose={() => setSyncModalState(null)}
-                onConfirm={async (decisions, options: ExportOptions, importDecisions) => {
-                  const projectName = syncModalState?.projectName;
-                  const syncDiff = syncModalState?.diff;
+                onConfirm={(decisions, options: ExportOptions, importDecisions) => {
+                  const { projectName, diff } = syncModalState;
                   setSyncModalState(null); // Close modal
-
-                  if (!workHandle || !projectName) return;
-
-                  setIsProcessing(true);
-                  setProgressMsg(`Syncing ${projectName}...`);
-
-                  // Every slot this sync moves, for the transfer window.
-                  const MB = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
-                  const slotText = (slot: string) => slot.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
-                  const localName = (slot: string) => syncDiff?.slots[slot]?.localFile?.name ?? slot;
-                  const localSize = (slot: string) => {
-                    const lf = syncDiff?.slots[slot]?.localFile;
-                    return lf?.versions.find(v => v.id === lf.currentVersionId)?.blob?.size ?? 0;
-                  };
-                  const cardName = (slot: string) => {
-                    const sd = syncDiff?.slots[slot];
-                    return sd?.remoteMeta?.name ?? sd?.remote?.name ?? sd?.remote?.fileName ?? slot;
-                  };
-                  const signal = transfer.start(`Syncing ${projectName}`, cardSource, [
-                    ...Object.entries(importDecisions).map(([slot, dec]) => ({
-                      slot, direction: 'down' as const, name: cardName(slot),
-                      bytes: syncDiff?.slots[slot]?.remote?.size ?? dec.file?.size ?? 0,
-                    })),
-                    ...Object.entries(decisions).filter(([slot, d]) => slot !== 'config' && d !== 'skip').map(([slot, d]) => ({
-                      slot, direction: d === 'delete' ? 'delete' as const : 'up' as const,
-                      name: d === 'delete' ? cardName(slot) : localName(slot),
-                      bytes: d === 'delete' ? 0 : localSize(slot),
-                    })),
-                  ]);
-                  const started = new Map<string, number>();
-                  const rate = (slot: string, bytes: number) => {
-                    const seconds = (Date.now() - (started.get(slot) ?? Date.now())) / 1000;
-                    return seconds >= 0.5 ? ` in ${seconds.toFixed(1)} s (${Math.round(bytes / 1024 / seconds)} KB/s)` : '';
-                  };
-
-                    try {
-                      const { loadProjectFromDirectory, verifyProjectBlobs } = await import('./utils/exportUtils');
-                      const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
-
-                      // 1. Verify Blobs (Pre-sync check for NotReadableError)
-                      const unreadable = await verifyProjectBlobs(projectState);
-                      if (unreadable.length > 0) {
-                        const fileList = unreadable.map(u => u.fileName).slice(0, 3).join(', ') + (unreadable.length > 3 ? '...' : '');
-                        showToast(`Unreadable files detected: ${fileList}. Please refresh or re-link project folder.`, 'error');
-                        transfer.close();
-                        setIsProcessing(false);
-                        setProgressMsg('');
-                        return;
-                      }
-
-                      // 2. Prepare decisions and state
-                      const finalDecisions = { ...decisions };
-                      if (options.includeConfig && options.configDecision === 'push_to_sk') {
-                        finalDecisions['config'] = 'export';
-                      }
-
-                      const TAPE_COLORS_ORDERED = ['Blue', 'Green', 'Pink', 'Red', 'Turquoise', 'Yellow'] as const;
-                      // Deep-clone state to mutate safely for imports
-                      const newState = JSON.parse(JSON.stringify(state)) as typeof state;
-                      for (const [id, fr] of Object.entries(state.files)) {
-                        if (newState.files[id]) newState.files[id].versions = fr.versions;
-                      }
-
-                      // ─── PHASE A: IMPORT / POOL (Read from SD) ───
-                      const importEntries = Object.entries(importDecisions);
-                      if (importEntries.length > 0) {
-                        setProgressMsg('Preserving & Importing SK files...');
-
-                        // Verification check for import files
-                        for (const [slotId, dec] of importEntries) {
-                          if (!dec.file) continue;
-                          try {
-                            await dec.file.slice(0, 1).arrayBuffer();
-                          } catch (e: any) {
-                            throw new Error(`SD file unreadable: ${dec.file.name || slotId}. Hardware connection may have been interrupted.`);
-                          }
-                        }
-
-                        const { v4: uuidv4 } = await import('uuid');
-                        const { readWavMetadata } = await import('./utils/importUtils');
-                        // Over USB the card files aren't at hand: download each one now.
-                        const usbCard = cardSource === 'usb' ? await cardFor('usb') : null;
-                        if (cardSource === 'usb' && !usbCard) throw new Error('Spotykach is not connected. Connect it and try again.');
-
-                        for (const [slotId, dec] of importEntries) {
-                          signal.throwIfAborted();
-                          started.set(slotId, Date.now());
-                          transfer.update(slotId, 'down', { status: 'active', fraction: 0 });
-                          let cardFile = dec.file;
-                          if (!cardFile && usbCard) {
-                            cardFile = await usbCard.readFile(dec.color as TapeColor, dec.slotIndex,
-                              (fraction) => transfer.update(slotId, 'down', { fraction }), signal);
-                          }
-                          if (!cardFile) {
-                            transfer.update(slotId, 'down', { status: 'skipped' });
-                            continue;
-                          }
-                          transfer.update(slotId, 'down', { status: 'done', fraction: 1, bytes: cardFile.size });
-                          transfer.log(`↓ ${slotText(slotId)}  ${cardName(slotId)}  ${MB(cardFile.size)}${usbCard ? rate(slotId, cardFile.size) : ''}`);
-                          const arrayBuffer = await cardFile.arrayBuffer();
-                          const blob = new Blob([arrayBuffer], { type: cardFile.type || 'audio/wav' });
-                          // The original name (INAM) when the card file has one, not `1.WAV`.
-                          const fileName = (await readWavMetadata(blob))?.name || cardFile.name || `${slotId}.wav`;
-
-                          const versionId = uuidv4();
-                          const fileId = uuidv4();
-                          const version = {
-                            id: versionId,
-                            timestamp: Date.now(),
-                            description: `Imported from SK (${slotId})`,
-                            blob,
-                            duration: 0,
-                            processing: [] as ('normalized' | 'trimmed' | 'looped')[],
-                          };
-                          const fileRecord = {
-                            id: fileId,
-                            name: fileName,
-                            originalName: fileName,
-                            versions: [version],
-                            currentVersionId: versionId,
-                            isParked: true,
-                            origin: 'SK Import',
-                          };
-                          newState.files[fileId] = fileRecord;
-
-                          if (dec.pullToSlot) {
-                            const color = dec.color as typeof TAPE_COLORS_ORDERED[number];
-                            const slotIdx = dec.slotIndex - 1;
-                            if (newState.tapes[color]?.slots[slotIdx] != null) {
-                              newState.tapes[color].slots[slotIdx].fileId = fileId;
-                              fileRecord.isParked = false;
-                            }
-                          }
-                        }
-
-                        // Apply config import if requested
-                        const currentDiff = syncModalState?.diff;
-                        if (options.includeConfig && options.configDecision === 'pull_to_slot' && currentDiff?.config?.remoteConfigText) {
-                          try {
-                            const { parseConfigText } = await import('./utils/exportUtils');
-                            const parsedConfig = parseConfigText(currentDiff.config.remoteConfigText);
-                            if (parsedConfig) newState.projectConfig = parsedConfig;
-                          } catch (e) {
-                            console.warn("Failed to parse remote config during import", e);
-                          }
-                        }
-
-                        // Commit state change early so export reflects the new slots if needed
-                        // Though exportSDStructure uses projectState (shallow clone of current state), 
-                        // we'll update it here to be sure.
-                        markSystemUpdate();
-                        setState(newState);
-                      }
-
-                      // ─── PHASE B: EXPORT / BUILD (Write to SD) ───
-                      const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
-                      if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
-                        const card = await cardFor(cardSource);
-                        if (!card) throw new Error(cardSource === 'usb'
-                          ? 'Spotykach is not connected. Connect it and try again.'
-                          : "Hardware folder access lost. Please re-select SD folder.");
-
-                        const { exportSDStructure } = await import('./utils/exportUtils');
-                        const cardSnapshot = await exportSDStructure(newState, { // Use newState which includes pooled files
-                          card,
-                          includeProject: true,
-                          directWrite: true,
-                          smartSync: options.skMode === 'overwrite',
-                          skMode: options.skMode,
-                          userLibrary: userLibrary,
-                          mirrorProjectToSD: getDurabilityPrefs().mirrorProjectsToSD,
-                          destinationHandle: sdHandle ?? undefined,
-                          workHandle: workHandle,
-                          projectName: projectName,
-                          syncDecisions: finalDecisions,
-                          includeConfig: options.includeConfig,
-                          forceOverwrite: options.forceOverwrite,
-                          onConvert: convertAudioToWav,
-                          signal,
-                          onSlot: (e) => {
-                            if (e.phase === 'start') {
-                              started.set(e.slot, Date.now());
-                              transfer.update(e.slot, 'up', { status: 'active', fraction: 0 });
-                            } else if (e.phase === 'progress') {
-                              transfer.update(e.slot, 'up', { fraction: e.fraction ?? 0 });
-                            } else if (e.phase === 'done') {
-                              transfer.update(e.slot, 'up', { status: 'done', fraction: 1, bytes: e.bytes });
-                              transfer.log(`↑ ${slotText(e.slot)}  ${localName(e.slot)}  ${MB(e.bytes ?? 0)}${rate(e.slot, e.bytes ?? 0)}`);
-                            } else if (e.phase === 'skipped') {
-                              transfer.update(e.slot, 'up', { status: 'skipped', bytes: e.bytes });
-                              transfer.log(`= ${slotText(e.slot)}  ${localName(e.slot)}  already on the card`);
-                            } else if (e.phase === 'deleted') {
-                              transfer.update(e.slot, 'delete', { status: 'done' });
-                              transfer.log(`× ${slotText(e.slot)}  removed from the card`);
-                            }
-                          },
-                        }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
-                        // Project data like any other: left unsaved so the next save keeps it.
-                        if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
-                      }
-
-                      transfer.log('Sync complete.', 'ok');
-                      transfer.finish();
-                      scanProjects(workHandle, sdHandle);
-                      if (cardSource === 'usb') void usbSession.refreshInfo();
-                      // ── Background SK snapshot (non-blocking, opt-in per build) ──
-                      if (options.skSnapshot && cardSource === 'reader' && workHandle && sdHandle && projectName) {
-                        createSKBackup(projectName, workHandle, sdHandle)
-                          .then(() => {
-                            if (currentProjectName === projectName) {
-                              scanSKBackups(projectName, workHandle!);
-                            }
-                          })
-                          .catch(e => console.warn('SK backup error (non-fatal):', e));
-                      }
-                    } catch (e: any) {
-                      if (signal.aborted) {
-                        transfer.log('Cancelled. Slots already written stay on the card; the slot being written keeps its old file.', 'warn');
-                        transfer.finish();
-                      } else {
-                        console.error(e);
-                        transfer.log(`Error: ${e.message}`, 'error');
-                        transfer.finish(e.message);
-                      }
-                    } finally {
-                      setIsProcessing(false);
-                      setProgressMsg('');
-                    }
-                  }}
+                  void runSync(projectName, diff, decisions, options, importDecisions);
+                }}
               />
             )}
 
@@ -6187,8 +6264,11 @@ function App({ onExitToHub }: AppProps) {
           onAuthorize={() => { void usbSession.authorize(); }}
           onPickFolder={handleSetSDFolder}
           onBuild={() => startFromCardRoute('push')}
+          projectEmpty={projectIsEmpty}
           onImportHere={() => startFromCardRoute('import')}
-          onImportNew={importCardIntoNewProject}
+          onImportWholeHere={importWholeCardHere}
+          onImportWholeNew={() => importCardIntoNewProject(true)}
+          onChooseSlotsNew={() => importCardIntoNewProject(false)}
           onClose={() => setRouteDialog(null)}
         />
       )}
