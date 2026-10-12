@@ -355,8 +355,8 @@ export interface SyncSlotDiff {
     /**
      * MATCH, but the card file's header is out of date: written by 4.1.3 or earlier
      * (no `ICMT.h`, `LIST` after the audio), or with its audio off a multiple of 4,
-     * which the device can't play. Same audio, so not a conflict; a build should
-     * still rewrite it once.
+     * which the device can't play, or missing the version's slice points. Same
+     * audio, so not a conflict; a build should still rewrite it once.
      */
     staleHeader?: boolean;
 }
@@ -670,6 +670,17 @@ export const calculateSyncDiff = async (
                 });
             }
 
+            // Same file, but the card copy has a different number of slices: built
+            // before the build took slices from the version. Rewrite it once.
+            let slicesStale = false;
+            const matchedVer = localFile?.versions.find(v => v.id === localFile.currentVersionId);
+            if (status === 'MATCH' && match === 'id' && localFile && matchedVer) {
+                const { versionSlices } = await import('./exportUtils');
+                const local = (await versionSlices(localFile, matchedVer)).slicePoints?.length ?? 0;
+                const onCard = remoteMeta?.slicePoints?.length ?? 0;
+                slicesStale = local !== onCard;
+            }
+
             diff.slots[slotId] = {
                 slotId,
                 color,
@@ -683,7 +694,7 @@ export const calculateSyncDiff = async (
                 // `bytes` included: a slot imported from a 4.1.3 card matches its card file
                 // byte for byte, and should still move to the current layout once.
                 staleHeader: status === 'MATCH' && match !== 'name'
-                    && (!remoteMeta?.hash || (remote?.dataOffset ?? 0) % 4 !== 0),
+                    && (!remoteMeta?.hash || (remote?.dataOffset ?? 0) % 4 !== 0 || slicesStale),
             };
         }
     }

@@ -297,12 +297,14 @@ export async function readWavHeaderInfo(source: Blob | ArrayBuffer): Promise<Wav
             } else if (chunkId === 'cue ' && body.length >= 4) {
                 const numPoints = view.getUint32(0, true);
                 const points: number[] = [];
-                // Sanity check numPoints to avoid infinite loops or memory issues
-                const safeNumPoints = Math.min(numPoints, 100);
+                // The device takes at most 255; the body length bounds the loop anyway.
+                const safeNumPoints = Math.min(numPoints, 255);
+                // Offsets are in frames at the file's own rate (an editor version can be 44.1 kHz).
+                const rate = sampleRate || SAMPLE_RATE;
                 for (let i = 0; i < safeNumPoints; i++) {
                     const record = 4 + i * 24;
                     if (record + 24 <= body.length) {
-                        points.push(+(view.getUint32(record + 20, true) / SAMPLE_RATE).toFixed(3));
+                        points.push(+(view.getUint32(record + 20, true) / rate).toFixed(3));
                     }
                 }
                 if (points.length > 0) {

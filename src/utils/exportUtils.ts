@@ -693,13 +693,27 @@ export const exportSaveState = async (
  * name (INAM), and `h`, the SHA-256 of the source version. With `h` a later sync
  * can tell whether a card file is current from a header read alone.
  */
+/**
+ * Slices and tempo for a version. They belong to the version: the slice tool saves
+ * a new version whose WAV carries them, and doesn't touch `file.metadata`. A version
+ * WAV with our ICMT is the truth (also when its slices were all removed); anything
+ * else (an imported MP3, a foreign WAV) falls back to the record.
+ */
+export const versionSlices = async (file: FileRecord, version: AudioVersion): Promise<Pick<WavMetadata, 'slicePoints' | 'tempo'>> => {
+    const own = version.blob ? (await readWavHeaderInfo(version.blob).catch(() => null))?.metadata : null;
+    if (own?.id) return { slicePoints: own.slicePoints, tempo: own.tempo };
+    return {
+        slicePoints: own?.slicePoints ?? file.metadata?.slicePoints,
+        tempo: own?.tempo ?? file.metadata?.tempo,
+    };
+};
+
 const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
     id: file.id,
     name: file.originalName || file.name,
     hash: version.hash ?? (version.blob ? await hashBlob(version.blob) : undefined),
     processing: version.processing,
-    tempo: file.metadata?.tempo,
-    slicePoints: file.metadata?.slicePoints,
+    ...await versionSlices(file, version),
 });
 
 /**

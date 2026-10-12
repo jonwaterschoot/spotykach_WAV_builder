@@ -41,6 +41,14 @@ upcoming USB transfer needs, and what the firmware's own USB file list reads.
   and then silences the device until it is restarted. The old 44-byte header was always
   aligned; a `LIST` chunk with a name isn't, unless padded, which the encoder now does.
 
+- **Slice points from the slice tool reach the card.** Build SD took slice points and
+  tempo from the file's record, which the slice tool never updates; it saves them in the new
+  version's WAV instead. So a sliced file built to the card had no cue points, while the same
+  file exported from the editor had them. The build now reads them from the version itself,
+  and a card file whose slice count differs from its version is marked **Sync · old header**
+  and rewritten by the next Standard Build.
+  Slice points of files that aren't 48 kHz are also read back at the right position (they
+  were about 8% early at 44.1 kHz), and up to 255 of them instead of 100.
 - **A missing SD card says so.** With the card ejected, the build and import preview treated
   it as an empty card and offered to write every slot. It now opens with a "SD card not found"
   dialog that offers Change SD location, waits for the card, and rescans when it is back.
