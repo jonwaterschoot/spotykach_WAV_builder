@@ -23,9 +23,9 @@
 const FREESOUND_SEARCH = 'https://freesound.org/apiv2/search/';
 
 /** What the app asks for; everything else in the query string is dropped. */
-const ALLOWED_PARAMS = ['query', 'filter', 'sort', 'page', 'page_size'];
+const ALLOWED_PARAMS = ['query', 'filter', 'sort', 'page', 'page_size', 'group_by_pack'];
 /** Fixed here, so the Worker can't be used to read fields the app doesn't show. */
-const FIELDS = 'id,name,username,license,duration,url,previews';
+const FIELDS = 'id,name,username,license,duration,url,previews,n_from_same_pack';
 
 const json = (body, status, headers = {}) =>
     new Response(JSON.stringify(body), {

@@ -29,6 +29,7 @@ interface FsSound {
     duration: number;
     url: string;
     previews?: Record<string, string>;
+    n_from_same_pack?: number;
 }
 interface FsPage { count: number; next: string | null; results: FsSound[] }
 
@@ -47,9 +48,12 @@ export const freesound: OnlineProvider = {
     async search(query, page, ctx) {
         const params = new URLSearchParams({
             query: query.text,
-            fields: 'id,name,username,license,duration,url,previews',
+            fields: 'id,name,username,license,duration,url,previews,n_from_same_pack',
             page_size: '50',
             page: String(page),
+            // One sound per pack: an ungrouped "kick" gave five kicks from one pack
+            // on the first page. The rest of a pack is a link away on its page.
+            group_by_pack: '1',
         });
         if (query.maxSeconds) params.set('filter', `duration:[0 TO ${query.maxSeconds}]`);
 
@@ -82,6 +86,7 @@ export const freesound: OnlineProvider = {
                 url: preview,
                 format: 'MP3',
                 bitrateKbps: 128,
+                morePackSounds: s.n_from_same_pack || undefined,
             });
         }
         return { hits, hasMore: !!data.next, total: data.count };

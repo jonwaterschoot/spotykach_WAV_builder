@@ -366,6 +366,7 @@ export const OnlineBrowser = ({
             hit.format && hit.bitrateKbps ? `${hit.format} ${hit.bitrateKbps} kbps` : hit.format,
             hit.expandable ? null : formatBytes(hit.bytes),
             hit.via ? `via ${hit.via}` : null,
+            hit.morePackSounds ? `+${hit.morePackSounds} more in its pack` : null,
         ].filter(Boolean);
         return (
             <div key={hit.key}>

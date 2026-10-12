@@ -38,6 +38,8 @@ export interface OnlineHit {
     format?: string;
     /** Where the archive says; lossless originals don't need one to be judged. */
     bitrateKbps?: number;
+    /** Freesound, grouped by pack: how many more sounds its pack has that aren't listed. */
+    morePackSounds?: number;
     /** An Archive item: a folder of tracks, listed by `expand`. */
     expandable?: boolean;
     /** The provider's own pointer for `expand`, e.g. NASA's asset list URL. */
