@@ -361,6 +361,16 @@ Code (pinned to commit `7535186`):
 - [`usbBackend.ts` `validate`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/usb/usbBackend.ts#L268-L297): what we refuse before an upload (your `is_loadable()`, alignment, frame, cue and size limits).
 - [`skLink.ts`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/usb/skLink.ts): our port of your protocol client from `web/index.html`.
 
+## Proposal (Oct 13): card identity without `ICMT`
+
+Not decided. The aim: no changes needed in Spotykach's code.
+
+- **Card files are written by the package's `encodeWav`** (name and cues, audio aligned), over USB and through the card reader alike. No `ICMT`, `ITMP` or `IART` on the card.
+- **The project's card snapshot holds the identity.** Per slot: file id, version hash, and what the slot list reports (name, frames, cue count, file size). A slot whose list entry equals the snapshot is the file the project wrote; anything else is changed or new.
+- **Gains:** no header read per slot over USB (the list is enough), no PR to Spotykach, and one card format shared with Synthux's own page.
+- **Costs:** a card can no longer tell a project it has never seen which file a slot was (no id inside), and tempo and processing flags aren't stored in card files. Cards written before the change are matched once by name and frame count, or by the tail read for 4.1.3 files.
+- **Checked:** 72 `encodeWav` files (names 0–70 bytes, non-ASCII, cues) load on ports of release firmware 1.3.1 (WAV code identical to `main` `7da8061`) and of the uploader firmware.
+
 ## Open questions and risks
 
 - **Protocol stability.** The spec is marked draft v1 and the branch is unreleased. Check `proto_major` in HELLO and keep the link code in two files so a v1.1 (pipelined uploads) is a contained change.
