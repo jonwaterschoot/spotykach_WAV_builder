@@ -306,7 +306,7 @@ Phase 3 results (Oct 11):
 - [x] In USB mode, show `config.txt` and project-copy options as "needs card reader"
 - [x] Per-slot progress for USB writes and a time estimate before a batch (about 20–40 s per full slot)
 - [x] Help text: Chromium only, close DAWs holding the MIDI port on Windows, `dialout` group on Linux
-- [ ] Hardware test of the UI on the uploader firmware (below; first run Oct 12)
+- [x] Hardware test of the UI on the uploader firmware (Oct 12, Windows; below)
 - [x] Transfer window for a sync: overall progress with time left, every slot, a log, Cancel
 - [x] Card route in the main header (SD | USB) next to Import / Build; header menus open on hover, News moved into the gear menu
 - [ ] Merge to `main` (flag still on) once the USB firmware is released; then remove the flag
@@ -337,7 +337,8 @@ Phase 4 results (Oct 12):
   - Then three choices: **Build to the card** (the sync modal on Build), **Import into this project** (on Import), **Import into a new project** (asks for a name, creates an empty project, and opens the import on "Merge into project", so every card slot lands in its place; the usual unsaved-changes question comes first).
   - **No review for a whole-card import into an empty project** (round 4): there is nothing to weigh the card against, so "Import into a new project" copies every slot into its place straight into the transfer window, with "Choose slots…" beside it for the sync modal. When the open project is empty, the dialog offers only "Import the whole card" (and "Choose slots…", which opens on "Merge into project"), not Build or a new project. The sync's apply step moved out of the modal's JSX into `runSync()`, which takes the project to import into, so a project created a moment ago is used rather than the one React still holds.
   - **Folder path:** the File System Access API gives a page the picked folder's name only, never its path, so there is nothing more to show. The modal's bar and the dialog add the slot count instead ("Card folder SK_SDslices · 9 slots in use") and say why on hover.
-- **Hardware test to do**, uploader firmware, Windows first: open with `?usb=1`, Import / Build SD, switch to USB, Connect (and Authorise port on first use, also after closing the picker by clicking outside it). Check the grid against `skUsb.slots()`, the snapshot line after a build, a Standard Build of a few changed slots (progress, time estimate, then in sync on rescan), a pull of a card-only slot into the project, a build that doesn't fit, unplugging mid-upload (the slot keeps its old file, the modal shows Connect again), then the same project over the card reader showing in sync.
+- **Hardware test passed (Oct 12, Windows, uploader firmware)** after round 4: a Build over the card reader (regression), "Import into a new project" with the whole card over USB and over the card reader, and "Choose slots…" on an empty project all worked as expected. Not yet tried on macOS or Linux.
+- **The checklist this was run against:** open with `?usb=1`, Import / Build SD, switch to USB, Connect (and Authorise port on first use, also after closing the picker by clicking outside it). Check the grid against `skUsb.slots()`, the snapshot line after a build, a Standard Build of a few changed slots (progress, time estimate, then in sync on rescan), a pull of a card-only slot into the project, a build that doesn't fit, unplugging mid-upload (the slot keeps its old file, the modal shows Connect again), then the same project over the card reader showing in sync.
 
 ## Open questions and risks
 
