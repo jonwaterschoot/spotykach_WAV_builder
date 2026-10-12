@@ -73,6 +73,7 @@ import { isUsbTransferEnabled } from './lib/usb/flag';
 import { preloadUsb, usbSession, useUsbSession } from './lib/usb/usbSession';
 import { CardSourceBar, type CardSource } from './components/CardSourceBar';
 import { TransferProgressModal } from './components/TransferProgressModal';
+import { CardRouteDialog, type ReaderCheck } from './components/CardRouteDialog';
 import { useTransferJob } from './session/transferJob';
 import { describeSnapshotCheck } from './lib/card/cardSnapshot';
 import type { CardBackend } from './lib/card/cardBackend';
@@ -297,6 +298,7 @@ function App({ onExitToHub }: AppProps) {
     projectName: string;
     diff: import('./utils/importUtils').SyncDiff | null;
     defaultMode?: 'import' | 'push';
+    defaultPreset?: import('./components/ExportPreviewModal').QuickPreset;
   } | null>(null);
 
   /** The sync modal's card can't be read (ejected); checked while the modal is open. */
@@ -310,6 +312,10 @@ function App({ onExitToHub }: AppProps) {
   const usb = useUsbSession();
   /** The running (or just finished) sync, for the transfer window. */
   const transfer = useTransferJob();
+  /** The header's SD | USB toggle: gets the route ready and asks what to do with the card. */
+  const [routeDialog, setRouteDialog] = useState<CardSource | null>(null);
+  const [readerCheck, setReaderCheck] = useState<ReaderCheck>({ status: 'checking' });
+  const [usbSlots, setUsbSlots] = useState<number | null>(null);
 
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
@@ -1015,14 +1021,15 @@ function App({ onExitToHub }: AppProps) {
 
 
 
-  const handleCreateEmptyProject = async (rawProjectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null) => {
+  /** The new project's state and name, or null when it wasn't created. */
+  const handleCreateEmptyProject = async (rawProjectName: string, overrideWorkHandle?: FileSystemDirectoryHandle | null): Promise<{ state: AppState; projectName: string } | null> => {
     const activeWorkHandle = overrideWorkHandle || workHandle;
     if (!activeWorkHandle) {
       showToast("Please set a Work Folder first.", "error");
-      return;
+      return null;
     }
 
-    if (!rawProjectName) return;
+    if (!rawProjectName) return null;
     const projectName = sanitizeFilename(rawProjectName);
 
     setIsProcessing(true);
@@ -1052,9 +1059,11 @@ function App({ onExitToHub }: AppProps) {
       showToast("Empty Project Created", "success");
 
       handleSmartScan(activeWorkHandle);
+      return { state: emptyState, projectName };
     } catch (e: any) {
       console.error(e);
       showToast("Failed to create project: " + e.message, "error");
+      return null;
     } finally {
       setIsProcessing(false);
     }
@@ -1359,6 +1368,43 @@ function App({ onExitToHub }: AppProps) {
     return new FolderBackend(sdHandle);
   };
 
+  /** A click on SD or USB in the header. USB connects straight away: the click lets the port picker open. */
+  const openCardRoute = (route: CardSource) => {
+    handleCardSourceChange(route);
+    setRouteDialog(route);
+    const { status, backend } = usbSession.state;
+    if (route === 'usb' && !backend?.connected && status !== 'connecting') void usbSession.connect();
+  };
+
+  const startFromCardRoute = (mode: 'push' | 'import') => {
+    const source = routeDialog ?? cardSource;
+    setRouteDialog(null);
+    void handleOpenSyncModal(mode, { source });
+  };
+
+  /** A clean project, then the import with every card slot pulled into its place. */
+  const importCardIntoNewProject = () => {
+    const source = routeDialog ?? cardSource;
+    setRouteDialog(null);
+    if (!workHandle) { handleSetWorkFolder(); return; }
+    checkUnsavedChanges(() => {
+      setProjectNameModal({
+        isOpen: true,
+        title: 'New project from the card',
+        confirmLabel: 'Create and import',
+        initialValue: `Card import ${new Date().toISOString().slice(0, 10)}`,
+        onConfirm: async (name) => {
+          const created = await handleCreateEmptyProject(name);
+          if (created) await handleOpenSyncModal('import', { source, state: created.state, projectName: created.projectName, preset: 'import_merge_project' });
+        },
+      });
+    }, {
+      offerSave: true,
+      consequence: `A new project replaces "${currentProjectName || 'the open project'}" in the studio.`,
+      proceedLabel: 'New project without saving',
+    });
+  };
+
   const handleCardSourceChange = (source: CardSource) => {
     if (source === cardSource) return;
     setCardSource(source);
@@ -1442,6 +1488,39 @@ function App({ onExitToHub }: AppProps) {
     lastUsbBackend.current = usb.backend;
     if (changed && syncModalOpen && cardSource === 'usb') void handleSKRefreshRef.current('usb');
   }, [usb.backend, syncModalOpen, cardSource]);
+
+  // The route dialog on SD: is the card folder there, and what's on it? Checked
+  // again every 2 s until it is, so inserting the card is enough.
+  useEffect(() => {
+    if (routeDialog !== 'reader') return;
+    if (!sdHandle) { setReaderCheck({ status: 'none' }); return; }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setReaderCheck({ status: 'checking' });
+    const check = async () => {
+      const { FolderBackend } = await import('./lib/card/folderBackend');
+      const card = new FolderBackend(sdHandle);
+      const reachable = await card.isReachable();
+      const slots = reachable ? (await card.listSlots().catch(() => [])).length : 0;
+      if (cancelled) return;
+      if (reachable) setReaderCheck({ status: 'ok', label: sdHandle.name, slots });
+      else {
+        setReaderCheck({ status: 'missing', label: sdHandle.name });
+        timer = setTimeout(check, 2000);
+      }
+    };
+    void check();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [routeDialog, sdHandle]);
+
+  // The route dialog on USB: how many slots the card holds (one LIST, no audio).
+  useEffect(() => {
+    setUsbSlots(null);
+    if (routeDialog !== 'usb' || !usb.backend) return;
+    let cancelled = false;
+    usb.backend.listSlots().then(slots => { if (!cancelled) setUsbSlots(slots.length); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [routeDialog, usb.backend]);
 
   // Dirty tracking moved into useProjectSession — see session/ProjectSession.tsx.
 
@@ -4449,17 +4528,24 @@ function App({ onExitToHub }: AppProps) {
     appStorage.removeItem('spotykach_emptySlotPreferredBrowser');
     showToast('Empty slot browser preference reset', 'success');
   };
-  const handleOpenSyncModal = async (mode: 'push' | 'import' = 'push') => {
+  const handleOpenSyncModal = async (
+    mode: 'push' | 'import' = 'push',
+    /** Another project than the open one (just created), and the preset to start on. */
+    open: { state?: AppState; projectName?: string; preset?: import('./components/ExportPreviewModal').QuickPreset; source?: CardSource } = {},
+  ) => {
     // With USB on, the chosen route opens even without a card folder: the modal
     // says so and offers Change SD or USB.
-    const source = cardSource;
+    const source = open.source ?? cardSource;
     if (source === 'reader' && !sdHandle && !usbEnabled) return;
     if (source === 'usb') preloadUsb();
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
     try {
-      const diff = await scanSyncDiff(state, source);
-      setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: mode });
+      const diff = await scanSyncDiff(open.state ?? state, source);
+      setSyncModalState({
+        isOpen: true, projectName: open.projectName ?? currentProjectName ?? '', diff,
+        defaultMode: mode, defaultPreset: open.preset,
+      });
     } catch (e: any) {
       showToast('SK scan failed: ' + e.message, 'error');
     } finally {
@@ -4612,7 +4698,7 @@ function App({ onExitToHub }: AppProps) {
                   <div className="flex items-stretch rounded-lg border border-orange-500/30 overflow-hidden">
                     <div role="group" aria-label="Reach the card through" className="flex items-center gap-0.5 p-0.5 bg-black/30">
                       <button
-                        onClick={() => handleCardSourceChange('reader')}
+                        onClick={() => openCardRoute('reader')}
                         aria-pressed={cardSource === 'reader'}
                         title={sdHandle ? `Card reader: ${sdHandle.name}` : 'Card reader: the SD card in this computer'}
                         className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${cardSource === 'reader' ? 'bg-orange-500/20 text-orange-300' : 'text-gray-500 hover:text-white'}`}
@@ -4621,7 +4707,7 @@ function App({ onExitToHub }: AppProps) {
                         <span className="hidden xl:inline">SD</span>
                       </button>
                       <button
-                        onClick={() => handleCardSourceChange('usb')}
+                        onClick={() => openCardRoute('usb')}
                         aria-pressed={cardSource === 'usb'}
                         title={usb.backend ? 'USB: Spotykach connected' : 'USB: Spotykach through its rear USB port (experimental)'}
                         className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${cardSource === 'usb' ? 'bg-orange-500/20 text-orange-300' : 'text-gray-500 hover:text-white'}`}
@@ -5415,6 +5501,7 @@ function App({ onExitToHub }: AppProps) {
                 projectName={syncModalState?.projectName || ''}
                 diff={syncModalState.diff}
                 defaultMode={syncModalState.defaultMode ?? 'push'}
+                defaultPreset={syncModalState.defaultPreset}
                 onChangeSDCard={cardSource === 'reader' ? handleSetSDFolder : undefined}
                 onRefresh={() => handleSKRefresh()}
                 isRefreshing={isProcessing}
@@ -5432,6 +5519,7 @@ function App({ onExitToHub }: AppProps) {
                       source={cardSource}
                       onSourceChange={handleCardSourceChange}
                       readerLabel={sdHandle?.name}
+                      readerSlots={Object.values(syncModalState.diff.slots).filter(s => s.remote).length}
                       readerMissing={sdCardMissing}
                       usb={usb}
                       onConnect={() => { void usbSession.connect(); }}
@@ -6087,6 +6175,23 @@ function App({ onExitToHub }: AppProps) {
           </div>
         )
       }
+
+      {routeDialog && (
+        <CardRouteDialog
+          route={routeDialog}
+          usb={usb}
+          usbSlots={usbSlots}
+          reader={readerCheck}
+          projectName={currentProjectName || undefined}
+          onConnect={() => { void usbSession.connect(); }}
+          onAuthorize={() => { void usbSession.authorize(); }}
+          onPickFolder={handleSetSDFolder}
+          onBuild={() => startFromCardRoute('push')}
+          onImportHere={() => startFromCardRoute('import')}
+          onImportNew={importCardIntoNewProject}
+          onClose={() => setRouteDialog(null)}
+        />
+      )}
 
       {/* SYNC TRANSFER WINDOW (replaces the overlay while a sync runs) */}
       {transfer.job && (

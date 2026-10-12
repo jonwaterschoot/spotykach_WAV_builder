@@ -10,6 +10,8 @@ interface CardSourceBarProps {
     onSourceChange: (source: CardSource) => void;
     /** The picked card folder, for the reader side. */
     readerLabel?: string;
+    /** Occupied slots the reader found. */
+    readerSlots?: number;
     /** The picked folder can't be read (card ejected), or none was picked. */
     readerMissing?: boolean;
     usb: UsbState;
@@ -33,7 +35,7 @@ const formatSize = (kib: number) => kib >= 1024 * 1024
  * "Authorise port" in view while the device waits in transfer mode.
  */
 export const CardSourceBar: React.FC<CardSourceBarProps> = ({
-    source, onSourceChange, readerLabel, readerMissing, usb, onConnect, onAuthorize, onDisconnect,
+    source, onSourceChange, readerLabel, readerSlots, readerMissing, usb, onConnect, onAuthorize, onDisconnect,
     cardNote, cardNoteIsWarning, disabled,
 }) => {
     const [showHelp, setShowHelp] = useState(false);
@@ -76,7 +78,13 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
             </span>
         );
     } else if (source === 'reader') {
-        status = <span className="text-gray-500">{readerLabel ? <>Card folder <span className="text-gray-300">{readerLabel}</span></> : 'No card folder picked'}</span>;
+        status = (
+            <span className="text-gray-500" title="Browsers only show a picked folder's name, not where it is.">
+                {readerLabel
+                    ? <>Card folder <span className="text-gray-300">{readerLabel}</span>{readerSlots !== undefined && <> · {readerSlots} slot{readerSlots === 1 ? '' : 's'} in use</>}</>
+                    : 'No card folder picked'}
+            </span>
+        );
     } else if (usb.status === 'connected') {
         const { info } = usb;
         status = (

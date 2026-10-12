@@ -62,6 +62,8 @@ interface ExportPreviewModalProps {
     diff: SyncDiff;
     projectName?: string;
     defaultMode?: 'import' | 'push';
+    /** The preset to start on, instead of the mode's first one. */
+    defaultPreset?: QuickPreset;
     onRefresh?: () => void;
     isRefreshing?: boolean;
     onChangeSDCard?: () => void;
@@ -529,7 +531,7 @@ const CardLossPanel: React.FC<{
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
-    isOpen, onClose, onConfirm, diff: cardDiff, projectName, defaultMode = 'push',
+    isOpen, onClose, onConfirm, diff: cardDiff, projectName, defaultMode = 'push', defaultPreset,
     onRefresh, isRefreshing, onChangeSDCard, cardMissing = false,
     sourceBar, usbMode = false, blockedReason,
 }) => {
@@ -546,7 +548,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    const initialPreset: QuickPreset = mode === 'import' ? 'import_pool_only' : 'push_sync';
+    const initialPreset: QuickPreset = defaultPreset ?? (mode === 'import' ? 'import_pool_only' : 'push_sync');
 
 
     const buildRows = useCallback((preset: QuickPreset, currentMode: 'import' | 'push'): SlotRow[] => {
