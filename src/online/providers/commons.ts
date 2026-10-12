@@ -1,5 +1,5 @@
 import { fromCommons } from '../licenses.ts';
-import { getJson, SAFE_FORMATS, SKIP_FORMATS, stripHtml, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
+import { getJson, LOSSLESS_FORMATS, SAFE_FORMATS, SKIP_FORMATS, stripHtml, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
 
 /**
  * Wikimedia Commons, through the Action API. `origin=*` is what makes it answer a
@@ -35,14 +35,17 @@ const meta = (v: VideoInfo, k: string): string | undefined => {
     return value == null ? undefined : String(value);
 };
 
-/** The original when every browser decodes it, else Commons' own MP3 transcode. */
-const playable = (v: VideoInfo): { url: string; format: string } => {
-    const ext = (v.url.split('?')[0].split('.').pop() || '').toLowerCase();
+/**
+ * Always the original. For Ogg/Opus, Commons' own MP3 transcode rides along as
+ * `altUrl`, for browsers that can't play Ogg (Safari); elsewhere the Ogg is used,
+ * which saves a second lossy encode.
+ */
+const playable = (v: VideoInfo): { url: string; format: string; altUrl?: string } => {
     const clean = v.url.split('?')[0];
+    const ext = (clean.split('.').pop() || '').toLowerCase();
     if (SAFE_FORMATS.has(ext)) return { url: clean, format: ext.toUpperCase() };
     const mp3 = v.derivatives?.find(d => d.transcodekey === 'mp3' || d.type.startsWith('audio/mpeg'));
-    if (mp3) return { url: mp3.src.split('?')[0], format: 'MP3' };
-    return { url: clean, format: ext.toUpperCase() };
+    return { url: clean, format: ext.toUpperCase(), altUrl: mp3?.src.split('?')[0] };
 };
 
 export const commons: OnlineProvider = {
@@ -51,7 +54,7 @@ export const commons: OnlineProvider = {
     blurb: 'Field recordings, instruments, voices; many need credit',
     homepage: 'https://commons.wikimedia.org/wiki/Category:Audio_files',
     needsKey: false,
-    quality: "The original file (often WAV or FLAC); Ogg files as Commons' own MP3 copy.",
+    quality: "Always the original file, often WAV or FLAC. In Safari, Ogg files come as Commons' MP3 copy, since Safari can't play Ogg.",
     limitNote: 'No published cap; kept to 30 searches a minute.',
     limits: { perMinute: 30, perDay: 2000 },
 
@@ -100,11 +103,11 @@ export const commons: OnlineProvider = {
                 license,
                 pageUrl: v.descriptionurl,
                 durationSec: v.duration,
-                // Only the original's size is given. A transcode is smaller, and judging
-                // it by a 100 MB WAV would refuse a 2 MB MP3.
-                bytes: file.url === v.url.split('?')[0] ? v.size : undefined,
+                bytes: v.size,
                 url: file.url,
+                altUrl: file.altUrl,
                 format: file.format,
+                lossless: LOSSLESS_FORMATS.has(file.format.toLowerCase()),
             });
         }
         return { hits, hasMore: !!data.continue, total: data.query?.searchinfo?.totalhits };

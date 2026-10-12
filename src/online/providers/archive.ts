@@ -1,5 +1,5 @@
 import { fromCcUrl, type LicenseFilter, type OnlineLicense } from '../licenses.ts';
-import { getJson, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
+import { getJson, LOSSLESS_FORMATS, MAX_DOWNLOAD_BYTES, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
 
 /**
  * The Internet Archive: Advanced Search for items, the Metadata API for an item's
@@ -85,7 +85,7 @@ export const archive: OnlineProvider = {
     blurb: 'Field recordings, radio, long sessions; folders of tracks',
     homepage: 'https://archive.org/details/audio',
     needsKey: false,
-    quality: "The item's MP3 copy (usually VBR) when it has one, otherwise the original WAV or FLAC.",
+    quality: "Lossless when it fits: the item's FLAC copy, or the original WAV, up to 60 MB. Otherwise its MP3 copy.",
     limitNote: 'No published cap; kept to 30 searches a minute.',
     limits: { perMinute: 30, perDay: 2000 },
 
@@ -128,32 +128,46 @@ export const archive: OnlineProvider = {
         const data = await getJson<IaMetadata>(`${METADATA}${encodeURIComponent(id)}`, 'Internet Archive', ctx);
         const files = (data.files ?? []).filter(f => AUDIO.has(extOf(f.name)));
         const originals = files.filter(f => f.source === 'original');
+        const sizeOf = (f: IaFile) => (f.size ? Number(f.size) : undefined);
+        const fits = (f: IaFile) => (sizeOf(f) ?? 0) <= MAX_DOWNLOAD_BYTES;
 
-        const tracks: { file: IaFile; lengthFrom: IaFile }[] = [];
+        // Per uploaded track, the best copy that fits: lossless first, smallest first
+        // (the Archive's FLAC of a WAV is about a third of it), else the MP3. Not AIFF:
+        // WebAudio reads it in Safari only.
+        const tracks: { file: IaFile; original: IaFile; alt?: IaFile }[] = [];
         for (const o of originals.length > 0 ? originals : files) {
-            const ext = extOf(o.name);
-            if (ext === 'mp3' || ext === 'wav' || ext === 'flac') {
-                // A small MP3 beats a 100 MB WAV for a sampler that keeps 42 s.
-                const mp3 = ext !== 'mp3' ? files.find(f => f.original === o.name && extOf(f.name) === 'mp3') : undefined;
-                tracks.push({ file: mp3 ?? o, lengthFrom: o });
-            } else {
-                const mp3 = files.find(f => f.original === o.name && extOf(f.name) === 'mp3');
-                if (mp3) tracks.push({ file: mp3, lengthFrom: o });
-            }
+            const copies = [o, ...files.filter(f => f.original === o.name)];
+            const lossless = copies
+                .filter(f => (extOf(f.name) === 'flac' || extOf(f.name) === 'wav') && fits(f))
+                .sort((x, y) => (sizeOf(x) ?? 0) - (sizeOf(y) ?? 0))[0];
+            const mp3 = copies.find(f => extOf(f.name) === 'mp3');
+            // An Ogg upload is already lossy; its MP3 would be a second lossy encode. Take
+            // the Ogg, with the MP3 as `altUrl` for browsers that can't play Ogg (Safari).
+            const ogg = extOf(o.name) === 'ogg' && fits(o) ? o : undefined;
+            const pick = lossless ?? ogg ?? mp3;
+            if (pick) tracks.push({ file: pick, original: o, alt: pick === ogg ? mp3 : undefined });
         }
 
         const license: OnlineLicense = hit.license;
-        return tracks.slice(0, 200).map(({ file, lengthFrom }) => ({
-            key: `online/archive/${id}/${file.name}`,
-            provider: 'archive' as const,
-            title: tidyTitle(file.title || lengthFrom.title || file.name.split('/').pop() || file.name),
-            author: hit.author,
-            license,
-            pageUrl: hit.pageUrl,
-            durationSec: parseLength(file.length ?? lengthFrom.length),
-            bytes: file.size ? Number(file.size) : undefined,
-            url: downloadUrl(id, file.name),
-            format: extOf(file.name).toUpperCase(),
-        }));
+        return tracks.slice(0, 200).map(({ file, original, alt }) => {
+            const format = extOf(file.name);
+            return {
+                // Keyed by the uploaded track, whichever copy is fetched.
+                key: `online/archive/${id}/${original.name}`,
+                provider: 'archive' as const,
+                title: tidyTitle(file.title || original.title || original.name.split('/').pop() || original.name),
+                author: hit.author,
+                license,
+                pageUrl: hit.pageUrl,
+                durationSec: parseLength(file.length ?? original.length),
+                bytes: sizeOf(file),
+                url: downloadUrl(id, file.name),
+                altUrl: alt ? downloadUrl(id, alt.name) : undefined,
+                format: format.toUpperCase(),
+                lossless: LOSSLESS_FORMATS.has(format),
+                // Said only when what is fetched isn't the upload itself.
+                original: file === original ? undefined : { format: extOf(original.name).toUpperCase(), bytes: sizeOf(original) },
+            };
+        });
     },
 };

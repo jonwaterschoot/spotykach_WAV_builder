@@ -19,6 +19,8 @@
 import { fromCcCode, fromCcUrl, fromCommons } from '../src/online/licenses.ts';
 import { PROVIDERS, licenseTextFor, dedupeKey, originFor } from '../src/online/index.ts';
 import { resultLicense } from '../src/mangler/license.ts';
+import { freesoundIdFromFileName } from '../src/online/providers/freesound.ts';
+import { aiffToWav, isAiff } from '../src/lib/audio/aiff.ts';
 import { createBudget } from '../src/online/budget.ts';
 import { parseLength } from '../src/online/providers/archive.ts';
 import { classifyLicense } from '../src/submission/licenses.ts';
@@ -105,6 +107,59 @@ check(
 check(parseLength('02:03') === 123 && parseLength('1:00:00') === 3600 && parseLength('12.5') === 12.5, 'Archive lengths parse');
 
 // ---------------------------------------------------------------------------
+section('Freesound originals: file names and AIFF');
+// ---------------------------------------------------------------------------
+
+check(freesoundIdFromFileName('398494__anthousai__wind-chimes-single-01.wav') === 398494, 'a Freesound download name gives its id');
+check(freesoundIdFromFileName('C:\\Downloads\\398494__anthousai__wind chimes (1).aiff') === 398494, 'also with a path and a browser-added (1)');
+check(freesoundIdFromFileName('kick_01.wav') === null && freesoundIdFromFileName('2024__.wav') === null, 'other names are not taken for one');
+
+{
+    // AIFF/AIFC with known samples → WAV with the same samples, little-endian.
+    const aiff = ({ bits, channels = 2, rate = 48000, aifc = null, samples }) => {
+        const bytesPer = bits / 8;
+        const frames = samples.length / channels;
+        const pcm = Buffer.alloc(samples.length * bytesPer);
+        samples.forEach((v, i) => {
+            if (aifc === 'sowt') pcm.writeIntLE(v, i * bytesPer, bytesPer);
+            else pcm.writeIntBE(v, i * bytesPer, bytesPer);
+        });
+        const ext = Buffer.alloc(10);
+        let exp = 16383 + 63, m = BigInt(rate);
+        while (!(m & (1n << 63n))) { m <<= 1n; exp--; }
+        ext.writeUInt16BE(exp, 0); ext.writeBigUInt64BE(m, 2);
+        const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+        const u16 = n => { const b = Buffer.alloc(2); b.writeUInt16BE(n); return b; };
+        const commBody = Buffer.concat([u16(channels), u32(frames), u16(bits), ext, ...(aifc ? [Buffer.from(aifc), Buffer.from([0, 0])] : [])]);
+        const comm = Buffer.concat([Buffer.from('COMM'), u32(commBody.length), commBody]);
+        const ssnd = Buffer.concat([Buffer.from('SSND'), u32(8 + pcm.length), u32(0), u32(0), pcm]);
+        const body = Buffer.concat([Buffer.from(aifc ? 'AIFC' : 'AIFF'), comm, ssnd]);
+        const file = Buffer.concat([Buffer.from('FORM'), u32(body.length), body]);
+        return file.buffer.slice(file.byteOffset, file.byteOffset + file.length);
+    };
+    const readWav = (wav, bits) => {
+        const v = new DataView(wav);
+        const out = [];
+        for (let at = 44; at < wav.byteLength; at += bits / 8) {
+            out.push(bits === 16 ? v.getInt16(at, true) : (v.getUint8(at) | (v.getUint8(at + 1) << 8) | (v.getInt8(at + 2) << 16)));
+        }
+        return { channels: v.getUint16(22, true), rate: v.getUint32(24, true), bits: v.getUint16(34, true), samples: out };
+    };
+    for (const [label, opts] of [
+        ['16-bit AIFF', { bits: 16, samples: [0, 1, -1, 32767, -32768, 1234] }],
+        ['24-bit AIFF', { bits: 24, rate: 96000, samples: [0, 1, -1, 8388607, -8388608, 123456] }],
+        ['16-bit AIFC sowt', { bits: 16, rate: 44100, aifc: 'sowt', samples: [5, -5, 300, -300] }],
+    ]) {
+        const src = aiff(opts);
+        const out = aiffToWav(src);
+        const w = out && readWav(out.wav, opts.bits);
+        check(isAiff(src) && !!w && w.rate === (opts.rate ?? 48000) && w.bits === opts.bits && w.channels === 2
+            && JSON.stringify(w.samples) === JSON.stringify(opts.samples), `${label} → WAV, same samples`, w ? JSON.stringify(w.samples) : 'null');
+    }
+    check(aiffToWav(aiff({ bits: 16, aifc: 'ima4', samples: [0, 0] })) === null, 'compressed AIFC is refused');
+}
+
+// ---------------------------------------------------------------------------
 section('Budget');
 // ---------------------------------------------------------------------------
 
@@ -156,6 +211,16 @@ if (process.argv.includes('--live')) {
                 check(!!playable, `${p.label}: expand lists a file`, playable ? `${playable.format}, ${playable.durationSec ?? '?'}s` : '');
             }
             if (playable) check(await fetchable(playable.url), `${p.label}: the file downloads`, playable.url.slice(0, 90));
+            if (p.id === 'archive') {
+                // A Radio Aporee item with a 17 MB WAV upload, a 5 MB FLAC copy and an MP3.
+                const [track] = await p.expand({ ...page.hits[0], key: 'online/archive/aporee_26426_30516', pageUrl: 'https://archive.org/details/aporee_26426_30516' }, ctx);
+                check(track?.format === 'FLAC' && track.lossless && track.original?.format === 'WAV',
+                    'Internet Archive: takes the FLAC copy over the WAV upload and the MP3', track ? `${track.format}, ${track.bytes} bytes, original ${track.original?.format}` : 'nothing');
+            }
+            if (p.id === 'openverse') {
+                const fs = page.hits.filter(h => h.via === 'Freesound');
+                check(fs.length === 0 || fs.every(h => h.isPreview && h.freesoundId && h.original?.format), 'Openverse: Freesound hits say preview, id and original', fs[0] ? `${fs[0].original?.format} ${fs[0].original?.sampleRate ?? ''}` : 'none in this search');
+            }
         } catch (e) {
             check(false, `${p.label}: search`, String(e));
         }

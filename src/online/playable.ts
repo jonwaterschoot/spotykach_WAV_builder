@@ -1,5 +1,5 @@
 import { PROVIDERS_BY_ID } from './index.ts';
-import type { OnlineHit } from './types.ts';
+import { MAX_DOWNLOAD_BYTES, type OnlineHit } from './types.ts';
 
 /**
  * From a search hit to a file this browser can play and the host can download.
@@ -10,16 +10,26 @@ import type { OnlineHit } from './types.ts';
 /** A hit with a URL settled, ready for the player or the host's import. */
 export type PlayableHit = OnlineHit & { url: string };
 
-/** Bigger than this isn't downloaded: a 42 s sampler has no use for a 90-minute WAV. */
-export const MAX_BYTES = 60 * 1024 * 1024;
+export const MAX_BYTES = MAX_DOWNLOAD_BYTES;
 
 /**
  * Commons' Ogg through Openverse arrives as the original. Where this browser can't
  * play Ogg (Safari), take Commons' own MP3 transcode of it instead.
  */
-const canPlayOgg = (() => {
-    try { return typeof Audio !== 'undefined' && new Audio().canPlayType('audio/ogg; codecs="vorbis"') !== ''; } catch { return false; }
-})();
+const canPlay = (mime: string) => {
+    try { return typeof Audio !== 'undefined' && new Audio().canPlayType(mime) !== ''; } catch { return false; }
+};
+const canPlayOgg = canPlay('audio/ogg; codecs="vorbis"');
+/** Chrome and Firefox can't decode AIFF; Safari can. */
+const canPlayAiff = canPlay('audio/aiff') || canPlay('audio/x-aiff');
+
+/** False for a file this browser can't decode, by its extension. */
+const playableHere = (url: string) => {
+    const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+    if (ext === 'ogg' || ext === 'oga' || ext === 'ogx' || ext === 'opus') return canPlayOgg;
+    if (ext === 'aif' || ext === 'aiff') return canPlayAiff;
+    return true;
+};
 export const browserUrl = (url: string) => {
     if (canPlayOgg) return url;
     const m = /^(https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/)(?!transcoded\/)(.+\/([^/]+\.(?:ogg|oga|ogx|opus)))$/i.exec(url);
@@ -31,7 +41,11 @@ const resolved = new Map<string, Partial<OnlineHit> & { url: string }>();
 
 /** A settled URL for a hit: its own, or the first file `expand` lists. Null when there is none. */
 export async function resolveHit(hit: OnlineHit): Promise<PlayableHit | null> {
-    if (hit.url) return { ...hit, url: browserUrl(hit.url) };
+    if (hit.url) {
+        // The archive's own fallback copy first; for Openverse's Commons Ogg, the transcode.
+        if (hit.altUrl && !playableHere(hit.url)) return { ...hit, url: hit.altUrl, format: 'MP3', lossless: false, bytes: undefined };
+        return { ...hit, url: browserUrl(hit.url) };
+    }
     const cached = resolved.get(hit.key);
     if (cached) return { ...hit, ...cached };
     const provider = PROVIDERS_BY_ID[hit.provider];

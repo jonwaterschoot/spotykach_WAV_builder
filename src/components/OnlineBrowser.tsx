@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, ExternalLink, Globe, KeyRound, Loader, Pause, Pencil, Play, Search } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, ExternalLink, FileAudio, Globe, KeyRound, Loader, Pause, Pencil, Play, Search, X } from 'lucide-react';
 import {
     PROVIDERS, PROVIDERS_BY_ID, DEFAULT_PROVIDERS, LICENSE_FILTERS, DEFAULT_LICENSE_FILTERS,
     RateLimitError, createBudget, dedupeKey,
     type LicenseFilter, type MaxLength, type OnlineHit, type OnlineProvider, type OnlineQuery, type ProviderId,
 } from '../online';
 import { MAX_BYTES, isTooBig, resolveHit, type PlayableHit } from '../online/playable';
+import { freesoundDownloadUrl, freesoundIdFromFileName, lookupFreesound } from '../online/providers/freesound';
+import { aiffToWav, isAiff } from '../lib/audio/aiff';
 import { appStorage } from '../utils/storageNamespace';
 
 export type { PlayableHit };
@@ -63,6 +65,8 @@ const LENGTHS: { value: MaxLength; label: string }[] = [
 const SUGGESTIONS = ['rain', 'bell', 'field recording', 'machine', 'piano', 'voice', 'birds', 'metal', 'drone', 'radio'];
 
 const KEY_STORE = 'wavbuilder_freesound_key';
+
+const LOSSLESS = new Set(['wav', 'flac', 'aif', 'aiff']);
 
 /**
  * WAV Builder's own proxy (workers/online-proxy), which holds the shared Freesound
@@ -138,6 +142,15 @@ const formatDuration = (sec?: number) => {
         : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
+/** "WAV · 24-bit · 48 kHz · stereo · 12 MB", from what the archive says. */
+const describeOriginal = (o: NonNullable<OnlineHit['original']>) => [
+    o.format,
+    o.bitDepth ? `${o.bitDepth}-bit` : null,
+    o.sampleRate ? `${+(o.sampleRate / 1000).toFixed(1)} kHz` : null,
+    o.channels === 1 ? 'mono' : o.channels === 2 ? 'stereo' : o.channels ? `${o.channels} ch` : null,
+    formatBytes(o.bytes),
+].filter(Boolean).join(' · ');
+
 const formatBytes = (n?: number) =>
     !n ? null : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1)} MB` : `${Math.ceil(n / 1024)} kB`;
 
@@ -157,6 +170,11 @@ export const OnlineBrowser = ({
     /** The archive the help panel explains. */
     const [infoId, setInfoId] = useState<ProviderId>(PROVIDERS[0].id);
     const [rowError, setRowError] = useState<{ key: string; message: string } | null>(null);
+    /** What happened to dropped originals, newest first. */
+    const [dropNotes, setDropNotes] = useState<{ id: number; ok: boolean; text: string }[]>([]);
+    const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+    const [droppingCount, setDroppingCount] = useState(0);
+    const originalInput = useRef<HTMLInputElement>(null);
     /** Re-render once a minute so "N left" and waits stay current. */
     const [, setTick] = useState(0);
     const aborts = useRef<Partial<Record<ProviderId, AbortController>>>({});
@@ -365,7 +383,11 @@ export const OnlineBrowser = ({
         const meta = [
             hit.author,
             formatDuration(hit.durationSec),
-            hit.format && hit.bitrateKbps ? `${hit.format} ${hit.bitrateKbps} kbps` : hit.format,
+            [
+                hit.format,
+                hit.bitrateKbps ? `${hit.bitrateKbps} kbps` : null,
+                hit.isPreview ? 'preview' : hit.lossless ? 'lossless' : null,
+            ].filter(Boolean).join(' ') || null,
             hit.expandable ? null : formatBytes(hit.bytes),
             hit.via ? `via ${hit.via}` : null,
             hit.morePackSounds ? `+${hit.morePackSounds} more in its pack` : null,
@@ -423,6 +445,27 @@ export const OnlineBrowser = ({
                             </span>
                             <span className="truncate">{meta.join(' · ')}</span>
                         </div>
+                        {(hit.original || freesoundDownloadUrl(hit)) && !hit.expandable && (
+                            <div className="mt-0.5 flex items-center gap-2 text-[10px] text-gray-500 min-w-0">
+                                {hit.original && (
+                                    <span className="truncate" title="The file as uploaded">
+                                        Original: {describeOriginal(hit.original)}
+                                    </span>
+                                )}
+                                {freesoundDownloadUrl(hit) && (
+                                    <a
+                                        href={freesoundDownloadUrl(hit)!}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="shrink-0 inline-flex items-center gap-1 text-synthux-blue hover:underline"
+                                        title="Downloads the original from freesound.org (sign in there if asked). Then drop the file on this panel: it is added with its credit."
+                                    >
+                                        <Download size={10} /> Get original
+                                    </a>
+                                )}
+                            </div>
+                        )}
                         {rowError?.key === hit.key && (
                             <div className="mt-1 text-[11px] text-red-400 font-body">{rowError.message}</div>
                         )}
@@ -475,10 +518,118 @@ export const OnlineBrowser = ({
         );
     };
 
+    /**
+     * A downloaded Freesound original, dropped or picked. Its name starts with the
+     * sound's id (`398494__user__title.wav`), which finds its search result, or,
+     * failing that, the sound itself, so it is added with its author and license
+     * like the preview would have been. AIFF is rewritten as WAV on the way in:
+     * Chrome and Firefox can't decode it.
+     */
+    const addOriginals = async (files: File[]) => {
+        const note = (ok: boolean, text: string) =>
+            setDropNotes(prev => [{ id: Date.now() + Math.random(), ok, text }, ...prev].slice(0, 6));
+        setDroppingCount(n => n + files.length);
+        for (const file of files) {
+            try {
+                const id = freesoundIdFromFileName(file.name);
+                if (!id) {
+                    note(false, `${file.name}: not a Freesound download name (it starts with the sound's number, e.g. 398494__user__title.wav). Add your own files the usual way (Files, or a drop on the pool).`);
+                    continue;
+                }
+                const known = [
+                    ...Object.values(results).flatMap(r => r?.hits ?? []),
+                    ...Object.values(expanded).flatMap(x => x.files),
+                ].filter(h => h.freesoundId === id);
+                let hit: OnlineHit | null = known.find(h => h.provider === 'freesound') ?? known[0] ?? null;
+                if (!hit) {
+                    const fs = PROVIDERS_BY_ID.freesound;
+                    if (access(fs) === 'none') {
+                        note(false, `${file.name}: search for it first, or add a Freesound key, so its author and license can be found.`);
+                        continue;
+                    }
+                    const spend = budgetFor(fs);
+                    if (budget.take(spend.id, spend.limits).waitSec > 0) {
+                        note(false, `${file.name}: Freesound's limit for today is reached; search for the sound tomorrow, or use your own key.`);
+                        continue;
+                    }
+                    hit = await lookupFreesound(id, { apiKey: apiKey || undefined, proxyUrl: PROXY_URL || undefined }).catch(e => {
+                        // Freesound's 404 for a removed sound; also an older proxy without the lookup.
+                        if (e instanceof Error && / 404/.test(e.message)) return null;
+                        throw e;
+                    });
+                }
+                if (!hit) {
+                    note(false, `${file.name}: Freesound sound ${id} wasn't found, or has a license the app doesn't take. Search for it here first, then drop the file again.`);
+                    continue;
+                }
+
+                const ext = (file.name.split('.').pop() || '').toLowerCase();
+                let blob: Blob = file;
+                let format = ext.toUpperCase();
+                const bytes = await file.arrayBuffer();
+                if (isAiff(bytes)) {
+                    const converted = aiffToWav(bytes);
+                    if (!converted) {
+                        note(false, `${file.name}: a compressed AIFF this can't read. Convert it to WAV first.`);
+                        continue;
+                    }
+                    blob = new Blob([converted.wav], { type: 'audio/wav' });
+                    format = 'WAV';
+                }
+                const url = URL.createObjectURL(blob);
+                await onAdd({ ...hit, url, format, bitrateKbps: undefined, isPreview: false, lossless: LOSSLESS.has(format.toLowerCase()), bytes: blob.size });
+                note(true, `Added the original of “${hit.title}” by ${hit.author}${format !== ext.toUpperCase() ? ` (${ext.toUpperCase()} as ${format})` : ''}.`);
+            } catch (e) {
+                console.error('Online source: original', e);
+                note(false, `${file.name}: could not add it (${e instanceof Error ? e.message : String(e)}).`);
+            } finally {
+                setDroppingCount(n => n - 1);
+            }
+        }
+    };
+
+    const isFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
+
     const anyResults = Object.keys(results).length > 0;
 
     return (
-        <div className="pb-20">
+        <div
+            className="pb-20 relative"
+            onDragOver={(e) => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'copy';
+                setIsDraggingFiles(true);
+            }}
+            onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDraggingFiles(false);
+            }}
+            onDrop={(e) => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingFiles(false);
+                addOriginals(Array.from(e.dataTransfer.files));
+            }}
+        >
+            {isDraggingFiles && (
+                <div className="pointer-events-none absolute inset-0 z-30 rounded-2xl border-2 border-dashed border-synthux-blue bg-synthux-blue/10 flex items-start justify-center pt-40">
+                    <div className="rounded-xl bg-black/90 px-5 py-4 text-center max-w-sm">
+                        <FileAudio size={28} className="mx-auto text-synthux-blue" />
+                        <p className="mt-2 text-sm font-bold text-white">Drop Freesound originals</p>
+                        <p className="mt-1 text-xs text-gray-400">Files named like 398494__user__title.wav are added with their author and license.</p>
+                    </div>
+                </div>
+            )}
+            <input
+                ref={originalInput}
+                type="file"
+                multiple
+                accept=".wav,.aif,.aiff,.flac,.mp3,.ogg,audio/*"
+                className="hidden"
+                onChange={(e) => { addOriginals(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+            />
             {/* Header and search */}
             <div className="mb-6 rounded-xl sm:rounded-2xl border border-white/5 bg-gradient-to-br from-synthux-blue/15 via-black/40 to-synthux-green/10 p-4 sm:p-6">
                 <div className="flex items-center gap-2 mb-1">
@@ -489,6 +640,25 @@ export const OnlineBrowser = ({
                     Search open audio archives without leaving the app. Previews stream from the archive;
                     adding a sound downloads it once, with its license and author kept alongside it.
                 </p>
+                <p className="text-xs text-gray-400 leading-relaxed max-w-3xl -mt-2 mb-4">
+                    Freesound gives previews here. For the original: <span className="text-gray-300">Get original</span> on
+                    a row (sign in on freesound.org if asked), then drop the downloaded file on this panel or{' '}
+                    <button onClick={() => originalInput.current?.click()} className="text-synthux-blue hover:underline">pick it</button>.
+                    {droppingCount > 0 && <span className="ml-2 inline-flex items-center gap-1 text-synthux-blue"><Loader size={11} className="animate-spin" /> adding…</span>}
+                </p>
+                {dropNotes.length > 0 && (
+                    <ul className="mb-4 max-w-3xl space-y-1">
+                        {dropNotes.map(n => (
+                            <li key={n.id} className={`flex items-start gap-2 rounded-lg px-3 py-1.5 text-xs ${n.ok ? 'bg-synthux-green/10 text-synthux-green' : 'bg-synthux-yellow/10 text-synthux-yellow'}`}>
+                                {n.ok ? <Check size={13} className="shrink-0 mt-px" /> : <AlertTriangle size={13} className="shrink-0 mt-px" />}
+                                <span className="flex-1">{n.text}</span>
+                                <button onClick={() => setDropNotes(prev => prev.filter(x => x.id !== n.id))} className="shrink-0 opacity-60 hover:opacity-100" title="Dismiss">
+                                    <X size={13} />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
 
                 <form
                     onSubmit={(e) => { e.preventDefault(); search(text); }}

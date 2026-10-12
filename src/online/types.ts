@@ -40,11 +40,34 @@ export interface OnlineHit {
     bitrateKbps?: number;
     /** Freesound, grouped by pack: how many more sounds its pack has that aren't listed. */
     morePackSounds?: number;
+    /** WAV, FLAC or AIFF: what is downloaded loses nothing. */
+    lossless?: boolean;
+    /** What is downloaded is a reduced copy (Freesound's MP3 preview). */
+    isPreview?: boolean;
+    /** The file as uploaded, where the archive describes it; shown beside a preview. */
+    original?: OriginalFile;
+    /** A copy every browser plays, for when `url` is one this one can't (Ogg in Safari). */
+    altUrl?: string;
+    /** Freesound's own id: for "Get the original", and to recognise that file when it comes back. */
+    freesoundId?: number;
     /** An Archive item: a folder of tracks, listed by `expand`. */
     expandable?: boolean;
     /** The provider's own pointer for `expand`, e.g. NASA's asset list URL. */
     ref?: string;
 }
+
+export interface OriginalFile {
+    format: string;
+    bytes?: number;
+    sampleRate?: number;
+    bitDepth?: number;
+    channels?: number;
+}
+
+/** Bigger than this isn't downloaded: a 42 s sampler has no use for a 90-minute WAV. */
+export const MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024;
+
+export const LOSSLESS_FORMATS = new Set(['wav', 'flac', 'aif', 'aiff']);
 
 export interface OnlinePage {
     hits: OnlineHit[];

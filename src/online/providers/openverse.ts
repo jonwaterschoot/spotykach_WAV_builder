@@ -1,5 +1,5 @@
 import { fromCcCode, type LicenseFilter } from '../licenses.ts';
-import { getJson, SKIP_FORMATS, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
+import { getJson, LOSSLESS_FORMATS, SKIP_FORMATS, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
 
 /**
  * Openverse (WordPress): one index over many CC audio archives. At CC0 it is in
@@ -40,6 +40,8 @@ interface OvResult {
     filetype: string | null;
     duration: number | null;
     bit_rate: number | null;
+    /** For Freesound sounds: the uploaded file, which the indexed `url` is a preview of. */
+    alt_files: { filetype?: string; filesize?: number; sample_rate?: number }[] | null;
 }
 
 interface OvPage {
@@ -55,7 +57,7 @@ export const openverse: OnlineProvider = {
     blurb: 'Freesound and Wikimedia sounds, one index, no key',
     homepage: 'https://openverse.org/',
     needsKey: false,
-    quality: 'Freesound sounds as 128 kbps MP3 previews; Wikimedia sounds as the original file. Its copy of Freesound dates from May 2024.',
+    quality: 'Freesound sounds as 128 kbps MP3 previews (each row says what the original is, and how to get it); Wikimedia sounds as the original file. Its copy of Freesound dates from May 2024.',
     limitNote: '20 searches a minute, 200 a day, per visitor. At most 240 results per search.',
     limits: { perMinute: 18, perDay: 190 },
 
@@ -77,6 +79,8 @@ export const openverse: OnlineProvider = {
             if (SKIP_FORMATS.has(format)) continue;
             const license = fromCcCode(r.license, r.license_version ?? undefined, r.license_url ?? undefined);
             if (!license || !query.licenses.includes(license.filter)) continue;
+            const fromFreesound = r.source === 'freesound';
+            const alt = r.alt_files?.[0];
             hits.push({
                 key: `online/openverse/${r.id}`,
                 provider: 'openverse',
@@ -90,6 +94,12 @@ export const openverse: OnlineProvider = {
                 url: r.url,
                 format: format.toUpperCase(),
                 bitrateKbps: r.bit_rate ? Math.round(r.bit_rate / 1000) : undefined,
+                lossless: LOSSLESS_FORMATS.has(format),
+                isPreview: fromFreesound || undefined,
+                original: fromFreesound && alt?.filetype
+                    ? { format: alt.filetype.toUpperCase(), bytes: alt.filesize || undefined, sampleRate: alt.sample_rate || undefined }
+                    : undefined,
+                freesoundId: fromFreesound ? Number(/\/sounds\/(\d+)/.exec(r.foreign_landing_url)?.[1]) || undefined : undefined,
             });
         }
         return { hits, hasMore: data.page < data.page_count, total: data.result_count };

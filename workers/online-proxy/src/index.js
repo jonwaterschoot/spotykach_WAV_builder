@@ -7,6 +7,7 @@
  * already allows the app's origin, so the Worker only ever handles small JSON.
  *
  *   GET /freesound/search?query=rain&page=1&filter=duration:[0 TO 30]
+ *   GET /freesound/sound/123456   (one sound, for a dropped original's credit)
  *   GET /health
  *
  * Guards, cheapest first:
@@ -20,12 +21,15 @@
  * Setup and deploy: ../README.md.
  */
 
-const FREESOUND_SEARCH = 'https://freesound.org/apiv2/search/';
+const FREESOUND_API = 'https://freesound.org/apiv2/';
 
 /** What the app asks for; everything else in the query string is dropped. */
 const ALLOWED_PARAMS = ['query', 'filter', 'sort', 'page', 'page_size', 'group_by_pack'];
-/** Fixed here, so the Worker can't be used to read fields the app doesn't show. */
-const FIELDS = 'id,name,username,license,duration,url,previews,n_from_same_pack';
+/**
+ * Fixed here, so the Worker can't be used to read fields the app doesn't show.
+ * Same list as FIELDS in src/online/providers/freesound.ts; keep the two alike.
+ */
+const FIELDS = 'id,name,username,license,duration,url,previews,n_from_same_pack,type,filesize,samplerate,bitdepth,channels';
 
 const json = (body, status, headers = {}) =>
     new Response(JSON.stringify(body), {
@@ -55,7 +59,8 @@ export default {
         const cors = corsHeaders(origin);
         if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
         if (request.method !== 'GET') return json({ detail: 'GET only.' }, 405, cors);
-        if (url.pathname !== '/freesound/search') return json({ detail: 'Not found.' }, 404, cors);
+        const soundId = /^\/freesound\/sound\/(\d{1,10})$/.exec(url.pathname)?.[1];
+        if (url.pathname !== '/freesound/search' && !soundId) return json({ detail: 'Not found.' }, 404, cors);
         if (!env.FREESOUND_KEY) return json({ detail: 'The proxy has no Freesound key set.' }, 503, cors);
 
         const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
@@ -66,13 +71,15 @@ export default {
             }
         }
 
-        const upstream = new URL(FREESOUND_SEARCH);
-        for (const name of ALLOWED_PARAMS) {
-            const value = url.searchParams.get(name);
-            if (value !== null) upstream.searchParams.set(name, value.slice(0, 500));
+        const upstream = new URL(soundId ? `${FREESOUND_API}sounds/${soundId}/` : `${FREESOUND_API}search/`);
+        if (!soundId) {
+            for (const name of ALLOWED_PARAMS) {
+                const value = url.searchParams.get(name);
+                if (value !== null) upstream.searchParams.set(name, value.slice(0, 500));
+            }
+            const pageSize = Math.min(50, Math.max(1, Number(upstream.searchParams.get('page_size')) || 30));
+            upstream.searchParams.set('page_size', String(pageSize));
         }
-        const pageSize = Math.min(50, Math.max(1, Number(upstream.searchParams.get('page_size')) || 30));
-        upstream.searchParams.set('page_size', String(pageSize));
         upstream.searchParams.set('fields', FIELDS);
         upstream.searchParams.set('token', env.FREESOUND_KEY);
 
