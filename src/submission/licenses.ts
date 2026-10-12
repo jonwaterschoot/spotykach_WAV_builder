@@ -102,7 +102,14 @@ export interface LicenseClass {
  * is the user's own, a pack with no terms is not.
  */
 export function classifyLicense(text: string | undefined | null): LicenseClass {
-    const t = (text ?? '').toLowerCase();
+    // A "Credit:" line names a title and an author (online sounds carry one, see
+    // src/online/licenses.ts). Their words are not terms, and "SA Recordings" must
+    // not read as share-alike.
+    const t = (text ?? '')
+        .split('\n')
+        .filter(line => !/^\s*credit:/i.test(line))
+        .join('\n')
+        .toLowerCase();
     const shareAlike = /(^|[^a-z])sa([^a-z]|$)|share[- ]?alike|same licen[cs]e/.test(t);
     const attribution = /cc[- ]?by|attribution|credit/.test(t) && !/no attribution/.test(t);
 

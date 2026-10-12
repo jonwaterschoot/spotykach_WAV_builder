@@ -1,5 +1,5 @@
-import { classifyLicense, type LicenseClass, type LicenseLevel } from '../submission/licenses';
-import { usedSources, type MangleRecipe, type RecipeSource } from './recipe';
+import { classifyLicense, type LicenseClass, type LicenseLevel } from '../submission/licenses.ts';
+import { usedSources, type MangleRecipe, type RecipeSource } from './recipe.ts';
 
 /**
  * Licenses for the mangler. A result follows the sources it actually uses (the
@@ -60,6 +60,9 @@ export function resultLicense(recipe: MangleRecipe): ResultLicense {
     for (const s of used) {
         const terms = shortTerms(s.license) || (LOCAL_ORIGINS.includes(s.origin) ? 'own file' : 'no license given');
         lines.push(`- ${s.name} (${s.origin}): ${terms}`);
+        // Online sounds name their author and page; that is the attribution BY asks for.
+        const credit = (s.license ?? '').split('\n').find(line => /^\s*credit:/i.test(line));
+        if (credit) lines.push(`  ${credit.trim()}`);
     }
     return { level, blockedBy, text: lines.join('\n') };
 }

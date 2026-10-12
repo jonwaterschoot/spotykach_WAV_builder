@@ -1,0 +1,166 @@
+#!/usr/bin/env node
+/**
+ * Checks for the online sources (src/online).
+ *
+ *   node scripts/check-online.mjs           offline: licenses, credit lines, budget
+ *   node scripts/check-online.mjs --live    also searches each keyless archive
+ *
+ * Offline covers: every archive's license spelling lands on the right chip, ND
+ * never gets through, the stored text classifies at the right level in the mangler
+ * (and a title can't change that), and the request budget stops and recovers.
+ *
+ * --live spends a few requests per archive (Openverse allows 200 a day): one
+ * search each, one Archive and one NASA expand, and a 2-byte read of a file from
+ * each to prove it downloads. Freesound is skipped unless FREESOUND_KEY is set.
+ *
+ * Needs Node 22.18+ / 23.6+ (type stripping). Exits 1 on any failure.
+ */
+
+import { fromCcCode, fromCcUrl, fromCommons } from '../src/online/licenses.ts';
+import { PROVIDERS, licenseTextFor, dedupeKey, originFor } from '../src/online/index.ts';
+import { resultLicense } from '../src/mangler/license.ts';
+import { createBudget } from '../src/online/budget.ts';
+import { parseLength } from '../src/online/providers/archive.ts';
+import { classifyLicense } from '../src/submission/licenses.ts';
+
+let failures = 0;
+const check = (ok, label, detail = '') => {
+    console.log(`${ok ? '  ok ' : 'FAIL '} ${label}${detail ? `  (${detail})` : ''}`);
+    if (!ok) failures++;
+};
+const section = title => console.log(`\n${title}`);
+
+// ---------------------------------------------------------------------------
+section('License spellings');
+// ---------------------------------------------------------------------------
+
+const cases = [
+    ['openverse cc0', fromCcCode('cc0', '1.0'), 'pd'],
+    ['openverse pdm', fromCcCode('pdm', '1.0'), 'pd'],
+    ['openverse by', fromCcCode('by', '4.0'), 'by'],
+    ['openverse by-sa', fromCcCode('by-sa', '3.0'), 'by-sa'],
+    ['openverse by-nc-sa', fromCcCode('by-nc-sa', '4.0'), 'nc'],
+    ['openverse by-nd', fromCcCode('by-nd', '4.0'), null],
+    ['openverse by-nc-nd', fromCcCode('by-nc-nd', '4.0'), null],
+    ['url zero', fromCcUrl('http://creativecommons.org/publicdomain/zero/1.0/'), 'pd'],
+    ['url mark', fromCcUrl('https://creativecommons.org/publicdomain/mark/1.0/'), 'pd'],
+    ['url by', fromCcUrl('https://creativecommons.org/licenses/by/4.0/'), 'by'],
+    ['url by-nc', fromCcUrl('http://creativecommons.org/licenses/by-nc/3.0/'), 'nc'],
+    ['url sampling+', fromCcUrl('http://creativecommons.org/licenses/sampling+/1.0/'), 'nc'],
+    ['url by-nd', fromCcUrl('https://creativecommons.org/licenses/by-nd/4.0/'), null],
+    ['url other site', fromCcUrl('https://example.com/licenses/by/4.0/'), null],
+    ['commons cc-by-sa-4.0', fromCommons('cc-by-sa-4.0', 'CC BY-SA 4.0', 'https://creativecommons.org/licenses/by-sa/4.0'), 'by-sa'],
+    ['commons cc0', fromCommons('cc0', 'CC0'), 'pd'],
+    ['commons pd', fromCommons('pd', 'Public domain'), 'pd'],
+    ['commons PD-old by short name', fromCommons(undefined, 'Public domain'), 'pd'],
+    ['commons gfdl', fromCommons('gfdl', 'GFDL'), null],
+];
+for (const [label, got, want] of cases) {
+    check((got?.filter ?? null) === want, label, `got ${got?.filter ?? 'null'}${got ? `, "${got.label}"` : ''}`);
+}
+
+// ---------------------------------------------------------------------------
+section('Stored text classifies at the right level');
+// ---------------------------------------------------------------------------
+
+const hit = (license, title = 'Bell', author = 'Someone') => ({
+    key: 'online/openverse/x', provider: 'openverse', via: 'Freesound',
+    title, author, license, pageUrl: 'https://freesound.org/s/1/', url: 'https://cdn.freesound.org/previews/1/1-hq.mp3',
+});
+const level = h => classifyLicense(licenseTextFor(h));
+
+check(level(hit(fromCcCode('cc0', '1.0'))).level === 'open', 'CC0 is open');
+check(!level(hit(fromCcCode('cc0', '1.0'))).attribution, 'CC0 needs no credit');
+check(level(hit(fromCcCode('by', '4.0'))).level === 'open' && level(hit(fromCcCode('by', '4.0'))).attribution, 'BY is open, with credit');
+check(level(hit(fromCcCode('by-sa', '4.0'))).shareAlike, 'BY-SA carries share-alike');
+check(level(hit(fromCcCode('by-nc', '4.0'))).level === 'personal', 'BY-NC is personal use');
+check(level(hit(fromCcUrl('http://creativecommons.org/licenses/sampling+/1.0/'))).level === 'personal', 'Sampling+ is personal use');
+
+const sneaky = hit(fromCcCode('cc0', '1.0'), 'No derivatives, personal use only, NC', 'SA Recordings');
+const s = level(sneaky);
+check(s.level === 'open' && !s.shareAlike, 'a title or author cannot change the level', JSON.stringify(s));
+check(licenseTextFor(sneaky).split('\n')[1].startsWith('Credit: "'), 'credit line is the second line');
+
+{
+    // A mangler result made from a CC0 and a BY-SA sound: open, share-alike, and
+    // the BY-SA author credited by name in the text written into the file's record.
+    const bySa = hit(fromCcCode('by-sa', '4.0'), 'Church bell', 'Adrian Tync');
+    const recipe = {
+        sources: [
+            { id: 'a', name: 'Bell', origin: originFor(hit(fromCcCode('cc0', '1.0'))), license: licenseTextFor(hit(fromCcCode('cc0', '1.0'))) },
+            { id: 'b', name: 'Church bell', origin: originFor(bySa), license: licenseTextFor(bySa) },
+        ],
+        snippets: [{ source: 0 }, { source: 1 }],
+    };
+    const r = resultLicense(recipe);
+    check(r.level === 'open' && /Share-alike/.test(r.text), 'a CC0 + BY-SA result is open and share-alike');
+    check(/Credit: "Church bell" by Adrian Tync, https:\/\/freesound\.org/.test(r.text), 'the result credits the BY-SA author', r.text.split('\n').find(l => l.includes('Adrian')) ?? '');
+}
+
+check(
+    dedupeKey({ url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/1/10/Bell.ogg/Bell.ogg.mp3' })
+        === dedupeKey({ url: 'https://upload.wikimedia.org/wikipedia/commons/1/10/Bell.ogg?utm_source=x' }),
+    'a Commons transcode and its original are one sound',
+);
+check(parseLength('02:03') === 123 && parseLength('1:00:00') === 3600 && parseLength('12.5') === 12.5, 'Archive lengths parse');
+
+// ---------------------------------------------------------------------------
+section('Budget');
+// ---------------------------------------------------------------------------
+
+{
+    let t = 1_000_000;
+    const store = new Map();
+    const budget = createBudget({ getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }, () => t);
+    const limits = { perMinute: 3, perDay: 5 };
+    const taken = [1, 2, 3].map(() => budget.take('x', limits).waitSec);
+    check(taken.every(w => w === 0), 'three in a minute are allowed');
+    const fourth = budget.take('x', limits);
+    check(fourth.waitSec > 0 && fourth.waitSec <= 60, 'the fourth waits for the minute', `${fourth.waitSec}s`);
+    t += 61_000;
+    check(budget.take('x', limits).waitSec === 0 && budget.take('x', limits).waitSec === 0, 'a minute later two more');
+    const sixth = budget.take('x', limits);
+    check(sixth.waitSec > 3600, 'then the day is spent', `${sixth.waitSec}s`);
+    t += 24 * 3600_000;
+    check(budget.take('x', limits).waitSec === 0, 'and comes back a day later');
+    check(budget.state('y', limits).usedDay === 0, 'providers count separately');
+}
+
+// ---------------------------------------------------------------------------
+if (process.argv.includes('--live')) {
+    section('Live (spends a few requests per archive)');
+    const query = { text: 'bell', licenses: ['pd', 'by', 'by-sa'], maxSeconds: 120 };
+    const ctx = { apiKey: process.env.FREESOUND_KEY };
+
+    const fetchable = async url => {
+        const res = await fetch(url, { headers: { Range: 'bytes=0-1' }, redirect: 'follow' });
+        return res.ok;
+    };
+
+    for (const p of PROVIDERS) {
+        if (p.needsKey && !ctx.apiKey) { console.log(`  --   ${p.label}: skipped, no key`); continue; }
+        try {
+            const page = await p.search(query, 1, ctx);
+            check(page.hits.length > 0, `${p.label}: search finds sounds`, `${page.hits.length} kept, total ${page.total ?? '?'}`);
+            const bad = page.hits.filter(h => !h.key || !h.pageUrl || !h.license || !query.licenses.includes(h.license.filter));
+            check(bad.length === 0, `${p.label}: every hit has key, page, allowed license`, bad[0]?.key ?? '');
+            const tooLong = page.hits.filter(h => h.durationSec && h.durationSec > 120.5);
+            check(tooLong.length === 0 || p.id === 'openverse', `${p.label}: length filter holds`, tooLong[0] ? `${tooLong[0].durationSec}s` : '');
+
+            let playable = page.hits.find(h => h.url);
+            if (!playable && p.expand) {
+                for (const h of page.hits.slice(0, 5)) {
+                    const files = await p.expand(h, ctx);
+                    if (files.length > 0) { playable = files[0]; break; }
+                }
+                check(!!playable, `${p.label}: expand lists a file`, playable ? `${playable.format}, ${playable.durationSec ?? '?'}s` : '');
+            }
+            if (playable) check(await fetchable(playable.url), `${p.label}: the file downloads`, playable.url.slice(0, 90));
+        } catch (e) {
+            check(false, `${p.label}: search`, String(e));
+        }
+    }
+}
+
+console.log(failures ? `\n${failures} failed` : '\nAll good');
+process.exit(failures ? 1 : 0);

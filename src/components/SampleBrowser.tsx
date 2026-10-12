@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, Dices, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, Dices, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon, Globe } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { PresetManifestEntry, SamplePack } from '../data/samplePacks';
 import { resolveAssetPath, toSampleKey } from '../utils/assetUtils';
@@ -9,6 +9,8 @@ import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../type
 import { TAPE_COLORS, COLOR_MAP } from '../types';
 // dynamic utility imports
 import { LocalFolderBrowser } from './LocalFolderBrowser';
+import { OnlineBrowser, type PlayableHit } from './OnlineBrowser';
+import { licenseTextFor, originFor } from '../online';
 
 const EMPTY_LIBRARY: UserLibrary = { files: {}, metadata: {} };
 const NO_PROJECTS: ProjectSummary[] = [];
@@ -135,6 +137,11 @@ interface BrowsableSample {
     /** True for a file the browser holds in memory rather than fetches by path. */
     _isVirtual?: boolean;
     _blob?: Blob;
+    /** An online sound: the file's URL, kept apart from `path`, which is its key. */
+    _url?: string;
+    /** An online sound brings its own origin and license; a pack's rows share the pack's. */
+    _origin?: string;
+    _license?: string;
 }
 
 // OS Folder Handle Type
@@ -378,6 +385,7 @@ export const SampleBrowser = ({
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';
     const isCustomFolderSelected = selectedPackId === 'custom-folder';
+    const isOnlineSelected = selectedPackId === 'online';
 
     // --------------------------------------------------------------------------------
     // 1. Initial Data Loading (Custom Folders from DB)
@@ -910,7 +918,7 @@ export const SampleBrowser = ({
                     previewUrlRef.current = blobUrl;
                     audioRef.current.src = blobUrl;
                 } else {
-                    audioRef.current.src = resolveAssetPath(sample.path);
+                    audioRef.current.src = sample._url || resolveAssetPath(sample.path);
                 }
                 setPlaybackTime(0);
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
@@ -971,7 +979,7 @@ export const SampleBrowser = ({
     const handleImport = async (sample: any) => {
         setImportingSample(sample.path);
         try {
-            let url = resolveAssetPath(sample.path);
+            let url = sample._url || resolveAssetPath(sample.path);
             if (sample._isVirtual && sample._blob) {
                 url = URL.createObjectURL(sample._blob);
             }
@@ -979,8 +987,8 @@ export const SampleBrowser = ({
             await onImport(
                 url,
                 sample.name,
-                selectedPack?.name || 'Local Folder',
-                selectedPack?.license,
+                sample._origin || selectedPack?.name || 'Local Folder',
+                sample._license ?? selectedPack?.license,
                 sample.path
             );
             setAddedSamples(prev => new Set(prev).add(sample.path));
@@ -996,15 +1004,15 @@ export const SampleBrowser = ({
         if (!onEditSample) return;
         setEditingSample(sample.path);
         try {
-            let url = resolveAssetPath(sample.path);
+            let url = sample._url || resolveAssetPath(sample.path);
             if (sample._isVirtual && sample._blob) {
                 url = URL.createObjectURL(sample._blob);
             }
             await onEditSample(
                 url,
                 sample.name,
-                selectedPack?.name || 'Local Folder',
-                selectedPack?.license,
+                sample._origin || selectedPack?.name || 'Local Folder',
+                sample._license ?? selectedPack?.license,
                 sample.path
             );
             setAddedSamples(prev => new Set(prev).add(sample.path));
@@ -1014,6 +1022,15 @@ export const SampleBrowser = ({
             setEditingSample(null);
         }
     };
+
+    /** An online hit as a row the player and the import already understand. */
+    const onlineSample = (hit: PlayableHit): BrowsableSample => ({
+        path: hit.key,
+        name: hit.title,
+        _url: hit.url,
+        _origin: originFor(hit),
+        _license: licenseTextFor(hit),
+    });
 
     const handleBulkImport = async (files: { file: File, path: string }[]) => {
         for (const { file, path } of files) {
@@ -1113,6 +1130,24 @@ export const SampleBrowser = ({
                                     {pack.name}
                                 </button>
                             ))}
+                        </div>
+
+                        {/* ONLINE — open archives, searched from here. Needs nothing set up, so second. */}
+                        <div className="mb-4">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase px-1 mb-2">Online</h3>
+                            <button
+                                data-source
+                                onClick={() => { setSelectedPackId('online'); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${isOnlineSelected
+                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                    }`}
+                            >
+                                <Globe size={14} /> Search open archives
+                            </button>
+                            <p className="px-3 pt-1.5 text-[10px] text-gray-600 leading-relaxed">
+                                Public domain and Creative Commons sounds from Openverse, Wikimedia Commons, the Internet Archive, NASA and Freesound.
+                            </p>
                         </div>
 
                         {/* PROJECT SAMPLES — a project source needs a work folder, so Studio only. */}
@@ -1296,7 +1331,21 @@ export const SampleBrowser = ({
                 {/* Main View: Sample List */}
                 <div className="flex-1 bg-synthux-main flex flex-col overflow-hidden relative noise-texture">
                     <div ref={scrollRef} className="flex-1 p-3 sm:p-6 overflow-y-auto relative z-10">
-                        {selectedPack ? (
+                        {isOnlineSelected ? (
+                            <OnlineBrowser
+                                playingKey={playingSample}
+                                isPreviewPlaying={isPreviewPlaying}
+                                busyKey={importingSample ?? editingSample}
+                                isAdded={(key) => allAddedPaths.paths.has(key)}
+                                locatedKey={locatedSamplePath}
+                                onLocatedSeen={() => setLocatedSamplePath(null)}
+                                addLabel={selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? addLabel : 'Add'}
+                                addedLabel={isStandalone ? addedLabel : 'Added'}
+                                onPlay={(hit) => handlePlay(onlineSample(hit))}
+                                onAdd={(hit) => handleImport(onlineSample(hit))}
+                                onEdit={onEditSample ? (hit) => handleEdit(onlineSample(hit)) : undefined}
+                            />
+                        ) : selectedPack ? (
                             <>
                                 <div className="mb-6 sm:mb-10 w-full">
                                     {/* HERO BANNER */}

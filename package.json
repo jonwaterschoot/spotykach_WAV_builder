@@ -11,6 +11,7 @@
     "submission": "node scripts/import-submission.mjs",
     "check:wav": "node scripts/check-wav-header.mjs",
     "check:mangler": "node scripts/check-mangler.mjs",
+    "check:online": "node scripts/check-online.mjs",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
