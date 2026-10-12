@@ -334,6 +334,8 @@ export interface MangleSourceEntry {
     /** The pool's switch: left out of the next batch when false. */
     enabled: boolean;
     addedAt: number;
+    /** Seconds: the parts new snippets may come from. Absent or empty: the whole file. */
+    regions?: [number, number][];
 }
 
 export interface MangleResultEntry {
@@ -351,6 +353,11 @@ export interface MangleResultEntry {
     createdAt: number;
     /** Snippet positions held when rerolling ("lock a snippet, reroll the others"). */
     locked?: number[];
+    /**
+     * Changed in the editor: a copy whose audio no longer follows its recipe, so it
+     * can be played, cropped, re-cued and saved, but not re-rendered.
+     */
+    edited?: boolean;
 }
 
 const loadAll = async <T>(store: string): Promise<T[]> => {

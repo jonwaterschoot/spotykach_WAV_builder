@@ -16,9 +16,14 @@ interface SnippetTableProps {
     playingIndex: number;
     onPlay: (index: number) => void;
     onHover: (index: number | null) => void;
-    onDelete: (index: number) => void;
-    onMove: (from: number, to: number) => void;
+    /** Removes these snippets; the rest move up. */
+    onDelete: (indices: number[]) => void;
+    /** Moves these snippets, together and in order, to the drop row. */
+    onMove: (indices: number[], to: number) => void;
     onToggleLock: (index: number) => void;
+    onLock: (indices: number[], lock: boolean) => void;
+    /** `[start, end)` frames of the full render that the file keeps, when cropped. */
+    crop?: { start: number; end: number };
     onPitch: (indices: number[], choice: PitchChoice | undefined) => void;
     onReroll: () => void;
     variations: number;
@@ -28,7 +33,8 @@ const SR = 48000;
 
 /** Every snippet of one result: where it came from, what was done to it, and the edits. */
 export const SnippetTable: React.FC<SnippetTableProps> = ({
-    entry, busy, activeIndex, playingIndex, onPlay, onHover, onDelete, onMove, onToggleLock, onPitch, onReroll, variations,
+    entry, busy, activeIndex, playingIndex, onPlay, onHover, onDelete, onMove, onToggleLock, onLock, onPitch, onReroll,
+    variations, crop,
 }) => {
     const { recipe } = entry;
     // Old recipes lack the scale fields; sanitising fills them with "root only, C".
@@ -41,8 +47,42 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
         .filter(i => i >= 0);
 
     const listRef = useRef<HTMLDivElement>(null);
-    const [dragFrom, setDragFrom] = useState<number | null>(null);
+    /** The rows being dragged (the selection, when the grabbed row is in it). */
+    const [dragging, setDragging] = useState<number[] | null>(null);
     const [dropAt, setDropAt] = useState<number | null>(null);
+    const [selection, setSelection] = useState<Set<number>>(new Set());
+    const [anchor, setAnchor] = useState<number | null>(null);
+    const offset = crop?.start ?? 0;
+
+    // A new render renumbers the rows: the old selection means nothing any more.
+    const [shownSnippets, setShownSnippets] = useState(recipe.snippets);
+    if (shownSnippets !== recipe.snippets) {
+        setShownSnippets(recipe.snippets);
+        setSelection(new Set());
+        setAnchor(null);
+    }
+
+    /** Click selects one, Shift extends from the last click, Ctrl/Cmd adds or removes one. */
+    const select = (i: number, e: React.MouseEvent) => {
+        const additive = e.ctrlKey || e.metaKey;
+        if (e.shiftKey && anchor !== null) {
+            const [a, b] = [Math.min(anchor, i), Math.max(anchor, i)];
+            const next = additive ? new Set(selection) : new Set<number>();
+            for (let k = a; k <= b; k++) next.add(k);
+            setSelection(next);
+            return;
+        }
+        setAnchor(i);
+        if (additive) {
+            const next = new Set(selection);
+            if (next.has(i)) next.delete(i); else next.add(i);
+            setSelection(next);
+            return;
+        }
+        setSelection(selection.size === 1 && selection.has(i) ? new Set() : new Set([i]));
+    };
+    const selected = [...selection].sort((a, b) => a - b);
+    const allSelectedLocked = selected.length > 0 && selected.every(i => locked.has(i));
 
     // Keep the row being played in view.
     useEffect(() => {
@@ -66,9 +106,39 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                         <Dices size={11} /> Reroll the rest ×{variations} ({locked.size} locked)
                     </TableAction>
                 )}
-                <span className="ml-auto">Drag ⋮⋮ to reorder · lock to keep in a reroll · edits undo once</span>
+                {selected.length > 0 && (
+                    <>
+                        <span className="text-gray-300">{selected.length} selected</span>
+                        <TableAction onClick={() => onDelete(selected)} disabled={busy || selected.length >= recipe.snippets.length}
+                            title="Remove the selected snippets (Delete); the rest move up and the end is refilled">
+                            <Trash2 size={11} /> Delete
+                        </TableAction>
+                        <TableAction onClick={() => onLock(selected, !allSelectedLocked)}
+                            title={allSelectedLocked ? 'Unlock the selected snippets' : 'Lock the selected snippets'}>
+                            {allSelectedLocked ? <Unlock size={11} /> : <Lock size={11} />} {allSelectedLocked ? 'Unlock' : 'Lock'}
+                        </TableAction>
+                        <TableAction onClick={() => setSelection(new Set())} title="Clear the selection">Clear</TableAction>
+                    </>
+                )}
+                <span className="ml-auto">Click, Shift- or Ctrl-click to select · drag ⋮⋮ to move · edits undo once</span>
             </div>
-            <div ref={listRef} className="max-h-72 overflow-y-auto rounded border border-white/5" onMouseLeave={() => onHover(null)}>
+            <div ref={listRef} tabIndex={0}
+                className="max-h-72 overflow-y-auto rounded border border-white/5 focus:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                onMouseLeave={() => onHover(null)}
+                onKeyDown={e => {
+                    if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length && !busy && selected.length < recipe.snippets.length) {
+                        e.preventDefault();
+                        onDelete(selected);
+                    }
+                    if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        setSelection(new Set(recipe.snippets.map((_, i) => i)));
+                    }
+                    if (e.key === 'Escape' && selection.size) {
+                        e.stopPropagation();
+                        setSelection(new Set());
+                    }
+                }}>
                 <table className="w-full text-[10px] font-mono">
                     <thead className="sticky top-0 bg-synthux-panel text-gray-500 z-10">
                         <tr className="text-left">
@@ -92,32 +162,46 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                             const isLocked = locked.has(i);
                             const choice = choiceOf(s);
                             const scaleOffset = s.pitch ? offsetFor({ kind: 'scale' }, s, settings) : null;
-                            const dropHere = dragFrom !== null && dropAt === i && dropAt !== dragFrom;
+                            const isSelected = selection.has(i);
+                            const isDragged = !!dragging?.includes(i);
+                            const dropHere = dragging !== null && dropAt === i && !isDragged;
+                            const below = dragging !== null && i > dragging[0];
+                            const outside = crop && (s.outStart + s.length <= crop.start || s.outStart >= crop.end);
                             return (
                                 <tr key={i} data-row={i}
                                     onMouseEnter={() => onHover(i)}
-                                    onDragOver={e => { if (dragFrom !== null) { e.preventDefault(); setDropAt(i); } }}
+                                    onClick={e => {
+                                        if ((e.target as HTMLElement).closest('button, select, [draggable="true"]')) return;
+                                        select(i, e);
+                                    }}
+                                    onDragOver={e => { if (dragging !== null) { e.preventDefault(); setDropAt(i); } }}
                                     onDrop={e => {
                                         e.preventDefault();
-                                        if (dragFrom !== null && dragFrom !== i) onMove(dragFrom, i);
-                                        setDragFrom(null);
+                                        if (dragging !== null && !dragging.includes(i)) onMove(dragging, i);
+                                        setDragging(null);
                                         setDropAt(null);
                                     }}
-                                    className={`border-t group ${dropHere
-                                        ? dragFrom! < i ? 'border-b-2 border-b-synthux-red border-t-white/5' : 'border-t-2 border-t-synthux-red'
+                                    title={outside ? 'Cropped out: not in the file now' : undefined}
+                                    className={`border-t group select-none cursor-default ${dropHere
+                                        ? below ? 'border-b-2 border-b-synthux-red border-t-white/5' : 'border-t-2 border-t-synthux-red'
                                         : 'border-white/5'}
-                                        ${dragFrom === i ? 'opacity-40' : ''}
-                                        ${isActive ? 'bg-synthux-red/15' : isLocked ? 'bg-synthux-yellow/5' : 'hover:bg-white/[0.03]'}`}>
+                                        ${isDragged ? 'opacity-40' : outside ? 'opacity-35' : ''}
+                                        ${isSelected ? 'bg-white/[0.09] outline outline-1 -outline-offset-1 outline-white/20'
+                                            : isActive ? 'bg-synthux-red/15' : isLocked ? 'bg-synthux-yellow/5' : 'hover:bg-white/[0.03]'}
+                                        ${isSelected && isActive ? 'bg-synthux-red/20' : ''}`}>
                                     <td className="pl-1">
                                         <span
                                             draggable={!busy}
                                             onDragStart={e => {
+                                                const group = selection.has(i) ? selected : [i];
                                                 e.dataTransfer.effectAllowed = 'move';
-                                                e.dataTransfer.setData('text/plain', String(i));
-                                                setDragFrom(i);
+                                                e.dataTransfer.setData('text/plain', group.join(','));
+                                                setDragging(group);
                                             }}
-                                            onDragEnd={() => { setDragFrom(null); setDropAt(null); }}
-                                            title="Drag to move this snippet"
+                                            onDragEnd={() => { setDragging(null); setDropAt(null); }}
+                                            title={selection.has(i) && selected.length > 1
+                                                ? `Drag to move the ${selected.length} selected snippets together`
+                                                : 'Drag to move this snippet'}
                                             className={`flex text-gray-600 ${busy ? 'opacity-30' : 'cursor-grab hover:text-white active:cursor-grabbing'}`}>
                                             <GripVertical size={11} />
                                         </span>
@@ -129,7 +213,7 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                                         </button>
                                     </td>
                                     <td className="px-2 py-0.5 text-gray-600">{i + 1}</td>
-                                    <td className="px-2 py-0.5 text-gray-500">{(s.outStart / SR).toFixed(2)}</td>
+                                    <td className="px-2 py-0.5 text-gray-500">{((s.outStart - offset) / SR).toFixed(2)}</td>
                                     <td className="px-2 py-0.5 truncate max-w-[9rem]" title={recipe.sources[s.source]?.name}>
                                         {recipe.sources[s.source]?.name ?? '?'}
                                     </td>
@@ -174,7 +258,7 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                                                 className={isLocked ? 'text-synthux-yellow' : 'text-gray-600 hover:text-white'}>
                                                 {isLocked ? <Lock size={11} /> : <Unlock size={11} />}
                                             </RowButton>
-                                            <RowButton onClick={() => onDelete(i)} disabled={busy || recipe.snippets.length < 2}
+                                            <RowButton onClick={() => onDelete([i])} disabled={busy || recipe.snippets.length < 2}
                                                 title="Remove this snippet; the rest move up and the end is refilled"
                                                 className="text-gray-600 hover:text-synthux-red">
                                                 <Trash2 size={11} />

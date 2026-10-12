@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Pause, Play, Plus, RefreshCw, Star, Trash2, Undo2, Unlock, X, ZoomIn,
+  Crop as CropIcon, Pause, Pencil, Play, Plus, RefreshCw, Scissors, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -28,12 +28,29 @@ import type { FileRecord, UserLibrary } from '../types';
 const SampleBrowser = React.lazy(() =>
   import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser })),
 );
+const LooseFileEditor = React.lazy(() =>
+  import('./EditorMode').then(m => ({ default: m.LooseFileEditor })),
+);
+
+/** The editor's commit button, when its edits come back to the mangler as a new result. */
+const MANGLER_COMMIT_LABELS: CommitLabels = {
+  clean: 'SAVED TO MANGLER',
+  dirty: 'SAVE AS NEW RESULT',
+  hint: 'Save these edits as a new result in the mangler (the original stays as it is)',
+  cleanToast: 'Already saved to the mangler',
+};
 import { runBatch, resultToWav, wavWithCues, type BatchHandle, type BatchSource } from '../mangler/batch';
 import type { MangleResult, PitchChoice, SnippetInfo } from '../mangler/render';
 import { withChoice } from '../mangler/pitchChoice';
 import { CUE_LEVELS, snippetCues, transientCues, type CueLevel } from '../mangler/recue';
 import { NOTE_NAMES } from '../lib/audio/pitch';
 import { SnippetTable } from '../mangler/ui/SnippetTable';
+import { SourcePartsModal } from '../mangler/ui/SourcePartsModal';
+import type { Part } from '../mangler/parts';
+import { ScrubBar } from '../mangler/ui/ScrubBar';
+import { clampCrop, cropAudio, cropResult, type Crop } from '../mangler/crop';
+import { readWavHeaderInfo } from '../lib/audio/wavHeader';
+import type { CommitLabels } from '../components/WaveformEditor';
 import { ScaleKeys } from '../mangler/ui/ScaleKeys';
 import { formatDb, formatMs, formatSeconds } from '../mangler/ui/format';
 import { useResultAudio } from '../mangler/ui/useResultAudio';
@@ -56,6 +73,20 @@ const SR = 48000;
  * between two cue points, which is what the hardware's slice mode plays.
  */
 type PlayMode = 'full' | 'fades' | 'cue';
+
+/** Where the file starts in the full render's frames (non-zero once cropped). */
+const offsetOf = (r: MangleResultEntry) => r.recipe.crop?.start ?? 0;
+
+/** Where a snippet takes over: the middle of its incoming crossfade. */
+const snippetCue = (s: SnippetInfo) => s.outStart + (s.xfade >> 1);
+
+/** The snippet under a point of the file (0-1): the last one started by then. */
+const snippetAt = (r: MangleResultEntry, fraction: number) => {
+  const frame = fraction * r.duration * SR + offsetOf(r);
+  let index = 0;
+  r.recipe.snippets.forEach((s, i) => { if (snippetCue(s) <= frame) index = i; });
+  return index;
+};
 
 const loadPlayMode = (): PlayMode => {
   const saved = appStorage.getItem(PLAY_MODE_KEY);
@@ -176,7 +207,17 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [hover, setHover] = useState<{ id: string; index: number } | null>(null);
   const [playMode, setPlayMode] = useState<PlayMode>(loadPlayMode);
   const [recueing, setRecueing] = useState<string | null>(null);
+  /** The source whose parts are being chosen. */
+  const [partsFor, setPartsFor] = useState<string | null>(null);
+  /** Crop mode on one result: the kept stretch, 0–1 of the file as it is now. */
+  const [cropEdit, setCropEdit] = useState<{ id: string; range: [number, number] } | null>(null);
+  /** The result open in the editor, and the copy its saves go to. */
+  const [editing, setEditing] = useState<MangleResultEntry | null>(null);
+  const editedCopyRef = useRef<string | null>(null);
   const region = useResultAudio();
+  /** The list as last rendered, for async work that must not act on a stale copy. */
+  const resultsRef = useRef(results);
+  useEffect(() => { resultsRef.current = results; }, [results]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const batchRef = useRef<BatchHandle | null>(null);
@@ -453,7 +494,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
     startJob({
       label: `Rendering ${count} variation${count === 1 ? '' : 's'}`,
-      sources: enabledSources.map(s => ({ id: s.id, blob: s.blob })),
+      sources: enabledSources.map(s => ({ id: s.id, blob: s.blob, regions: s.regions })),
       settings: batchSettings,
       seeds,
       onResult: async (result) => {
@@ -479,7 +520,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const sourcesFor = useCallback((recipeSources: RecipeSource[]): BatchSource[] =>
     recipeSources.map(rs => {
       const entry = sources.find(s => s.id === rs.id);
-      return { id: rs.id, blob: entry?.blob ?? null, enabled: entry?.enabled ?? false };
+      return { id: rs.id, blob: entry?.blob ?? null, enabled: entry?.enabled ?? false, regions: entry?.regions };
     }), [sources]);
 
   /** Settings of an old recipe. Results from before sinc was the default keep the linear resampler. */
@@ -497,9 +538,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
    */
   const editResult = useCallback((
     r: MangleResultEntry, fixed: (SnippetInfo | null)[], editSettings: MangleSettings, label: string,
-    locked: number[] | undefined = r.locked,
+    options: { locked?: number[]; crop?: Crop | null } = {},
   ) => {
-    if (batchRef.current) return;
+    if (batchRef.current || r.edited) return;
+    const locked = 'locked' in options ? options.locked : r.locked;
+    // undefined keeps the crop, null drops it.
+    const crop = options.crop === undefined ? r.recipe.crop : options.crop ?? undefined;
     const missing = missingFor(r, fixed);
     if (missing.length) {
       showToast(`Can't edit: ${missing.map(m => m.name).join(', ')} is no longer in the source pool`, 'error');
@@ -513,10 +557,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       settings: editSettings,
       seeds: [r.recipe.seed],
       fixed,
-      onResult: async (result) => {
+      onResult: async (full) => {
+        // The same stretch as before, if it was cropped (clamped to a shorter render).
+        const kept = crop ? clampCrop(crop, full.left.length) : null;
+        const result = kept ? cropResult(full, kept) : full;
         let entry = makeEntry(result, editSettings, r.recipe.sources, {
           id: r.id, name: r.name, kept: r.kept, batchId: r.batchId, createdAt: r.createdAt, locked,
         });
+        if (kept) entry = { ...entry, recipe: { ...entry.recipe, crop: kept } };
         // Cues found at the hits are found again on the edited audio.
         const level = r.recipe.cueSource;
         if (level && level !== 'snippets') {
@@ -543,11 +591,20 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     editResult(r, lockedFixed(r), settings, 'Re-rendering with the current settings');
   }, [editResult, settings]);
 
-  const deleteSnippet = useCallback((r: MangleResultEntry, index: number) => {
-    const fixed = r.recipe.snippets.filter((_, i) => i !== index);
-    const locked = r.locked?.filter(i => i !== index).map(i => (i > index ? i - 1 : i));
-    editResult(r, fixed, recipeSettings(r), `Removing snippet ${index + 1}`, locked);
+  /** Puts the snippets in a new order (old indices); locks follow their snippets. */
+  const reorder = useCallback((r: MangleResultEntry, order: number[], label: string) => {
+    const fixed = order.map(i => r.recipe.snippets[i]);
+    const wasLocked = new Set(r.locked ?? []);
+    const locked = order.map((old, now) => (wasLocked.has(old) ? now : -1)).filter(i => i >= 0);
+    editResult(r, fixed, recipeSettings(r), label, { locked });
   }, [editResult]);
+
+  const deleteSnippets = useCallback((r: MangleResultEntry, indices: number[]) => {
+    const gone = new Set(indices);
+    const order = r.recipe.snippets.map((_, i) => i).filter(i => !gone.has(i));
+    if (order.length === 0) return;
+    reorder(r, order, indices.length === 1 ? `Removing snippet ${indices[0] + 1}` : `Removing ${indices.length} snippets`);
+  }, [reorder]);
 
   /** Sets the pitch of the given snippets: own, the scale, a note, or a shift. */
   const setPitch = useCallback((r: MangleResultEntry, indices: number[], choice: PitchChoice | undefined) => {
@@ -560,16 +617,121 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     editResult(r, fixed, editSettings, indices.length > 1 ? `${label} (${indices.length} snippets)` : label);
   }, [editResult]);
 
-  /** Moves snippet `from` to position `to`; the locks move with their snippets. */
-  const moveSnippet = useCallback((r: MangleResultEntry, from: number, to: number) => {
-    const order = r.recipe.snippets.map((_, i) => i);
-    const [moved] = order.splice(from, 1);
-    order.splice(to, 0, moved);
-    const fixed = order.map(i => r.recipe.snippets[i]);
-    const wasLocked = new Set(r.locked ?? []);
-    const locked = order.map((old, now) => (wasLocked.has(old) ? now : -1)).filter(i => i >= 0);
-    editResult(r, fixed, recipeSettings(r), `Moving snippet ${from + 1} to ${to + 1}`, locked);
+  /**
+   * Moves the snippets in `indices` to the row they were dropped on, together and
+   * in their own order: after that row when dragged down, before it when up.
+   */
+  const moveSnippets = useCallback((r: MangleResultEntry, indices: number[], to: number) => {
+    const moving = [...new Set(indices)].sort((a, b) => a - b);
+    const set = new Set(moving);
+    const rest = r.recipe.snippets.map((_, i) => i).filter(i => !set.has(i));
+    const down = to > moving[0];
+    const at = rest.filter(i => (down ? i <= to : i < to)).length;
+    const order = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+    if (order.every((old, now) => old === now)) return;
+    reorder(r, order, moving.length === 1
+      ? `Moving snippet ${moving[0] + 1}`
+      : `Moving ${moving.length} snippets together`);
+  }, [reorder]);
+
+  const lockSnippets = useCallback((r: MangleResultEntry, indices: number[], lock: boolean) => {
+    const current = new Set(r.locked ?? []);
+    for (const i of indices) if (lock) current.add(i); else current.delete(i);
+    const next = { ...r, locked: current.size ? [...current].sort((a, b) => a - b) : undefined };
+    setResults(prev => prev.map(x => (x.id === r.id ? next : x)));
+    putMangleResultToDB(next).catch(e => console.error(e));
+  }, []);
+
+  /**
+   * Keeps only `range` (0–1 of the file as it is now). Cut from the audio there
+   * is, so no source is needed; the recipe remembers it against the full render.
+   */
+  const applyCrop = useCallback(async (r: MangleResultEntry, range: [number, number]) => {
+    if (batchRef.current) return;
+    try {
+      const buffer = await region.load(r.id, r.blob);
+      const left = buffer.getChannelData(0);
+      const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+      const local = clampCrop({ start: range[0] * left.length, end: range[1] * left.length }, left.length);
+      if (!local || (local.start === 0 && local.end === left.length)) { setCropEdit(null); return; }
+      const base = r.recipe.crop?.start ?? 0;
+      const cropped = cropAudio([left, right], r.recipe.cuePoints, local, SR);
+      const level = r.recipe.cueSource;
+      const cuePoints = level && level !== 'snippets'
+        ? transientCues(cropped.channels, SR, level)
+        : cropped.cuePoints;
+      const entry: MangleResultEntry = {
+        ...r,
+        blob: wavWithCues(cropped.channels[0], cropped.channels[1], cuePoints, r.name),
+        duration: cropped.channels[0].length / SR,
+        peaks: waveformPeaks(cropped.channels[0], cropped.channels[1]),
+        recipe: { ...r.recipe, cuePoints, crop: { start: base + local.start, end: base + local.end } },
+      };
+      region.stop();
+      region.forget(r.id);
+      await storeEntry(entry);
+      setUndo(prev => ({ ...prev, [r.id]: r }));
+      setResults(prev => prev.map(x => (x.id === r.id ? entry : x)));
+      setCropEdit(null);
+      showToast(`Cropped to ${formatSeconds(entry.duration)}`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Could not crop this result', 'error');
+    }
+  }, [region, storeEntry, showToast]);
+
+  /** Back to the full length: a re-render with every snippet as it is and no crop. */
+  const resetCrop = useCallback((r: MangleResultEntry) => {
+    editResult(r, r.recipe.snippets, recipeSettings(r), 'Restoring the full length', { crop: null });
   }, [editResult]);
+
+  /**
+   * The editor saved: its version becomes (or updates) a copy next to the
+   * original, marked edited. Cue points are read back from the WAV it wrote.
+   */
+  const saveEditedCopy = useCallback(async (from: MangleResultEntry, blob: Blob, duration: number) => {
+    const id = editedCopyRef.current ?? newId();
+    editedCopyRef.current = id;
+    try {
+      region.forget(id);
+      const buffer = await region.load(id, blob);
+      const left = buffer.getChannelData(0);
+      const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+      const header = await readWavHeaderInfo(blob).catch(() => null);
+      const cuePoints = (header?.metadata?.slicePoints ?? []).map(t => Math.round(t * SR));
+      const list = resultsRef.current;
+      const existing = list.find(x => x.id === id);
+      const taken = new Set(list.filter(x => x.id !== id).map(x => x.name));
+      let name = existing?.name ?? `${from.name}-edit`;
+      for (let n = 2; !existing && taken.has(name); n++) name = `${from.name}-edit-${n}`;
+      {
+        const entry: MangleResultEntry = {
+          id,
+          name,
+          blob,
+          duration: duration || left.length / SR,
+          recipe: { ...from.recipe, cuePoints, cueSource: undefined, crop: undefined },
+          peaks: waveformPeaks(left, right),
+          kept: true,
+          batchId: from.batchId,
+          createdAt: existing?.createdAt ?? Date.now(),
+          edited: true,
+        };
+        await storeEntry(entry);
+        setResults(prev => sortResults(prev.some(x => x.id === id) ? prev.map(x => (x.id === id ? entry : x)) : [...prev, entry]));
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Could not bring the edit back into the mangler', 'error');
+    }
+  }, [region, storeEntry, showToast]);
+
+  const openEditor = useCallback((r: MangleResultEntry) => {
+    region.stop();
+    if (player.isPlaying) player.pause();
+    editedCopyRef.current = null;
+    setEditing(r);
+  }, [region, player]);
 
   /** New cue points for a result, the audio untouched: at the snippets, or at the hits. */
   const recue = useCallback(async (r: MangleResultEntry, level: 'snippets' | CueLevel) => {
@@ -662,36 +824,35 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     });
   }, [undo, player, region, storeEntry]);
 
-  /** The snippet under a point of the file (0-1): the last one started by then. */
-  const snippetAt = (r: MangleResultEntry, fraction: number) => {
-    const frame = fraction * r.duration * SR;
-    let index = 0;
-    r.recipe.snippets.forEach((s, i) => { if (s.outStart + (s.xfade >> 1) <= frame) index = i; });
-    return index;
-  };
-
-  const snippetCue = (s: SnippetInfo) => s.outStart + (s.xfade >> 1);
-
   /** Plays snippet `index` the way the play mode says. */
   const playSnippet = useCallback((r: MangleResultEntry, index: number) => {
     const s = r.recipe.snippets[index];
     if (!s) return;
     if (player.isPlaying) player.pause();
     const next = r.recipe.snippets[index + 1];
-    const [start, end] = playMode === 'full'
-      ? [snippetCue(s), r.duration * SR]
+    const offset = r.recipe.crop?.start ?? 0;
+    const fileEnd = r.duration * SR;
+    const [start, end] = (playMode === 'full'
+      ? [snippetCue(s) - offset, fileEnd]
       : playMode === 'fades'
-        ? [s.outStart, s.outStart + s.length]
-        : [snippetCue(s), next ? snippetCue(next) : r.duration * SR];
-    region.playRegion({ resultId: r.id, index, start: start / SR, end: end / SR }, r.blob);
+        ? [s.outStart - offset, s.outStart + s.length - offset]
+        : [snippetCue(s) - offset, next ? snippetCue(next) - offset : fileEnd]
+    ).map(f => Math.max(0, Math.min(fileEnd, f)));
+    if (end - start < 1) return; // cropped out
+    region.playRegion({ resultId: r.id, index, start: start / SR, end: end / SR, full: playMode === 'full' }, r.blob);
   }, [player, region, playMode]);
+
+  /** The play button: the whole file, pausing and resuming where it left off. */
+  const togglePlay = useCallback((r: MangleResultEntry) => {
+    if (player.isPlaying) player.pause();
+    const here = region.playing?.resultId === r.id ? region.playing : null;
+    if (here?.full) { region.pause(); return; }
+    const from = region.paused?.resultId === r.id ? region.paused.position : 0;
+    region.playRegion({ resultId: r.id, index: -1, start: from >= r.duration - 0.05 ? 0 : from, end: r.duration, full: true }, r.blob);
+  }, [player, region]);
 
   /** A click on the waveform at `fraction`, the way the play mode says. */
   const playAt = useCallback((r: MangleResultEntry, fraction: number) => {
-    if (player.activeFileId === r.id && player.isPlaying) {
-      player.seek(fraction * player.duration);
-      return;
-    }
     setExpanded(r.id); // so the list can show where this is
     if (playMode === 'fades') {
       playSnippet(r, snippetAt(r, fraction));
@@ -700,7 +861,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (player.isPlaying) player.pause();
     const end = r.duration;
     if (playMode === 'full') {
-      region.playRegion({ resultId: r.id, index: -1, start: fraction * end, end }, r.blob);
+      region.playRegion({ resultId: r.id, index: -1, start: fraction * end, end, full: true }, r.blob);
       return;
     }
     // Cue: between the cue points around the click (which may be hits, not snippets).
@@ -861,9 +1022,6 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
   const keptResults = useMemo(() => results.filter(r => r.kept), [results]);
 
-  const progressOf = (id: string) =>
-    player.activeFileId === id && player.duration > 0 ? player.currentTime / player.duration : null;
-
   const resultsBytes = useMemo(() => results.reduce((sum, r) => sum + r.blob.size, 0), [results]);
   const busy = batch !== null;
 
@@ -964,9 +1122,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             <ul className="space-y-1">
               {sources.map(s => {
                 const playing = player.activeFileId === s.id && player.isPlaying;
+                const active = player.activeFileId === s.id;
+                const partCount = s.regions?.length ?? 0;
                 return (
-                  <li key={s.id}
-                    className={`group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 ${s.enabled ? '' : 'opacity-45'}`}>
+                  <li key={s.id} className={`rounded-md hover:bg-white/5 ${active ? 'bg-white/[0.04]' : ''} ${s.enabled ? '' : 'opacity-45'}`}>
+                  <div className="group flex items-center gap-2 px-2 py-1.5">
                     <input
                       type="checkbox"
                       checked={s.enabled}
@@ -988,6 +1148,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         <LicenseBadge level={sourceLicense(s).level} terms={s.license} />
                       </span>
                     </span>
+                    <button
+                      onClick={() => { if (player.isPlaying) player.pause(); setPartsFor(s.id); }}
+                      className={`shrink-0 flex items-center gap-0.5 rounded px-1 text-[10px] ${partCount
+                        ? 'text-synthux-red border border-synthux-red/40'
+                        : 'text-gray-600 hover:text-white opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+                      title={partCount ? `${partCount} part${partCount === 1 ? '' : 's'} chosen: snippets only come from there` : 'Choose the parts of this file to use'}
+                    >
+                      <Scissors size={11} />{partCount > 0 && partCount}
+                    </button>
                     <span className="shrink-0 text-[10px] font-mono text-gray-500 tabular-nums">{formatSeconds(s.duration)}</span>
                     <button
                       onClick={() => removeSource(s.id)}
@@ -996,6 +1165,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     >
                       <X size={13} />
                     </button>
+                  </div>
+                  {active && (
+                    <ScrubBar position={player.currentTime} duration={player.duration || s.duration} onSeek={t => player.seek(t)} />
+                  )}
                   </li>
                 );
               })}
@@ -1217,8 +1390,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             )}
 
             {results.map(r => {
-              const playing = player.activeFileId === r.id && player.isPlaying;
-              const frames = Math.max(1, r.duration * 48000);
+              const frames = Math.max(1, r.duration * SR);
+              const offset = offsetOf(r);
               const used = usedSources(r.recipe);
               const pitched = r.recipe.snippets.filter(s => s.pitch).length;
               const isOpen = expanded === r.id;
@@ -1226,36 +1399,50 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               const blocked = license.level === 'no-derivatives';
               const zoom = zooms[r.id];
               const regionHere = region.playing?.resultId === r.id ? region.playing : null;
+              const pausedHere = region.paused?.resultId === r.id ? region.paused : null;
+              const playingFull = !!regionHere?.full;
               const total = r.duration || 1;
-              const globalHere = player.activeFileId === r.id;
-              const progress = globalHere
-                ? progressOf(r.id)
-                : regionHere && region.position !== null ? region.position / total : null;
-              // The row to show: the one playing, following the playhead in Full mode.
-              const activeIndex = regionHere
-                ? regionHere.index >= 0 && playMode !== 'full'
-                  ? regionHere.index
-                  : region.position !== null ? snippetAt(r, region.position / total) : -1
-                : globalHere && progress !== null && player.isPlaying ? snippetAt(r, progress) : -1;
-              // Tint what is playing (a bounded region, so not in Full mode), else the hovered row.
+              const progress = regionHere && region.position !== null
+                ? region.position / total
+                : pausedHere ? pausedHere.position / total : null;
+              // The row to show: the one playing, following the playhead when playing through.
+              const activeIndex = regionHere && !regionHere.full && regionHere.index >= 0
+                ? regionHere.index
+                : progress !== null ? snippetAt(r, progress) : -1;
+              // Tint a bounded region while it plays, else the hovered row.
               const hovered = hover?.id === r.id ? r.recipe.snippets[hover.index] : undefined;
-              const highlight: [number, number] | null = regionHere && playMode !== 'full'
+              const highlight: [number, number] | null = regionHere && !regionHere.full
                 ? [regionHere.start / total, regionHere.end / total]
-                : hovered ? [hovered.outStart / frames, (hovered.outStart + hovered.length) / frames] : null;
+                : hovered ? [(hovered.outStart - offset) / frames, (hovered.outStart + hovered.length - offset) / frames] : null;
               const transient = !!r.recipe.cueSource && r.recipe.cueSource !== 'snippets';
+              const cropping = cropEdit?.id === r.id ? cropEdit : null;
               return (
                 <article key={r.id}
                   className={`rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
                   <div className="flex items-center gap-2 mb-2">
                     <button
-                      onClick={() => player.play(playable(r.id, r.name, r.blob, r.duration))}
+                      onClick={() => togglePlay(r)}
                       className="h-8 w-8 shrink-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                      title={playing ? 'Pause' : 'Play'}
+                      title={playingFull ? 'Pause' : pausedHere ? 'Resume' : 'Play'}
                     >
-                      {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                      {playingFull ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
                     </button>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold truncate">{r.name}</div>
+                      <div className="text-xs font-bold truncate flex items-center gap-1.5">
+                        {r.name}
+                        {r.edited && (
+                          <span className="shrink-0 px-1 rounded border border-synthux-pink/40 text-synthux-pink text-[9px] uppercase tracking-wider font-normal"
+                            title="Changed in the editor: play, crop, re-cue and save it, but its snippets can't be edited any more">
+                            edited
+                          </span>
+                        )}
+                        {r.recipe.crop && (
+                          <span className="shrink-0 px-1 rounded border border-synthux-yellow/40 text-synthux-yellow/90 text-[9px] uppercase tracking-wider font-normal"
+                            title={`Cropped to ${formatSeconds(r.duration)}`}>
+                            cropped
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-gray-500 truncate">
                         {r.recipe.snippets.length} snippets · {r.recipe.cuePoints.length} cues
                         {r.recipe.cuesCapped ? ' (capped)' : ''} · {used.length} source{used.length === 1 ? '' : 's'}
@@ -1299,10 +1486,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                   </div>
 
                   <div className="flex items-center gap-1 mb-1.5 text-[10px]">
-                    <CardAction onClick={() => rerender(r)} disabled={busy} icon={<RefreshCw size={11} />}
-                      title="Render this seed again with the sliders as they are now (locked snippets stay)">
-                      Same seed, current settings
-                    </CardAction>
+                    {!r.edited && (
+                      <CardAction onClick={() => rerender(r)} disabled={busy} icon={<RefreshCw size={11} />}
+                        title="Render this seed again with the sliders as they are now (locked snippets stay)">
+                        Same seed, current settings
+                      </CardAction>
+                    )}
                     {undo[r.id] && (
                       <CardAction onClick={() => undoEdit(r)} disabled={busy} icon={<Undo2 size={11} />}
                         title="Back to the version before the last edit">
@@ -1319,7 +1508,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         onChange={e => recue(r, e.target.value as 'snippets' | CueLevel)}
                         className="bg-transparent text-gray-200 text-[10px] cursor-pointer disabled:cursor-not-allowed"
                       >
-                        <option value="snippets" className="bg-synthux-panel">at snippets</option>
+                        <option value="snippets" className="bg-synthux-panel" disabled={r.edited}>at snippets</option>
                         {CUE_LEVELS.map(l => (
                           <option key={l.value} value={l.value} className="bg-synthux-panel">at hits: {l.label.toLowerCase()}</option>
                         ))}
@@ -1337,28 +1526,70 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     >
                       Zoom
                     </CardAction>
+                    {cropping ? (
+                      <>
+                        <CardAction onClick={() => applyCrop(r, cropping.range)} disabled={busy} active icon={<CropIcon size={11} />}
+                          title="Keep only the stretch between the yellow handles">
+                          Apply crop ({formatSeconds((cropping.range[1] - cropping.range[0]) * r.duration)})
+                        </CardAction>
+                        <CardAction onClick={() => setCropEdit(null)} icon={<X size={11} />} title="Leave crop mode">
+                          Cancel
+                        </CardAction>
+                      </>
+                    ) : (
+                      <CardAction
+                        onClick={() => {
+                          setZooms(prev => (prev[r.id] !== undefined ? prev : { ...prev, [r.id]: 1 }));
+                          setCropEdit({ id: r.id, range: [0, 1] });
+                        }}
+                        disabled={busy}
+                        icon={<CropIcon size={11} />}
+                        title="Keep only part of the file. Edits later on keep the same stretch"
+                      >
+                        Crop
+                      </CardAction>
+                    )}
+                    {r.recipe.crop && !r.edited && !cropping && (
+                      <CardAction onClick={() => resetCrop(r)} disabled={busy} icon={<Undo2 size={11} />}
+                        title="Render the full length again (needs the sources in the pool)">
+                        Full length
+                      </CardAction>
+                    )}
+                    <CardAction onClick={() => openEditor(r)} disabled={busy} icon={<Pencil size={11} />}
+                      title="Open a copy in the audio editor (trim, fade, EQ, slices…). Saving there adds an edited copy here; this one stays editable">
+                      Editor
+                    </CardAction>
                   </div>
 
                   <ResultWaveform
                     peaks={r.peaks}
                     audio={zoom !== undefined ? region.decoded[r.id] : undefined}
                     cues={r.recipe.cuePoints.map(f => f / frames)}
-                    edges={transient ? r.recipe.snippets.map(s => snippetCue(s) / frames) : undefined}
-                    fades={r.recipe.snippets.filter(s => s.xfade > 0).map(s => [s.outStart / frames, (s.outStart + s.xfade) / frames] as [number, number])}
+                    edges={transient && !r.edited ? r.recipe.snippets.map(s => (snippetCue(s) - offset) / frames) : undefined}
+                    fades={r.edited ? [] : r.recipe.snippets.filter(s => s.xfade > 0)
+                      .map(s => [(s.outStart - offset) / frames, (s.outStart + s.xfade - offset) / frames] as [number, number])}
                     progress={progress}
-                    playedFrom={regionHere ? regionHere.start / total : 0}
+                    playedFrom={regionHere && !regionHere.full ? regionHere.start / total : 0}
                     highlight={highlight}
                     zoom={zoom}
                     onZoom={z => setZooms(prev => ({ ...prev, [r.id]: z }))}
                     onPick={f => playAt(r, f)}
+                    crop={cropping?.range ?? null}
+                    onCropChange={range => setCropEdit({ id: r.id, range: [Math.max(0, range[0]), Math.min(1, range[1])] })}
                   />
 
+                  {r.edited ? (
+                    <p className="mt-2 text-[10px] text-gray-500">
+                      Edited in the editor, so its snippets can't be changed here. The original result is still editable.
+                    </p>
+                  ) : (
                   <button onClick={() => setExpanded(isOpen ? null : r.id)}
                     className="mt-2 flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300">
                     {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     Snippets{pitched ? ` · ${pitched} with a pitch` : ''}
                   </button>
-                  {isOpen && (
+                  )}
+                  {isOpen && !r.edited && (
                     <SnippetTable
                       entry={r}
                       busy={busy}
@@ -1366,9 +1597,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       playingIndex={regionHere ? regionHere.index : -1}
                       onPlay={i => playSnippet(r, i)}
                       onHover={i => setHover(i === null ? null : { id: r.id, index: i })}
-                      onDelete={i => deleteSnippet(r, i)}
-                      onMove={(from, to) => moveSnippet(r, from, to)}
+                      onDelete={indices => deleteSnippets(r, indices)}
+                      onMove={(indices, to) => moveSnippets(r, indices, to)}
                       onToggleLock={i => toggleLock(r, i)}
+                      onLock={(indices, lock) => lockSnippets(r, indices, lock)}
+                      crop={r.recipe.crop}
                       onPitch={(indices, choice) => setPitch(r, indices, choice)}
                       onReroll={() => rerollUnlocked(r)}
                       variations={settings.variations}
@@ -1456,6 +1689,56 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             </div>
           </div>
         </div>
+      )}
+
+      {partsFor && (() => {
+        const source = sources.find(x => x.id === partsFor);
+        if (!source) return null;
+        return (
+          <SourcePartsModal
+            source={source}
+            load={region.load}
+            playRegion={region.playRegion}
+            stop={region.stop}
+            playing={region.playing}
+            position={region.position}
+            onClose={() => setPartsFor(null)}
+            onSave={(parts: Part[]) => {
+              const next = { ...source, regions: parts.length ? parts : undefined };
+              setSources(prev => prev.map(x => (x.id === source.id ? next : x)));
+              putMangleSourceToDB(next).catch(e => console.error(e));
+              setPartsFor(null);
+              showToast(parts.length
+                ? `${source.name}: ${parts.length} part${parts.length === 1 ? '' : 's'} in use`
+                : `${source.name}: the whole file is in use`, 'success');
+            }}
+          />
+        );
+      })()}
+
+      {editing && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[80] bg-synthux-main flex items-center justify-center text-gray-500">
+            <Loader size={20} className="animate-spin" />
+          </div>
+        }>
+          <LooseFileEditor
+            key={editing.id}
+            file={{
+              name: `${editing.name}.wav`,
+              blob: editing.blob,
+              duration: editing.duration,
+              origin: 'Sample Mangler',
+              license: resultLicense(editing.recipe).text,
+              metadata: { slicePoints: editing.recipe.cuePoints.map(f => f / SR), name: editing.name },
+            }}
+            subtitle={`Editing a copy of ${editing.name}. "Save as new result" puts it next to the original in the mangler.`}
+            commitLabels={MANGLER_COMMIT_LABELS}
+            destination="the mangler"
+            onEdited={({ blob, duration }) => saveEditedCopy(editing, blob, duration)}
+            onClose={() => { setEditing(null); editedCopyRef.current = null; }}
+          />
+        </Suspense>
       )}
 
       <ConfirmModal

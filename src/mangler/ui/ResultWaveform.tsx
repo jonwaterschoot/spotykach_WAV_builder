@@ -23,6 +23,12 @@ interface ResultWaveformProps {
     /** 1 = the whole file fits. Shows the zoom bar and a taller wave when set. */
     zoom?: number;
     onZoom?: (zoom: number) => void;
+    /**
+     * Crop mode: the kept stretch, 0–1. Outside it is dimmed; its two handles
+     * drag, and a drag elsewhere marks a new stretch. Clicks don't play.
+     */
+    crop?: [number, number] | null;
+    onCropChange?: (crop: [number, number]) => void;
     height?: number;
 }
 
@@ -36,8 +42,10 @@ export const MAX_ZOOM = 64;
  * to 64× never asks for a canvas wider than browsers allow.
  */
 export const ResultWaveform: React.FC<ResultWaveformProps> = ({
-    peaks, audio, cues, edges, fades, progress, playedFrom = 0, highlight, onPick, zoom, onZoom, height = 56,
+    peaks, audio, cues, edges, fades, progress, playedFrom = 0, highlight, onPick, zoom, onZoom, crop, onCropChange,
+    height = 56,
 }) => {
+    const cropDrag = useRef<{ side: 0 | 1 } | { anchor: number } | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [view, setView] = useState({ width: 0, scroll: 0 });
@@ -179,7 +187,24 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(Math.round(played), 0, 1, h);
         }
-    }, [view, peaks, audio, cues, edges, fades, progress, playedFrom, highlight, z, h, zoomed]);
+
+        if (crop) {
+            const x0 = toX(crop[0]), x1 = toX(crop[1]);
+            ctx.fillStyle = 'rgba(0,0,0,0.65)';
+            ctx.fillRect(0, 0, Math.max(0, Math.min(width, x0)), h);
+            if (x1 < width) ctx.fillRect(Math.max(0, x1), 0, width - Math.max(0, x1), h);
+            ctx.fillStyle = '#ffb900';
+            for (const x of [x0, x1]) {
+                ctx.fillRect(Math.round(x) - 1, 0, 3, h);
+                ctx.fillRect(Math.round(x) - 5, mid - 10, 11, 20);
+            }
+        }
+    }, [view, peaks, audio, cues, edges, fades, progress, playedFrom, highlight, z, h, zoomed, crop]);
+
+    const fractionAt = (clientX: number, el: HTMLElement) => {
+        const rect = el.getBoundingClientRect();
+        return Math.min(1, Math.max(0, (clientX - rect.left + view.scroll) / (view.width * z)));
+    };
 
     const setZoom = (next: number) => onZoom?.(Math.min(MAX_ZOOM, Math.max(1, next)));
 
@@ -192,7 +217,9 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                     <ZoomButton title="Fit the whole file" onClick={() => setZoom(1)} disabled={z === 1}><Maximize2 size={11} /></ZoomButton>
                     <span className="font-mono ml-1 tabular-nums">{z}×</span>
                     {!audio && z > 1 && <span className="ml-2">loading detail…</span>}
-                    <span className="ml-auto">Red lines are cue points · orange is crossfade · click to play</span>
+                    <span className="ml-auto">{crop
+                        ? 'Drag the yellow handles (or across the wave) to set what stays'
+                        : 'Red lines are cue points · orange is crossfade · click to play'}</span>
                 </div>
             )}
             <div
@@ -207,12 +234,31 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                 <canvas
                     ref={canvasRef}
                     style={{ height: h, width: view.width || '100%' }}
-                    className={`sticky left-0 top-0 block -mt-px ${onPick ? 'cursor-pointer' : ''}`}
+                    className={`sticky left-0 top-0 block -mt-px touch-none ${crop ? 'cursor-ew-resize' : onPick ? 'cursor-pointer' : ''}`}
+                    onPointerDown={e => {
+                        if (!crop || !onCropChange) return;
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        const f = fractionAt(e.clientX, e.currentTarget);
+                        const px = (g: number) => g * view.width * z - view.scroll;
+                        const x = px(f);
+                        if (Math.abs(x - px(crop[0])) <= 8) cropDrag.current = { side: 0 };
+                        else if (Math.abs(x - px(crop[1])) <= 8) cropDrag.current = { side: 1 };
+                        else cropDrag.current = { anchor: f };
+                    }}
+                    onPointerMove={e => {
+                        const drag = cropDrag.current;
+                        if (!drag || !crop || !onCropChange) return;
+                        const f = fractionAt(e.clientX, e.currentTarget);
+                        if ('side' in drag) {
+                            onCropChange(drag.side === 0 ? [Math.min(f, crop[1] - 0.001), crop[1]] : [crop[0], Math.max(f, crop[0] + 0.001)]);
+                        } else {
+                            onCropChange([Math.min(drag.anchor, f), Math.max(drag.anchor, f) + 0.0005]);
+                        }
+                    }}
+                    onPointerUp={() => { cropDrag.current = null; }}
                     onClick={e => {
-                        if (!onPick) return;
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const x = e.clientX - rect.left + view.scroll;
-                        onPick(Math.min(1, Math.max(0, x / (view.width * z))));
+                        if (crop || !onPick) return;
+                        onPick(fractionAt(e.clientX, e.currentTarget));
                     }}
                 />
             </div>

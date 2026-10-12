@@ -25,6 +25,8 @@ export interface MangleRecipe {
     peakReductionDb: number;
     /** Where the cue points came from: the snippet starts (absent), or the hits found at this level. */
     cueSource?: 'snippets' | import('./recue').CueLevel;
+    /** The stretch of the full render the file keeps. Snippet positions stay those of the full render. */
+    crop?: import('./crop').Crop;
 }
 
 export const recipeFromResult = (

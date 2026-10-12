@@ -253,6 +253,16 @@ All edits go through one engine mechanism: `render(..., { fixed })` renders posi
 - [x] Per-snippet pitch menu in the list: own, the scale, nearest of any note, or ±1…12 st (on top of the random detune). Stored as `SnippetInfo.choice` + `detune`; old `toCApplied` results read as "to C"
 - [x] Scales: root + preset (root only, chromatic, major, minor, dorian, lydian, mixolydian, pentatonics, fifths) or a custom scale from a one-octave key diagram (`ScaleKeys`). Apply and "scale" in the list snap to the nearest scale note, within half an octave
 
+**Phase 7 — Refinement**
+
+- [x] Clicking a cue point no longer leaves a paused playhead behind: a result's play button now uses the same player as the snippets (`useResultAudio`, with pause and resume), so there is one playhead per result
+      - [x] Playing the file through (the play button, or *Click plays: Full*) colours everything before the playhead; *Fades* and *Cue* colour only the region that plays. Kept the three modes rather than two
+- [x] Source pool: a draggable playhead bar under the source being previewed (`ScrubBar`)
+- [x] Source detail (scissors on the row): a modal with a zoomable waveform (1–128×) to mark the parts snippets may come from. Drag to add, drag edges to resize, the middle to move; click to listen; Delete and Space. Stored as `MangleSourceEntry.regions` (seconds); the engine picks a part by length and never crosses its edge
+- [x] Editor: *Editor* opens a copy in `LooseFileEditor` (commit button "Save as new result"). Its saves become a result marked *edited* next to the original: playable, croppable, re-cueable and savable, but not re-renderable. The original stays editable
+- [x] Crop: *Crop* shows yellow handles on the waveform; *Apply crop* cuts the stretch from the audio there is, and the recipe keeps it (`recipe.crop`, frames of the full render), so later edits cut the same stretch. *Full length* re-renders without it. Rows outside the crop are dimmed. Renders never exceed the output length, so the 42 s case doesn't arise; the crop covers trimming in general
+- [x] Snippet list selection: click, Shift-click (range), Ctrl/Cmd-click (toggle), Ctrl+A, Escape. Delete, lock or unlock the selection; dragging a selected row moves the whole selection, grouped in its own order, to the drop row (after it when dragging down, before it when up)
+
 ## Open questions and risks
 
 - **Desktop only (decided Oct 11).** The door gets `desktopOnly: true`. 10 minutes of decoded sources won't fit in a phone tab's memory, and the three-column layout needs a wide screen. No phone layout is planned.

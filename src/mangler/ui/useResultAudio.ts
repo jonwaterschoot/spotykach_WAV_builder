@@ -13,6 +13,18 @@ export interface RegionPlayback {
     index: number;
     start: number;
     end: number;
+    /**
+     * Playing the file through (its play button, or Full mode): the waveform
+     * colours everything before the playhead, as for any player. A bounded
+     * region colours only itself.
+     */
+    full?: boolean;
+}
+
+/** Where a paused full play stopped, so the play button resumes from there. */
+export interface PausedPlayback {
+    resultId: string;
+    position: number;
 }
 
 const CACHE = 3;
@@ -28,6 +40,9 @@ export function useResultAudio() {
     decodedRef.current = decoded;
     const pendingRef = useRef(new Map<string, Promise<AudioBuffer>>());
     const [playing, setPlaying] = useState<RegionPlayback | null>(null);
+    const playingRef = useRef(playing);
+    playingRef.current = playing;
+    const [paused, setPaused] = useState<PausedPlayback | null>(null);
     /** Seconds into the result while a region plays. */
     const [position, setPosition] = useState<number | null>(null);
 
@@ -67,7 +82,8 @@ export function useResultAudio() {
         });
     }, []);
 
-    const stop = useCallback(() => {
+    /** Stops the sound, with a short fade. Keeps `paused` alone; `stop` clears it. */
+    const halt = useCallback(() => {
         const node = nodeRef.current;
         nodeRef.current = null;
         if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -81,6 +97,21 @@ export function useResultAudio() {
         node.gain.gain.linearRampToValueAtTime(0, now + FADE);
         node.source.stop(now + FADE + 0.01);
     }, []);
+
+    const stop = useCallback(() => {
+        halt();
+        setPaused(null);
+    }, [halt]);
+
+    /** Pauses a full play where it is; the next `resume` carries on from there. */
+    const pause = useCallback(() => {
+        const current = playingRef.current;
+        const ctx = contextRef.current;
+        if (!current || !ctx) return;
+        const position = Math.min(current.end, current.start + (ctx.currentTime - startedRef.current));
+        halt();
+        setPaused({ resultId: current.resultId, position });
+    }, [halt]);
 
     /** Plays `[start, end)` seconds of a result. The same region again stops it. */
     const playRegion = useCallback(async (region: RegionPlayback, blob: Blob) => {
@@ -132,5 +163,5 @@ export function useResultAudio() {
         contextRef.current?.close().catch(() => undefined);
     }, []);
 
-    return { decoded, load, forget, playing, position, playRegion, stop };
+    return { decoded, load, forget, playing, position, paused, playRegion, pause, stop };
 }

@@ -43,10 +43,11 @@ async function decode(id: string, blob: Blob): Promise<AudioBuffer> {
 }
 
 /** Copies, so the cache survives the transfer. Mono passes one array twice. */
-const toSource = (buffer: AudioBuffer, enabled: boolean): MangleSource => {
+const toSource = (buffer: AudioBuffer, enabled: boolean, regions?: [number, number][]): MangleSource => {
     const left = buffer.getChannelData(0).slice();
     const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1).slice() : left;
-    return { channels: [left, right], enabled };
+    const frames = regions?.map(([a, b]) => [Math.round(a * MANGLE_SAMPLE_RATE), Math.round(b * MANGLE_SAMPLE_RATE)] as [number, number]);
+    return { channels: [left, right], enabled, regions: frames?.length ? frames : undefined };
 };
 
 export interface BatchSource {
@@ -55,6 +56,8 @@ export interface BatchSource {
     blob: Blob | null;
     /** May new snippets be drawn from it. Default true. A fixed snippet may use any source. */
     enabled?: boolean;
+    /** Seconds: the parts new snippets may come from. */
+    regions?: [number, number][];
 }
 
 export interface BatchHandlers {
@@ -90,10 +93,10 @@ export function runBatch(
         for (let i = 0; i < sources.length; i++) {
             if (cancelled) return;
             handlers.onDecodeProgress?.(i, sources.length);
-            const { id, blob, enabled = true } = sources[i];
+            const { id, blob, enabled = true, regions } = sources[i];
             try {
                 if (!blob) throw new Error('Source no longer in the pool');
-                decoded.push(toSource(await decode(id, blob), enabled));
+                decoded.push(toSource(await decode(id, blob), enabled, regions));
             } catch (e) {
                 console.error('Mangler: could not decode a source', e);
                 // Keep the indexes lined up with the recipe; the planner skips it.

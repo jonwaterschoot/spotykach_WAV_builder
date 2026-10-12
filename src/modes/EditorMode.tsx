@@ -124,6 +124,10 @@ interface LooseFileEditorProps {
   subtitle?: string;
   /** Offered after "Add to pool". Absent when the shell gave no route there. */
   onEnterBrowse?: () => void;
+  /** The commit button's words, when the host's destination isn't Browse's pool. */
+  commitLabels?: CommitLabels;
+  /** Where `onEdited` saves to, for the leave warning. Default "the temporary pool". */
+  destination?: string;
 }
 
 /**
@@ -140,7 +144,7 @@ interface LooseFileEditorProps {
  * every step is kept while the editor lives, `collapseFileVersions` runs at the
  * project exit, and the pool receives one blob against the original it already holds.
  */
-export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterBrowse }) => {
+export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterBrowse, commitLabels, destination = 'the temporary pool' }) => {
   const [record, setRecord] = useState<FileRecord>(() => recordFromLooseFile(file));
   const [isDirty, setIsDirty] = useState(false);
   const [hasEdited, setHasEdited] = useState(false);
@@ -363,7 +367,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
             versions={record.versions}
             activeVersionId={record.currentVersionId}
             metadata={record.metadata}
-            commitLabels={onEdited ? POOL_COMMIT_LABELS : LOOSE_COMMIT_LABELS}
+            commitLabels={commitLabels ?? (onEdited ? POOL_COMMIT_LABELS : LOOSE_COMMIT_LABELS)}
             commitCleanTone={onEdited ? 'primary' : 'quiet'}
             transportActions={transportActions}
             onAssignVersion={handleAssignVersion}
@@ -409,7 +413,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
         title="Leave the editor?"
         message={
           onEdited
-            ? 'Changes you have not saved to the temporary pool will be lost. Everything already saved to the pool stays there.'
+            ? `Changes you have not saved to ${destination} will be lost. Everything already saved there stays.`
             : 'This file is only in memory. Anything you have not downloaded or added to the pool will be lost.'
         }
         confirmLabel="Leave"
