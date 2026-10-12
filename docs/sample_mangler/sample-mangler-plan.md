@@ -184,17 +184,17 @@ Start with the engine and a bare screen, so the sound can be judged before any U
 
 **Phase 0 — Prep**
 
-- [ ] Commit this plan next to the idea note
+- [x] Commit this plan next to the idea note
 - [ ] Decide the route name (`#/mangle`) and the door text, colour and icon (lucide `Shuffle` or `Dices`). The hub text says "six doors": update it
 
 **Phase 1 — Engine (no UI beyond a test button)**
 
-- [ ] `src/mangler/rng.ts`: mulberry32, `uniform`, `logUniform(min, max, bias)`, `pick(weights)`
-- [ ] `src/mangler/plan.ts`: settings → snippet plan (pure, seeded). Covers the fill-to-length loop, the crossfade clamp and the last-snippet trim
-- [ ] `src/mangler/dsp.ts`: cut, reverse, resample, gated RMS, gain, equal-power join, loop crossfade, peak limiter, all on `Float32Array`
-- [ ] `src/lib/audio/pitch.ts`: YIN with confidence, `semitonesToNearestC`
-- [ ] `src/mangler/mangle.worker.ts`: takes channel data (transferred) + settings + seeds, returns rendered buffers + cue points + snippet list, reports progress per variation
-- [ ] A determinism check: the same seed and settings give bit-identical output twice (`scripts/check-mangler.mjs` or a dev-only button, since the repo has no test runner)
+- [x] `src/mangler/rng.ts`: mulberry32, `uniform`, `logUniform(min, max, bias)`, `pick(weights)`
+- [x] `src/mangler/plan.ts`: settings → snippet plan (pure, seeded). Covers the fill-to-length loop, the crossfade clamp and the last-snippet trim
+- [x] `src/mangler/dsp.ts`: cut, reverse, resample, gated RMS, gain, equal-power join, loop crossfade, peak limiter, all on `Float32Array`
+- [x] `src/lib/audio/pitch.ts`: YIN with confidence, `semitonesToNearestC`
+- [x] `src/mangler/mangle.worker.ts`: takes channel data (transferred) + settings + seeds, returns rendered buffers + cue points + snippet list, reports progress per variation
+- [x] A determinism check: the same seed and settings give bit-identical output twice (`npm run check:mangler`, since the repo has no test runner). The loop and assembly live in `src/mangler/render.ts`, settings and presets in `src/mangler/settings.ts`
 
 **Phase 2 — Mode and door**
 
