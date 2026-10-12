@@ -153,6 +153,75 @@ const sameDice = moved.snippets.slice(0, n).every((s, i) =>
 check(sameDice && moved.snippets.some((s, i) => i < n && s.reverse !== base.snippets[i].reverse),
     'reverse slider changes direction only', `${n} snippets compared`);
 
+section('Editing (fixed snippets)');
+{
+    const again = render(sources, settings, 12345, { fixed: a.snippets });
+    check(sameArray(again.left, a.left) && sameArray(again.right, a.right), 'every snippet fixed: bit-identical to the original');
+
+    // Delete snippet 3: the rest fixed, the end refilled.
+    const without = a.snippets.filter((_, i) => i !== 3);
+    const deleted = render(sources, settings, 12345, { fixed: without });
+    check(deleted.left.length === a.left.length, 'delete a snippet: still exactly 42 s');
+    check(deleted.snippets.slice(0, without.length).every((s, i) =>
+        s.sourceStart === without[i].sourceStart && s.source === without[i].source),
+        'delete a snippet: the others keep their audio', `${deleted.snippets.length} snippets`);
+
+    // Lock snippet 5, reroll the rest with another seed.
+    const locked = a.snippets.map((s, i) => (i === 5 ? s : null));
+    const rerolled = render(sources, settings, 999, { fixed: locked });
+    check(rerolled.snippets[5].sourceStart === a.snippets[5].sourceStart && rerolled.snippets[0].sourceStart !== a.snippets[0].sourceStart,
+        'lock one, reroll the rest');
+
+    // Apply C to one suggested snippet.
+    const suggest = sanitizeSettings({ ...settings, repitch: 'suggest' });
+    const sug = render(sources, suggest, 77);
+    const target = sug.snippets.findIndex(s => s.pitch && !s.toCApplied);
+    const edited = sug.snippets.map((s, i) => (i === target ? { ...s, shift: s.shift + s.pitch.toC, toCApplied: true } : s));
+    const applied = render(sources, suggest, 77, { fixed: edited });
+    check(target >= 0 && applied.snippets[target].toCApplied && !sameArray(applied.left, sug.left),
+        'suggest: applying C to one snippet changes the file', `snippet ${target + 1}`);
+
+    let threw = false;
+    try { render([sources[0]], settings, 1, { fixed: [{ ...a.snippets[0], source: 7 }] }); } catch { threw = true; }
+    check(threw, 'a fixed snippet whose source is gone: refuses');
+}
+
+section('Snap and resampling');
+{
+    const zero = render(sources, sanitizeSettings({ ...settings, snapStart: 'zero', repitch: 'off', reverseProbability: 0 }), 8);
+    const offZero = zero.snippets.filter(s => {
+        const src = sources[s.source].channels;
+        const i = s.sourceStart;
+        const v = k => src[0][k] + src[1][k];
+        return i + 1 < src[0].length && v(i) !== 0 && Math.sign(v(i)) === Math.sign(v(i + 1)) && Math.sign(v(i)) === Math.sign(v(i - 1) ?? v(i));
+    });
+    // Silence and tiny sources have no crossing within 5 ms; tones and noise do.
+    const toneOnes = zero.snippets.filter(s => s.source <= 2);
+    check(offZero.filter(s => s.source <= 2).length === 0, 'snap to zero: tone and noise snippets start on a crossing', `${toneOnes.length} checked`);
+
+    // Clicks: a 1 s source of silence with a hit every 100 ms, so every 200 ms
+    // search window holds one.
+    const hits = new Float32Array(SR);
+    for (let h = 0; h < 10; h++) for (let i = 0; i < 2000; i++) hits[h * 4800 + 1000 + i] = Math.sin(i * 0.3) * Math.exp(-i / 400);
+    const onset = render([mono(hits)], sanitizeSettings({ outputSeconds: 3, snapStart: 'onset', skipSilence: false, snippetMinMs: 200, snippetMaxMs: 240, reverseProbability: 0, repitch: 'off' }), 3);
+    const nearHit = onset.snippets.filter(s => {
+        const phase = (s.sourceStart - 1000 + 4800) % 4800;
+        return phase < 200 || phase > 4800 - 200;
+    }).length;
+    check(nearHit >= onset.snippets.length * 0.8, 'snap to onset: snippets start at a hit', `${nearHit} of ${onset.snippets.length}`);
+
+    const { resampleSinc, resample } = await import('../src/mangler/dsp.ts');
+    const sine = tone(1000, 0.5);
+    const ideal = r => tone(1000 * r, 0.5).subarray(0, 4000);
+    const err = (out, ref) => { let e = 0; for (let i = 500; i < 3500; i++) e = Math.max(e, Math.abs(out[i] - ref[i])); return e; };
+    const r = Math.pow(2, -7 / 12);
+    const sincErr = err(resampleSinc([sine, sine], r, 4000)[0], ideal(r));
+    const linErr = err(resample([sine, sine], r, 4000)[0], ideal(r));
+    check(sincErr < 1e-3 && sincErr < linErr, 'sinc: closer to the ideal tone than linear', `max error ${sincErr.toExponential(1)} vs ${linErr.toExponential(1)}`);
+    const dc = resampleSinc([new Float32Array(2000).fill(0.5), new Float32Array(2000).fill(0.5)], 1.7, 600)[0];
+    check(dc.slice(50, 550).every(v => Math.abs(v - 0.5) < 1e-5), 'sinc: DC passes unchanged');
+}
+
 section('Presets and edges');
 {
     const glitch = render(sources, sanitizeSettings({ ...DEFAULT_SETTINGS, ...PRESETS.Glitch, snippetMaxMs: 40 }), 1);

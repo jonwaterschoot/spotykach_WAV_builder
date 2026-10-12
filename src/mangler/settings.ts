@@ -5,6 +5,8 @@
 
 export type RepitchMode = 'off' | 'suggest' | 'apply';
 export type SourceMix = 'even' | 'length';
+export type SnapStart = 'off' | 'zero' | 'onset';
+export type Resampler = 'linear' | 'sinc';
 
 export interface MangleSettings {
     /** Length of the result. The hardware plays the first 42 s. */
@@ -19,6 +21,8 @@ export interface MangleSettings {
     hardCuts: boolean;
     /** 0–1, per snippet. */
     reverseProbability: number;
+    /** Where a snippet may start: anywhere, on a zero crossing, or on a transient. */
+    snapStart: SnapStart;
     /** Gated RMS every snippet is matched to. */
     loudnessTargetDb: number;
     /** Random ± deviation from the target, for dynamics on purpose. */
@@ -32,6 +36,8 @@ export interface MangleSettings {
     pitchConfidence: number;
     /** Extra random shift of up to ± this many semitones. */
     detuneSt: number;
+    /** Windowed sinc keeps the highs on big shifts; linear is the old, duller one. */
+    resampler: Resampler;
     sourceMix: SourceMix;
     /** 0 = no cap. */
     maxPerSource: number;
@@ -61,6 +67,7 @@ export const DEFAULT_SETTINGS: MangleSettings = {
     xfadeMaxMs: 40,
     hardCuts: false,
     reverseProbability: 0.25,
+    snapStart: 'off',
     loudnessTargetDb: -18,
     loudnessSpreadDb: 0,
     maxBoostDb: 24,
@@ -69,6 +76,7 @@ export const DEFAULT_SETTINGS: MangleSettings = {
     repitch: 'suggest',
     pitchConfidence: 0.8,
     detuneSt: 0,
+    resampler: 'sinc',
     sourceMix: 'even',
     maxPerSource: 0,
     cuePoints: true,
@@ -125,6 +133,8 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     s.variations = Math.round(clamp(s.variations, 1, VARIATIONS_MAX, d.variations));
     if (!['off', 'suggest', 'apply'].includes(s.repitch)) s.repitch = d.repitch;
     if (!['even', 'length'].includes(s.sourceMix)) s.sourceMix = d.sourceMix;
+    if (!['off', 'zero', 'onset'].includes(s.snapStart)) s.snapStart = d.snapStart;
+    if (!['linear', 'sinc'].includes(s.resampler)) s.resampler = d.resampler;
     for (const key of ['hardCuts', 'skipSilence', 'cuePoints', 'loop', 'limiter'] as const) {
         s[key] = typeof s[key] === 'boolean' ? s[key] : d[key];
     }

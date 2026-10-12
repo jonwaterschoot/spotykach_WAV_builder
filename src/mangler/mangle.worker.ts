@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { render, type MangleResult, type MangleSource } from './render.ts';
+import { render, type MangleResult, type MangleSource, type SnippetInfo } from './render.ts';
 import type { MangleSettings } from './settings.ts';
 
 /**
@@ -15,6 +15,8 @@ export interface MangleRequest {
     sources: MangleSource[];
     settings: MangleSettings;
     seeds: number[];
+    /** Same for every seed: see `RenderOptions.fixed`. */
+    fixed?: (SnippetInfo | null)[];
 }
 
 export type MangleResponse =
@@ -27,11 +29,13 @@ const post = (message: MangleResponse, transfer: Transferable[] = []) =>
     (self as unknown as DedicatedWorkerGlobalScope).postMessage(message, transfer);
 
 self.onmessage = (event: MessageEvent<MangleRequest>) => {
-    const { batchId, sources, settings, seeds } = event.data;
+    const { batchId, sources, settings, seeds, fixed } = event.data;
     try {
         seeds.forEach((seed, index) => {
-            const result = render(sources, settings, seed, fraction =>
-                post({ type: 'progress', batchId, index, fraction }));
+            const result = render(sources, settings, seed, {
+                fixed,
+                onProgress: fraction => post({ type: 'progress', batchId, index, fraction }),
+            });
             post({ type: 'result', batchId, index, result }, [result.left.buffer, result.right.buffer]);
         });
         post({ type: 'done', batchId });

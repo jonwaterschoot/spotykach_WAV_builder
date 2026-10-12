@@ -40,6 +40,8 @@ export class Planner {
     private readonly sampleRate: number;
     private readonly counts: number[];
     private readonly baseWeights: number[];
+    /** False when every source is off: `pickSource` then returns -1. */
+    readonly hasSources: boolean;
 
     constructor(rng: Rng, sources: readonly PlanSource[], settings: MangleSettings, sampleRate: number) {
         this.rng = rng;
@@ -49,7 +51,7 @@ export class Planner {
         this.baseWeights = sources.map(s =>
             !s.enabled || s.length <= 0 ? 0 : settings.sourceMix === 'length' ? s.length : 1,
         );
-        if (this.baseWeights.every(w => w === 0)) throw new Error('No sources to mangle');
+        this.hasSources = this.baseWeights.some(w => w > 0);
     }
 
     /** The source draw on its own: the renderer uses it again for silence rerolls. */

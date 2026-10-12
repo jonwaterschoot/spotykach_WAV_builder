@@ -58,6 +58,119 @@ export function resample(signal: Stereo, ratio: number, outLength?: number): Ste
     return out;
 }
 
+const SINC_ZEROS = 12;
+const SINC_STEPS = 512; // table points per zero crossing
+
+/**
+ * The windowed sinc kernel K(u) = sinc(u) × Blackman(u / zeros) for u in
+ * [0, zeros], tabulated once, so the resampler does no trig per tap.
+ */
+const SINC_TABLE = (() => {
+    const table = new Float32Array(SINC_ZEROS * SINC_STEPS + 2);
+    for (let i = 0; i < table.length; i++) {
+        const u = i / SINC_STEPS;
+        const w = Math.min(1, u / SINC_ZEROS);
+        const window = 0.42 + 0.5 * Math.cos(Math.PI * w) + 0.08 * Math.cos(2 * Math.PI * w);
+        const arg = Math.PI * u;
+        table[i] = (u === 0 ? 1 : Math.sin(arg) / arg) * Math.max(0, window);
+    }
+    return table;
+})();
+
+/**
+ * Same as `resample`, by windowed sinc (Blackman, 12 zero crossings each side).
+ * Shifting up, the kernel widens to low-pass at the new Nyquist, so the highs
+ * fold back as little as they can; shifting down, it keeps the top end that
+ * linear interpolation smears. Weights are normalised, so DC passes unchanged.
+ */
+export function resampleSinc(signal: Stereo, ratio: number, outLength?: number): Stereo {
+    const inLength = signal[0].length;
+    if (Math.abs(ratio - 1) < 1e-9) return resample(signal, 1, outLength);
+    const maxOut = Math.max(0, Math.floor((inLength - 1) / ratio) + 1);
+    const n = Math.min(outLength ?? maxOut, maxOut);
+    const cutoff = Math.min(1, 1 / ratio);
+    const half = Math.ceil(SINC_ZEROS / cutoff);
+    const scale = cutoff * SINC_STEPS;
+    const limit = SINC_ZEROS * SINC_STEPS;
+    const out: Stereo = [new Float32Array(n), new Float32Array(n)];
+    const [l, r] = signal;
+    const [outL, outR] = out;
+
+    for (let i = 0; i < n; i++) {
+        const pos = i * ratio;
+        const centre = Math.floor(pos);
+        const lo = Math.max(0, centre - half + 1);
+        const hi = Math.min(inLength - 1, centre + half);
+        let total = 0, sumL = 0, sumR = 0;
+        for (let k = lo; k <= hi; k++) {
+            const t = Math.abs(pos - k) * scale;
+            if (t >= limit) continue;
+            const j = t | 0;
+            const weight = SINC_TABLE[j] + (SINC_TABLE[j + 1] - SINC_TABLE[j]) * (t - j);
+            total += weight;
+            sumL += l[k] * weight;
+            sumR += r[k] * weight;
+        }
+        const norm = total !== 0 ? 1 / total : 0;
+        outL[i] = sumL * norm;
+        outR[i] = sumR * norm;
+    }
+    return out;
+}
+
+/**
+ * The zero crossing nearest `at` within `radius` frames (on the mono mix), or
+ * `at` itself when there is none. Of the two samples around a crossing, the one
+ * closer to zero.
+ */
+export function nearestZeroCrossing(signal: Stereo, at: number, radius: number): number {
+    const [l, r] = signal;
+    const n = l.length;
+    const v = (i: number) => l[i] + r[i];
+    for (let d = 0; d <= radius; d++) {
+        for (const i of d === 0 ? [at] : [at - d, at + d]) {
+            if (i < 0 || i + 1 >= n) continue;
+            const a = v(i), b = v(i + 1);
+            if (a === 0) return i;
+            if ((a < 0) !== (b < 0)) return Math.abs(a) <= Math.abs(b) ? i : i + 1;
+        }
+    }
+    return at;
+}
+
+/**
+ * The strongest attack in `[from, from + window)`: the biggest rise of a 2.5 ms
+ * energy envelope, moved back to just before it and onto a zero crossing.
+ * `from` when nothing in the window rises clearly (a pad, a drone).
+ */
+export function findOnset(signal: Stereo, from: number, window: number, sampleRate: number): number {
+    const [l, r] = signal;
+    const frame = Math.max(16, Math.round(sampleRate * 0.0025));
+    const end = Math.min(l.length, from + window);
+    const frames = Math.floor((end - from) / frame);
+    if (frames < 3) return from;
+
+    const energy = new Float64Array(frames);
+    let mean = 0;
+    for (let f = 0; f < frames; f++) {
+        let e = 0;
+        for (let i = from + f * frame, stop = i + frame; i < stop; i++) e += l[i] * l[i] + r[i] * r[i];
+        energy[f] = e / frame;
+        mean += energy[f];
+    }
+    mean /= frames;
+
+    let best = -1, bestRise = 0;
+    for (let f = 1; f < frames; f++) {
+        const rise = energy[f] - energy[f - 1];
+        if (rise > bestRise) { bestRise = rise; best = f; }
+    }
+    // A clear attack: the jump is at least the window's mean energy, and not silence.
+    if (best < 0 || bestRise < mean || energy[best] < 1e-7) return from;
+    const at = from + (best - 1) * frame;
+    return nearestZeroCrossing(signal, at, Math.round(sampleRate * 0.001));
+}
+
 /** Plain RMS in dBFS over both channels. −Infinity for silence. */
 export function rmsDb(signal: Stereo): number {
     const [l, r] = signal;
