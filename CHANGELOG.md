@@ -41,6 +41,10 @@ upcoming USB transfer needs, and what the firmware's own USB file list reads.
   and then silences the device until it is restarted. The old 44-byte header was always
   aligned; a `LIST` chunk with a name isn't, unless padded, which the encoder now does.
 
+- **A missing SD card says so.** With the card ejected, the build and import preview treated
+  it as an empty card and offered to write every slot. It now opens with a "SD card not found"
+  dialog that offers Change SD location, waits for the card, and rescans when it is back.
+
 Loads on the current release firmware unchanged: it skips chunks it doesn't know until it
 has found `fmt ` and `data`, and `cue ` stays after the audio.
 

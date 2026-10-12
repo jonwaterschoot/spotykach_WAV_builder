@@ -292,6 +292,9 @@ function App({ onExitToHub }: AppProps) {
     defaultMode?: 'import' | 'push';
   } | null>(null);
 
+  /** The sync modal's card can't be read (ejected); checked while the modal is open. */
+  const [sdCardMissing, setSdCardMissing] = useState(false);
+
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
 
@@ -1300,14 +1303,32 @@ function App({ onExitToHub }: AppProps) {
     }
   };
 
+  /**
+   * The sync diff for the modal. When the card can't be read (ejected), a diff
+   * against no card instead, flagged missing: the modal opens and asks for the
+   * card rather than failing with a toast.
+   */
+  const scanSyncDiff = async (projectState: AppState, handle: FileSystemDirectoryHandle) => {
+    const { calculateSyncDiff } = await import('./utils/importUtils');
+    const { FolderBackend, CardUnavailableError } = await import('./lib/card/folderBackend');
+    try {
+      const diff = await calculateSyncDiff(projectState, new FolderBackend(handle));
+      setSdCardMissing(false);
+      return diff;
+    } catch (e) {
+      if (!(e instanceof CardUnavailableError)) throw e;
+      const { unreachableCard } = await import('./lib/card/cardBackend');
+      setSdCardMissing(true);
+      return calculateSyncDiff(projectState, unreachableCard);
+    }
+  };
+
   const handleSKRefresh = async () => {
     if (!sdHandle || !syncModalState) return;
 
     setIsProcessing(true);
     setProgressMsg('Scanning SK folder on SD...');
     try {
-      const { calculateSyncDiff } = await import('./utils/importUtils');
-      const { FolderBackend } = await import('./lib/card/folderBackend');
       const projectName = syncModalState.projectName;
 
       let projectState = state;
@@ -1316,11 +1337,12 @@ function App({ onExitToHub }: AppProps) {
         projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
       }
 
-      const card = new FolderBackend(sdHandle);
-      const diff = await calculateSyncDiff(projectState, card);
+      const diff = await scanSyncDiff(projectState, sdHandle);
 
       setSyncModalState(prev => prev ? { ...prev, diff } : null);
-      showToast("SD Card rescanned", "success");
+      // A missing card shows in the modal itself.
+      const { FolderBackend } = await import('./lib/card/folderBackend');
+      if (await new FolderBackend(sdHandle).isReachable()) showToast("SD Card rescanned", "success");
     } catch (e: any) {
       console.error(e);
       showToast("SK scan failed: " + e.message, 'error');
@@ -1333,6 +1355,37 @@ function App({ onExitToHub }: AppProps) {
   // ==========================================
   // EFFECTS
   // ==========================================
+
+  // While the sync modal is open, notice an ejected card instead of offering
+  // to write to it, and rescan once it is back.
+  const syncModalOpen = !!syncModalState?.isOpen;
+  const handleSKRefreshRef = useRef(handleSKRefresh);
+  handleSKRefreshRef.current = handleSKRefresh;
+  const sdCardMissingRef = useRef(sdCardMissing);
+  sdCardMissingRef.current = sdCardMissing;
+  useEffect(() => {
+    if (!syncModalOpen || !sdHandle) {
+      if (!syncModalOpen) setSdCardMissing(false);
+      return;
+    }
+    let cancelled = false;
+    // Carried over a Change SD pick, so the new folder gets scanned.
+    let wasMissing = sdCardMissingRef.current;
+    const check = async () => {
+      const { FolderBackend } = await import('./lib/card/folderBackend');
+      const missing = !(await new FolderBackend(sdHandle).isReachable());
+      if (cancelled) return;
+      setSdCardMissing(missing);
+      if (wasMissing && !missing) void handleSKRefreshRef.current();
+      wasMissing = missing;
+    };
+    void check();
+    const timer = setInterval(check, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [syncModalOpen, sdHandle]);
 
   // Dirty tracking moved into useProjectSession — see session/ProjectSession.tsx.
 
@@ -4341,10 +4394,7 @@ function App({ onExitToHub }: AppProps) {
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
     try {
-      const { calculateSyncDiff } = await import('./utils/importUtils');
-      const { FolderBackend } = await import('./lib/card/folderBackend');
-      const card = new FolderBackend(sdHandle);
-      const diff = await calculateSyncDiff(state, card);
+      const diff = await scanSyncDiff(state, sdHandle);
       setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: mode });
     } catch (e: any) {
       showToast('SK scan failed: ' + e.message, 'error');
@@ -5229,19 +5279,12 @@ function App({ onExitToHub }: AppProps) {
 
                   try {
                     const { loadProjectFromDirectory } = await import('./utils/exportUtils');
-                    const { calculateSyncDiff } = await import('./utils/importUtils');
-                    const { FolderBackend } = await import('./lib/card/folderBackend');
-
                     // 1. Load Project State Headless
                     const projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading project...'));
 
-                    // 2. Scan SD Structure
+                    // 2. Scan the card and calculate the diff
                     setProgressMsg('Scanning SD Card...');
-                    const card = new FolderBackend(sdHandle);
-
-                    // 3. Calculate Diff
-                    setProgressMsg('Calculating Differences...');
-                    const diff = await calculateSyncDiff(projectState, card);
+                    const diff = await scanSyncDiff(projectState, sdHandle);
 
                     setSyncModalState({ isOpen: true, projectName, diff, defaultMode: 'push' });
 
@@ -5261,10 +5304,7 @@ function App({ onExitToHub }: AppProps) {
                   setIsProcessing(true);
                   setProgressMsg('Scanning SK folder on SD...');
                   try {
-                    const { calculateSyncDiff } = await import('./utils/importUtils');
-                    const { FolderBackend } = await import('./lib/card/folderBackend');
-                    const card = new FolderBackend(sdHandle);
-                    const diff = await calculateSyncDiff(state, card);
+                    const diff = await scanSyncDiff(state, sdHandle);
                     setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                   } catch (e: any) {
                     console.error(e);
@@ -5287,6 +5327,7 @@ function App({ onExitToHub }: AppProps) {
                 onChangeSDCard={handleSetSDFolder}
                 onRefresh={handleSKRefresh}
                 isRefreshing={isProcessing}
+                cardMissing={sdCardMissing}
                 onClose={() => setSyncModalState(null)}
                 onConfirm={async (decisions, options: ExportOptions, importDecisions) => {
                   const projectName = syncModalState?.projectName;

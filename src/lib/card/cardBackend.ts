@@ -117,3 +117,17 @@ export const readCardSlots = async (card: CardBackend): Promise<Map<string, Slot
 /** The slot's bytes: the file the descriptor already holds, or a `readFile()`. */
 export const slotFile = (card: CardBackend, desc: SlotDescriptor): Promise<File> =>
     desc.file ? Promise.resolve(desc.file) : card.readFile(desc.tape, desc.slot);
+
+/**
+ * A card with nothing on it and no way to write. Stands in when the real card
+ * can't be reached, so the sync modal can open and ask for it.
+ */
+export const unreachableCard: CardBackend = {
+    kind: 'folder',
+    info: async () => ({ kind: 'folder', label: 'No card' }),
+    listSlots: async () => [],
+    readHeader: async () => null,
+    readFile: async () => { throw new Error('SD card not found.'); },
+    writeSlot: async () => { throw new Error('SD card not found.'); },
+    deleteSlot: async () => { throw new Error('SD card not found.'); },
+};

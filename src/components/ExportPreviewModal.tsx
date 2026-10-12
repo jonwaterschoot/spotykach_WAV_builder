@@ -59,6 +59,8 @@ interface ExportPreviewModalProps {
     onRefresh?: () => void;
     isRefreshing?: boolean;
     onChangeSDCard?: () => void;
+    /** The card can't be read any more (ejected): nothing may be written or imported. */
+    cardMissing?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -506,7 +508,7 @@ const CardLossPanel: React.FC<{
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     isOpen, onClose, onConfirm, diff, projectName, defaultMode = 'push',
-    onRefresh, isRefreshing, onChangeSDCard
+    onRefresh, isRefreshing, onChangeSDCard, cardMissing = false
 }) => {
     const [mode, setMode] = useState<'import' | 'push'>(defaultMode);
 
@@ -1630,7 +1632,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         </button>
                         <button
                             onClick={handleConfirm}
-                            disabled={isApplying || actionCount === 0}
+                            disabled={isApplying || actionCount === 0 || cardMissing}
+                            title={cardMissing ? 'SD card not found' : undefined}
                             className={`px-8 py-3 ${mode === 'push' ? 'bg-orange-600 hover:bg-orange-500 shadow-[0_8px_24px_rgba(249,115,22,0.3)]' : 'bg-indigo-600 hover:bg-indigo-500 shadow-[0_8px_24px_rgba(79,70,229,0.3)]'} disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl flex items-center gap-3 transition-all transform hover:-translate-y-0.5`}
                         >
                             {isApplying ? <Loader size={20} className="animate-spin" /> : 
@@ -1654,6 +1657,39 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         </button>
                     </div>
                 </div>
+                {/* Card not reachable: blocks the modal until it is back or another folder is picked */}
+                {cardMissing && (
+                    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+                        <div role="alertdialog" aria-labelledby="card-missing-title"
+                            className="bg-[#1a1a1a] border border-red-500/40 rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col gap-6 text-center animate-in fade-in zoom-in duration-200">
+                            <div className="mx-auto w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center">
+                                <AlertTriangle size={28} className="text-red-400" />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <h3 id="card-missing-title" className="text-lg font-bold text-white">SD card not found</h3>
+                                <p className="text-sm text-gray-400">
+                                    The card was ejected or its location can't be read. Insert the card, or pick its location again.
+                                </p>
+                            </div>
+                            <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
+                                <Loader size={14} className="animate-spin" />
+                                Waiting for the card. It is rescanned as soon as it is back.
+                            </div>
+                            <div className="flex items-center justify-center gap-3">
+                                <button onClick={onClose}
+                                    className="px-5 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors font-medium">
+                                    Cancel
+                                </button>
+                                {onChangeSDCard && (
+                                    <button onClick={onChangeSDCard}
+                                        className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-colors">
+                                        Change SD location
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {/* Conflict Summary Modal (Simple View Only) */}
                 {showConflictSummary && (
                     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">

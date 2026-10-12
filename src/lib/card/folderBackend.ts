@@ -16,6 +16,16 @@ const tapeFolder = (tape: TapeColor): string => tape.charAt(0).toUpperCase();
 const slotFileName = (slot: number): string => `${slot}.WAV`;
 const SLOT_FILE = /^(\d+)\.WAV$/i;
 
+/** The picked folder can't be read: the card was ejected, or permission was withdrawn. */
+export class CardUnavailableError extends Error {
+    constructor(folder: string, options?: ErrorOptions) {
+        // A drive root is named "\" (Windows) or "/", which says nothing.
+        const where = folder && !/^[\\/]+$/.test(folder) ? ` ("${folder}")` : '';
+        super(`SD card not found${where}. Reinsert the card, or pick it again with Change SD.`, options);
+        this.name = 'CardUnavailableError';
+    }
+}
+
 export class FolderBackend implements CardBackend {
     readonly kind = 'folder' as const;
 
@@ -34,6 +44,24 @@ export class FolderBackend implements CardBackend {
 
     async info(): Promise<CardInfo> {
         return { kind: 'folder', label: this.root.name };
+    }
+
+    /**
+     * Whether the picked folder can still be read. A handle outlives an ejected
+     * card, and a missing card would otherwise look like a card without `SK`.
+     */
+    async isReachable(): Promise<boolean> {
+        try {
+            // Reading one entry is enough; an empty card reads fine.
+            await this.root.keys().next();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private async ensureReachable(): Promise<void> {
+        if (!(await this.isReachable())) throw new CardUnavailableError(this.root.name);
     }
 
     private async skFolder(create: boolean): Promise<FileSystemDirectoryHandle | null> {
@@ -68,6 +96,7 @@ export class FolderBackend implements CardBackend {
 
     async listSlots(): Promise<SlotDescriptor[]> {
         this.listed.clear();
+        await this.ensureReachable();
         const sk = await this.skFolder(false);
         if (!sk) return [];
 
@@ -146,6 +175,7 @@ export class FolderBackend implements CardBackend {
 
     /** `SK/` and one folder per tape, even for tapes the build leaves empty. */
     async ensureLayout(): Promise<void> {
+        await this.ensureReachable();
         for (const tape of TAPE_COLORS) await this.tapeDir(tape, true);
     }
 
@@ -158,6 +188,7 @@ export class FolderBackend implements CardBackend {
                 return null;
             }
         };
+        await this.ensureReachable();
         const sk = await this.skFolder(false);
         const fromSK = sk ? await read(sk) : null;
         if (fromSK) return { text: fromSK, location: 'sk' };
