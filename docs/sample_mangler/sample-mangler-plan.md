@@ -185,7 +185,7 @@ Start with the engine and a bare screen, so the sound can be judged before any U
 **Phase 0 — Prep**
 
 - [x] Commit this plan next to the idea note
-- [ ] Decide the route name (`#/mangle`) and the door text, colour and icon (lucide `Shuffle` or `Dices`). The hub text says "six doors": update it
+- [x] Decide the route name (`#/mangle`) and the door text, colour and icon (lucide `Shuffle` or `Dices`). The hub text says "six doors": update it. Went with `#/mangle`, `Dices`, synthux red, tagline *Experimental*
 
 **Phase 1 — Engine (no UI beyond a test button)**
 
@@ -198,31 +198,31 @@ Start with the engine and a bare screen, so the sound can be judged before any U
 
 **Phase 2 — Mode and door**
 
-- [ ] Add `mangle` to `AppMode` / `MODES`, `ModeRouter` (lazy `MangleMode`), and a door in `HubScreen` with `desktopOnly: true`
-- [ ] `src/modes/MangleMode.tsx`: three columns (picker, settings, results), desktop only
-- [ ] `mangle-sources` and `mangle-results` stores, DB version bump, load on mount
-- [ ] Source pool list: length, include switch, remove, preview
-- [ ] Settings panel with the range sliders and presets; settings remembered in `localStorage`
-- [ ] Generate N: decode, worker, results appear as they finish; cancel button
-- [ ] Result card: waveform (`MiniWaveform`) with snippet boundaries, seed, play, keep, discard
+- [x] Add `mangle` to `AppMode` / `MODES`, `ModeRouter` (lazy `MangleMode`), and a door in `HubScreen` with `desktopOnly: true`
+- [x] `src/modes/MangleMode.tsx`: three columns (picker, settings, results), desktop only
+- [x] `mangle-sources` and `mangle-results` stores, DB version bump, load on mount
+- [x] Source pool list: length, include switch, remove, preview
+- [x] Settings panel with the range sliders and presets; settings remembered in `localStorage`
+- [x] Generate N: decode, worker, results appear as they finish; cancel button
+- [x] Result card: waveform with snippet boundaries, seed, play, keep, discard. A small canvas drawn from peaks stored with the result (`ResultWaveform`) instead of `MiniWaveform`, which decodes the blob
 
 **Phase 3 — Picker**
 
 - [ ] `SampleBrowser` `mode="picker"` with `actionLabel`; hide everything but list, search, preview and the action
-- [ ] Local files: file input and drag-and-drop onto the source pool, plus the picker's local folder tab
+- [ ] Local files: file input and drag-and-drop onto the source pool (done in Phase 2), plus the picker's local folder tab
 
 **Phase 4 — Saving and handoff**
 
 - [ ] `classifyLicense()` in `src/submission/licenses.ts`; license level shown on each source row and each result
 - [ ] Block every save route for a result that uses a no-derivatives source; mark *personal use* results and have Submit a Pack refuse them
-- [ ] Download WAV with cue points
+- [x] Download WAV with cue points
 - [ ] Add to Browse pool, then the "Open Browse" prompt (copy the `EditorMode` pattern)
 - [ ] Save to Studio user library through IndexedDB, with unique names; warn while Studio may be open in another tab
 - [ ] Later: `BroadcastChannel` merge in Studio so both can be open
 
 **Phase 5 — Refinement**
 
-- [ ] Snippet list per result: source, length, gain, direction, note, shift; per-snippet "apply C" in Suggest mode
+- [ ] Snippet list per result: source, length, gain, direction, note, shift (done in Phase 2); per-snippet "apply C" in Suggest mode
 - [ ] "Same seed" re-render after a slider change
 - [ ] Lock a snippet and reroll the others
 - [ ] Snap snippet starts to zero crossings (hard cuts) or to onsets (an optional "transient start" toggle)

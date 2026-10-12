@@ -11,6 +11,7 @@ const PresetsMode = React.lazy(() => import('../modes/PresetsMode'));
 const ConfigMode = React.lazy(() => import('../modes/ConfigMode'));
 const EditorMode = React.lazy(() => import('../modes/EditorMode'));
 const SubmitMode = React.lazy(() => import('../modes/SubmitMode'));
+const MangleMode = React.lazy(() => import('../modes/MangleMode'));
 
 const ModeLoading: React.FC = () => (
   <div className="h-screen w-full flex items-center justify-center bg-synthux-main text-gray-500">
@@ -73,6 +74,14 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
     return (
       <Suspense fallback={<ModeLoading />}>
         <SubmitMode onExitToHub={() => setMode('hub')} />
+      </Suspense>
+    );
+  }
+
+  if (mode === 'mangle') {
+    return (
+      <Suspense fallback={<ModeLoading />}>
+        <MangleMode onExitToHub={() => setMode('hub')} />
       </Suspense>
     );
   }
