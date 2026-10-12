@@ -34,7 +34,7 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
     return (
         <div className="bg-[#1a1a1a] border border-gray-700 rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden relative group">
             {/* Draggable Header Background */}
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 drag-handle cursor-move z-10"></div>
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-rose-400 to-red-500 drag-handle cursor-move z-10"></div>
 
             <div className="flex items-center justify-between p-3 border-b border-gray-800 shrink-0 drag-handle cursor-move bg-black/20">
                 <div className="flex items-center gap-2">
@@ -44,7 +44,7 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
                             <button
                                 key={l}
                                 onClick={() => onLayoutChange(l)}
-                                className={`px-2 py-0.5 rounded-[3px] text-[9px] font-black uppercase transition-colors ${layout === l ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/40' : 'text-gray-500 hover:text-gray-300'
+                                className={`px-2 py-0.5 rounded-[3px] text-[9px] font-black uppercase transition-colors ${layout === l ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'text-gray-500 hover:text-gray-300'
                                     }`}
                             >
                                 {l}
@@ -75,18 +75,18 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
                                             onClick={() => onPlaySlice(currentSliceIdx)}
                                             className={`w-10 h-10 border-2 rounded-lg flex items-center justify-center font-black text-sm transition-all duration-75 relative group/key
                                                 ${isTriggered
-                                                    ? 'bg-cyan-500 border-cyan-300 text-white scale-95 shadow-[0_0_15px_rgba(34,211,238,0.6)]'
+                                                    ? 'bg-red-500 border-red-300 text-white scale-95 shadow-[0_0_15px_rgba(248,113,113,0.6)]'
                                                     : isActive
-                                                        ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-400'
+                                                        ? 'bg-red-900/30 border-red-500/50 text-red-400'
                                                         : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'
                                                 }`}
                                         >
                                             {key}
                                             {isTriggered && (
-                                                <span className="absolute inset-0 rounded-lg animate-ping bg-cyan-400/20 pointer-events-none"></span>
+                                                <span className="absolute inset-0 rounded-lg animate-ping bg-red-400/20 pointer-events-none"></span>
                                             )}
                                         </button>
-                                        <div className={`text-[8px] font-black uppercase tracking-tighter ${isTriggered ? 'text-cyan-300' : isActive ? 'text-cyan-500' : 'text-gray-600'}`}>
+                                        <div className={`text-[8px] font-black uppercase tracking-tighter ${isTriggered ? 'text-red-300' : isActive ? 'text-red-500' : 'text-gray-600'}`}>
                                             SL {currentSliceIdx + 1}
                                         </div>
                                     </div>
@@ -96,10 +96,10 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
                     ))}
                 </div>
 
-                <div className="mt-4 p-2.5 bg-cyan-900/10 border border-cyan-500/20 rounded-lg">
+                <div className="mt-4 p-2.5 bg-red-900/10 border border-red-500/20 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
-                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
-                        <h3 className="text-cyan-500 font-black uppercase tracking-widest text-[9px]">MIDI & KEYBOARD SYNC</h3>
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+                        <h3 className="text-red-500 font-black uppercase tracking-widest text-[9px]">MIDI & KEYBOARD SYNC</h3>
                     </div>
                     <p className="text-gray-500 text-[10px] font-medium leading-relaxed">
                         Trigger slices with keys or MIDI notes (C1-G3). Map reflects active playback.

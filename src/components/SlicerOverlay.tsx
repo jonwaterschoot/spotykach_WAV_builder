@@ -148,7 +148,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                     y={0}
                     width={Math.max(0, timeToX(activeEnd) - timeToX(activeStart))}
                     height={height}
-                    fill="rgba(34, 211, 238, 0.15)"
+                    fill="rgba(248, 113, 113, 0.15)"
                     pointerEvents="none"
                 />
             )}
@@ -165,7 +165,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                             y1={0}
                             x2={x}
                             y2={height}
-                            stroke={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#f87171" : "#22d3ee"}
+                            stroke={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#ffffff" : "#f87171"}
                             strokeWidth={(hoverIdx === idx || hoveredMarkerIdx === idx) ? 3 : 2}
                             strokeDasharray={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "0" : "4 2"}
                             opacity={(hoverIdx === idx || hoveredMarkerIdx === idx) ? 1 : 0.8}
@@ -190,8 +190,8 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                             cx={x}
                             cy={14}
                             r={9}
-                            fill={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#b91c1c" : "#0891b2"}
-                            stroke={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#f87171" : "#22d3ee"}
+                            fill={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#7f1d1d" : "#dc2626"}
+                            stroke={(hoverIdx === idx || hoveredMarkerIdx === idx) ? "#ffffff" : "#f87171"}
                             strokeWidth={1.5}
                             onMouseEnter={() => setHoverIdx(idx)}
                             onMouseLeave={() => setHoverIdx(null)}
@@ -243,7 +243,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                             x={x}
                             y={height - 4}
                             textAnchor="middle"
-                            fill="rgba(34,211,238,0.6)"
+                            fill="rgba(248,113,113,0.6)"
                             fontSize="8"
                             fontFamily="monospace"
                             pointerEvents="none"
@@ -259,7 +259,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                 x={width - 8}
                 y={14}
                 textAnchor="end"
-                fill="rgba(34,211,238,0.5)"
+                fill="rgba(248,113,113,0.5)"
                 fontSize="9"
                 fontFamily="monospace"
                 pointerEvents="none"
@@ -272,15 +272,15 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                 <foreignObject x={0} y={0} width={width} height={height} className="pointer-events-none">
                     <div className="w-full h-full flex flex-col items-center justify-center p-4">
                         {!bannerDismissed ? (
-                            <div className="bg-cyan-950/90 border border-cyan-500/50 backdrop-blur-md px-8 py-4 rounded-2xl shadow-2xl shadow-cyan-900/40 flex flex-col items-center gap-2 pointer-events-auto relative group">
+                            <div className="bg-red-950/90 border border-red-500/50 backdrop-blur-md px-8 py-4 rounded-2xl shadow-2xl shadow-red-900/40 flex flex-col items-center gap-2 pointer-events-auto relative group">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setBannerDismissed(true); }}
-                                    className="absolute top-2 right-2 p-1 text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-full transition-all"
+                                    className="absolute top-2 right-2 p-1 text-red-500/50 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-all"
                                     title="Dismiss"
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                 </button>
-                                <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
+                                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30">
                                     <svg
                                         width="20"
                                         height="20"
@@ -290,7 +290,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                                         strokeWidth="2"
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
-                                        className="text-cyan-400 rotate-90"
+                                        className="text-red-400 rotate-90"
                                     >
                                         <circle cx="6" cy="6" r="3" />
                                         <circle cx="6" cy="18" r="3" />
@@ -299,10 +299,10 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                                         <line x1="8.12" y1="8.12" x2="12" y2="12" />
                                     </svg>
                                 </div>
-                                <span className="text-cyan-400 font-black uppercase tracking-[0.2em] text-sm text-center">
+                                <span className="text-red-400 font-black uppercase tracking-[0.2em] text-sm text-center">
                                     not implemented on Spotykach yet
                                 </span>
-                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20">
+                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
                                     <svg
                                         width="10"
                                         height="10"
@@ -312,19 +312,19 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                                         strokeWidth="2"
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
-                                        className="text-cyan-400"
+                                        className="text-red-400"
                                     >
                                         <circle cx="12" cy="12" r="10" />
                                         <line x1="12" y1="8" x2="12" y2="12" />
                                         <line x1="12" y1="16" x2="12.01" y2="16" />
                                     </svg>
-                                    <span className="text-cyan-400/80 font-bold text-[9px] uppercase tracking-wider">
+                                    <span className="text-red-400/80 font-bold text-[9px] uppercase tracking-wider">
                                         Marker editing only
                                     </span>
                                 </div>
                             </div>
                         ) : (
-                            <div className="mt-auto mb-2 flex items-center gap-1.5 px-2 py-1 rounded bg-cyan-950/40 border border-cyan-500/20 backdrop-blur-sm shadow-lg pointer-events-auto cursor-help group" title="Slices are currently for marker visualization and export only. They do not yet affect playback on the hardware.">
+                            <div className="mt-auto mb-2 flex items-center gap-1.5 px-2 py-1 rounded bg-red-950/40 border border-red-500/20 backdrop-blur-sm shadow-lg pointer-events-auto cursor-help group" title="Slices are currently for marker visualization and export only. They do not yet affect playback on the hardware.">
                                 <svg
                                     width="10"
                                     height="10"
@@ -334,13 +334,13 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                                     strokeWidth="2.5"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
-                                    className="text-cyan-400"
+                                    className="text-red-400"
                                 >
                                     <circle cx="12" cy="12" r="10" />
                                     <line x1="12" y1="8" x2="12" y2="12" />
                                     <line x1="12" y1="16" x2="12.01" y2="16" />
                                 </svg>
-                                <span className="text-cyan-400/60 font-black text-[8px] uppercase tracking-widest group-hover:text-cyan-400 transition-colors">
+                                <span className="text-red-400/60 font-black text-[8px] uppercase tracking-widest group-hover:text-red-400 transition-colors">
                                     Not implemented on Spotykach
                                 </span>
                             </div>
