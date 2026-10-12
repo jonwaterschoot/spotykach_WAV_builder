@@ -38,7 +38,7 @@ export async function resolveHit(hit: OnlineHit): Promise<PlayableHit | null> {
     if (!provider.expand) return null;
     const first = (await provider.expand(hit, {})).find(f => f.url);
     if (!first?.url) return null;
-    const settled = { url: browserUrl(first.url), format: first.format, bytes: first.bytes, durationSec: first.durationSec };
+    const settled = { url: browserUrl(first.url), format: first.format, bytes: first.bytes, durationSec: first.durationSec, bitrateKbps: first.bitrateKbps };
     resolved.set(hit.key, settled);
     return { ...hit, ...settled };
 }

@@ -11,7 +11,8 @@ export const PROVIDERS: OnlineProvider[] = [openverse, commons, archive, nasa, f
 
 export const PROVIDERS_BY_ID = Object.fromEntries(PROVIDERS.map(p => [p.id, p])) as Record<ProviderId, OnlineProvider>;
 
-export const DEFAULT_PROVIDERS: ProviderId[] = ['openverse', 'commons', 'archive', 'nasa'];
+/** Freesound included: it is skipped anyway while there is neither a key nor the proxy. */
+export const DEFAULT_PROVIDERS: ProviderId[] = ['openverse', 'commons', 'archive', 'nasa', 'freesound'];
 
 /** "Online · Freesound": the `origin` an imported sound carries. */
 export const originFor = (hit: OnlineHit): string =>

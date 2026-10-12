@@ -36,6 +36,8 @@ export interface OnlineHit {
     url?: string;
     /** "MP3", "WAV" … for the row. */
     format?: string;
+    /** Where the archive says; lossless originals don't need one to be judged. */
+    bitrateKbps?: number;
     /** An Archive item: a folder of tracks, listed by `expand`. */
     expandable?: boolean;
     /** The provider's own pointer for `expand`, e.g. NASA's asset list URL. */
@@ -54,6 +56,11 @@ export interface ProviderContext {
     signal?: AbortSignal;
     /** The user's own key, for the providers that need one. */
     apiKey?: string;
+    /**
+     * WAV Builder's own proxy (workers/online-proxy), which holds a shared key. Used
+     * when there is no `apiKey`; a personal key always goes direct.
+     */
+    proxyUrl?: string;
     fetch?: typeof fetch;
 }
 
@@ -64,8 +71,16 @@ export interface OnlineProvider {
     blurb: string;
     homepage: string;
     needsKey: boolean;
+    /** True when the shared proxy can stand in for a missing key. */
+    proxyable?: boolean;
+    /** What you get, in a line: format and bitrate of what is downloaded. */
+    quality: string;
+    /** The archive's own limits, in a line. */
+    limitNote: string;
     /** Kept a little under the archive's own limits; see budget.ts. */
     limits: { perMinute: number; perDay: number };
+    /** Through the shared proxy: this visitor's slice of one key shared by everyone. */
+    sharedLimits?: { perMinute: number; perDay: number };
     /** `page` counts from 1. */
     search(query: OnlineQuery, page: number, ctx: ProviderContext): Promise<OnlinePage>;
     /** An expandable hit's playable files. */
@@ -89,8 +104,12 @@ export async function getJson<T>(url: string, label: string, ctx: ProviderContex
         const retry = Number(res.headers.get('retry-after'));
         throw new RateLimitError(label, Number.isFinite(retry) && retry > 0 ? retry : 60);
     }
-    if (res.status === 401 || res.status === 403) throw new Error(`${label} refused the request (${res.status}). Check the key.`);
-    if (!res.ok) throw new Error(`${label} answered ${res.status}`);
+    if (!res.ok) {
+        // The proxy and Freesound both explain themselves in `detail`.
+        const detail = await res.json().then((b: { detail?: unknown }) => (typeof b?.detail === 'string' ? b.detail : ''), () => '');
+        if (res.status === 401 || res.status === 403) throw new Error(`${label} refused the request${detail ? `: ${detail}` : '. Check the key.'}`);
+        throw new Error(`${label} answered ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
     return res.json() as Promise<T>;
 }
 

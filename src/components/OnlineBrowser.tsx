@@ -3,7 +3,7 @@ import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, ExternalLink
 import {
     PROVIDERS, PROVIDERS_BY_ID, DEFAULT_PROVIDERS, LICENSE_FILTERS, DEFAULT_LICENSE_FILTERS,
     RateLimitError, createBudget, dedupeKey,
-    type LicenseFilter, type MaxLength, type OnlineHit, type OnlineQuery, type ProviderId,
+    type LicenseFilter, type MaxLength, type OnlineHit, type OnlineProvider, type OnlineQuery, type ProviderId,
 } from '../online';
 import { MAX_BYTES, isTooBig, resolveHit, type PlayableHit } from '../online/playable';
 import { appStorage } from '../utils/storageNamespace';
@@ -63,6 +63,12 @@ const LENGTHS: { value: MaxLength; label: string }[] = [
 const SUGGESTIONS = ['rain', 'bell', 'field recording', 'machine', 'piano', 'voice', 'birds', 'metal', 'drone', 'radio'];
 
 const KEY_STORE = 'wavbuilder_freesound_key';
+
+/**
+ * WAV Builder's own proxy (workers/online-proxy), set at build time. Empty means
+ * there is none, and Freesound needs the user's own key.
+ */
+const PROXY_URL = (import.meta.env.VITE_ONLINE_PROXY_URL || '').replace(/\/+$/, '');
 const PREFS_STORE = 'wavbuilder_online_prefs';
 
 const LICENSE_TONE: Record<LicenseFilter, string> = {
@@ -160,11 +166,21 @@ export const OnlineBrowser = ({
         };
     }, []);
 
-    const activeProviders = PROVIDERS.filter(p => prefs.providers.includes(p.id) && (!p.needsKey || apiKey));
+    /** How a provider would be reached now: free, the user's key, the shared key, or not at all. */
+    const access = (p: OnlineProvider): 'open' | 'own-key' | 'shared' | 'none' =>
+        !p.needsKey ? 'open' : apiKey ? 'own-key' : p.proxyable && PROXY_URL ? 'shared' : 'none';
+    /** The budget a provider spends from: the shared key's is a smaller, separate one. */
+    const budgetFor = (p: OnlineProvider) =>
+        access(p) === 'shared' && p.sharedLimits
+            ? { id: `${p.id}-shared`, limits: p.sharedLimits }
+            : { id: p.id, limits: p.limits };
+
+    const activeProviders = PROVIDERS.filter(p => prefs.providers.includes(p.id) && access(p) !== 'none');
 
     const runProvider = async (id: ProviderId, q: OnlineQuery, page: number) => {
         const provider = PROVIDERS_BY_ID[id];
-        const wait = budget.take(id, provider.limits).waitSec;
+        const spend = budgetFor(provider);
+        const wait = budget.take(spend.id, spend.limits).waitSec;
         if (wait > 0) {
             setResults(prev => ({
                 ...prev,
@@ -183,7 +199,11 @@ export const OnlineBrowser = ({
                 : { ...(prev[id] as ProviderResults), loading: true, error: undefined },
         }));
         try {
-            const res = await provider.search(q, page, { signal: controller.signal, apiKey: apiKey || undefined });
+            const res = await provider.search(q, page, {
+                signal: controller.signal,
+                apiKey: apiKey || undefined,
+                proxyUrl: PROXY_URL || undefined,
+            });
             setResults(prev => {
                 const before = page === 1 ? [] : prev[id]?.hits ?? [];
                 const seen = new Set(before.map(h => h.key));
@@ -194,7 +214,7 @@ export const OnlineBrowser = ({
             });
         } catch (e) {
             if (controller.signal.aborted) return;
-            if (e instanceof RateLimitError) budget.exhaustMinute(id, provider.limits);
+            if (e instanceof RateLimitError) budget.exhaustMinute(spend.id, spend.limits);
             const message = e instanceof Error ? e.message : String(e);
             setResults(prev => ({
                 ...prev,
@@ -337,7 +357,7 @@ export const OnlineBrowser = ({
         const meta = [
             hit.author,
             formatDuration(hit.durationSec),
-            hit.format,
+            hit.format && hit.bitrateKbps ? `${hit.format} ${hit.bitrateKbps} kbps` : hit.format,
             hit.expandable ? null : formatBytes(hit.bytes),
             hit.via ? `via ${hit.via}` : null,
         ].filter(Boolean);
@@ -531,42 +551,53 @@ export const OnlineBrowser = ({
                 {/* Archives */}
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5">
                     {PROVIDERS.map(p => {
-                        const needsKey = p.needsKey && !apiKey;
-                        const on = prefs.providers.includes(p.id) && !needsKey;
-                        const b = budget.state(p.id, p.limits);
-                        const left = p.limits.perDay - b.usedDay;
+                        const how = access(p);
+                        const on = prefs.providers.includes(p.id) && how !== 'none';
+                        const spend = budgetFor(p);
+                        const left = spend.limits.perDay - budget.state(spend.id, spend.limits).usedDay;
+                        // A count is worth showing where the cap is real and small enough to meet.
+                        const showLeft = on && (p.id === 'openverse' || p.needsKey);
+                        const keyOffer = p.needsKey && how !== 'own-key';
                         return (
                             <div key={p.id} className={`rounded-lg border px-3 py-2 transition-colors ${on ? 'border-white/15 bg-white/5' : 'border-gray-800 bg-black/30'}`}>
-                                <label className={`flex items-center gap-2 ${needsKey ? 'cursor-default' : 'cursor-pointer'}`}>
+                                <label className={`flex items-center gap-2 ${how === 'none' ? 'cursor-default' : 'cursor-pointer'}`}>
                                     <input
                                         type="checkbox"
                                         checked={on}
-                                        disabled={needsKey}
+                                        disabled={how === 'none'}
                                         onChange={() => setPrefs(prev => ({ ...prev, providers: toggleIn(prev.providers, p.id) }))}
                                         className="accent-synthux-blue"
                                     />
                                     <span className={`text-xs font-bold ${on ? 'text-gray-200' : 'text-gray-500'}`}>{p.label}</span>
-                                    {p.id === 'openverse' && on && (
-                                        <span className="ml-auto text-[9px] font-mono text-gray-500" title="Openverse allows each visitor 200 requests a day">
+                                    {how === 'shared' && <span className="text-[9px] text-gray-500">shared key</span>}
+                                    {how === 'own-key' && <span className="text-[9px] text-synthux-green">your key</span>}
+                                    {showLeft && (
+                                        <span className="ml-auto text-[9px] font-mono text-gray-500" title={p.limitNote}>
                                             {left} left today
                                         </span>
                                     )}
-                                    {p.needsKey && apiKey && (
-                                        <button onClick={forgetKey} className="ml-auto text-[9px] text-gray-500 hover:text-red-400" title="Remove your key from this browser">
-                                            Forget key
-                                        </button>
-                                    )}
                                 </label>
                                 <p className="text-[10px] text-gray-500 leading-snug mt-0.5 pl-5">{p.blurb}</p>
-                                {needsKey && !showKeyField && (
+                                <p className="text-[10px] text-gray-600 leading-snug mt-1 pl-5">
+                                    <span className="text-gray-500">Audio:</span> {p.quality}
+                                </p>
+                                <p className="text-[10px] text-gray-600 leading-snug pl-5">
+                                    <span className="text-gray-500">Limits:</span> {p.limitNote}
+                                </p>
+                                {how === 'own-key' && (
+                                    <button onClick={forgetKey} className="mt-1 ml-5 text-[10px] text-gray-500 hover:text-red-400" title="Remove your key from this browser">
+                                        Forget my key{PROXY_URL ? ' (back to the shared key)' : ''}
+                                    </button>
+                                )}
+                                {keyOffer && !showKeyField && (
                                     <button
                                         onClick={() => setShowKeyField(true)}
                                         className="mt-1 ml-5 inline-flex items-center gap-1 text-[10px] text-synthux-blue hover:underline"
                                     >
-                                        <KeyRound size={10} /> Add your API key
+                                        <KeyRound size={10} /> {how === 'shared' ? 'Use your own key for more' : 'Add your API key'}
                                     </button>
                                 )}
-                                {needsKey && showKeyField && (
+                                {keyOffer && showKeyField && (
                                     <div className="mt-1.5 pl-5">
                                         <div className="flex gap-1">
                                             <input
@@ -581,9 +612,10 @@ export const OnlineBrowser = ({
                                             </button>
                                         </div>
                                         <p className="text-[10px] text-gray-500 leading-snug mt-1">
-                                            Free at{' '}
-                                            <a href="https://freesound.org/apiv2/apply" target="_blank" rel="noreferrer" className="text-synthux-blue hover:underline">freesound.org/apiv2/apply</a>
-                                            {' '}(use the “Client secret/Api key”). Kept in this browser only.
+                                            Free, needs a Freesound account:{' '}
+                                            <a href="https://freesound.org/apiv2/apply" target="_blank" rel="noreferrer" className="text-synthux-blue hover:underline">freesound.org/apiv2/apply</a>.
+                                            Name it (e.g. “WAV Builder”), leave the callback URL empty, describe it in a line, accept
+                                            the terms. Copy the “Client secret/Api key” column. Kept in this browser only.
                                         </p>
                                     </div>
                                 )}

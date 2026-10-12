@@ -85,6 +85,8 @@ export const archive: OnlineProvider = {
     blurb: 'Field recordings, radio, long sessions; folders of tracks',
     homepage: 'https://archive.org/details/audio',
     needsKey: false,
+    quality: "The item's MP3 copy (usually VBR) when it has one, otherwise the original WAV or FLAC.",
+    limitNote: 'No published cap; kept to 30 searches a minute.',
     limits: { perMinute: 30, perDay: 2000 },
 
     async search(query, page, ctx) {

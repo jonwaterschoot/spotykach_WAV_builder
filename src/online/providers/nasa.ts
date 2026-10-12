@@ -34,6 +34,8 @@ export const nasa: OnlineProvider = {
     blurb: 'Mission audio, launches, space sounds; public domain',
     homepage: 'https://images.nasa.gov/',
     needsKey: false,
+    quality: '128 kbps MP3, or the original MP3 when there is no 128k copy.',
+    limitNote: 'No published cap; kept to 30 searches a minute.',
     limits: { perMinute: 30, perDay: 1000 },
 
     async search(query, page, ctx) {
@@ -75,6 +77,11 @@ export const nasa: OnlineProvider = {
             ?? files.find(f => f.endsWith('~orig.mp3'))
             ?? files.find(f => /\.(mp3|m4a|wav)$/i.test(f));
         if (!pick) return [];
-        return [{ ...hit, url: pick, format: (pick.split('.').pop() || '').toUpperCase() }];
+        return [{
+            ...hit,
+            url: pick,
+            format: (pick.split('.').pop() || '').toUpperCase(),
+            bitrateKbps: pick.endsWith('~128k.mp3') ? 128 : undefined,
+        }];
     },
 };

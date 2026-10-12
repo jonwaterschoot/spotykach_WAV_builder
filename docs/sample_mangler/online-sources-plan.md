@@ -41,7 +41,13 @@ Multi-select (added the same day): rows tick like pack rows (click, shift-click 
 
 Known gap: NASA hits have no duration until their file is fetched, so the length filter can't hold them back; a 30-minute broadcast can be added under "≤ 2 min".
 
-Not done yet: everything under "Later".
+Shared Freesound key (Oct 12, later): `workers/online-proxy` is a Cloudflare Worker that holds one Freesound key and forwards searches only, behind an origin check, a fixed parameter list and 15 searches a minute per IP. The app uses it when `VITE_ONLINE_PROXY_URL` is set at build time and the user has no key of their own; each visitor then gets 10 a minute and 100 a day from it, counted in their browser. A personal key always goes direct. Tested locally with `wrangler dev` (origin refusal, preflight, refused key, the rate limiter) and from the app through it. Deploy steps: `workers/online-proxy/README.md`.
+
+Each archive's card now says what audio you get and its limits, rows show the bitrate where the archive gives one, and "N left today" shows for Openverse and Freesound.
+
+Found on the way: Openverse's copy of Freesound (about 592,000 sounds) was last indexed in May 2024, so anything uploaded since is only in Freesound itself. Openverse also stops at 240 results per search for anonymous visitors.
+
+Not done yet: the Freesound sign-in for original files, and the rest of "Later".
 
 ## What was checked (Oct 12, 2026)
 

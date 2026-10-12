@@ -39,6 +39,7 @@ interface OvResult {
     filesize: number | null;
     filetype: string | null;
     duration: number | null;
+    bit_rate: number | null;
 }
 
 interface OvPage {
@@ -54,6 +55,8 @@ export const openverse: OnlineProvider = {
     blurb: 'Freesound and Wikimedia sounds, one index, no key',
     homepage: 'https://openverse.org/',
     needsKey: false,
+    quality: 'Freesound sounds as 128 kbps MP3 previews; Wikimedia sounds as the original file. Its copy of Freesound dates from May 2024.',
+    limitNote: '20 searches a minute, 200 a day, per visitor. At most 240 results per search.',
     limits: { perMinute: 18, perDay: 190 },
 
     async search(query, page, ctx) {
@@ -86,6 +89,7 @@ export const openverse: OnlineProvider = {
                 bytes: r.filesize ?? undefined,
                 url: r.url,
                 format: format.toUpperCase(),
+                bitrateKbps: r.bit_rate ? Math.round(r.bit_rate / 1000) : undefined,
             });
         }
         return { hits, hasMore: data.page < data.page_count, total: data.result_count };

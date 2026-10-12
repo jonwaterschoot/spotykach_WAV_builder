@@ -51,6 +51,8 @@ export const commons: OnlineProvider = {
     blurb: 'Field recordings, instruments, voices; many need credit',
     homepage: 'https://commons.wikimedia.org/wiki/Category:Audio_files',
     needsKey: false,
+    quality: "The original file (often WAV or FLAC); Ogg files as Commons' own MP3 copy.",
+    limitNote: 'No published cap; kept to 30 searches a minute.',
     limits: { perMinute: 30, perDay: 2000 },
 
     async search(query, page, ctx) {

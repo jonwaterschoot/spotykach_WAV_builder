@@ -2,12 +2,17 @@ import { fromCcUrl } from '../licenses.ts';
 import { getJson, tidyTitle, type OnlineHit, type OnlineProvider } from '../types.ts';
 
 /**
- * Freesound, with the user's own API key. One key per app and no sharing it, so
- * the app ships none: each user pastes theirs (freesound.org/apiv2/apply), and it
- * stays in their browser. 60 requests a minute, 2000 a day, per key.
+ * Freesound, two ways in:
  *
- * Previews only (128 kbps MP3). The original WAV/FLAC needs an OAuth sign-in,
- * which needs a server for the token exchange; see the plan's "Later".
+ * - **The user's own key** (freesound.org/apiv2/apply), kept in their browser and
+ *   sent straight to Freesound. Their own 60 a minute and 2000 a day.
+ * - **WAV Builder's proxy** (workers/online-proxy) when they have none. It holds
+ *   one key for everybody, so each visitor gets a small slice (`sharedLimits`).
+ *
+ * One key per app and no sharing it, which is why the app itself ships none.
+ *
+ * Previews only (128 kbps MP3). The original WAV/FLAC needs a Freesound sign-in
+ * (OAuth), which needs a server for the token exchange; see the plan's "Later".
  *
  * License filtering is done here rather than in the query: Freesound's license
  * names in filters are not documented with an example, and a wrong guess would be
@@ -30,29 +35,42 @@ interface FsPage { count: number; next: string | null; results: FsSound[] }
 export const freesound: OnlineProvider = {
     id: 'freesound',
     label: 'Freesound',
-    blurb: 'The big sample library; needs your own free API key',
+    blurb: 'The big sample library, all of it and up to date',
     homepage: 'https://freesound.org/',
     needsKey: true,
+    proxyable: true,
+    quality: '128 kbps MP3 previews. The original WAV/FLAC needs a Freesound sign-in, not built yet.',
+    limitNote: 'Own key: 60 searches a minute, 2000 a day. Shared key: a few a minute, 100 a day per visitor.',
     limits: { perMinute: 55, perDay: 1900 },
+    sharedLimits: { perMinute: 10, perDay: 100 },
 
     async search(query, page, ctx) {
-        if (!ctx.apiKey) throw new Error('Freesound needs your API key.');
         const params = new URLSearchParams({
             query: query.text,
-            token: ctx.apiKey,
             fields: 'id,name,username,license,duration,url,previews',
             page_size: '50',
             page: String(page),
         });
         if (query.maxSeconds) params.set('filter', `duration:[0 TO ${query.maxSeconds}]`);
 
-        const data = await getJson<FsPage>(`${API}?${params}`, 'Freesound', ctx);
+        let url: string;
+        if (ctx.apiKey) {
+            params.set('token', ctx.apiKey);
+            url = `${API}?${params}`;
+        } else if (ctx.proxyUrl) {
+            // The proxy adds the key and fixes `fields` itself.
+            url = `${ctx.proxyUrl.replace(/\/+$/, '')}/freesound/search?${params}`;
+        } else {
+            throw new Error('Freesound needs your API key.');
+        }
+
+        const data = await getJson<FsPage>(url, 'Freesound', ctx);
         const hits: OnlineHit[] = [];
         for (const s of data.results) {
             const license = fromCcUrl(s.license);
             if (!license || !query.licenses.includes(license.filter)) continue;
-            const url = s.previews?.['preview-hq-mp3'];
-            if (!url) continue;
+            const preview = s.previews?.['preview-hq-mp3'];
+            if (!preview) continue;
             hits.push({
                 key: `online/freesound/${s.id}`,
                 provider: 'freesound',
@@ -61,8 +79,9 @@ export const freesound: OnlineProvider = {
                 license,
                 pageUrl: s.url,
                 durationSec: s.duration,
-                url,
+                url: preview,
                 format: 'MP3',
+                bitrateKbps: 128,
             });
         }
         return { hits, hasMore: !!data.next, total: data.count };
