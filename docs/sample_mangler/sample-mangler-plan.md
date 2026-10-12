@@ -270,6 +270,7 @@ All edits go through one engine mechanism: `render(..., { fixed })` renders posi
 **Added Oct 12 — Guide**
 
 - [x] A short interactive guide (`src/mangler/ui/ManglerTour.tsx`) that spotlights the columns in order of operations: fill the pool, set the ranges, generate, listen/keep/refine, save. Opens by itself on the first visit (`mangler_tour_seen`), and again from *Guide* in the header. Arrow keys or Enter step, Escape closes. Targets are `data-tour` attributes in `MangleMode`
+- [x] Result waveforms zoom like the editor's: Ctrl+scroll zooms horizontally around the pointer, Alt+scroll sets the wave height (remembered, `mangler_wave_height`), Shift+scroll the amplitude. On a compact card any of them opens the zoomed view
 
 ## Open questions and risks
 

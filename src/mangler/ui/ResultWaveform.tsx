@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
+import { appStorage } from '../../utils/storageNamespace';
 
 interface ResultWaveformProps {
     /** Stored outline, used until (or unless) the decoded audio is there. */
@@ -34,6 +35,18 @@ interface ResultWaveformProps {
 
 export const MAX_ZOOM = 64;
 
+/** The zoomed wave's height, set with Alt+scroll and shared by every result. */
+const WAVE_HEIGHT_KEY = 'mangler_wave_height';
+const WAVE_HEIGHT_MIN = 96;
+const WAVE_HEIGHT_MAX = 600;
+const clampHeight = (h: number) => Math.round(Math.min(WAVE_HEIGHT_MAX, Math.max(WAVE_HEIGHT_MIN, h)));
+const loadHeight = () => {
+    const saved = Number(appStorage.getItem(WAVE_HEIGHT_KEY));
+    return saved ? clampHeight(saved) : 160;
+};
+const GAIN_MIN = 0.5;
+const GAIN_MAX = 15;
+
 /**
  * A result's waveform with a tick at every snippet start.
  *
@@ -51,8 +64,17 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
     const [view, setView] = useState({ width: 0, scroll: 0 });
     const zoomed = zoom !== undefined;
     const z = zoom ?? 1;
-    const h = zoomed ? Math.max(height, 160) : height;
+    const [zoomedHeight, setZoomedHeight] = useState(loadHeight);
+    /** Amplitude zoom (Shift+scroll), as in the editor. */
+    const [gain, setGain] = useState(1);
+    const h = zoomed ? Math.max(height, zoomedHeight) : height;
     const previousZoom = useRef(z);
+    /** Set by Ctrl+scroll: the file fraction to keep under the pointer, `offset` px from the view's left. */
+    const zoomAnchor = useRef<{ fraction: number; offset: number } | null>(null);
+
+    useEffect(() => {
+        appStorage.setItem(WAVE_HEIGHT_KEY, String(zoomedHeight));
+    }, [zoomedHeight]);
 
     // Track the view's width and scroll position.
     useEffect(() => {
@@ -66,14 +88,58 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
         return () => { observer.disconnect(); el.removeEventListener('scroll', update); };
     }, []);
 
-    // Zooming keeps the middle of the view where it was.
+    // Zooming keeps the middle of the view where it was, or with Ctrl+scroll the
+    // point under the pointer.
     useLayoutEffect(() => {
         const el = scrollRef.current;
         if (!el || previousZoom.current === z) return;
-        const centre = (el.scrollLeft + el.clientWidth / 2) / (el.clientWidth * previousZoom.current);
+        const anchor = zoomAnchor.current ?? {
+            fraction: (el.scrollLeft + el.clientWidth / 2) / (el.clientWidth * previousZoom.current),
+            offset: el.clientWidth / 2,
+        };
+        zoomAnchor.current = null;
         previousZoom.current = z;
-        el.scrollLeft = Math.max(0, centre * el.clientWidth * z - el.clientWidth / 2);
+        el.scrollLeft = Math.max(0, anchor.fraction * el.clientWidth * z - anchor.offset);
     }, [z]);
+
+    /*
+     * Modifier + scroll over the wave, as in the editor:
+     *   Ctrl  → horizontal zoom, anchored at the pointer
+     *   Alt   → wave height
+     *   Shift → amplitude zoom
+     * On a compact card any of them opens the zoomed view first. Browsers turn
+     * Shift+wheel into a horizontal scroll (deltaX), so read whichever axis moved.
+     */
+    const handleWheel = (e: WheelEvent) => {
+        if (!onZoom || (!e.ctrlKey && !e.altKey && !e.shiftKey)) return;
+        const raw = e.deltaY || e.deltaX;
+        if (!raw) return;
+        e.preventDefault();
+        const factor = raw < 0 ? 1.1 : 1 / 1.1;
+        if (e.ctrlKey) {
+            const el = scrollRef.current;
+            const next = Math.round(Math.min(MAX_ZOOM, Math.max(1, z * factor)) * 100) / 100;
+            if (el && next !== z) {
+                const offset = e.clientX - el.getBoundingClientRect().left;
+                zoomAnchor.current = { fraction: (el.scrollLeft + offset) / (el.clientWidth * z), offset };
+            }
+            onZoom(next);
+            return;
+        }
+        if (!zoomed) onZoom(1);
+        if (e.altKey) setZoomedHeight(v => clampHeight(v * factor));
+        else setGain(g => Math.round(Math.min(GAIN_MAX, Math.max(GAIN_MIN, g * factor)) * 100) / 100);
+    };
+    // The listener is bound once (non-passive, to stop the page scrolling); it calls the current handler.
+    const handleWheelRef = useRef(handleWheel);
+    handleWheelRef.current = handleWheel;
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => handleWheelRef.current(e);
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []);
 
     // Follow the playhead when it leaves the view.
     useEffect(() => {
@@ -152,7 +218,7 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
         const played = progress === null ? -Infinity : toX(progress);
         const playStart = progress === null ? Infinity : toX(playedFrom);
         const column = (x: number, amp: number) => {
-            const a = Math.max(0.5, amp * (h - 6) / 2);
+            const a = Math.max(0.5, Math.min(1, amp * gain) * (h - 6) / 2);
             ctx.fillStyle = x >= playStart && x < played ? '#f00f13' : 'rgba(255,255,255,0.55)';
             ctx.fillRect(x, mid - a, 1, 2 * a);
         };
@@ -199,7 +265,7 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                 ctx.fillRect(Math.round(x) - 5, mid - 10, 11, 20);
             }
         }
-    }, [view, peaks, audio, cues, edges, fades, progress, playedFrom, highlight, z, h, zoomed, crop]);
+    }, [view, peaks, audio, cues, edges, fades, progress, playedFrom, highlight, z, h, zoomed, crop, gain]);
 
     const fractionAt = (clientX: number, el: HTMLElement) => {
         const rect = el.getBoundingClientRect();
@@ -215,7 +281,10 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                     <ZoomButton title="Zoom out" onClick={() => setZoom(z / 2)} disabled={z <= 1}><Minus size={12} /></ZoomButton>
                     <ZoomButton title="Zoom in" onClick={() => setZoom(z * 2)} disabled={z >= MAX_ZOOM}><Plus size={12} /></ZoomButton>
                     <ZoomButton title="Fit the whole file" onClick={() => setZoom(1)} disabled={z === 1}><Maximize2 size={11} /></ZoomButton>
-                    <span className="font-mono ml-1 tabular-nums">{z}×</span>
+                    <span className="font-mono ml-1 tabular-nums"
+                        title="Ctrl+scroll zooms, Alt+scroll sets the height, Shift+scroll the amplitude">
+                        {Number.isInteger(z) ? z : z.toFixed(1)}×{gain !== 1 && ` · amp ${gain.toFixed(1)}×`}
+                    </span>
                     {!audio && z > 1 && <span className="ml-2">loading detail…</span>}
                     <span className="ml-auto">{crop
                         ? 'Drag the yellow handles (or across the wave) to set what stays'
