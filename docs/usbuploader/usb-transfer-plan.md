@@ -350,6 +350,13 @@ Context: WAV Builder writes `RIFF/WAVE`, `fmt `, `LIST/INFO` (`IART`, `INAM`, `I
 4. **Pin the `INAM` rule.** UTF-8, at most 64 bytes, cut at a character boundary, NUL-terminated, padded to even length. We copied your `utf8Truncate()`. If the two tools cut long or non-ASCII names differently, the same file gets two names and name matching fails. Can this go into the spec as fixed, or into a shared module?
 5. **Nice to have: `ICMT` (or a hash field) in LIST.** We currently do one 4 KB header read per occupied slot (about 36 × 4 KB, 1–2 s) only to get `ICMT`. If LIST returned it, that read would go away.
 
+Code (pinned to commit `7535186`):
+
+- [`wavHeader.ts` `buildInfoChunk`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/audio/wavHeader.ts#L63-L109): the `LIST/INFO` layout, the `ICMT` JSON and the alignment padding (items 1, 2). [`utf8Truncate`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/audio/wavHeader.ts#L35-L42) is the `INAM` cut (item 4), and [`readWavHeaderInfo`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/audio/wavHeader.ts#L241) is our reader.
+- [`scripts/check-wav-header.mjs`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/scripts/check-wav-header.mjs): a JS port of `wav_header()` and `wav_info()` from both firmwares. It sweeps name lengths 0–70 and fails on audio that isn't 4-byte aligned. Run it on any file: `node scripts/check-wav-header.mjs path/to/file.wav`.
+- [`usbBackend.ts` `validate`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/usb/usbBackend.ts#L268-L297): what we refuse before an upload (your `is_loadable()`, alignment, frame, cue and size limits).
+- [`skLink.ts`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/usb/skLink.ts): our port of your protocol client from `web/index.html`.
+
 ## Open questions and risks
 
 - **Protocol stability.** The spec is marked draft v1 and the branch is unreleased. Check `proto_major` in HELLO and keep the link code in two files so a v1.1 (pipelined uploads) is a contained change.
