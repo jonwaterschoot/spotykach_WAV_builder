@@ -266,18 +266,41 @@ Phase 2 results (Oct 11):
 
 **Phase 3 — USB backend (`feat/usb-transfer`, behind a flag)**
 
-- [ ] `skLink.ts`: frame encode/decode, CRC-32, seq, timeouts. Port it from `web/index.html` on the `uploader` branch rather than rewriting it
-- [ ] Enter flow: Web MIDI with `sysex: true`, find the Spotykach output, send `F0 7D 53 4B 01 F7`, handle OK, BUSY, NO_CARD and no reply (old firmware)
-- [ ] Open the serial port filtered on `0x0483:0x5740`; reuse `getPorts()` so later sessions skip the picker
-- [ ] HELLO: refuse a different major version; show firmware version and free space; use `max_frames` and `max_cues` to validate before upload
-- [ ] `UsbBackend`: LIST → `listSlots()`, DOWNLOAD_READ 0–4096 → `readHeader()` (tail read for legacy files), upload with progress and abort
-- [ ] Copy the download retry logic (shrinking read size, 8 failures max) for the macOS tail-drop issue
-- [ ] Send EXIT on leave and on `beforeunload`; handle a disconnect mid-transfer
-- [ ] Free-space check before a batch: sum of upload sizes vs `card_free_kib`, keeping in mind the temp file and old file exist side by side
+- [x] `skLink.ts`: frame encode/decode, CRC-32, seq, timeouts. Ported from `web/index.html` on the `uploader` branch (MIT); upstream pin and the differences from the page in `src/lib/usb/PROTOCOL.md`
+- [x] Enter flow: Web MIDI with `sysex: true`, find the Spotykach output, send `F0 7D 53 4B 01 F7`, handle OK, BUSY, NO_CARD and no reply (old firmware)
+- [x] Open the serial port filtered on `0x0483:0x5740`; reuse `getPorts()` so later sessions skip the picker. First use past the click's 5 s throws `NeedsAuthorizationError`; `authorizePort()` runs the picker from a fresh click
+- [x] HELLO: refuse a different major version; firmware version and free space in `info()`; `max_frames` and `max_cues` checked before upload
+- [x] `UsbBackend` in `src/lib/usb/usbBackend.ts`: LIST → `listSlots()`, DOWNLOAD_READ 0–4096 → `readHeader()` (plus a tail read from the end of `data`, for legacy `ICMT` and for cue points), upload with progress and abort
+- [x] Copy the download retry logic (shrinking read size, 8 failures max) for the macOS tail-drop issue
+- [x] Send EXIT on leave and on `beforeunload`; handle a disconnect mid-transfer
+- [x] Free-space check before a batch: `checkSpace(writes)` (optional on `CardBackend`), sum of upload sizes vs `card_free_kib`, keeping in mind the temp file and old file exist side by side
+- [x] Hardware test with the uploader firmware (Oct 12, Windows, below): connect, LIST, header reads, upload, download, non-float refusal, EXIT
+
+Phase 3 results (Oct 11):
+
+- **Upstream unchanged.** `uploader` is still at `550d80b`; pinned in `src/lib/usb/PROTOCOL.md`.
+- **Behind `?usb=1`** (remembered in `localStorage`, `?usb=0` turns it off). Without the flag the USB code isn't loaded: it is a separate 19 kB chunk. With it, `window.skUsb` drives the backend from the console (`connect`, `authorize`, `slots`, `download`, `upload`, `remove`, `exit`) for hardware tests before the Phase 4 UI.
+- **One operation at a time.** Every multi-request operation (LIST, an upload, a header read, a download) and HELLO go through `SkLink.exclusive()`. HELLO resets the device session, so a HELLO for the free space must never land inside an upload. PING only after 2 s without any request.
+- **Header read = two small reads in one DOWNLOAD session**: the first 4 KB (32 KB if `data` isn't in it, like the firmware), then from the end of `data` to the end of the file when that is at most 64 KB. The tail gives legacy files their `ICMT` and new files their cue points (`cue ` stays after `data`). `readWavHeaderInfo()` now also returns `dataEnd`.
+- **`writeSlot` compare over USB.** `always` uploads. `size` compares with LIST. `content` can't compare bytes, so it compares size, `ICMT.id`, `ICMT.h`, processing and frames from a header read; a blob without our id and hash is always uploaded. After an upload the listing entry is updated locally instead of re-running LIST, and HELLO refreshes the free space.
+- **Uploads are checked first**, with a message that names the slot: 48 kHz, audio on a multiple of 4 bytes (the alignment bug), at most `max_frames` frames and `max_cues` cue points, and under the device's `TOO_LARGE` limit. WAV Builder's files are uploaded as they are; nothing is decoded or re-encoded.
+- **`checkSpace`** walks the batch in order: each upload needs its full size free while the old file exists, then frees the old one; 64 KiB margin per file for clusters.
+- **Simulated device test passed** (Node, the real `skLink.ts` + `usbBackend.ts` against a JS model of the firmware's service behind a fake serial port that splits replies at random): HELLO, LIST with a UTF-8 `INAM`, header read with id and hash in one read, legacy `ICMT` from the tail read, cues from the tail, skip on same id + hash, write on a changed hash, a 42 s download byte-exact with every fifth reply's tail dropped, abort mid-upload (old slot kept, device idle), concurrent calls serialized, misaligned audio refused, space check, delete, EXIT on close. Not a substitute for hardware: the real device's timing, the Windows driver rebinding and the MIDI port exclusivity are untested.
+- **Hardware test still to do**, on the uploader firmware: open WAV Builder with `?usb=1`, then in the console `await skUsb.connect()`, `await skUsb.slots()` (names, ids, timing for 36 slots), `await skUsb.download('Blue', 1)` and `await skUsb.upload('Blue', 1)` with a WAV Builder export (throughput is logged), then check the slot plays. Windows first (spec §9.2).
+- **First hardware run (Oct 12, Windows, uploader firmware).** Connect worked after granting the COM port: firmware `1.3.1`, protocol 1.0. An upload of a WAV Builder file (4 MB) took 8.9 s, **460 KB/s**, inside the spec's 400–800 KB/s, and the slot played on the device. Found:
+  - A non-float WAV uploaded to 100% and was then refused by the device (`BAD_FORMAT`). The pre-upload check only looked at sample rate and alignment; it now checks the device's whole `is_loadable()` (format 3, 2 channels, 48 kHz, 32-bit, block align 8), so such a file is refused before the upload. `readWavHeaderInfo()` returns `audioFormat`, `channels`, `bitsPerSample` and `blockAlign`.
+  - **Browse tier confirmed:** LIST plus a header read for 7 occupied slots took **0.6 s**. The four slots WAV Builder wrote showed their `INAM` name, `ICMT` id and hash, with the audio at 228–244 bytes (all multiples of 4). The three slots with a bare 44-byte header (uploaded from the console, or saved by the device) showed no metadata, as expected: step 4 of the matching ladder.
+  - **Slice points were lost by Build SD** (a bug since before 4.1.3, not USB): the build took them from `file.metadata`, which the slice tool never updates. Fixed (now read from the version's WAV) and confirmed: the same version (`ICMT.h` `7661ad00…`) built before the fix shows 0 cues, after the fix 15, audio at byte 264. A second upload ran at 481 KB/s (7.3 MB in 14.7 s).
+  - **Download confirmed:** Green 1 (7.3 MB) in 15.1 s, 470 KB/s, no lost replies on Windows. Uploaded again to Green 2 it lists the same name, id, hash and 15 cues, so the round trip is byte-exact.
+  - **Importing that download into a slot lost its slices** (not USB; since before 4.1.3): `loadAndProcessAudio` re-encodes every imported file without metadata. It now keeps the source WAV's `cue `, tempo and `INAM`, and a dropped card file is named after its `INAM`.
+  - **Refusal and exit confirmed:** a 16-bit integer WAV is refused before any upload ("48000 Hz, 2 ch, 16-bit integer PCM"). EXIT returns the device to MIDI; it plays and takes MIDI as before.
+  - Closing Chrome's port picker by clicking outside it leaves the device in transfer mode (rings lit) with its MIDI port gone, so the next connect said "MIDI port not found". `connect()` now opens the port picker in that case (when the click still counts), and the error says what the lit rings mean. Phase 4 needs a visible "Authorise port" button for this.
+- **Left for Phase 4**, since nothing uses USB in the app yet: make `newFiles` / `updatedFiles` in the sync diff lazy (today they would download every new or changed slot), switch `scanDeviceChanges` to the card snapshot (it returns null over USB), have `exportSDStructure` call `checkSpace` before a USB batch, and record `via: 'usb'` in the snapshot.
 
 **Phase 4 — UI and switching (`feat/usb-transfer`)**
 
 - [ ] Source chooser in the export and sync modals: Card reader or USB
+- [ ] "Authorise port" button that stays visible while the device waits in transfer mode (port picker closed by accident, or the click expired)
 - [ ] Browse view from headers only; "Pull from device" action for slots that aren't in the project
 - [ ] Card snapshot check on every connect, both sources (see Architecture)
 - [ ] In USB mode, show `config.txt` and project-copy options as "needs card reader"

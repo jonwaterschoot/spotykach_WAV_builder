@@ -4,8 +4,8 @@
  *
  * - `FolderBackend` — the card reader, through the File System Access API. Reaches
  *   everything: slot WAVs, `config.txt`, `project.json`, README.
- * - `UsbBackend` (Phase 3, `feat/usb-transfer`) — the Spotykach's rear USB. Reaches
- *   the 36 slot files only, so every folder-only member is optional.
+ * - `UsbBackend` (`feat/usb-transfer`) — the Spotykach's rear USB. Reaches the 36
+ *   slot files only, so every folder-only member is optional.
  *
  * Slots are addressed by tape colour and slot number; the backend owns the
  * `SK/<T>/<N>.WAV` layout.
@@ -37,6 +37,10 @@ export interface SlotDescriptor {
     size: number;
     /** Folder route only: USB has no timestamps. */
     lastModified?: number;
+    /** USB only, from LIST: the device can load this file (48 kHz stereo float32). */
+    loadable?: boolean;
+    /** USB only, from LIST: cue points, before or after `data`. */
+    cueCount?: number;
 
     /** True once `readHeader()` has filled the fields below. */
     headerRead: boolean;
@@ -81,6 +85,20 @@ export interface CardFileStore {
     write(path: string, blob: Blob, compare?: WriteCompare): Promise<boolean>;
 }
 
+/** One slot a batch will write, for `checkSpace()`. */
+export interface PlannedWrite {
+    tape: TapeColor;
+    slot: number;
+    size: number;
+}
+
+export interface SpaceCheck {
+    ok: boolean;
+    freeKiB: number;
+    /** The least free space the batch needs at any point, margins included. */
+    neededKiB: number;
+}
+
 export interface CardBackend {
     readonly kind: CardKind;
     info(): Promise<CardInfo>;
@@ -93,6 +111,8 @@ export interface CardBackend {
     /** True when it wrote, false when `compare` found the slot already holds `blob`. */
     writeSlot(tape: TapeColor, slot: number, blob: Blob, options?: WriteSlotOptions): Promise<boolean>;
     deleteSlot(tape: TapeColor, slot: number): Promise<void>;
+    /** USB only: whether a batch of writes fits on the card. The folder route can't read the card's free space. */
+    checkSpace?(writes: PlannedWrite[]): Promise<SpaceCheck>;
 
     /** Create whatever the card needs before a build (the folder route's `SK/<T>` folders). */
     ensureLayout?(): Promise<void>;

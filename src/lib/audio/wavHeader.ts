@@ -199,8 +199,18 @@ export interface WavHeaderInfo {
     frames?: number;
     /** From `fmt `, when found. */
     sampleRate?: number;
+    /** From `fmt `: 1 = integer PCM, 3 = float, 0xFFFE = extensible. */
+    audioFormat?: number;
+    channels?: number;
+    bitsPerSample?: number;
+    blockAlign?: number;
     /** Byte offset of the audio, when `data` was found. Must be a multiple of 4 on the card. */
     dataOffset?: number;
+    /**
+     * Byte offset just past `data` (pad byte included): where the tail chunks
+     * start. Known from the `data` size even when the read stops before it.
+     */
+    dataEnd?: number;
     /** Our `LIST/INFO` and `cue ` contents, or null when the file has none. */
     metadata: WavMetadata | null;
 }
@@ -235,7 +245,11 @@ export async function readWavHeaderInfo(source: Blob | ArrayBuffer): Promise<Wav
     let foundAny = false;
     let frames: number | undefined;
     let sampleRate: number | undefined;
+    let audioFormat: number | undefined;
+    let channels: number | undefined;
+    let bitsPerSample: number | undefined;
     let dataOffset: number | undefined;
+    let dataEnd: number | undefined;
     let blockAlign = 0;
 
     let offset = 0;
@@ -254,14 +268,18 @@ export async function readWavHeaderInfo(source: Blob | ArrayBuffer): Promise<Wav
         if (chunkId === 'data') {
             if (blockAlign) frames = Math.floor(chunkSize / blockAlign);
             dataOffset = offset + 8;
+            dataEnd = next;
         } else if (chunkId === 'fmt ' || chunkId === 'LIST' || chunkId === 'cue ') {
             // A partial read can end inside a chunk: parse what is there.
             const body = new Uint8Array(await blob.slice(offset + 8, Math.min(offset + 8 + chunkSize, size)).arrayBuffer());
             const view = new DataView(body.buffer);
 
             if (chunkId === 'fmt ' && body.length >= 16) {
+                audioFormat = view.getUint16(0, true);
+                channels = view.getUint16(2, true);
                 sampleRate = view.getUint32(4, true);
                 blockAlign = view.getUint16(12, true);
+                bitsPerSample = view.getUint16(14, true);
             } else if (chunkId === 'LIST' && body.length >= 4 && readId(view, 0) === 'INFO') {
                 let sub = 4;
                 while (sub + 8 <= body.length) {
@@ -318,5 +336,8 @@ export async function readWavHeaderInfo(source: Blob | ArrayBuffer): Promise<Wav
     }
 
     if (foundAny && frames !== undefined) metadata.frames = frames;
-    return { frames, sampleRate, dataOffset, metadata: foundAny ? metadata : null };
+    return {
+        frames, sampleRate, audioFormat, channels, bitsPerSample, blockAlign: blockAlign || undefined,
+        dataOffset, dataEnd, metadata: foundAny ? metadata : null,
+    };
 }

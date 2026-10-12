@@ -15,6 +15,10 @@ polyfill({
 window.addEventListener("touchmove", function () { }, { passive: false });
 
 import { AudioPlayerProvider } from './contexts/AudioPlayerContext'
+import { isUsbTransferEnabled } from './lib/usb/flag'
+
+// Experimental: USB transfer, behind ?usb=1 until the firmware is released
+if (isUsbTransferEnabled()) void import('./lib/usb/devConsole').then(m => m.installUsbConsole());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
