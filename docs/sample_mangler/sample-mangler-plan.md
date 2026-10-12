@@ -208,16 +208,18 @@ Start with the engine and a bare screen, so the sound can be judged before any U
 
 **Phase 3 — Picker**
 
-- [ ] `SampleBrowser` `mode="picker"` with `actionLabel`; hide everything but list, search, preview and the action
-- [ ] Local files: file input and drag-and-drop onto the source pool (done in Phase 2), plus the picker's local folder tab
+- [x] `SampleBrowser` `mode="picker"` with `addLabel` / `addedLabel`; the pack downloads and preset links are hidden, and the edit pen, drag and project actions are already off without their callbacks. Opens as an overlay over the mangler ("Packs" button), since a 300 px column is too narrow for it
+- [x] Local files: file input and drag-and-drop onto the source pool (done in Phase 2), plus the picker's local folder tab
 
 **Phase 4 — Saving and handoff**
 
-- [ ] `classifyLicense()` in `src/submission/licenses.ts`; license level shown on each source row and each result
-- [ ] Block every save route for a result that uses a no-derivatives source; mark *personal use* results and have Submit a Pack refuse them
+- [x] `classifyLicense()` in `src/submission/licenses.ts`; license level shown on each source row and each result
+- [x] Block every save route (download too) for a result that uses a no-derivatives source; mark *personal use* results. Submit a Pack refusing them is still to do
 - [x] Download WAV with cue points
-- [ ] Add to Browse pool, then the "Open Browse" prompt (copy the `EditorMode` pattern)
-- [ ] Save to Studio user library through IndexedDB, with unique names; warn while Studio may be open in another tab
+- [x] Add to Browse pool, then the "Open Browse" prompt (copy the `EditorMode` pattern)
+- [x] Save to Studio user library through IndexedDB, with unique names; warn while Studio may be open in another tab
+- [x] New Studio project from one result or all kept ones (added Oct 12): `buildDetachedState` + `createProjectFromState`, the same name → workspace → created steps as Browse's "Import into a project"
+- [x] `FileRecord.pendingDiskWrite`: Studio's library sync used to mark a record that isn't in `User_Library/` as missing, and then the autosave skipped it, so a library save from the mangler would never reach the folder. Flagged records are written instead, and the flag is cleared once the file is on disk
 - [ ] Later: `BroadcastChannel` merge in Studio so both can be open
 
 **Phase 5 — Refinement**

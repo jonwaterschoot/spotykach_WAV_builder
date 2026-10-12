@@ -39,7 +39,15 @@ interface SampleBrowserProps {
      * project exists, so every project-bound action is hidden and the only exit
      * is the caller's selection pool.
      */
-    mode?: 'standalone' | 'project';
+    mode?: 'standalone' | 'project' | 'picker';
+    /**
+     * `picker` only: the add button's words, e.g. "Add to mangle pool". A picker is
+     * standalone with less: list, search, preview and that one button. The pack's
+     * downloads and preset links are left out.
+     */
+    addLabel?: string;
+    /** `picker` only: the button once the sample is in the host's pool. */
+    addedLabel?: string;
     userLibrary?: UserLibrary;
     projects?: ProjectSummary[];
     onOpenLibraryManager?: (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => void;
@@ -155,9 +163,12 @@ export const SampleBrowser = ({
     forceStop,
     onOpenPreset,
     onSampleDrag,
+    addLabel = 'Add to pool',
+    addedLabel = 'In pool',
 }: SampleBrowserProps) => {
 
-    const isStandalone = mode === 'standalone';
+    const isStandalone = mode !== 'project';
+    const isPicker = mode === 'picker';
     // Locked decision: the library is IDB-resident and needs no work folder, so it
     // rides along in standalone — but read-only, and only when there's something in it.
     const hasUserLibrary = Object.keys(userLibrary.files).length > 0;
@@ -1350,7 +1361,7 @@ export const SampleBrowser = ({
                                             )}
                                         </div>
 
-                                        {((selectedPack.links && selectedPack.links.length > 0) || showPresetLink) && (
+                                        {!isPicker && ((selectedPack.links && selectedPack.links.length > 0) || showPresetLink) && (
                                             <div className="space-y-10 border-t border-white/5 pt-8">
                                                 {/* ZIP DOWNLOADS — and, beside them, the same pack already built for the card */}
                                                 {(packZipLinks.length > 0 || showPresetLink) && (
@@ -1656,14 +1667,14 @@ export const SampleBrowser = ({
                                                                                 ) : isAdded ? (
                                                                                     <>
                                                                                         <Check size={14} />
-                                                                                        <span className="sm:hidden">{isStandalone ? 'In pool' : 'Added'}</span>
-                                                                                        <span className="hidden sm:inline">{isStandalone ? 'In pool (add again)' : 'Added (Add Again)'}</span>
+                                                                                        <span className="sm:hidden">{isStandalone ? addedLabel : 'Added'}</span>
+                                                                                        <span className="hidden sm:inline">{isStandalone ? `${addedLabel} (add again)` : 'Added (Add Again)'}</span>
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
                                                                                         <Download size={14} />
                                                                                         <span className="sm:hidden">{selectionMode === 'slot-selection' ? 'Assign' : 'Add'}</span>
-                                                                                        <span className="hidden sm:inline">{selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? 'Add to pool' : 'Add'}</span>
+                                                                                        <span className="hidden sm:inline">{selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? addLabel : 'Add'}</span>
                                                                                     </>
                                                                                 )}
                                                                             </button>
@@ -1840,7 +1851,7 @@ export const SampleBrowser = ({
                                 onClick={() => handleBulkActionWithTarget(isStandalone ? 'pool' : 'slots')}
                                 className="bg-synthux-orange hover:bg-synthux-orange/80 text-black py-2 px-6 rounded-full font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-synthux-orange/20"
                             >
-                                <Plus size={14} /> {isStandalone ? 'Add to pool' : 'Import Selection'}
+                                <Plus size={14} /> {isStandalone ? addLabel : 'Import Selection'}
                             </button>
 
                             {!isStandalone && (

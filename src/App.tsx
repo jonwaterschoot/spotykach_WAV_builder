@@ -1696,8 +1696,13 @@ function App({ onExitToHub }: AppProps) {
             const updatedVersions = canonical.versions.map(v =>
               v.id === canonical.currentVersionId ? { ...v, blob: diskFile } : v
             );
-            nextFiles[canonical.id] = { ...canonical, versions: updatedVersions };
+            // On disk now, so a pending write from outside Studio is done.
+            nextFiles[canonical.id] = { ...canonical, pendingDiskWrite: undefined, versions: updatedVersions };
             diskFileNamesProcessed.add(lowerName);
+          } else if (canonical.pendingDiskWrite) {
+            // Added by the Sample Mangler through IDB: not missing, just not written
+            // yet. The autosave below puts it in User_Library/.
+            nextFiles[canonical.id] = canonical;
           } else {
             // Not on disk: keep in index but mark as missing
             nextFiles[canonical.id] = canonical;

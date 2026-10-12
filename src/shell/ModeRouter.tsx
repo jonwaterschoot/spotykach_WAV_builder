@@ -81,7 +81,11 @@ export const ModeRouter: React.FC<ModeRouterProps> = ({ mode, setMode }) => {
   if (mode === 'mangle') {
     return (
       <Suspense fallback={<ModeLoading />}>
-        <MangleMode onExitToHub={() => setMode('hub')} />
+        <MangleMode
+          onExitToHub={() => setMode('hub')}
+          onEnterStudio={() => setMode('studio')}
+          onEnterBrowse={() => setMode('browse')}
+        />
       </Suspense>
     );
   }

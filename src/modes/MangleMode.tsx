@@ -1,8 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Dices, Download, Loader, Lock, Pause, Play, Plus, Star, Trash2,
-  Unlock, X,
+  ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  Pause, Play, Plus, Star, Trash2, Unlock, X,
 } from 'lucide-react';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { ExportProgressModal } from '../components/ExportProgressModal';
+import { ProjectNameModal } from '../components/modals/ProjectNameModal';
+import { WorkspaceChoiceModal } from '../components/modals/WorkspaceChoiceModal';
+import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
+import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
+import { getDirectoryHandle } from '../utils/storageUtils';
+import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
+import { LEVEL_LABEL, resultLicense, sourceLicense } from '../mangler/license';
+import { addResultsToBrowsePool, resultsAsDetached, saveResultsToLibrary } from '../mangler/save';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
@@ -10,10 +20,14 @@ import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { appStorage } from '../utils/storageNamespace';
 import {
   deleteMangleResultsFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB, loadMangleSourcesFromDB,
-  putMangleResultToDB, putMangleSourceToDB,
+  loadUserLibraryFromDB, putMangleResultToDB, putMangleSourceToDB,
 } from '../utils/persistence';
 import type { MangleResultEntry, MangleSourceEntry } from '../utils/persistence';
-import type { FileRecord } from '../types';
+import type { FileRecord, UserLibrary } from '../types';
+
+const SampleBrowser = React.lazy(() =>
+  import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser })),
+);
 import { runBatch, resultToWav, type BatchHandle } from '../mangler/batch';
 import { recipeFromResult, resultName, usedSources, waveformPeaks, type RecipeSource } from '../mangler/recipe';
 import { deriveSeed, randomSeed } from '../mangler/rng';
@@ -100,14 +114,19 @@ interface BatchState {
 
 interface MangleModeProps {
   onExitToHub: () => void;
+  onEnterStudio?: () => void;
+  onEnterBrowse?: () => void;
 }
+
+/** A save waiting on the user: which results, and where to. */
+type PendingSave = { route: 'library' | 'pool'; results: MangleResultEntry[] };
 
 /**
  * Sample Mangler at `#/mangle`: random snippets from a pool of sources, joined
  * into one file of up to 42 s. No project and no folder: the pool and the results
  * live in IndexedDB until a result is saved. See docs/sample_mangler.
  */
-export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
+export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStudio, onEnterBrowse }) => {
   const [sources, setSources] = useState<MangleSourceEntry[]>([]);
   const [results, setResults] = useState<MangleResultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -117,16 +136,46 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
   const [adding, setAdding] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [pooledPrompt, setPooledPrompt] = useState<number | null>(null);
+
+  // New-project flow, the same three steps as Browse's "Import into a project".
+  const [projectResults, setProjectResults] = useState<MangleResultEntry[] | null>(null);
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const [knownWorkspace, setKnownWorkspace] = useState<FileSystemDirectoryHandle | null>(null);
+  const [createdProject, setCreatedProject] = useState<string | null>(null);
+  const [exportLogs, setExportLogs] = useState<string[]>([]);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportDone, setExportDone] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const batchRef = useRef<BatchHandle | null>(null);
 
   const { toasts, showToast, removeToast } = useToasts();
   const player = useAudioPlayer();
 
-  useEscapeLayer(true, () => {
+  useEscapeLayer(!pickerOpen, () => {
     onExitToHub();
     return true;
   });
+  useEscapeLayer(pickerOpen, () => {
+    setPickerOpen(false);
+    return true;
+  });
+
+  // The picker shows the user library read-only when there is one; the project
+  // flow offers the stored workspace by name. Neither asks for permission here.
+  useEffect(() => {
+    let alive = true;
+    loadUserLibraryFromDB().then(lib => { if (alive && lib) setUserLibrary(lib); });
+    getDirectoryHandle('work')
+      .then(handle => { if (alive) setKnownWorkspace(handle); })
+      .catch(e => console.warn('Could not read the stored workspace handle', e));
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -184,6 +233,45 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
     }
     if (failed) showToast(`${failed} file${failed > 1 ? 's' : ''} could not be decoded`, 'error');
   }, [showToast]);
+
+  /** The picker's add button: a pack sample (URL) or a file from a local folder (object URL). */
+  const addFromUrl = useCallback(async (
+    url: string, name: string, origin?: string, license?: string, sourcePath?: string,
+  ) => {
+    const isObjectUrl = url.startsWith('blob:');
+    setAdding(n => n + 1);
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
+      const blob = await response.blob();
+      const duration = await probeDuration(blob);
+      const entry: MangleSourceEntry = {
+        id: newId(),
+        name: stripExtension(name),
+        origin: origin || 'Sample pack',
+        license,
+        sourceSamplePath: sourcePath ?? (isObjectUrl ? undefined : url),
+        blob,
+        duration,
+        enabled: true,
+        addedAt: Date.now(),
+      };
+      await putMangleSourceToDB(entry);
+      setSources(prev => [...prev, entry]);
+    } catch (e) {
+      console.error('Mangler: could not add', name, e);
+      showToast(`Could not add ${name}`, 'error');
+      throw e;
+    } finally {
+      setAdding(n => n - 1);
+      if (isObjectUrl) URL.revokeObjectURL(url);
+    }
+  }, [showToast]);
+
+  const pooledPaths = useMemo(
+    () => new Set(sources.map(s => s.sourceSamplePath).filter((p): p is string => !!p)),
+    [sources],
+  );
 
   const toggleSource = useCallback((entry: MangleSourceEntry) => {
     const next = { ...entry, enabled: !entry.enabled };
@@ -325,6 +413,118 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
     showToast(`Seed ${value} is set and locked`, 'info');
   }, [showToast]);
 
+  // ---------------------------------------------------------------------------
+  // Saving
+  // ---------------------------------------------------------------------------
+
+  /** Results that may leave: anything using a no-derivatives source stays here. */
+  const savable = useCallback((list: MangleResultEntry[]) => {
+    const ok = list.filter(r => resultLicense(r.recipe).level !== 'no-derivatives');
+    const refused = list.length - ok.length;
+    if (refused) {
+      showToast(`${refused} result${refused > 1 ? 's use' : ' uses'} a no-derivatives source and can't be saved`, 'error');
+    }
+    return ok;
+  }, [showToast]);
+
+  const requestSave = useCallback((route: PendingSave['route'], list: MangleResultEntry[]) => {
+    const ok = savable(list);
+    if (ok.length) setPendingSave({ route, results: ok });
+  }, [savable]);
+
+  const confirmSave = useCallback(async () => {
+    if (!pendingSave) return;
+    const { route, results: list } = pendingSave;
+    setPendingSave(null);
+    try {
+      if (route === 'pool') {
+        await addResultsToBrowsePool(list);
+        setPooledPrompt(list.length);
+      } else {
+        const names = await saveResultsToLibrary(list);
+        showToast(names.length === 1
+          ? `Saved to the user library as ${names[0]}`
+          : `${names.length} files saved to the user library`, 'success');
+      }
+      // Saved means worth keeping here too.
+      const ids = new Set(list.map(r => r.id));
+      setResults(prev => prev.map(r => (ids.has(r.id) && !r.kept ? { ...r, kept: true } : r)));
+      for (const r of list) if (!r.kept) putMangleResultToDB({ ...r, kept: true }).catch(console.error);
+    } catch (e) {
+      console.error(e);
+      showToast(e instanceof Error ? e.message : 'Could not save', 'error');
+    }
+  }, [pendingSave, showToast]);
+
+  const downloadResult = useCallback((r: MangleResultEntry) => {
+    if (savable([r]).length) downloadBlob(r.blob, `${r.name}.wav`);
+  }, [savable]);
+
+  const startProject = useCallback((list: MangleResultEntry[]) => {
+    const ok = savable(list).slice(0, GRID_CAPACITY);
+    if (ok.length === 0) return;
+    if (!canPickFolder()) {
+      showToast('Creating a project needs Chrome or Edge (folder access). Download the WAVs instead.', 'error');
+      return;
+    }
+    if (list.length > GRID_CAPACITY) showToast(`A project holds ${GRID_CAPACITY} files; the first ${GRID_CAPACITY} go in`, 'info');
+    setProjectResults(ok);
+  }, [savable, showToast]);
+
+  const createProject = useCallback(async (rawName: string, workspace?: FileSystemDirectoryHandle | null) => {
+    const list = projectResults;
+    if (!list?.length) return;
+    setShowExport(true);
+    setExportDone(false);
+    setExportError(null);
+    setExportLogs(['Creating project…']);
+    try {
+      const { createProjectFromState } = await import('../utils/newProject');
+      const created = await createProjectFromState(
+        buildDetachedState(resultsAsDetached(list)),
+        rawName,
+        msg => { if (msg) setExportLogs(prev => (prev[prev.length - 1] === msg ? prev : [...prev, msg])); },
+        workspace,
+      );
+      if (!created) {
+        setShowExport(false); // Picker dismissed: nothing happened.
+        return;
+      }
+      setShowExport(false);
+      setProjectResults(null);
+      setCreatedProject(created.projectName);
+    } catch (e) {
+      console.error(e);
+      setExportError(e instanceof Error ? e.message : 'Could not create the project.');
+    } finally {
+      setExportDone(true);
+    }
+  }, [projectResults]);
+
+  /** `ensureWorkspacePermission` first: the prompt needs this click's activation. */
+  const continueInKnownWorkspace = async () => {
+    if (!knownWorkspace || !pendingName) return;
+    const name = pendingName;
+    const granted = await ensureWorkspacePermission(knownWorkspace);
+    setPendingName(null);
+    if (!granted) {
+      setExportError('Permission to your workspace folder was refused, so nothing was written.');
+      setShowExport(true);
+      setExportDone(true);
+      return;
+    }
+    await createProject(name, knownWorkspace);
+  };
+
+  const pickAnotherWorkspace = async () => {
+    if (!pendingName) return;
+    const name = pendingName;
+    setPendingName(null);
+    await createProject(name);
+  };
+
+  const keptResults = useMemo(() => results.filter(r => r.kept), [results]);
+
   const progressOf = (id: string) =>
     player.activeFileId === id && player.duration > 0 ? player.currentTime / player.duration : null;
 
@@ -369,13 +569,24 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
         <section className="min-h-0 flex flex-col border-r border-white/10">
           <div className="shrink-0 px-4 pt-4 pb-2 flex items-center justify-between">
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Source pool</h2>
-            <button
-              onClick={() => inputRef.current?.click()}
-              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-synthux-red
-                border border-synthux-red/40 hover:bg-synthux-red/10 transition-colors"
-            >
-              <Plus size={12} /> Add files
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-white
+                  bg-synthux-red/80 hover:bg-synthux-red transition-colors"
+                title="Pick from the sample packs"
+              >
+                <Package size={12} /> Packs
+              </button>
+              <button
+                onClick={() => inputRef.current?.click()}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-synthux-red
+                  border border-synthux-red/40 hover:bg-synthux-red/10 transition-colors"
+                title="Add audio files from your computer"
+              >
+                <Plus size={12} /> Files
+              </button>
+            </div>
             <input
               ref={inputRef}
               type="file"
@@ -399,7 +610,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
                 <span className="block text-sm font-bold mb-1">Drop audio files here</span>
                 <span className="block text-[11px] text-gray-500 leading-relaxed">
                   Or click to choose. WAV, MP3, FLAC, AIFF: anything the browser can decode.
-                  Picking from the sample packs comes next.
+                  Use Packs above to pick from the sample packs.
                 </span>
               </button>
             )}
@@ -426,7 +637,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
                     </button>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs" title={s.name}>{s.name}</span>
-                      <span className="block truncate text-[10px] text-gray-500">{s.origin}</span>
+                      <span className="flex items-center gap-1.5 text-[10px] text-gray-500 min-w-0">
+                        <span className="truncate">{s.origin}</span>
+                        <LicenseBadge level={sourceLicense(s).level} terms={s.license} />
+                      </span>
                     </span>
                     <span className="shrink-0 text-[10px] font-mono text-gray-500 tabular-nums">{formatSeconds(s.duration)}</span>
                     <button
@@ -620,6 +834,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
               const used = usedSources(r.recipe);
               const pitched = r.recipe.snippets.filter(s => s.pitch).length;
               const isOpen = expanded === r.id;
+              const license = resultLicense(r.recipe);
+              const blocked = license.level === 'no-derivatives';
               return (
                 <article key={r.id}
                   className={`rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
@@ -637,7 +853,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
                         {r.recipe.snippets.length} snippets · {r.recipe.cuePoints.length} cues
                         {r.recipe.cuesCapped ? ' (capped)' : ''} · {used.length} source{used.length === 1 ? '' : 's'}
                         {r.recipe.peakReductionDb < -0.5 ? ` · limited ${formatDb(r.recipe.peakReductionDb)}` : ''}
+                        {' '}<LicenseBadge level={license.level} terms={license.text} />
                       </div>
+                      {blocked && (
+                        <div className="text-[10px] text-synthux-red truncate">
+                          Can't be saved: uses {license.blockedBy.map(b => b.name).join(', ')} (no derivatives)
+                        </div>
+                      )}
                     </div>
                     <button onClick={() => applySeed(r.recipe.seed)}
                       className="shrink-0 font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
@@ -648,9 +870,21 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
                       className={r.kept ? 'text-synthux-yellow' : 'text-gray-500 hover:text-synthux-yellow'}>
                       <Star size={15} fill={r.kept ? 'currentColor' : 'none'} />
                     </IconButton>
-                    <IconButton title="Download WAV" onClick={() => downloadBlob(r.blob, `${r.name}.wav`)}
+                    <IconButton title="Download WAV" onClick={() => downloadResult(r)} disabled={blocked}
                       className="text-gray-400 hover:text-white">
                       <Download size={15} />
+                    </IconButton>
+                    <IconButton title="Save to the Studio user library" onClick={() => requestSave('library', [r])}
+                      disabled={blocked} className="text-gray-400 hover:text-synthux-yellow">
+                      <Library size={15} />
+                    </IconButton>
+                    <IconButton title="Add to the Browse pool" onClick={() => requestSave('pool', [r])}
+                      disabled={blocked} className="text-gray-400 hover:text-synthux-green">
+                      <Layers size={15} />
+                    </IconButton>
+                    <IconButton title="New Studio project with this file" onClick={() => startProject([r])}
+                      disabled={blocked} className="text-gray-400 hover:text-synthux-orange">
+                      <FolderPlus size={15} />
                     </IconButton>
                     <IconButton title="Discard" onClick={() => discard(r.id)} className="text-gray-500 hover:text-synthux-red">
                       <Trash2 size={15} />
@@ -680,6 +914,20 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
               {results.length} result{results.length === 1 ? '' : 's'} · {results.filter(r => r.kept).length} kept ·{' '}
               {(resultsBytes / 1024 / 1024).toFixed(0)} MB in browser storage
             </span>
+            {keptResults.length > 0 && (
+              <span className="flex items-center gap-1 ml-2">
+                <span className="text-gray-400">Kept:</span>
+                <FooterButton onClick={() => requestSave('library', keptResults)} icon={<Library size={12} />}>
+                  Save to library
+                </FooterButton>
+                <FooterButton onClick={() => requestSave('pool', keptResults)} icon={<Layers size={12} />}>
+                  Browse pool
+                </FooterButton>
+                <FooterButton onClick={() => startProject(keptResults)} icon={<FolderPlus size={12} />}>
+                  New project
+                </FooterButton>
+              </span>
+            )}
             {results.some(r => !r.kept) && !busy && (
               <button onClick={clearUnkept} className="ml-auto text-gray-400 hover:text-white underline-offset-2 hover:underline">
                 Clear unkept
@@ -696,10 +944,154 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub }) => {
         </div>
       )}
 
+      {pickerOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex flex-col p-4 sm:p-8">
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl overflow-hidden border border-white/10 bg-synthux-browsebg shadow-2xl">
+            <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2 border-b border-white/10 bg-synthux-panel">
+              <span className="text-[11px] text-gray-400">
+                <span className="font-bold uppercase tracking-widest text-synthux-red mr-3">Add to mangle pool</span>
+                {sources.length} source{sources.length === 1 ? '' : 's'} in the pool
+                {adding > 0 && <span className="ml-2 inline-flex items-center gap-1"><Loader size={11} className="animate-spin" /> adding {adding}…</span>}
+              </span>
+              <button onClick={() => setPickerOpen(false)}
+                className="px-4 py-1.5 rounded-full text-xs font-bold bg-synthux-red text-white hover:bg-synthux-red/80">
+                Done
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 relative flex flex-col">
+              <Suspense fallback={
+                <div className="h-full flex items-center justify-center text-gray-500"><Loader size={20} className="animate-spin" /></div>
+              }>
+                <SampleBrowser
+                  isOpen
+                  mode="picker"
+                  addLabel="Add to mangle pool"
+                  addedLabel="In mangle pool"
+                  onClose={() => setPickerOpen(false)}
+                  onImport={addFromUrl}
+                  addedPaths={pooledPaths}
+                  userLibrary={userLibrary}
+                  onRemoteBulkImport={async (samples, _target, origin, license) => {
+                    for (const sample of samples) {
+                      try { await addFromUrl(sample.url, sample.name, origin, license, sample.path); } catch { /* next */ }
+                    }
+                  }}
+                  onImportToPool={async (files) => {
+                    for (const { file, path } of files) {
+                      try { await addFromUrl(URL.createObjectURL(file), file.name, 'Local Folder', undefined, path); } catch { /* next */ }
+                    }
+                  }}
+                />
+              </Suspense>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={pendingSave !== null}
+        onClose={() => setPendingSave(null)}
+        onConfirm={confirmSave}
+        title={pendingSave?.route === 'library' ? 'Save to the user library' : 'Add to the Browse pool'}
+        message={pendingSave && (
+          <span className="space-y-2 block">
+            <span className="block">
+              {pendingSave.results.length === 1 ? <strong>{pendingSave.results[0].name}</strong> : `${pendingSave.results.length} results`}
+              {pendingSave.route === 'library'
+                ? " will be added to the user library. Studio copies it into User_Library/ in your work folder the next time it opens."
+                : " will be added to Browse's temporary pool, where you can build an SK/ folder or a project from it."}
+            </span>
+            {pendingSave.route === 'library' && (
+              <span className="block text-synthux-yellow">
+                Close Studio in any other tab first: while it is open it writes its own copy of the library
+                over this one.
+              </span>
+            )}
+            {pendingSave.results.some(r => resultLicense(r.recipe).level === 'personal') && (
+              <span className="block text-gray-400">
+                Some of it is built from personal-use samples: fine in your own music, but not to be shared as a sample.
+                The license note travels with the file.
+              </span>
+            )}
+          </span>
+        )}
+        confirmLabel={pendingSave?.route === 'library' ? 'Save' : 'Add'}
+      />
+
+      <ConfirmModal
+        isOpen={pooledPrompt !== null}
+        onClose={() => setPooledPrompt(null)}
+        onConfirm={() => { setPooledPrompt(null); onEnterBrowse?.(); }}
+        title="Added to the Browse pool"
+        message={`${pooledPrompt === 1 ? 'The result is' : `${pooledPrompt} results are`} in the temporary pool. Open Browse to download it as an SK/ folder or import it into a project.`}
+        confirmLabel={onEnterBrowse ? 'Open Browse' : 'Got it'}
+        cancelLabel="Stay here"
+        showCancel={!!onEnterBrowse}
+      />
+
+      <ProjectNameModal
+        isOpen={projectResults !== null && pendingName === null && !showExport}
+        onClose={() => setProjectResults(null)}
+        onConfirm={(name) => setPendingName(name)}
+        title={`New project with ${projectResults?.length ?? 0} file${projectResults?.length === 1 ? '' : 's'}`}
+        initialValue="Mangled"
+        placeholder="Project name…"
+        confirmLabel="Continue"
+      />
+
+      <WorkspaceChoiceModal
+        isOpen={pendingName !== null}
+        onClose={() => { setPendingName(null); setProjectResults(null); }}
+        projectName={pendingName || ''}
+        existing={knownWorkspace}
+        onUseExisting={continueInKnownWorkspace}
+        onPickFolder={pickAnotherWorkspace}
+        onRunSetup={knownWorkspace || !onEnterStudio ? undefined : () => {
+          setPendingName(null);
+          onEnterStudio();
+        }}
+      />
+
+      <ExportProgressModal
+        isOpen={showExport}
+        onClose={() => { setShowExport(false); setProjectResults(null); }}
+        logs={exportLogs}
+        isComplete={exportDone}
+        error={exportError}
+      />
+
+      <ProjectCreatedModal
+        projectName={createdProject}
+        onDismiss={() => setCreatedProject(null)}
+        onEnterStudio={onEnterStudio}
+      />
+
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>
   );
 };
+
+const LicenseBadge: React.FC<{ level: keyof typeof LEVEL_LABEL; terms?: string }> = ({ level, terms }) => {
+  if (level === 'open') return null;
+  const tone = level === 'no-derivatives'
+    ? 'text-synthux-red border-synthux-red/40'
+    : 'text-synthux-yellow/90 border-synthux-yellow/30';
+  return (
+    <span title={terms || LEVEL_LABEL[level]}
+      className={`shrink-0 inline-block px-1 rounded border text-[9px] uppercase tracking-wider leading-[14px] ${tone}`}>
+      {LEVEL_LABEL[level]}
+    </span>
+  );
+};
+
+const FooterButton: React.FC<{ onClick: () => void; icon: React.ReactNode; children: React.ReactNode }> = ({
+  onClick, icon, children,
+}) => (
+  <button onClick={onClick}
+    className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
+    {icon} {children}
+  </button>
+);
 
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <fieldset className="space-y-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
@@ -708,11 +1100,12 @@ const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, 
   </fieldset>
 );
 
-const IconButton: React.FC<{ title: string; onClick: () => void; className: string; children: React.ReactNode }> = ({
-  title, onClick, className, children,
-}) => (
-  <button onClick={onClick} title={title} aria-label={title}
-    className={`shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-white/5 transition-colors ${className}`}>
+const IconButton: React.FC<{
+  title: string; onClick: () => void; className: string; children: React.ReactNode; disabled?: boolean;
+}> = ({ title, onClick, className, children, disabled }) => (
+  <button onClick={onClick} title={title} aria-label={title} disabled={disabled}
+    className={`shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-white/5 transition-colors
+      disabled:opacity-25 disabled:cursor-not-allowed ${className}`}>
     {children}
   </button>
 );
