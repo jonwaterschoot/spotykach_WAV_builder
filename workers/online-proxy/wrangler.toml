@@ -2,6 +2,11 @@ name = "wavbuilder-online"
 main = "src/index.js"
 compatibility_date = "2025-10-01"
 
+# Live at https://wavbuilder-online.jonwtr.workers.dev. Said explicitly so deploy
+# stops warning about it. No preview URLs: every deploy is the one the app uses.
+workers_dev = true
+preview_urls = false
+
 # The pages allowed to use the proxy: the live site, and the dev server.
 # The live site is GitHub Pages; an origin is scheme + host only, no path.
 [vars]

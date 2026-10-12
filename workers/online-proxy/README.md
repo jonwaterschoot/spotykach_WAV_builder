@@ -52,15 +52,7 @@ You need a Cloudflare account (the one with R2 is fine) and a Freesound account.
 
 5. **Check it:** open `<that URL>/health` in a browser. It should say `{"ok":true,"freesoundKey":true}`.
 
-6. **Point the app at it.** Add a line to the repo's `.env` (it is gitignored, and it is where the build reads `VITE_` settings from):
-
-   ```
-   VITE_ONLINE_PROXY_URL=https://wavbuilder-online.<your-subdomain>.workers.dev
-   ```
-
-   Then `npm run deploy` as usual. In the app, Freesound's card now says "shared key" and is on by default.
-
-   The URL isn't a secret (it ends up in the page anyway); only the Freesound key is.
+6. **The app already points at it.** The live URL, `https://wavbuilder-online.jonwtr.workers.dev`, is built into `src/components/OnlineBrowser.tsx` (`DEFAULT_PROXY_URL`), the same way the R2 address is built in. The URL is no secret; only the Freesound key is, and it stays in the Worker. To build against another Worker, set `VITE_ONLINE_PROXY_URL` in `.env`; set it to `off` to build without the proxy.
 
 ## Local testing
 

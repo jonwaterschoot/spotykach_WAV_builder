@@ -65,10 +65,16 @@ const SUGGESTIONS = ['rain', 'bell', 'field recording', 'machine', 'piano', 'voi
 const KEY_STORE = 'wavbuilder_freesound_key';
 
 /**
- * WAV Builder's own proxy (workers/online-proxy), set at build time. Empty means
- * there is none, and Freesound needs the user's own key.
+ * WAV Builder's own proxy (workers/online-proxy), which holds the shared Freesound
+ * key. The URL is no secret (only the key is, and it stays in the Worker), so it is
+ * built in like the R2 address. `VITE_ONLINE_PROXY_URL` overrides it, e.g. with
+ * `http://localhost:8787` for `wrangler dev`, or with "off" to build without it.
  */
-const PROXY_URL = (import.meta.env.VITE_ONLINE_PROXY_URL || '').replace(/\/+$/, '');
+const DEFAULT_PROXY_URL = 'https://wavbuilder-online.jonwtr.workers.dev';
+const PROXY_URL = (() => {
+    const raw = import.meta.env.VITE_ONLINE_PROXY_URL ?? DEFAULT_PROXY_URL;
+    return raw === 'off' ? '' : raw.replace(/\/+$/, '');
+})();
 const PREFS_STORE = 'wavbuilder_online_prefs';
 
 const LICENSE_TONE: Record<LicenseFilter, string> = {

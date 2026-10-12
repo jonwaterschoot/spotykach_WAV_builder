@@ -41,7 +41,9 @@ Multi-select (added the same day): rows tick like pack rows (click, shift-click 
 
 Known gap: NASA hits have no duration until their file is fetched, so the length filter can't hold them back; a 30-minute broadcast can be added under "≤ 2 min".
 
-Shared Freesound key (Oct 12, later): `workers/online-proxy` is a Cloudflare Worker that holds one Freesound key and forwards searches only, behind an origin check, a fixed parameter list and 15 searches a minute per IP. The app uses it when `VITE_ONLINE_PROXY_URL` is set at build time and the user has no key of their own; each visitor then gets 10 a minute and 100 a day from it, counted in their browser. A personal key always goes direct. Tested locally with `wrangler dev` (origin refusal, preflight, refused key, the rate limiter) and from the app through it. Deploy steps: `workers/online-proxy/README.md`.
+Shared Freesound key (Oct 12, later): `workers/online-proxy` is a Cloudflare Worker that holds one Freesound key and forwards searches only, behind an origin check, a fixed parameter list and 15 searches a minute per IP. The app uses it when the user has no key of their own; each visitor then gets 10 a minute and 100 a day from it, counted in their browser. A personal key always goes direct. Tested locally with `wrangler dev` (origin refusal, preflight, refused key, the rate limiter) and from the app through it. Deploy steps: `workers/online-proxy/README.md`.
+
+Live since Oct 13 at `https://wavbuilder-online.jonwtr.workers.dev`, built into the app as `DEFAULT_PROXY_URL` (the env var only overrides it). Checked live: a real search through it from the site's origin, the key absent from responses, other origins refused, previews loading from the site's origin, and from the app a Freesound search through the shared key with a sound added to the pool.
 
 Each archive's card now says what audio you get and its limits, rows show the bitrate where the archive gives one, and "N left today" shows for Openverse and Freesound.
 
