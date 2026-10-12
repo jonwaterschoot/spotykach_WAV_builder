@@ -540,7 +540,7 @@ export const FileBrowser = ({
                     {/* Sort — one order, both lists */}
                     <div title={`Sort: ${SORT_LABELS[sort.mode]}${sort.dir === 'desc' ? ' (reversed)' : ''}`}>
                         <Dropdown
-                            align="right"
+                            align="left"
                             iconOnly
                             label={sortIcon}
                             buttonClassName={`!p-1.5 !rounded !border-transparent hover:!bg-gray-700 ${isSorted ? '!text-synthux-blue !bg-gray-800' : '!text-gray-400 hover:!text-white'}`}
