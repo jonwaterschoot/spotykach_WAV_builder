@@ -171,6 +171,107 @@ export function findOnset(signal: Stereo, from: number, window: number, sampleRa
     return nearestZeroCrossing(signal, at, Math.round(sampleRate * 0.001));
 }
 
+export interface OnsetOptions {
+    from?: number;
+    to?: number;
+    /** 0 (only the clearest hits) … 1 (every small attack). */
+    sensitivity?: number;
+    /** No two onsets closer than this. */
+    minGapMs?: number;
+}
+
+export interface Onset {
+    frame: number;
+    /** How sharp the attack is: the rise in log energy. For ranking. */
+    strength: number;
+}
+
+/**
+ * Attacks in a signal: where the energy of its first difference (which leans on
+ * the highs, where hits live) rises sharply over ~10 ms, against a threshold
+ * that follows the local average, so a busy passage needs a bigger jump than a
+ * quiet one. Each onset sits just before its rise, on a zero crossing.
+ */
+export function detectOnsets(signal: Stereo, sampleRate: number, options: OnsetOptions = {}): Onset[] {
+    const [l, r] = signal;
+    const hop = 256;
+    const wanted = Math.max(0, options.from ?? 0);
+    // Two frames of pre-roll, so a hit right at `from` has history to rise from.
+    const from = Math.max(1, wanted - 2 * hop);
+    const to = Math.min(l.length, options.to ?? l.length);
+    const sensitivity = Math.min(1, Math.max(0, options.sensitivity ?? 0.5));
+    const frames = Math.floor((to - from) / hop);
+    if (frames < 4) return [];
+
+    const logEnergy = new Float64Array(frames);
+    for (let f = 0; f < frames; f++) {
+        let e = 0;
+        for (let i = from + f * hop, stop = i + hop; i < stop; i++) {
+            const d = (l[i] + r[i]) - (l[i - 1] + r[i - 1]);
+            e += d * d;
+        }
+        logEnergy[f] = Math.log10(e / hop + 1e-10);
+    }
+
+    // Rise over two frames, so a slightly soft attack still counts.
+    const rise = new Float64Array(frames);
+    for (let f = 2; f < frames; f++) rise[f] = Math.max(0, logEnergy[f] - 0.5 * (logEnergy[f - 1] + logEnergy[f - 2]));
+
+    // 1.0 is a 10 dB jump. Sensitive finds 3 dB ones; strict wants 15 dB.
+    const delta = 1.5 - 1.2 * sensitivity;
+    const gap = Math.max(1, Math.round(((options.minGapMs ?? 50) / 1000) * sampleRate / hop));
+    const span = 10;
+    const floor = -6.5; // about −65 dBFS on the difference signal: silence has no hits
+
+    const onsets: Onset[] = [];
+    let last = -Infinity;
+    for (let f = 2; f < frames; f++) {
+        if (rise[f] <= 0 || logEnergy[f] < floor) continue;
+        let isPeak = true;
+        for (let k = Math.max(2, f - 3); k <= Math.min(frames - 1, f + 3); k++) {
+            if (rise[k] > rise[f] || (rise[k] === rise[f] && k < f)) { isPeak = false; break; }
+        }
+        if (!isPeak) continue;
+        let mean = 0, n = 0;
+        for (let k = Math.max(2, f - span); k <= Math.min(frames - 1, f + span); k++) { mean += rise[k]; n++; }
+        mean /= Math.max(1, n);
+        if (rise[f] < delta * 0.5 + mean) continue;
+        if (f - last < gap) {
+            // Too close: keep the sharper of the two.
+            const prev = onsets[onsets.length - 1];
+            if (prev && rise[f] > prev.strength) onsets.pop(); else continue;
+        }
+        const at = attackStart(signal, from + Math.max(0, f - 2) * hop, from + (f + 1) * hop, sampleRate);
+        if (at < wanted) continue;
+        onsets.push({ frame: at, strength: rise[f] });
+        last = f;
+    }
+    return onsets;
+}
+
+/**
+ * Where an attack found somewhere in `[lo, hi)` really begins: the first sample
+ * over a fifth of the peak just after it, less half a millisecond, on a zero
+ * crossing at or before that point.
+ */
+function attackStart(signal: Stereo, lo: number, hi: number, sampleRate: number): number {
+    const [l, r] = signal;
+    const end = Math.min(l.length, hi + 256);
+    let peakValue = 0;
+    for (let i = lo; i < end; i++) peakValue = Math.max(peakValue, Math.abs(l[i] + r[i]));
+    let first = lo;
+    for (let i = lo; i < end; i++) {
+        if (Math.abs(l[i] + r[i]) >= peakValue * 0.2) { first = i; break; }
+    }
+    let at = Math.max(lo, first - Math.round(sampleRate * 0.0005));
+    // Back to the last zero crossing, so the cut starts clean.
+    const v = (i: number) => l[i] + r[i];
+    for (let i = at; i > Math.max(1, at - Math.round(sampleRate * 0.002)); i--) {
+        if (v(i) === 0 || (v(i) < 0) !== (v(i - 1) < 0)) { at = i; break; }
+    }
+    return at;
+}
+
 /** Plain RMS in dBFS over both channels. −Infinity for silence. */
 export function rmsDb(signal: Stereo): number {
     const [l, r] = signal;

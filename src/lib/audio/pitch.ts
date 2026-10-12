@@ -30,7 +30,7 @@ export interface YinOptions {
 /** Shorter than this, there are too few periods for a usable estimate. */
 export const MIN_PITCH_SECONDS = 0.08;
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 /** Fractional MIDI note: 69 = A4 = 440 Hz, 60 = C4. */
 export const frequencyToMidi = (hz: number): number => 69 + 12 * Math.log2(hz / 440);
@@ -47,6 +47,27 @@ export function noteName(hz: number): string {
 export function semitonesToNearestC(hz: number): number {
     const fromC = ((frequencyToMidi(hz) % 12) + 12) % 12;
     return fromC <= 6 ? -fromC : 12 - fromC;
+}
+
+/**
+ * Semitones (with cents) that move `hz` onto the nearest of `pitchClasses`
+ * (0 = C … 11 = B), between −6 and +6. With `[0]` this is `semitonesToNearestC`.
+ * Ties go down. 0 when the list is empty.
+ */
+export function semitonesToPitchClasses(hz: number, pitchClasses: readonly number[]): number {
+    const fromC = ((frequencyToMidi(hz) % 12) + 12) % 12;
+    let best = 0;
+    let bestDistance = Infinity;
+    for (const pc of pitchClasses) {
+        // The shift onto this pitch class, wrapped into [−6, 6).
+        let d = (((pc - fromC) % 12) + 12) % 12;
+        if (d >= 6) d -= 12;
+        if (Math.abs(d) < bestDistance - 1e-9 || (Math.abs(Math.abs(d) - bestDistance) < 1e-9 && d < best)) {
+            best = d;
+            bestDistance = Math.abs(d);
+        }
+    }
+    return bestDistance === Infinity ? 0 : best;
 }
 
 /**

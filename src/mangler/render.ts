@@ -1,11 +1,11 @@
-import { detectPitchYin, semitonesToNearestC } from '../lib/audio/pitch.ts';
+import { detectPitchYin, semitonesToNearestC, semitonesToPitchClasses } from '../lib/audio/pitch.ts';
 import {
-    applyGain, cut, dbToGain, declick, fadeOutTail, findOnset, gatedRmsDb, joinInto, limit, loopCrossfade,
+    applyGain, cut, dbToGain, declick, detectOnsets, fadeOutTail, findOnset, gatedRmsDb, joinInto, limit, loopCrossfade,
     monoMix, nearestZeroCrossing, peak, resample, resampleSinc, reverseInPlace, rmsDb, type Stereo,
 } from './dsp.ts';
 import { Planner } from './plan.ts';
 import { createRng, deriveSeed } from './rng.ts';
-import { MAX_CUE_POINTS, type MangleSettings } from './settings.ts';
+import { MAX_CUE_POINTS, scalePitchClasses, type MangleSettings } from './settings.ts';
 
 /** Everything renders at the hardware's rate. */
 export const MANGLE_SAMPLE_RATE = 48000;
@@ -22,7 +22,19 @@ export interface SnippetPitch {
     confidence: number;
     /** Semitones to the nearest C. */
     toC: number;
+    /** Semitones to the nearest note of the render's scale (equals `toC` for "root only" on C). */
+    toScale?: number;
 }
+
+/**
+ * What a snippet's pitch was set to. Absent: its own pitch (plus detune).
+ * `scale`: the nearest note of the scale. `note`: the nearest given pitch class.
+ * `st`: a plain shift.
+ */
+export type PitchChoice =
+    | { kind: 'scale' }
+    | { kind: 'note'; pc: number }
+    | { kind: 'st'; st: number };
 
 export interface SnippetInfo {
     /** Index into the sources passed to `render`. */
@@ -42,8 +54,12 @@ export interface SnippetInfo {
     pitch: SnippetPitch | null;
     /** Semitones actually applied (to C, plus detune). */
     shift: number;
-    /** The shift includes the move to C (`pitch.toC`). */
+    /** The shift includes the move to C (`pitch.toC`). Results from before `choice`. */
     toCApplied?: boolean;
+    /** The random detune part of `shift`. */
+    detune?: number;
+    /** What the rest of `shift` is. Absent: nothing beyond the detune. */
+    choice?: PitchChoice;
     /** Times the snippet was redrawn for being below the silence threshold. */
     rerolls: number;
 }
@@ -103,6 +119,7 @@ export function render(
     const out: Stereo = [new Float32Array(capacity), new Float32Array(capacity)];
     const declickLength = settings.hardCuts ? 0 : Math.round(2 * ms);
 
+    const scale = scalePitchClasses(settings.scaleRoot, settings.scaleMask);
     const resampleWith = (signal: Stereo, ratio: number, length: number) =>
         settings.resampler === 'sinc' ? resampleSinc(signal, ratio, length) : resample(signal, ratio, length);
 
@@ -164,6 +181,8 @@ export function render(
                 pitch: spec.pitch,
                 shift: spec.shift,
                 toCApplied: spec.toCApplied,
+                detune: spec.detune,
+                choice: spec.choice,
                 rerolls: spec.rerolls,
             };
             gainDb = spec.gainDb;
@@ -184,8 +203,9 @@ export function render(
                 // Pitch: detect on the planned region, then widen the read so the
                 // snippet keeps its planned length after the shift.
                 let pitch: SnippetPitch | null = null;
-                let shift = plan.detune * settings.detuneSt;
-                let toCApplied = false;
+                const detune = plan.detune * settings.detuneSt;
+                let shift = detune;
+                let choice: PitchChoice | undefined;
                 if (settings.repitch !== 'off') {
                     const at = Math.floor(startFraction * (srcLength - length));
                     const region: Stereo = [src[0].subarray(at, at + length), src[1].subarray(at, at + length)];
@@ -196,10 +216,11 @@ export function render(
                             note: estimate.note,
                             confidence: estimate.confidence,
                             toC: semitonesToNearestC(estimate.frequency),
+                            toScale: semitonesToPitchClasses(estimate.frequency, scale),
                         };
                         if (settings.repitch === 'apply' && estimate.confidence >= settings.pitchConfidence) {
-                            shift += pitch.toC;
-                            toCApplied = true;
+                            shift += pitch.toScale ?? pitch.toC;
+                            choice = { kind: 'scale' };
                         }
                     }
                 }
@@ -207,7 +228,16 @@ export function render(
                 const readLength = Math.min(srcLength, Math.ceil(length * ratio) + 1);
                 let start = Math.floor(startFraction * (srcLength - readLength));
                 start = snapStart(src, start, readLength, Math.ceil(length * ratio), plan.reverse);
-                signal = resampleWith(cut(src, start, readLength), ratio, length);
+                // One hit per snippet: stop before the next attack in the region.
+                let outLength = length;
+                if (settings.oneHit) {
+                    const minGap = Math.round(0.03 * sr * ratio);
+                    const next = detectOnsets(src, sr, {
+                        from: start + minGap, to: start + readLength, sensitivity: 0.5, minGapMs: 30,
+                    })[0];
+                    if (next) outLength = Math.max(Math.round(0.02 * sr), Math.min(length, Math.floor((next.frame - start) / ratio)));
+                }
+                signal = resampleWith(cut(src, start, readLength), ratio, outLength);
                 if (plan.reverse) reverseInPlace(signal);
 
                 info = {
@@ -219,7 +249,8 @@ export function render(
                     measuredDb: gatedRmsDb(signal, sr),
                     pitch,
                     shift,
-                    toCApplied,
+                    detune,
+                    choice,
                     rerolls,
                 };
 

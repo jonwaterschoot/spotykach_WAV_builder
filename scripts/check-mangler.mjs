@@ -222,6 +222,55 @@ section('Snap and resampling');
     check(dc.slice(50, 550).every(v => Math.abs(v - 0.5) < 1e-5), 'sinc: DC passes unchanged');
 }
 
+section('Scales, pitch choices, transients');
+{
+    const { semitonesToPitchClasses } = await import('../src/lib/audio/pitch.ts');
+    const { maskFromIntervals, SCALES, scalePitchClasses } = await import('../src/mangler/settings.ts');
+    const major = maskFromIntervals(SCALES.find(sc => sc.name === 'Major').intervals);
+    check(semitonesToPitchClasses(220, scalePitchClasses(2, major)) === 0, 'A is in D major: no shift');
+    check(semitonesToPitchClasses(220, scalePitchClasses(6, major)) === -1, 'A in F# major: down to G# (ties go down)');
+    check(Math.abs(semitonesToPitchClasses(300, scalePitchClasses(0, 1)) - semitonesToPitchClasses(300, [0])) < 1e-12, 'root only on C = to C');
+
+    const inMinor = render(sources, sanitizeSettings({ ...settings, scaleRoot: 9, scaleMask: maskFromIntervals([0, 2, 3, 5, 7, 8, 10]) }), 12345);
+    const aSnips = inMinor.snippets.filter(s => s.source === 0 && s.choice?.kind === 'scale');
+    check(aSnips.length > 0 && aSnips.every(s => Math.abs(s.shift) < 0.1), 'apply with A minor: A3 snippets stay put', `${aSnips.length} snippets`);
+
+    const { withChoice, detuneOf, choiceOf } = await import('../src/mangler/pitchChoice.ts');
+    const sine = a.snippets.find(s => s.source === 0 && s.pitch);
+    const toE = withChoice({ ...sine, detune: 0.5, shift: 0.5 + sine.pitch.toC }, { kind: 'note', pc: 4 }, settings);
+    check(Math.abs(toE.shift - (0.5 - 5)) < 0.05 && toE.choice.kind === 'note', 'A3 to E: −5 st on top of the detune', toE.shift.toFixed(2));
+    const old = { ...sine, detune: undefined, choice: undefined, toCApplied: true, shift: 1 + sine.pitch.toC };
+    check(Math.abs(detuneOf(old) - 1) < 1e-9 && choiceOf(old)?.kind === 'note', 'old results: toCApplied reads as "to C"');
+    const plain = withChoice({ ...sine, pitch: null }, { kind: 'st', st: 7 }, settings);
+    check(plain.choice.kind === 'st', 'a plain shift works without a detected pitch');
+
+    // Hits every 100 ms from 1000 on (built above for the onset snap).
+    const { detectOnsets } = await import('../src/mangler/dsp.ts');
+    const hitsTrack = new Float32Array(SR);
+    for (let h = 0; h < 10; h++) for (let i = 0; i < 2000; i++) hitsTrack[h * 4800 + 1000 + i] = Math.sin(i * 0.3) * Math.exp(-i / 400);
+    const found = detectOnsets([hitsTrack, hitsTrack], SR, { sensitivity: 0.5 });
+    const onHit = found.filter(o => { const p = (o.frame - 1000 + 4800) % 4800; return p < 60 || p > 4800 - 60; });
+    check(found.length >= 9 && found.length <= 11 && onHit.length === found.length, 'detectOnsets: one per hit', `${found.length} found`);
+    const noiseOnsets = detectOnsets([noise(1), noise(1)], SR, { sensitivity: 0.5 });
+    check(noiseOnsets.length <= 3, 'detectOnsets: steady noise has (almost) none', String(noiseOnsets.length));
+
+    const drums = render([mono(hitsTrack)], sanitizeSettings({
+        outputSeconds: 5, snapStart: 'onset', oneHit: true, skipSilence: false, snippetMinMs: 300, snippetMaxMs: 600,
+        reverseProbability: 0, repitch: 'off', xfadeMinMs: 0, xfadeMaxMs: 2,
+    }), 4);
+    const longest = Math.max(...drums.snippets.map(s => s.length)) / SR * 1000;
+    check(longest <= 110, 'one hit per snippet: no snippet runs into the next hit', `longest ${longest.toFixed(0)} ms`);
+
+    const { transientCues, snippetCues } = await import('../src/mangler/recue.ts');
+    const cues = transientCues([drums.left, drums.right], SR, 'normal');
+    check(cues[0] === 0 && cues.length >= drums.snippets.length * 0.7, 'transient cues on a mangled drum loop', `${cues.length} cues, ${drums.snippets.length} snippets`);
+    const clicks = new Float32Array(42 * SR);
+    for (let t = 1000; t < clicks.length - 200; t += 1440) for (let i = 0; i < 100; i++) clicks[t + i] = 0.8 * Math.exp(-i / 20) * (i % 2 ? 1 : -1);
+    const dense = transientCues([clicks, clicks], SR, 'aggressive');
+    check(dense.length <= MAX_CUE_POINTS && dense.every((f, i) => i === 0 || f > dense[i - 1]), 'transient cues: capped at 255, in order', `${dense.length} cues`);
+    check(JSON.stringify(snippetCues(a.snippets, a.left.length)) === JSON.stringify(a.cuePoints), 'snippet cues match what a render writes');
+}
+
 section('Presets and edges');
 {
     const glitch = render(sources, sanitizeSettings({ ...DEFAULT_SETTINGS, ...PRESETS.Glitch, snippetMaxMs: 40 }), 1);
