@@ -1,5 +1,5 @@
 import type { Rng } from './rng.ts';
-import type { MangleSettings } from './settings.ts';
+import { OUTPUT_MAX_SECONDS, type MangleSettings } from './settings.ts';
 
 /**
  * One snippet's dice, picked before any audio is touched. The renderer turns it
@@ -83,7 +83,7 @@ export class Planner {
         const detune = this.rng.uniform(-1, 1);
         return {
             source,
-            length: Math.max(1, Math.round(Math.min(lengthMs, s.outputSeconds * 1000) * ms)),
+            length: Math.max(1, Math.round(Math.min(lengthMs, (s.fillMode === 'count' ? OUTPUT_MAX_SECONDS : s.outputSeconds) * 1000) * ms)),
             xfade: Math.round(xfadeMs * ms),
             reverse,
             startFraction,

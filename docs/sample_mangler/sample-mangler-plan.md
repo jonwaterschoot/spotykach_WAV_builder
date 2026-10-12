@@ -262,6 +262,9 @@ All edits go through one engine mechanism: `render(..., { fixed })` renders posi
 - [x] Editor: *Editor* opens a copy in `LooseFileEditor` (commit button "Save as new result"). Its saves become a result marked *edited* next to the original: playable, croppable, re-cueable and savable, but not re-renderable. The original stays editable
 - [x] Crop: *Crop* shows yellow handles on the waveform; *Apply crop* cuts the stretch from the audio there is, and the recipe keeps it (`recipe.crop`, frames of the full render), so later edits cut the same stretch. *Full length* re-renders without it. Rows outside the crop are dimmed. Renders never exceed the output length, so the 42 s case doesn't arise; the crop covers trimming in general
 - [x] Snippet list selection: click, Shift-click (range), Ctrl/Cmd-click (toggle), Ctrl+A, Escape. Delete, lock or unlock the selection; dragging a selected row moves the whole selection, grouped in its own order, to the drop row (after it when dragging down, before it when up)
+**Added Oct 12 — Fill by count**
+
+- [x] *Fill: By length / By count*. By count makes exactly N snippets (1–128 on the slider, 255 allowed) and the file ends where the last one does, so variations differ in length; the slider shows a typical length. Over 42 s it stops there with fewer snippets and the card says so. With *Loop the file* the tail folds into the start. Deleting a snippet in count mode shortens the file instead of refilling the end. Length mode renders exactly as before
 
 ## Open questions and risks
 

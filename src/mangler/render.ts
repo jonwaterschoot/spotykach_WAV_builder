@@ -5,7 +5,7 @@ import {
 } from './dsp.ts';
 import { Planner } from './plan.ts';
 import { createRng, deriveSeed } from './rng.ts';
-import { MAX_CUE_POINTS, scalePitchClasses, type MangleSettings } from './settings.ts';
+import { MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, scalePitchClasses, type MangleSettings } from './settings.ts';
 
 /** Everything renders at the hardware's rate. */
 export const MANGLE_SAMPLE_RATE = 48000;
@@ -99,6 +99,8 @@ export interface MangleResult {
     cuePoints: number[];
     /** More snippets started than the firmware has cue points for. */
     cuesCapped: boolean;
+    /** Count mode: the snippets asked for didn't fit in 42 s, so there are fewer. */
+    countCapped?: boolean;
     snippets: SnippetInfo[];
     /** Deepest limiter (or scale-down) reduction, dB ≤ 0. */
     peakReductionDb: number;
@@ -137,11 +139,13 @@ export function render(
     const { onProgress, fixed } = options;
     const sr = MANGLE_SAMPLE_RATE;
     const ms = sr / 1000;
-    const total = Math.round(settings.outputSeconds * sr);
+    const byCount = settings.fillMode === 'count';
+    // Count mode renders into the most there may be, and ends where the last snippet does.
+    const maxTotal = Math.round((byCount ? OUTPUT_MAX_SECONDS : settings.outputSeconds) * sr);
     const loopLength = settings.loop
-        ? Math.min(Math.round(Math.min(1000, Math.max(10, settings.xfadeMaxMs)) * ms), total >> 2)
+        ? Math.min(Math.round(Math.min(1000, Math.max(10, settings.xfadeMaxMs)) * ms), maxTotal >> 2)
         : 0;
-    const capacity = total + loopLength;
+    const capacity = maxTotal + loopLength;
     const out: Stereo = [new Float32Array(capacity), new Float32Array(capacity)];
     const declickLength = settings.hardCuts ? 0 : Math.round(2 * ms);
 
@@ -186,6 +190,7 @@ export function render(
     let lastProgress = 0;
 
     for (let index = 0; end < capacity && index < MAX_SNIPPETS; index++) {
+        if (byCount && snippets.length >= settings.snippetCount) break;
         // Always drawn, fixed or not, so the snippets after a fixed one keep their dice.
         const plan = planner.next();
         const spec = fixed?.[index];
@@ -337,11 +342,17 @@ export function render(
         }
     }
 
+    // Length mode: exactly the length asked for. Count mode: up to the end of the
+    // last snippet; a loop folds its last stretch into the start, so the file is
+    // that much shorter (and the fold at most a fifth of what there is).
+    const loopNow = byCount ? Math.min(loopLength, Math.floor(end / 5)) : loopLength;
+    const total = byCount ? Math.max(2, Math.min(maxTotal, end - loopNow)) : maxTotal;
     let result: Stereo = out;
-    if (loopLength > 0) {
-        result = loopCrossfade(out, total, loopLength);
-    } else if (declickLength) {
-        fadeOutTail(out, total, declickLength);
+    if (loopNow > 0) {
+        result = loopCrossfade(out, total, loopNow);
+    } else {
+        if (declickLength) fadeOutTail(out, total, declickLength);
+        if (total < out[0].length) result = [out[0].slice(0, total), out[1].slice(0, total)];
     }
 
     const ceiling = dbToGain(PEAK_CEILING_DB);
@@ -368,6 +379,7 @@ export function render(
         right: result[1],
         cuePoints,
         cuesCapped: settings.cuePoints && starts.length > MAX_CUE_POINTS,
+        countCapped: byCount && snippets.length < settings.snippetCount,
         snippets,
         peakReductionDb,
     };

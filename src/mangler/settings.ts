@@ -5,12 +5,17 @@
 
 export type RepitchMode = 'off' | 'suggest' | 'apply';
 export type SourceMix = 'even' | 'length';
+/** Fill to a length (as many snippets as fit), or make a number of snippets (whatever length that gives). */
+export type FillMode = 'length' | 'count';
 export type SnapStart = 'off' | 'zero' | 'onset';
 export type Resampler = 'linear' | 'sinc';
 
 export interface MangleSettings {
-    /** Length of the result. The hardware plays the first 42 s. */
+    fillMode: FillMode;
+    /** Length of the result, in `length` mode. The hardware plays the first 42 s. */
     outputSeconds: number;
+    /** Snippets per result, in `count` mode. The file ends where the last one does (42 s at most). */
+    snippetCount: number;
     snippetMinMs: number;
     snippetMaxMs: number;
     /** −1 favours short snippets, +1 long ones. */
@@ -68,7 +73,9 @@ export const VARIATIONS_MAX = 12;
 export const MAX_CUE_POINTS = 255;
 
 export const DEFAULT_SETTINGS: MangleSettings = {
+    fillMode: 'length',
     outputSeconds: 42,
+    snippetCount: 16,
     snippetMinMs: 150,
     snippetMaxMs: 2000,
     bias: 0,
@@ -127,6 +134,8 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     const d = DEFAULT_SETTINGS;
 
     s.outputSeconds = clamp(s.outputSeconds, 1, OUTPUT_MAX_SECONDS, d.outputSeconds);
+    s.snippetCount = Math.round(clamp(s.snippetCount, 1, MAX_CUE_POINTS, d.snippetCount));
+    if (!['length', 'count'].includes(s.fillMode)) s.fillMode = d.fillMode;
     s.snippetMinMs = clamp(s.snippetMinMs, SNIPPET_MIN_MS, SNIPPET_MAX_MS, d.snippetMinMs);
     s.snippetMaxMs = clamp(s.snippetMaxMs, SNIPPET_MIN_MS, SNIPPET_MAX_MS, d.snippetMaxMs);
     if (s.snippetMaxMs < s.snippetMinMs) [s.snippetMinMs, s.snippetMaxMs] = [s.snippetMaxMs, s.snippetMinMs];

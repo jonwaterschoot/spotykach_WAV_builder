@@ -298,6 +298,34 @@ section('Source parts and crop');
         'crop: clamped to the file, null when nothing is left');
 }
 
+section('Fill by count');
+{
+    const byCount = sanitizeSettings({ ...settings, fillMode: 'count', snippetCount: 12 });
+    const lengths = [1, 2, 3, 4].map(seedValue => {
+        const out = render(sources, byCount, seedValue);
+        check(out.snippets.length === 12 && out.cuePoints.length === 12, `seed ${seedValue}: exactly 12 snippets and cues`,
+            `${(out.left.length / SR).toFixed(2)} s`);
+        const last = out.snippets[11];
+        check(out.left.length === last.outStart + last.length, `seed ${seedValue}: the file ends where the last snippet does`);
+        return out.left.length;
+    });
+    check(new Set(lengths).size === 4, 'variations come out at different lengths');
+    const again = render(sources, byCount, 1);
+    check(again.left.length === lengths[0], 'count mode is seeded too');
+
+    const tooMany = render(sources, sanitizeSettings({ fillMode: 'count', snippetCount: 100, snippetMinMs: 2000, snippetMaxMs: 4000 }), 5);
+    check(tooMany.left.length === 42 * SR && tooMany.countCapped && tooMany.snippets.length < 100,
+        'more than fits: stops at 42 s and says so', `${tooMany.snippets.length} snippets`);
+
+    const looped = render(sources, sanitizeSettings({ ...byCount, loop: true, xfadeMaxMs: 200 }), 6);
+    const unlooped = render(sources, sanitizeSettings({ ...byCount, loop: false, xfadeMaxMs: 200 }), 6);
+    check(looped.left.length < unlooped.left.length && looped.left.length > unlooped.left.length * 0.75,
+        'count + loop: the tail folds into the start', `${unlooped.left.length - looped.left.length} frames folded`);
+
+    const fewer = render(sources, sanitizeSettings({ ...byCount, snippetCount: 11 }), 1, { fixed: render(sources, byCount, 1).snippets.slice(0, 11) });
+    check(fewer.snippets.length === 11 && fewer.left.length < lengths[0], 'deleting in count mode shortens the file');
+}
+
 section('Presets and edges');
 {
     const glitch = render(sources, sanitizeSettings({ ...DEFAULT_SETTINGS, ...PRESETS.Glitch, snippetMaxMs: 40 }), 1);

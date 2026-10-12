@@ -74,6 +74,18 @@ const SR = 48000;
  */
 type PlayMode = 'full' | 'fades' | 'cue';
 
+/**
+ * The typical length of `count` snippets: the median of the log-uniform pick
+ * (skewed by the bias), less the median crossfade. A guide, not a promise.
+ */
+const countEstimate = (s: MangleSettings, count: number) => {
+  const u = Math.pow(0.5, Math.pow(4, -s.bias));
+  const median = Math.exp(Math.log(s.snippetMinMs) + u * (Math.log(s.snippetMaxMs) - Math.log(s.snippetMinMs)));
+  const xfade = (s.xfadeMinMs + s.xfadeMaxMs) / 2;
+  const seconds = Math.max(0, count * median - (count - 1) * Math.min(xfade, median / 2)) / 1000;
+  return seconds >= OUTPUT_MAX_SECONDS ? '42 s (full)' : `~${formatSeconds(seconds)}`;
+};
+
 /** Where the file starts in the full render's frames (non-zero once cropped). */
 const offsetOf = (r: MangleResultEntry) => r.recipe.crop?.start ?? 0;
 
@@ -599,12 +611,25 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     editResult(r, fixed, recipeSettings(r), label, { locked });
   }, [editResult]);
 
+  /**
+   * By length, the rest move up and the end is refilled; by count, the file
+   * simply gets shorter (one snippet fewer is the new count).
+   */
   const deleteSnippets = useCallback((r: MangleResultEntry, indices: number[]) => {
     const gone = new Set(indices);
     const order = r.recipe.snippets.map((_, i) => i).filter(i => !gone.has(i));
     if (order.length === 0) return;
-    reorder(r, order, indices.length === 1 ? `Removing snippet ${indices[0] + 1}` : `Removing ${indices.length} snippets`);
-  }, [reorder]);
+    const label = indices.length === 1 ? `Removing snippet ${indices[0] + 1}` : `Removing ${indices.length} snippets`;
+    const base = recipeSettings(r);
+    if (base.fillMode !== 'count') {
+      reorder(r, order, label);
+      return;
+    }
+    const fixed = order.map(i => r.recipe.snippets[i]);
+    const wasLocked = new Set(r.locked ?? []);
+    const locked = order.map((old, now) => (wasLocked.has(old) ? now : -1)).filter(i => i >= 0);
+    editResult(r, fixed, { ...base, snippetCount: order.length }, label, { locked });
+  }, [reorder, editResult]);
 
   /** Sets the pitch of the given snippets: own, the scale, a note, or a shift. */
   const setPitch = useCallback((r: MangleResultEntry, indices: number[], choice: PitchChoice | undefined) => {
@@ -1210,9 +1235,18 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </div>
 
           <Group title="Shape">
-            <Slider label="Output length" min={1} max={OUTPUT_MAX_SECONDS} value={settings.outputSeconds}
-              onChange={v => update('outputSeconds', v)} format={v => `${v} s`}
-              hint="The hardware plays the first 42 s of a file" />
+            <Segmented label="Fill" value={settings.fillMode} onChange={v => update('fillMode', v)}
+              options={[{ value: 'length', label: 'By length' }, { value: 'count', label: 'By count' }]}
+              hint="By length: as many snippets as fit the length. By count: that many snippets, and the file is as long as they turn out (42 s at most)" />
+            {settings.fillMode === 'length' ? (
+              <Slider label="Output length" min={1} max={OUTPUT_MAX_SECONDS} value={settings.outputSeconds}
+                onChange={v => update('outputSeconds', v)} format={v => `${v} s`}
+                hint="The hardware plays the first 42 s of a file" />
+            ) : (
+              <Slider label="Snippets" min={1} max={128} value={Math.min(128, settings.snippetCount)}
+                onChange={v => update('snippetCount', v)} format={v => `${v} → ${countEstimate(settings, v)}`}
+                hint="Each variation gets this many snippets; their lengths decide how long the file is. The estimate is the typical length" />
+            )}
             <RangeSlider label="Snippet length" min={SNIPPET_MIN_MS} max={SNIPPET_MAX_MS} scale="log"
               low={settings.snippetMinMs} high={settings.snippetMaxMs}
               onChange={(lo, hi) => updateMany({ snippetMinMs: lo, snippetMaxMs: hi })} format={formatMs} />
@@ -1444,7 +1478,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         )}
                       </div>
                       <div className="text-[10px] text-gray-500 truncate">
-                        {r.recipe.snippets.length} snippets · {r.recipe.cuePoints.length} cues
+                        {formatSeconds(r.duration)} · {r.recipe.snippets.length} snippets
+                        {r.recipe.countCapped ? ` (of ${r.recipe.settings.snippetCount}: 42 s reached)` : ''} · {r.recipe.cuePoints.length} cues
                         {r.recipe.cuesCapped ? ' (capped)' : ''} · {used.length} source{used.length === 1 ? '' : 's'}
                         {r.recipe.peakReductionDb < -0.5 ? ` · limited ${formatDb(r.recipe.peakReductionDb)}` : ''}
                         {' '}<LicenseBadge level={license.level} terms={license.text} />

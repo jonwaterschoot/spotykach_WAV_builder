@@ -22,6 +22,8 @@ export interface MangleRecipe {
     /** Frames. */
     cuePoints: number[];
     cuesCapped: boolean;
+    /** Count mode: fewer snippets than asked for, because 42 s was reached. */
+    countCapped?: boolean;
     peakReductionDb: number;
     /** Where the cue points came from: the snippet starts (absent), or the hits found at this level. */
     cueSource?: 'snippets' | import('./recue').CueLevel;
@@ -38,6 +40,7 @@ export const recipeFromResult = (
     snippets: result.snippets,
     cuePoints: result.cuePoints,
     cuesCapped: result.cuesCapped,
+    countCapped: result.countCapped || undefined,
     peakReductionDb: result.peakReductionDb,
 });
 
