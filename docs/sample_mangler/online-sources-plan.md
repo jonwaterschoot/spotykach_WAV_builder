@@ -2,6 +2,9 @@
 
 Oct 12, 2026 · Jon · for the sample browser and the Sample Mangler, based on the research note of Oct 11 and live checks of each API on Oct 12
 
+> The plan and research record, kept as written. For how it works now and how to change it: [online-sources.md](online-sources.md).
+
+
 ## Summary
 
 Add a fourth group to the sample browser's source column, **Online**, with one search panel in our own UI that queries open audio archives and lists the results like pack rows: preview, add to the mangle pool, import. The first version needs no keys, no sign-in and no server of our own.

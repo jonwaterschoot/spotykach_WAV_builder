@@ -9,7 +9,7 @@ Background: [docs/sample_mangler/online-sources-plan.md](../../docs/sample_mangl
 | Guard | Where | What it stops |
 | --- | --- | --- |
 | Origin check | `ALLOWED_ORIGINS` in `wrangler.toml` | Other sites using your quota |
-| Fixed parameters and `fields`, at most 50 results a page | `src/index.js` | Using the key for anything but search |
+| Two routes only (`/freesound/search`, `/freesound/sound/<id>`), fixed parameters and `fields`, at most 50 results a page | `src/index.js` | Using the key for anything else |
 | 15 searches a minute per IP | `[[ratelimits]]` in `wrangler.toml` | A runaway loop or a script |
 | 10 a minute, 100 a day per visitor | The app (`sharedLimits` in `src/online/providers/freesound.ts`) | One visitor eating the day |
 | 60 a minute, 2000 a day for the key | Freesound itself | Everything else: past it, Freesound answers 429 and the app says "limit reached" |
