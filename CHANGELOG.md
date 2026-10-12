@@ -49,6 +49,11 @@ upcoming USB transfer needs, and what the firmware's own USB file list reads.
   and rewritten by the next Standard Build.
   Slice points of files that aren't 48 kHz are also read back at the right position (they
   were about 8% early at 44.1 kHz), and up to 255 of them instead of 100.
+- **Slice points survive importing a WAV.** Dropping or picking a local file (and the
+  other import paths: Browse, the editor's file picker, sample packs, submissions) decoded
+  it and wrote a fresh WAV with no metadata, so a card file brought back in lost its slices,
+  tempo and name. They are now carried over. A card file (`1.wav`) dropped onto a slot is
+  also named after its `INAM`, the name it had, instead of `1`.
 - **A missing SD card says so.** With the card ejected, the build and import preview treated
   it as an empty card and offered to write every slot. It now opens with a "SD card not found"
   dialog that offers Change SD location, waits for the card, and rescans when it is back.

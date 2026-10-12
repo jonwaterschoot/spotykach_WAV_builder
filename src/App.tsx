@@ -3036,6 +3036,9 @@ function App({ onExitToHub }: AppProps) {
     setProgressMsg('Processing audio...');
     try {
       const { buffer, blob } = await audioEngine.loadAndProcessAudio(file);
+      // A card file is named 1.wav; its INAM holds the name it had.
+      const { readWavMetadata } = await import('./utils/importUtils');
+      const sourceName = (await readWavMetadata(file))?.name;
 
       const fileId = generateId();
       const versionId = generateId();
@@ -3048,16 +3051,17 @@ function App({ onExitToHub }: AppProps) {
         duration: buffer.duration
       };
 
-      const safeName = sanitizeFilename(file.name);
+      const givenName = sourceName || file.name;
+      const safeName = sanitizeFilename(givenName);
 
-      if (safeName !== file.name) {
-        showToast(`Renamed "${file.name}" to "${safeName}"`, 'info');
+      if (safeName !== givenName) {
+        showToast(`Renamed "${givenName}" to "${safeName}"`, 'info');
       }
 
       const newFile: FileRecord = {
         id: fileId,
         name: safeName.toUpperCase().replace(/\.[^/.]+$/, ""),
-        originalName: file.name,
+        originalName: givenName,
         versions: [version],
         currentVersionId: versionId,
         isParked: false // It's assigned immediately
