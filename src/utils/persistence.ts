@@ -349,6 +349,8 @@ export interface MangleResultEntry {
     kept: boolean;
     batchId: number;
     createdAt: number;
+    /** Snippet positions held when rerolling ("lock a snippet, reroll the others"). */
+    locked?: number[];
 }
 
 const loadAll = async <T>(store: string): Promise<T[]> => {

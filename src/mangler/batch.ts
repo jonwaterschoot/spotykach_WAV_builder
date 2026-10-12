@@ -1,7 +1,7 @@
 import { encodeWAV } from '../lib/audio/wavEncoder';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import type { MangleRequest, MangleResponse } from './mangle.worker';
-import { MANGLE_SAMPLE_RATE, type MangleResult, type MangleSource } from './render';
+import { MANGLE_SAMPLE_RATE, type MangleResult, type MangleSource, type SnippetInfo } from './render';
 import type { MangleSettings } from './settings';
 
 /**
@@ -51,7 +51,10 @@ const toSource = (buffer: AudioBuffer, enabled: boolean): MangleSource => {
 
 export interface BatchSource {
     id: string;
-    blob: Blob;
+    /** Null for a source that has left the pool: kept as a placeholder so indexes line up. */
+    blob: Blob | null;
+    /** May new snippets be drawn from it. Default true. A fixed snippet may use any source. */
+    enabled?: boolean;
 }
 
 export interface BatchHandlers {
@@ -74,6 +77,7 @@ let nextBatchId = 1;
  */
 export function runBatch(
     sources: BatchSource[], settings: MangleSettings, seeds: number[], handlers: BatchHandlers,
+    fixed?: (SnippetInfo | null)[],
 ): BatchHandle {
     const batchId = nextBatchId++;
     let worker: Worker | null = null;
@@ -86,8 +90,10 @@ export function runBatch(
         for (let i = 0; i < sources.length; i++) {
             if (cancelled) return;
             handlers.onDecodeProgress?.(i, sources.length);
+            const { id, blob, enabled = true } = sources[i];
             try {
-                decoded.push(toSource(await decode(sources[i].id, sources[i].blob), true));
+                if (!blob) throw new Error('Source no longer in the pool');
+                decoded.push(toSource(await decode(id, blob), enabled));
             } catch (e) {
                 console.error('Mangler: could not decode a source', e);
                 // Keep the indexes lined up with the recipe; the planner skips it.
@@ -95,7 +101,7 @@ export function runBatch(
             }
         }
         if (cancelled) return;
-        if (!decoded.some(s => s.enabled)) {
+        if (!decoded.some(s => s.enabled) && !fixed?.some(Boolean)) {
             handlers.onError('None of the sources could be decoded.');
             return;
         }
@@ -116,7 +122,7 @@ export function runBatch(
 
         const transfer = new Set<ArrayBuffer>();
         for (const s of decoded) for (const ch of s.channels) transfer.add(ch.buffer as ArrayBuffer);
-        const request: MangleRequest = { type: 'render', batchId, sources: decoded, settings, seeds };
+        const request: MangleRequest = { type: 'render', batchId, sources: decoded, settings, seeds, fixed };
         worker.postMessage(request, [...transfer]);
     })().catch(e => handlers.onError(e instanceof Error ? e.message : String(e)));
 

@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Pause, Play, Plus, Star, Trash2, Unlock, X,
+  Pause, Play, Plus, RefreshCw, Square, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -28,7 +28,9 @@ import type { FileRecord, UserLibrary } from '../types';
 const SampleBrowser = React.lazy(() =>
   import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser })),
 );
-import { runBatch, resultToWav, type BatchHandle } from '../mangler/batch';
+import { runBatch, resultToWav, type BatchHandle, type BatchSource } from '../mangler/batch';
+import type { MangleResult, SnippetInfo } from '../mangler/render';
+import { useResultAudio } from '../mangler/ui/useResultAudio';
 import { recipeFromResult, resultName, usedSources, waveformPeaks, type RecipeSource } from '../mangler/recipe';
 import { deriveSeed, randomSeed } from '../mangler/rng';
 import {
@@ -104,6 +106,8 @@ const downloadBlob = (blob: Blob, fileName: string) => {
 
 interface BatchState {
   handle: BatchHandle;
+  /** What the bar says while rendering. */
+  label: string;
   phase: 'decoding' | 'rendering';
   total: number;
   /** Per variation, 0–1. */
@@ -151,6 +155,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [exportDone, setExportDone] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
+  /** Zoom per result; absent means the compact waveform. */
+  const [zooms, setZooms] = useState<Record<string, number>>({});
+  /** The version before the last edit, per result. In memory only: one step back. */
+  const [undo, setUndo] = useState<Record<string, MangleResultEntry>>({});
+  const [hover, setHover] = useState<{ id: string; index: number } | null>(null);
+  const region = useResultAudio();
+
   const inputRef = useRef<HTMLInputElement>(null);
   const batchRef = useRef<BatchHandle | null>(null);
 
@@ -187,6 +198,19 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     });
     return () => { alive = false; };
   }, []);
+
+  // The app's player and the snippet player never play at once.
+  const stopRegion = region.stop;
+  useEffect(() => { if (player.isPlaying) stopRegion(); }, [player.isPlaying, stopRegion]);
+
+  // A zoomed waveform draws from the decoded audio.
+  const loadAudio = region.load;
+  useEffect(() => {
+    for (const id of Object.keys(zooms)) {
+      const r = results.find(x => x.id === id);
+      if (r) loadAudio(id, r.blob).catch(e => console.error('Mangler: could not decode a result', e));
+    }
+  }, [zooms, results, loadAudio]);
 
   useEffect(() => { appStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }, [settings]);
   useEffect(() => { appStorage.setItem(SEED_KEY, JSON.stringify({ seed, locked })); }, [seed, locked]);
@@ -279,6 +303,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     putMangleSourceToDB(next).catch(e => console.error(e));
   }, []);
 
+  const setAllSources = useCallback((enabled: boolean) => {
+    setSources(prev => prev.map(s => {
+      if (s.enabled === enabled) return s;
+      const next = { ...s, enabled };
+      putMangleSourceToDB(next).catch(e => console.error(e));
+      return next;
+    }));
+  }, []);
+
   const removeSource = useCallback((id: string) => {
     if (player.activeFileId === id) player.stop();
     setSources(prev => prev.filter(s => s.id !== id));
@@ -292,6 +325,89 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   // Batches
   // ---------------------------------------------------------------------------
 
+  /**
+   * One worker job: a batch from the Generate button, or an edit of a result.
+   * One at a time; the bar above the results shows it and Stop cancels it.
+   */
+  const startJob = useCallback((job: {
+    label: string;
+    sources: BatchSource[];
+    settings: MangleSettings;
+    seeds: number[];
+    fixed?: (SnippetInfo | null)[];
+    onResult: (result: MangleResult, index: number) => Promise<void>;
+    onDone?: () => void;
+  }) => {
+    const count = job.seeds.length;
+    const handle = runBatch(job.sources, job.settings, job.seeds, {
+      onDecodeProgress: (done, total) =>
+        setBatch(prev => (prev ? { ...prev, decodeDone: done, decodeTotal: total } : prev)),
+      onProgress: (index, fraction) =>
+        setBatch(prev => {
+          if (!prev) return prev;
+          const progress = [...prev.progress];
+          progress[index] = fraction;
+          return { ...prev, phase: 'rendering', progress };
+        }),
+      onResult: (index, result) => job.onResult(result, index),
+      onDone: () => {
+        batchRef.current = null;
+        setBatch(null);
+        job.onDone?.();
+      },
+      onError: (message) => {
+        batchRef.current?.cancel();
+        batchRef.current = null;
+        setBatch(null);
+        showToast(message, 'error');
+      },
+    }, job.fixed);
+    batchRef.current = handle;
+    setBatch({
+      handle,
+      label: job.label,
+      phase: 'decoding',
+      total: count,
+      progress: Array(count).fill(0),
+      decodeDone: 0,
+      decodeTotal: job.sources.length,
+    });
+  }, [showToast]);
+
+  /** A stored result from a render. */
+  const makeEntry = useCallback((
+    result: MangleResult, batchSettings: MangleSettings, recipeSources: RecipeSource[],
+    meta: { id?: string; name: string; kept: boolean; batchId: number; createdAt?: number; locked?: number[] },
+  ): MangleResultEntry => ({
+    id: meta.id ?? newId(),
+    name: meta.name,
+    blob: resultToWav(result, meta.name),
+    duration: result.left.length / result.sampleRate,
+    recipe: recipeFromResult(result, batchSettings, recipeSources),
+    peaks: waveformPeaks(result.left, result.right),
+    kept: meta.kept,
+    batchId: meta.batchId,
+    createdAt: meta.createdAt ?? Date.now(),
+    locked: meta.locked?.length ? meta.locked : undefined,
+  }), []);
+
+  const storeEntry = useCallback(async (entry: MangleResultEntry) => {
+    try {
+      await putMangleResultToDB(entry);
+    } catch (e) {
+      console.error(e);
+      showToast('Could not store a result (storage full?). It is shown but will not survive a reload.', 'error');
+    }
+  }, [showToast]);
+
+  /** A new name for a seed, not taken by any result in the list. */
+  const freshName = (seedValue: number, taken: Set<string>) => {
+    let name = resultName(seedValue);
+    for (let n = 2; taken.has(name); n++) name = `${resultName(seedValue)}-${n}`;
+    taken.add(name);
+    return name;
+  };
+
   const generate = useCallback(async () => {
     if (batchRef.current) return;
     if (enabledSources.length === 0) {
@@ -303,6 +419,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     const unkept = results.filter(r => !r.kept).map(r => r.id);
     if (unkept.length) {
       if (player.activeFileId && unkept.includes(player.activeFileId)) player.stop();
+      region.stop();
       await deleteMangleResultsFromDB(unkept);
       setResults(prev => prev.filter(r => r.kept));
     }
@@ -317,73 +434,183 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     }));
     const taken = new Set(results.filter(r => r.kept).map(r => r.name));
 
-    const handle = runBatch(
-      enabledSources.map(s => ({ id: s.id, blob: s.blob })),
-      batchSettings,
+    startJob({
+      label: `Rendering ${count} variation${count === 1 ? '' : 's'}`,
+      sources: enabledSources.map(s => ({ id: s.id, blob: s.blob })),
+      settings: batchSettings,
       seeds,
-      {
-        onDecodeProgress: (done, total) =>
-          setBatch(prev => (prev ? { ...prev, decodeDone: done, decodeTotal: total } : prev)),
-        onProgress: (index, fraction) =>
-          setBatch(prev => {
-            if (!prev) return prev;
-            const progress = [...prev.progress];
-            progress[index] = fraction;
-            return { ...prev, phase: 'rendering', progress };
-          }),
-        onResult: async (_index, result) => {
-          let name = resultName(result.seed);
-          for (let n = 2; taken.has(name); n++) name = `${resultName(result.seed)}-${n}`;
-          taken.add(name);
-          const entry: MangleResultEntry = {
-            id: newId(),
-            name,
-            blob: resultToWav(result, name),
-            duration: result.left.length / result.sampleRate,
-            recipe: recipeFromResult(result, batchSettings, recipeSources),
-            peaks: waveformPeaks(result.left, result.right),
-            kept: false,
-            batchId,
-            createdAt: Date.now(),
-          };
-          try {
-            await putMangleResultToDB(entry);
-          } catch (e) {
-            console.error(e);
-            showToast('Could not store a result (storage full?). It is shown but will not survive a reload.', 'error');
-          }
-          setResults(prev => sortResults([...prev, entry]));
-        },
-        onDone: () => {
-          batchRef.current = null;
-          setBatch(null);
-          if (!locked) setSeedState({ seed: randomSeed(), locked: false });
-        },
-        onError: (message) => {
-          batchRef.current?.cancel();
-          batchRef.current = null;
-          setBatch(null);
-          showToast(message, 'error');
-        },
+      onResult: async (result) => {
+        const entry = makeEntry(result, batchSettings, recipeSources, {
+          name: freshName(result.seed, taken), kept: false, batchId,
+        });
+        await storeEntry(entry);
+        setResults(prev => sortResults([...prev, entry]));
       },
-    );
-    batchRef.current = handle;
-    setBatch({
-      handle,
-      phase: 'decoding',
-      total: count,
-      progress: Array(count).fill(0),
-      decodeDone: 0,
-      decodeTotal: enabledSources.length,
+      onDone: () => { if (!locked) setSeedState({ seed: randomSeed(), locked: false }); },
     });
-  }, [enabledSources, results, settings, seed, locked, player, showToast]);
+  }, [enabledSources, results, settings, seed, locked, player, region, showToast, startJob, makeEntry, storeEntry]);
 
-  const cancelBatch = useCallback(() => {
+  // ---------------------------------------------------------------------------
+  // Editing a result
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The pool entries a result was made from, in its recipe's order. A source
+   * that has left the pool comes back as a placeholder; a snippet that needs it
+   * makes the render refuse with a message.
+   */
+  const sourcesFor = useCallback((recipeSources: RecipeSource[]): BatchSource[] =>
+    recipeSources.map(rs => {
+      const entry = sources.find(s => s.id === rs.id);
+      return { id: rs.id, blob: entry?.blob ?? null, enabled: entry?.enabled ?? false };
+    }), [sources]);
+
+  /** Settings of an old recipe. Results from before sinc was the default keep the linear resampler. */
+  const recipeSettings = (r: MangleResultEntry) =>
+    sanitizeSettings({ ...r.recipe.settings, resampler: r.recipe.settings.resampler ?? 'linear' });
+
+  const missingFor = useCallback((r: MangleResultEntry, fixed: (SnippetInfo | null)[]) => {
+    const needed = new Set(fixed.filter((f): f is SnippetInfo => !!f).map(f => f.source));
+    return r.recipe.sources.filter((rs, i) => needed.has(i) && !sources.some(s => s.id === rs.id));
+  }, [sources]);
+
+  /**
+   * Renders `r` again with some snippets fixed and replaces it in place. The old
+   * version stays one Undo away.
+   */
+  const editResult = useCallback((
+    r: MangleResultEntry, fixed: (SnippetInfo | null)[], editSettings: MangleSettings, label: string,
+    locked: number[] | undefined = r.locked,
+  ) => {
+    if (batchRef.current) return;
+    const missing = missingFor(r, fixed);
+    if (missing.length) {
+      showToast(`Can't edit: ${missing.map(m => m.name).join(', ')} is no longer in the source pool`, 'error');
+      return;
+    }
+    if (player.activeFileId === r.id) player.stop();
+    region.stop();
+    startJob({
+      label,
+      sources: sourcesFor(r.recipe.sources),
+      settings: editSettings,
+      seeds: [r.recipe.seed],
+      fixed,
+      onResult: async (result) => {
+        const entry = makeEntry(result, editSettings, r.recipe.sources, {
+          id: r.id, name: r.name, kept: r.kept, batchId: r.batchId, createdAt: r.createdAt, locked,
+        });
+        await storeEntry(entry);
+        region.forget(r.id);
+        setUndo(prev => ({ ...prev, [r.id]: r }));
+        setResults(prev => prev.map(x => (x.id === r.id ? entry : x)));
+      },
+    });
+  }, [missingFor, player, region, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+
+  const lockedFixed = (r: MangleResultEntry) =>
+    r.recipe.snippets.map((s, i) => (r.locked?.includes(i) ? s : null));
+
+  /** "Same seed": the sliders as they are now, locked snippets kept. */
+  const rerender = useCallback((r: MangleResultEntry) => {
+    editResult(r, lockedFixed(r), settings, 'Re-rendering with the current settings');
+  }, [editResult, settings]);
+
+  const deleteSnippet = useCallback((r: MangleResultEntry, index: number) => {
+    const fixed = r.recipe.snippets.filter((_, i) => i !== index);
+    const locked = r.locked?.filter(i => i !== index).map(i => (i > index ? i - 1 : i));
+    editResult(r, fixed, recipeSettings(r), `Removing snippet ${index + 1}`, locked);
+  }, [editResult]);
+
+  /** Moves the given snippets onto C, or back off it. */
+  const setToC = useCallback((r: MangleResultEntry, indices: number[], on: boolean) => {
+    const targets = new Set(indices);
+    const fixed = r.recipe.snippets.map((s, i) => {
+      if (!targets.has(i) || !s.pitch || !!s.toCApplied === on) return s;
+      return { ...s, shift: s.shift + (on ? s.pitch.toC : -s.pitch.toC), toCApplied: on };
+    });
+    editResult(r, fixed, recipeSettings(r), on ? 'Moving to C' : 'Back to the original pitch');
+  }, [editResult]);
+
+  const toggleLock = useCallback((r: MangleResultEntry, index: number) => {
+    const current = new Set(r.locked ?? []);
+    if (current.has(index)) current.delete(index); else current.add(index);
+    const next = { ...r, locked: current.size ? [...current].sort((a, b) => a - b) : undefined };
+    setResults(prev => prev.map(x => (x.id === r.id ? next : x)));
+    putMangleResultToDB(next).catch(e => console.error(e));
+  }, []);
+
+  /** New variations around the locked snippets, with the current settings. */
+  const rerollUnlocked = useCallback((r: MangleResultEntry) => {
+    if (batchRef.current || !r.locked?.length) return;
+    const fixed = lockedFixed(r);
+    const missing = missingFor(r, fixed);
+    if (missing.length) {
+      showToast(`Can't reroll: ${missing.map(m => m.name).join(', ')} is no longer in the source pool`, 'error');
+      return;
+    }
+    const count = settings.variations;
+    const base = randomSeed();
+    const seeds = Array.from({ length: count }, (_, i) => deriveSeed(base, 0x10c6, i));
+    const batchId = Date.now();
+    const batchSettings = settings;
+    const taken = new Set(results.map(x => x.name));
+    startJob({
+      label: `Rerolling around ${r.locked.length} locked snippet${r.locked.length === 1 ? '' : 's'}`,
+      sources: sourcesFor(r.recipe.sources),
+      settings: batchSettings,
+      seeds,
+      fixed,
+      onResult: async (result) => {
+        const entry = makeEntry(result, batchSettings, r.recipe.sources, {
+          name: freshName(result.seed, taken), kept: false, batchId, locked: r.locked,
+        });
+        await storeEntry(entry);
+        setResults(prev => sortResults([...prev, entry]));
+      },
+    });
+  }, [missingFor, settings, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+
+  const undoEdit = useCallback(async (r: MangleResultEntry) => {
+    const previous = undo[r.id];
+    if (!previous) return;
+    if (player.activeFileId === r.id) player.stop();
+    region.stop();
+    region.forget(r.id);
+    const restored = { ...previous, kept: r.kept };
+    await storeEntry(restored);
+    setResults(prev => prev.map(x => (x.id === r.id ? restored : x)));
+    setUndo(prev => {
+      const next = { ...prev };
+      delete next[r.id];
+      return next;
+    });
+  }, [undo, player, region, storeEntry]);
+
+  /** Plays one snippet, start to end, with the snippet player. */
+  const playSnippet = useCallback((r: MangleResultEntry, index: number) => {
+    const s = r.recipe.snippets[index];
+    if (!s) return;
+    if (player.isPlaying) player.pause();
+    const sr = 48000;
+    region.playRegion({ resultId: r.id, index, start: s.outStart / sr, end: (s.outStart + s.length) / sr }, r.blob);
+  }, [player, region]);
+
+  /** The snippet under a point of the file (0-1): the last one started by then. */
+  const snippetAt = (r: MangleResultEntry, fraction: number) => {
+    const frame = fraction * r.duration * 48000;
+    let index = 0;
+    r.recipe.snippets.forEach((s, i) => { if (s.outStart + (s.xfade >> 1) <= frame) index = i; });
+    return index;
+  };
+
+    const cancelBatch = useCallback(() => {
+    region.stop();
     batchRef.current?.cancel();
     batchRef.current = null;
     setBatch(null);
     showToast('Stopped. Results that had finished are kept in the list.', 'info');
-  }, [showToast]);
+  }, [showToast, region]);
 
   // ---------------------------------------------------------------------------
   // Results
@@ -397,9 +624,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
   const discard = useCallback((id: string) => {
     if (player.activeFileId === id) player.stop();
+    if (region.playing?.resultId === id) region.stop();
     setResults(prev => prev.filter(r => r.id !== id));
     deleteMangleResultsFromDB([id]);
-  }, [player]);
+  }, [player, region]);
 
   const clearUnkept = useCallback(() => {
     const ids = results.filter(r => !r.kept).map(r => r.id);
@@ -568,7 +796,17 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         {/* Source pool */}
         <section className="min-h-0 flex flex-col border-r border-white/10">
           <div className="shrink-0 px-4 pt-4 pb-2 flex items-center justify-between">
-            <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Source pool</h2>
+            <label className="flex items-center gap-2 cursor-pointer" title="Switch every source on or off">
+              <input
+                type="checkbox"
+                checked={sources.length > 0 && enabledSources.length === sources.length}
+                ref={el => { if (el) el.indeterminate = enabledSources.length > 0 && enabledSources.length < sources.length; }}
+                onChange={e => setAllSources(e.target.checked)}
+                disabled={sources.length === 0}
+                className="accent-synthux-red h-3.5 w-3.5 cursor-pointer disabled:cursor-default"
+              />
+              <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Source pool</h2>
+            </label>
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setPickerOpen(true)}
@@ -708,6 +946,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             <Toggle label="Hard cuts (leave clicks in)" checked={settings.hardCuts}
               onChange={v => update('hardCuts', v)}
               hint="Off adds a 2 ms fade at each snippet edge" />
+            <Segmented label="Snippet start" value={settings.snapStart} onChange={v => update('snapStart', v)}
+              options={[{ value: 'off', label: 'Anywhere' }, { value: 'zero', label: 'Zero' }, { value: 'onset', label: 'Transient' }]}
+              hint="Zero: on a zero crossing, so hard cuts don't click. Transient: on the strongest attack in the first half second" />
             <Slider label="Reverse" min={0} max={100} value={Math.round(settings.reverseProbability * 100)}
               onChange={v => update('reverseProbability', v / 100)} format={v => `${v}%`}
               hint="Chance that a snippet plays backwards" />
@@ -741,6 +982,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               hint="Below this a snippet keeps its own pitch" />
             <Slider label="Random detune" min={0} max={12} step={0.5} value={settings.detuneSt}
               onChange={v => update('detuneSt', v)} format={v => (v ? `± ${v} st` : 'off')} />
+            <Segmented label="Resampling" value={settings.resampler} onChange={v => update('resampler', v)}
+              options={[{ value: 'sinc', label: 'Clean' }, { value: 'linear', label: 'Lo-fi' }]}
+              hint="Clean (windowed sinc) keeps the highs on big shifts; Lo-fi (linear) is duller and grittier" />
           </Group>
 
           <Group title="Sources and file">
@@ -809,7 +1053,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               <Loader size={13} className="animate-spin text-synthux-red" />
               {batch.phase === 'decoding'
                 ? `Decoding sources ${Math.min(batch.decodeDone + 1, batch.decodeTotal)} of ${batch.decodeTotal}…`
-                : `Rendering ${batch.progress.filter(p => p >= 1).length} of ${batch.total}…`}
+                : batch.total > 1
+                  ? `${batch.label}: ${batch.progress.filter(p => p >= 1).length} of ${batch.total} done…`
+                  : `${batch.label}…`}
               <div className="flex-1 flex gap-1">
                 {batch.progress.map((p, i) => (
                   <div key={i} className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
@@ -836,6 +1082,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               const isOpen = expanded === r.id;
               const license = resultLicense(r.recipe);
               const blocked = license.level === 'no-derivatives';
+              const zoom = zooms[r.id];
+              const regionHere = region.playing?.resultId === r.id ? region.playing : null;
+              const total = r.duration || 1;
+              const progress = player.activeFileId === r.id
+                ? progressOf(r.id)
+                : regionHere && region.position !== null ? region.position / total : null;
+              const marked = regionHere && regionHere.index >= 0
+                ? regionHere.index
+                : hover?.id === r.id ? hover.index : -1;
+              const markedSnippet = marked >= 0 ? r.recipe.snippets[marked] : null;
               return (
                 <article key={r.id}
                   className={`rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
@@ -891,11 +1147,46 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     </IconButton>
                   </div>
 
+                  <div className="flex items-center gap-1 mb-1.5 text-[10px]">
+                    <CardAction onClick={() => rerender(r)} disabled={busy} icon={<RefreshCw size={11} />}
+                      title="Render this seed again with the sliders as they are now (locked snippets stay)">
+                      Same seed, current settings
+                    </CardAction>
+                    {undo[r.id] && (
+                      <CardAction onClick={() => undoEdit(r)} disabled={busy} icon={<Undo2 size={11} />}
+                        title="Back to the version before the last edit">
+                        Undo
+                      </CardAction>
+                    )}
+                    <CardAction
+                      onClick={() => setZooms(prev => {
+                        const next = { ...prev };
+                        if (next[r.id] !== undefined) delete next[r.id]; else next[r.id] = 4;
+                        return next;
+                      })}
+                      active={zoom !== undefined}
+                      icon={<ZoomIn size={11} />}
+                      title="A taller waveform you can zoom into, with snippet numbers"
+                    >
+                      Zoom
+                    </CardAction>
+                  </div>
+
                   <ResultWaveform
                     peaks={r.peaks}
+                    audio={zoom !== undefined ? region.decoded[r.id] : undefined}
                     boundaries={r.recipe.snippets.map(s => (s.outStart + (s.xfade >> 1)) / frames)}
-                    progress={player.activeFileId === r.id ? progressOf(r.id) : null}
-                    onSeek={player.activeFileId === r.id ? f => player.seek(f * player.duration) : undefined}
+                    progress={progress}
+                    highlight={markedSnippet
+                      ? [markedSnippet.outStart / frames, (markedSnippet.outStart + markedSnippet.length) / frames]
+                      : null}
+                    zoom={zoom}
+                    onZoom={z => setZooms(prev => ({ ...prev, [r.id]: z }))}
+                    onPick={f => {
+                      // The whole file playing: seek it. Otherwise play the snippet clicked.
+                      if (player.activeFileId === r.id && player.isPlaying) player.seek(f * player.duration);
+                      else playSnippet(r, snippetAt(r, f));
+                    }}
                   />
 
                   <button onClick={() => setExpanded(isOpen ? null : r.id)}
@@ -903,7 +1194,21 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     Snippets{pitched ? ` · ${pitched} with a pitch` : ''}
                   </button>
-                  {isOpen && <SnippetTable entry={r} />}
+                  {isOpen && (
+                    <SnippetTable
+                      entry={r}
+                      busy={busy}
+                      playingIndex={regionHere ? regionHere.index : -1}
+                      onPlay={i => playSnippet(r, i)}
+                      onHover={i => setHover(i === null ? null : { id: r.id, index: i })}
+                      onDelete={i => deleteSnippet(r, i)}
+                      onToggleLock={i => toggleLock(r, i)}
+                      onToggleC={(i, on) => setToC(r, [i], on)}
+                      onAllToC={indices => setToC(r, indices, true)}
+                      onReroll={() => rerollUnlocked(r)}
+                      variations={settings.variations}
+                    />
+                  )}
                 </article>
               );
             })}
@@ -1110,47 +1415,139 @@ const IconButton: React.FC<{
   </button>
 );
 
-/** Every snippet of one result: where it came from and what was done to it. */
-const SnippetTable: React.FC<{ entry: MangleResultEntry }> = ({ entry }) => {
+const CardAction: React.FC<{
+  onClick: () => void; icon: React.ReactNode; title: string; children: React.ReactNode;
+  disabled?: boolean; active?: boolean;
+}> = ({ onClick, icon, title, children, disabled, active }) => (
+  <button onClick={onClick} disabled={disabled} title={title}
+    className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed
+      ${active ? 'border-synthux-red/60 text-white bg-synthux-red/20' : 'border-white/10 text-gray-400 hover:text-white hover:bg-white/5'}`}>
+    {icon} {children}
+  </button>
+);
+
+interface SnippetTableProps {
+  entry: MangleResultEntry;
+  busy: boolean;
+  playingIndex: number;
+  onPlay: (index: number) => void;
+  onHover: (index: number | null) => void;
+  onDelete: (index: number) => void;
+  onToggleLock: (index: number) => void;
+  onToggleC: (index: number, on: boolean) => void;
+  onAllToC: (indices: number[]) => void;
+  onReroll: () => void;
+  variations: number;
+}
+
+/** Every snippet of one result: where it came from, what was done to it, and the edits. */
+const SnippetTable: React.FC<SnippetTableProps> = ({
+  entry, busy, playingIndex, onPlay, onHover, onDelete, onToggleLock, onToggleC, onAllToC, onReroll, variations,
+}) => {
   const { recipe } = entry;
   const sr = 48000;
+  const locked = new Set(entry.locked ?? []);
+  const threshold = recipe.settings.pitchConfidence ?? 0.8;
+  const confident = recipe.snippets
+    .map((s, i) => (s.pitch && !s.toCApplied && s.pitch.confidence >= threshold ? i : -1))
+    .filter(i => i >= 0);
+
   return (
-    <div className="mt-2 max-h-64 overflow-y-auto rounded border border-white/5">
-      <table className="w-full text-[10px] font-mono">
-        <thead className="sticky top-0 bg-synthux-panel text-gray-500">
-          <tr className="text-left">
-            <th className="px-2 py-1 font-normal">#</th>
-            <th className="px-2 py-1 font-normal">at</th>
-            <th className="px-2 py-1 font-normal">source</th>
-            <th className="px-2 py-1 font-normal text-right">length</th>
-            <th className="px-2 py-1 font-normal text-right">gain</th>
-            <th className="px-2 py-1 font-normal">dir</th>
-            <th className="px-2 py-1 font-normal">pitch</th>
-          </tr>
-        </thead>
-        <tbody className="text-gray-300">
-          {recipe.snippets.map((s, i) => (
-            <tr key={i} className="border-t border-white/5">
-              <td className="px-2 py-0.5 text-gray-600">{i + 1}</td>
-              <td className="px-2 py-0.5 text-gray-500">{(s.outStart / sr).toFixed(2)}</td>
-              <td className="px-2 py-0.5 truncate max-w-[10rem]" title={recipe.sources[s.source]?.name}>
-                {recipe.sources[s.source]?.name ?? '?'}
-              </td>
-              <td className="px-2 py-0.5 text-right">{formatMs((s.length / sr) * 1000)}</td>
-              <td className="px-2 py-0.5 text-right">{Number.isFinite(s.measuredDb) ? formatDb(s.gainDb) : 'silent'}</td>
-              <td className="px-2 py-0.5">{s.reverse ? '◀' : '▶'}</td>
-              <td className="px-2 py-0.5">
-                {s.pitch
-                  ? `${s.pitch.note} (${Math.round(s.pitch.confidence * 100)}%) → C ${formatSt(s.pitch.toC)}`
-                  : <span className="text-gray-600">no pitch</span>}
-                {Math.abs(s.shift) > 0.01 && <span className="text-synthux-yellow"> · shifted {formatSt(s.shift)}</span>}
-              </td>
+    <div className="mt-2">
+      <div className="flex flex-wrap items-center gap-1.5 mb-1.5 text-[10px] text-gray-500">
+        {confident.length > 0 && (
+          <CardAction onClick={() => onAllToC(confident)} disabled={busy} icon={<span className="font-bold">C</span>}
+            title={`Move every snippet with a pitch confidence of ${Math.round(threshold * 100)}% or more to the nearest C`}>
+            All confident to C ({confident.length})
+          </CardAction>
+        )}
+        {locked.size > 0 && (
+          <CardAction onClick={onReroll} disabled={busy} icon={<Dices size={11} />}
+            title="New variations that keep the locked snippets where they are and roll the rest, with the current settings">
+            Reroll the rest ×{variations} ({locked.size} locked)
+          </CardAction>
+        )}
+        <span className="ml-auto">Lock snippets to keep them in a reroll · edits can be undone once</span>
+      </div>
+      <div className="max-h-72 overflow-y-auto rounded border border-white/5" onMouseLeave={() => onHover(null)}>
+        <table className="w-full text-[10px] font-mono">
+          <thead className="sticky top-0 bg-synthux-panel text-gray-500 z-10">
+            <tr className="text-left">
+              <th className="px-1 py-1 font-normal w-6" aria-label="Play" />
+              <th className="px-2 py-1 font-normal">#</th>
+              <th className="px-2 py-1 font-normal">at</th>
+              <th className="px-2 py-1 font-normal">source</th>
+              <th className="px-2 py-1 font-normal text-right">length</th>
+              <th className="px-2 py-1 font-normal text-right">gain</th>
+              <th className="px-2 py-1 font-normal" title="Direction: forwards or reversed">dir</th>
+              <th className="px-2 py-1 font-normal">pitch</th>
+              <th className="px-1 py-1 font-normal" aria-label="Actions" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="text-gray-300">
+            {recipe.snippets.map((s, i) => {
+              const isPlaying = playingIndex === i;
+              const isLocked = locked.has(i);
+              return (
+                <tr key={i} onMouseEnter={() => onHover(i)}
+                  className={`border-t border-white/5 group ${isPlaying ? 'bg-synthux-red/15' : isLocked ? 'bg-synthux-yellow/5' : 'hover:bg-white/[0.03]'}`}>
+                  <td className="px-1 py-0.5">
+                    <button onClick={() => onPlay(i)} title={isPlaying ? 'Stop' : 'Play this snippet'}
+                      className={`h-5 w-5 flex items-center justify-center rounded ${isPlaying ? 'text-synthux-red' : 'text-gray-500 hover:text-white'}`}>
+                      {isPlaying ? <Square size={10} fill="currentColor" /> : <Play size={11} />}
+                    </button>
+                  </td>
+                  <td className="px-2 py-0.5 text-gray-600">{i + 1}</td>
+                  <td className="px-2 py-0.5 text-gray-500">{(s.outStart / sr).toFixed(2)}</td>
+                  <td className="px-2 py-0.5 truncate max-w-[10rem]" title={recipe.sources[s.source]?.name}>
+                    {recipe.sources[s.source]?.name ?? '?'}
+                  </td>
+                  <td className="px-2 py-0.5 text-right">{formatMs((s.length / sr) * 1000)}</td>
+                  <td className="px-2 py-0.5 text-right">{Number.isFinite(s.measuredDb) ? formatDb(s.gainDb) : 'silent'}</td>
+                  <td className="px-2 py-0.5 text-gray-400" title={s.reverse ? 'Reversed' : 'Forwards'}>{s.reverse ? '←' : '→'}</td>
+                  <td className="px-2 py-0.5">
+                    {s.pitch
+                      ? `${s.pitch.note} (${Math.round(s.pitch.confidence * 100)}%) → C ${formatSt(s.pitch.toC)}`
+                      : <span className="text-gray-600">no pitch</span>}
+                    {Math.abs(s.shift) > 0.01 && <span className="text-synthux-yellow"> · shifted {formatSt(s.shift)}</span>}
+                  </td>
+                  <td className="px-1 py-0.5">
+                    <span className="flex items-center justify-end gap-0.5">
+                      {s.pitch && (
+                        <RowButton onClick={() => onToggleC(i, !s.toCApplied)} disabled={busy}
+                          title={s.toCApplied ? 'Back to its own pitch' : `Move to C (${formatSt(s.pitch.toC)})`}
+                          className={s.toCApplied ? 'text-synthux-yellow' : 'text-gray-500 hover:text-white'}>
+                          <span className="font-bold text-[10px]">C</span>
+                        </RowButton>
+                      )}
+                      <RowButton onClick={() => onToggleLock(i)} title={isLocked ? 'Unlock' : 'Lock: keep this snippet in a reroll'}
+                        className={isLocked ? 'text-synthux-yellow' : 'text-gray-600 hover:text-white'}>
+                        {isLocked ? <Lock size={11} /> : <Unlock size={11} />}
+                      </RowButton>
+                      <RowButton onClick={() => onDelete(i)} disabled={busy || recipe.snippets.length < 2}
+                        title="Remove this snippet; the rest move up and the end is refilled"
+                        className="text-gray-600 hover:text-synthux-red">
+                        <Trash2 size={11} />
+                      </RowButton>
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
+
+const RowButton: React.FC<{
+  onClick: () => void; title: string; className: string; children: React.ReactNode; disabled?: boolean;
+}> = ({ onClick, title, className, children, disabled }) => (
+  <button onClick={onClick} title={title} aria-label={title} disabled={disabled}
+    className={`h-5 w-5 flex items-center justify-center rounded hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed ${className}`}>
+    {children}
+  </button>
+);
 
 export default MangleMode;
