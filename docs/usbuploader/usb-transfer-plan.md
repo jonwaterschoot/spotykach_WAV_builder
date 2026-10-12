@@ -192,6 +192,8 @@ The USB firmware is a separate, unreleased branch. Nothing we merge to `main` ma
 
 **Tracking upstream**
 
+> **Since Oct 13, 2026:** Synthux publishes the host side as the npm package `@synthuxacademy/spotykach-transfer`, and `skLink.ts` (our port) is gone. The package is the protocol code; changes to it go as a PR to the Spotykach repo. The bullets below are the earlier approach. Current: `src/lib/usb/PROTOCOL.md`.
+
 - Pin the commit in one place: `src/lib/usb/PROTOCOL.md` (or a header comment in `skLink.ts`) holds the upstream commit and protocol version our code was ported from.
 - All protocol code lives in `src/lib/usb/skLink.ts` (frames, CRC, commands) and `src/lib/usb/usbBackend.ts` (mapping to `CardBackend`). A protocol change touches only these.
 - Check the branch before each USB work session: `git ls-remote https://github.com/Synthux-Academy/Spotykach.git refs/heads/uploader` against the pinned commit; if it moved, diff `docs/usb-transfer.md`, `src/transfer/protocol.h` and `web/index.html`.
@@ -341,6 +343,8 @@ Phase 4 results (Oct 12):
 - **The checklist this was run against:** open with `?usb=1`, Import / Build SD, switch to USB, Connect (and Authorise port on first use, also after closing the picker by clicking outside it). Check the grid against `skUsb.slots()`, the snapshot line after a build, a Standard Build of a few changed slots (progress, time estimate, then in sync on rescan), a pull of a card-only slot into the project, a build that doesn't fit, unplugging mid-upload (the slot keeps its old file, the modal shows Connect again), then the same project over the card reader showing in sync.
 
 ## For Vlad
+
+> **Answered with `@synthuxacademy/spotykach-transfer` 1.0.1 (Oct 12), checked Oct 13:** 1 fixed (`encodeWav` pads `INAM` to 4). 2 open (`encodeWav`/`convertAudio` write only `INAM` and cues). 3 firmware, not visible in the package. 4 same rule, but `utf8Truncate` isn't exported, so we keep a copy. 5 open (`SlotEntry` has no `ICMT`). The open web-side items go to Synthux as a PR on the Spotykach repo.
 
 Context: WAV Builder writes `RIFF/WAVE`, `fmt `, `LIST/INFO` (`IART`, `INAM`, `ITMP`, `ICMT`), `data`, `cue `. `ICMT` holds JSON `{id, h, p, t}`: our record UUID, a SHA-256 of the audio, processing flags and tempo. We use `id` + `h` to match card slots to project files without downloading them. Files are uploaded as they are, not re-encoded.
 

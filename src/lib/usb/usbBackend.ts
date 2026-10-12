@@ -13,8 +13,8 @@ import { readWavHeaderInfo } from '../audio/wavHeader';
 import type { WavHeaderInfo } from '../audio/wavHeader';
 import type { CardBackend, CardInfo, PlannedWrite, SlotDescriptor, SpaceCheck, WriteSlotOptions } from '../card/cardBackend';
 import { slotKey } from '../card/cardBackend';
-import { CMD, SLOT_LOADABLE, SLOT_OCCUPIED } from './skLink';
-import type { Connection, HelloInfo, ListEntry, SkLink } from './skLink';
+import { CMD, SLOT_LOADABLE, SLOT_OCCUPIED, checkUploadable } from '@synthuxacademy/spotykach-transfer';
+import type { Connection, DeviceInfo, SkLink, SlotEntry } from '@synthuxacademy/spotykach-transfer';
 
 /** The device's own LIST read: covers our `LIST` chunk (about 300 bytes) with room to spare. */
 const HEADER_READ = 4096;
@@ -33,12 +33,12 @@ export class UsbBackend implements CardBackend {
     readonly kind = 'usb' as const;
     readonly link: SkLink;
     /** From the last HELLO: limits, firmware version, card space. */
-    hello: HelloInfo;
+    hello: DeviceInfo;
     /** Called once when the device goes away (unplugged, left transfer mode). */
     ondisconnect: ((error: Error) => void) | null = null;
 
     /** The last LIST, by `slotKey`, empty slots included. */
-    private entries = new Map<string, ListEntry>();
+    private entries = new Map<string, SlotEntry>();
     private listed = false;
     private headers = new Map<string, SlotDescriptor>();
     private readonly onBeforeUnload = () => {
@@ -46,9 +46,9 @@ export class UsbBackend implements CardBackend {
         if (!this.link.closed) this.link.request(CMD.exit).catch(() => {});
     };
 
-    constructor({ link, hello }: Connection) {
+    constructor({ link, info }: Connection) {
         this.link = link;
-        this.hello = hello;
+        this.hello = info;
         link.onclose = (error) => {
             window.removeEventListener('beforeunload', this.onBeforeUnload);
             this.ondisconnect?.(error);
@@ -88,13 +88,13 @@ export class UsbBackend implements CardBackend {
         return slot - 1;
     }
 
-    private async entry(tape: TapeColor, slot: number): Promise<ListEntry | null> {
+    private async entry(tape: TapeColor, slot: number): Promise<SlotEntry | null> {
         if (!this.listed) await this.listSlots();
         const e = this.entries.get(slotKey(tape, slot));
         return e && (e.flags & SLOT_OCCUPIED) ? e : null;
     }
 
-    private describe(tape: TapeColor, slot: number, e: ListEntry): SlotDescriptor {
+    private describe(tape: TapeColor, slot: number, e: SlotEntry): SlotDescriptor {
         return {
             tape,
             slot,
@@ -147,7 +147,7 @@ export class UsbBackend implements CardBackend {
         const e = await this.entry(tape, slot);
         if (!e) return null;
 
-        const { head, tail } = await this.link.readSlot(this.tapeIndex(tape), this.deviceSlot(slot), this.hello.maxChunk, async (size, read) => {
+        const { head, tail } = await this.link.readSlot(this.tapeIndex(tape), this.deviceSlot(slot), async (size, read) => {
             let head = await readWavHeaderInfo(toBuffer(await read(0, Math.min(HEADER_READ, size)))).catch(() => null);
             if (head && head.dataOffset === undefined && size > HEADER_READ) {
                 // Chunks before `data` bigger than 4 KB: read as far as the firmware does.
@@ -182,7 +182,7 @@ export class UsbBackend implements CardBackend {
     async readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<File> {
         signal?.throwIfAborted();
         if (!(await this.entry(tape, slot))) throw new Error(`${tape} ${slot} is empty on the card.`);
-        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), this.hello.maxChunk, { onProgress, signal });
+        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), { onProgress, signal });
         return new File([toBuffer(bytes)], slotFileName(slot), { type: 'audio/wav' });
     }
 
@@ -191,7 +191,6 @@ export class UsbBackend implements CardBackend {
         signal?.throwIfAborted();
         // Walks the chunk headers only, so `cue ` after the audio is counted too.
         const info = await readWavHeaderInfo(blob);
-        this.validate(tape, slot, blob, info);
 
         if (compare !== 'always') {
             const existing = await this.entry(tape, slot);
@@ -202,7 +201,8 @@ export class UsbBackend implements CardBackend {
         }
 
         const bytes = new Uint8Array(await blob.arrayBuffer());
-        await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, this.hello.maxChunk, { onProgress, signal });
+        this.validate(tape, slot, bytes, info);
+        await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, { onProgress, signal });
 
         // What LIST would now say, without paying for a LIST.
         this.headers.delete(slotKey(tape, slot));
@@ -265,34 +265,21 @@ export class UsbBackend implements CardBackend {
         }
     }
 
-    /** What the device would reject or play wrong, with a message that says why. */
-    private validate(tape: TapeColor, slot: number, blob: Blob, info: WavHeaderInfo) {
+    /**
+     * What the device would reject or play wrong, with a message that says why.
+     * Format, length and cue count are the package's `checkUploadable` (the same
+     * check `upload()` runs); the alignment check is ours: our files carry `ICMT`
+     * before the audio, which the package's own `encodeWav` never writes.
+     */
+    private validate(tape: TapeColor, slot: number, bytes: Uint8Array, info: WavHeaderInfo) {
         const where = `${tape} ${slot}`;
-        if (info.dataOffset === undefined || info.frames === undefined) {
-            throw new Error(`${where}: not a WAV file Spotykach can read.`);
+        const problems = checkUploadable(bytes, this.hello);
+        if (problems.length > 0) {
+            throw new Error(`${where}: ${problems.join(' ')} Export it from WAV Builder first.`);
         }
-        // The device's is_loadable(): exactly 48 kHz stereo 32-bit float, format 3.
-        const loadable = info.audioFormat === 3 && info.channels === 2 && info.sampleRate === SAMPLE_RATE
-            && info.bitsPerSample === 32 && info.blockAlign === 8 && info.frames > 0;
-        if (!loadable) {
-            const kind = info.audioFormat === 3 ? 'float' : info.audioFormat === 1 ? 'integer PCM' : info.audioFormat === 0xFFFE ? 'extensible' : `format ${info.audioFormat}`;
-            throw new Error(`${where}: ${info.sampleRate} Hz, ${info.channels} ch, ${info.bitsPerSample}-bit ${kind}. `
-                + 'Spotykach loads 48 kHz stereo 32-bit float only; export it from WAV Builder first.');
-        }
-        if (info.dataOffset % 4 !== 0) {
+        if (info.dataOffset !== undefined && info.dataOffset % 4 !== 0) {
             // The SD DMA can't read misaligned audio: noise, then a dead engine.
             throw new Error(`${where}: the audio starts at byte ${info.dataOffset}, which Spotykach can't play. Re-export the file.`);
-        }
-        if (info.frames > this.hello.maxFrames) {
-            const seconds = (this.hello.maxFrames / SAMPLE_RATE).toFixed(0);
-            throw new Error(`${where}: longer than the ${seconds} s Spotykach can hold.`);
-        }
-        const cues = info.metadata?.slicePoints?.length ?? 0;
-        if (cues > this.hello.maxCues) {
-            throw new Error(`${where}: ${cues} slice points; Spotykach takes at most ${this.hello.maxCues}.`);
-        }
-        if (blob.size > this.hello.maxFrames * 8 + 65536) {
-            throw new Error(`${where}: the file is too large for Spotykach.`);
         }
     }
 
@@ -301,7 +288,7 @@ export class UsbBackend implements CardBackend {
      * compares our `ICMT` (id, hash, processing) and the frame count from a header
      * read; a blob without our id and hash is always written.
      */
-    private async holds(tape: TapeColor, slot: number, existing: ListEntry, blob: Blob, info: WavHeaderInfo, compare: 'content' | 'size'): Promise<boolean> {
+    private async holds(tape: TapeColor, slot: number, existing: SlotEntry, blob: Blob, info: WavHeaderInfo, compare: 'content' | 'size'): Promise<boolean> {
         if (existing.fileSize !== blob.size) return false;
         if (compare === 'size') return true;
         const ours = info.metadata;

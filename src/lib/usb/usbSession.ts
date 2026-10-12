@@ -2,7 +2,7 @@
  * The one USB connection the app holds: the sync modal's USB source and
  * `window.skUsb` share it, so they never fight over the serial port.
  *
- * Small on purpose: the protocol code (`skLink.ts`, `usbBackend.ts`) is imported
+ * Small on purpose: the protocol code (the `@synthuxacademy/spotykach-transfer` package, `usbBackend.ts`) is imported
  * only when a connection is made, so it stays a separate chunk.
  */
 import { useSyncExternalStore } from 'react';
@@ -38,7 +38,7 @@ const set = (next: Partial<UsbState>) => {
     listeners.forEach(l => l());
 };
 
-const loadLink = () => import('./skLink');
+const loadLink = () => import('@synthuxacademy/spotykach-transfer');
 
 /** Starts loading the protocol code, so a later Authorise click doesn't wait on it. */
 export const preloadUsb = () => {
@@ -46,7 +46,7 @@ export const preloadUsb = () => {
     void import('./usbBackend');
 };
 
-const adopt = async (connection: import('./skLink').Connection): Promise<UsbBackend> => {
+const adopt = async (connection: import('@synthuxacademy/spotykach-transfer').Connection): Promise<UsbBackend> => {
     const { UsbBackend } = await import('./usbBackend');
     const backend = new UsbBackend(connection);
     backend.ondisconnect = (error) => {
