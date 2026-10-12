@@ -8,7 +8,8 @@ import { sanitizeSettings, scaleName } from '../settings';
 import { formatDb, formatMs, formatSt } from './format';
 
 interface SnippetTableProps {
-    entry: MangleResultEntry;
+    /** Only the recipe and the locks are read, so the editor's take (not a stored result) fits too. */
+    entry: Pick<MangleResultEntry, 'recipe' | 'locked'>;
     busy: boolean;
     /** The row the snippet player is on (follows the playhead in Full mode), or −1. */
     activeIndex: number;

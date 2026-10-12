@@ -2,7 +2,7 @@ import type React from 'react';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, XCircle, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, XCircle, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Dices } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
@@ -22,6 +22,10 @@ import { DbScale } from './DbScale';
 import { readWavMetadata } from '../utils/importUtils';
 import { LimiterOverlay } from './LimiterOverlay';
 import { KeyboardSlicerModal } from './KeyboardSlicerModal';
+import { CUE_LEVELS, transientCues, type CueLevel } from '../mangler/recue';
+import { EditorManglePanel } from '../mangler/ui/EditorManglePanel';
+import { EditorToolPicker } from './EditorToolPicker';
+import { ScrubNumber } from './ScrubNumber';
 
 // Fade Overlay Component
 interface FadeOverlayProps {
@@ -663,6 +667,14 @@ export const TAPE_COMMIT_LABELS: CommitLabels = {
     cleanToast: 'Assigned to Tape',
 };
 
+const WAVE_HEIGHT_KEY = 'waveformEditor.waveHeight';
+const WAVE_HEIGHT_DEFAULT = 256;
+const WAVE_HEIGHT_MIN = 128;
+const WAVE_HEIGHT_MAX = 1000;
+const clampWaveHeight = (h: number) => Math.round(Math.min(WAVE_HEIGHT_MAX, Math.max(WAVE_HEIGHT_MIN, h)));
+const V_ZOOM_MIN = 0.5;
+const V_ZOOM_MAX = 15;
+
 interface WaveformEditorProps {
     slot: EditorSlot;
     versions: AudioVersion[];
@@ -700,9 +712,16 @@ interface WaveformEditorProps {
      * version and must not present itself as the obvious next click.
      */
     transportActions?: React.ReactNode | ((state: { commitClean: boolean }) => React.ReactNode);
+    /** Opens the full Sample Mangler, over the whole project. Absent: the Mangler tool has no "with other sounds" link. */
+    onOpenFullMangler?: () => void;
+    /** Something (the Mangler) is open over the editor: its keyboard shortcuts stand down. */
+    isCovered?: boolean;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, commitCleanTone = 'primary', transportActions }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, commitCleanTone = 'primary', transportActions, onOpenFullMangler, isCovered = false }: WaveformEditorProps) => {
+    const isCoveredRef = useRef(isCovered);
+    useEffect(() => { isCoveredRef.current = isCovered; }, [isCovered]);
+
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -710,6 +729,16 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [isPlaying, setIsPlaying] = useState(false);
     const [zoom, setZoom] = useState(10);
     const [vZoom, setVZoom] = useState(1); // Vertical Zoom (Visual Gain)
+    // How tall the wave is drawn. Dragging its bottom edge (or Alt+scroll) grows
+    // it, and the modal grows with it; the choice is remembered per browser.
+    const [waveHeight, setWaveHeight] = useState(() => {
+        try {
+            const saved = Number(localStorage.getItem(WAVE_HEIGHT_KEY));
+            if (saved) return clampWaveHeight(saved);
+        } catch { /* storage blocked: use the default */ }
+        return WAVE_HEIGHT_DEFAULT;
+    });
+    const waveHeightRef = useRef(waveHeight);
     const [fadeIn, setFadeIn] = useState(0);
     const [fadeOut, setFadeOut] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
@@ -841,6 +870,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [showGlobalSlices, setShowGlobalSlices] = useState(false);
     const [snapToSlices, setSnapToSlices] = useState(false);
     const [customSliceCount, setCustomSliceCount] = useState<number>(32);
+    const [detectLevel, setDetectLevel] = useState<CueLevel>('auto');
+    const [detectMaxSlices, setDetectMaxSlices] = useState<number>(32);
     const [keyboardLayout, setKeyboardLayout] = useState<'QWERTY' | 'AZERTY'>('QWERTY');
     const [showKeyboardMapModal, setShowKeyboardMapModal] = useState(false);
     const [hoveredMarkerIdx, setHoveredMarkerIdx] = useState<number | null>(null);
@@ -849,7 +880,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const triggeredSliceTimeout = useRef<NodeJS.Timeout | null>(null);
 
     // Active Tool (for toolbar UI — only one expanded at a time)
-    type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | null;
+    type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | 'mangle' | null;
     const [activeTool, setActiveTool] = useState<ToolId>(null);
     const [pendingTool, setPendingTool] = useState<ToolId | undefined>(undefined);
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
@@ -876,12 +907,20 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const isSlicerDirty = slicePoints.length !== (initialSlicePoints?.length || 0) || slicePoints.some((p, i) => Math.abs(p - (initialSlicePoints?.[i] || 0)) > 0.001) || tempo !== initialTempo;
 
     // Calculated Dirty State
+    /** A Mangler take playing in the waveform, not applied yet. */
+    /** `cues` in seconds, drawn on the wave while the take is loaded. */
+    const [mangleTake, setMangleTake] = useState<{ blob: Blob; duration: number; description: string; cues: number[] } | null>(null);
+    /** Slice markers on their way from the Slicer to the Mangler. */
+    const [mangleImport, setMangleImport] = useState<{ points: number[]; key: number } | null>(null);
+    /** A stretch of the wave to mark, seconds: the snippet hovered in the Mangler's list. */
+    const [waveHighlight, setWaveHighlight] = useState<[number, number] | null>(null);
+    const isMangleDirty = mangleTake !== null;
     const isLoopDirty = hasLoopInteracted && (loopCrossfade !== 0.2 || loopFitTo42 || hasTrimInteracted);
     // Calculated Dirty State
     const isDirty = useMemo(() => {
         if (!originalBuffer) return false;
-        return isTrimDirty || isAutomationDirty || isEqDirty || isLimiterDirty || isPitchDirty || isCutterDirty || isSlicerDirty || isLoopDirty;
-    }, [isTrimDirty, isAutomationDirty, isEqDirty, isLimiterDirty, isPitchDirty, isCutterDirty, isSlicerDirty, isLoopDirty, originalBuffer]);
+        return isTrimDirty || isAutomationDirty || isEqDirty || isLimiterDirty || isPitchDirty || isCutterDirty || isSlicerDirty || isLoopDirty || isMangleDirty;
+    }, [isTrimDirty, isAutomationDirty, isEqDirty, isLimiterDirty, isPitchDirty, isCutterDirty, isSlicerDirty, isLoopDirty, isMangleDirty, originalBuffer]);
 
     // Report Dirty State to Parent — use a ref so that the effect only fires when isDirty changes,
     // regardless of whether the parent provides a new function reference on each render.
@@ -906,6 +945,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         else if (activeTool === 'cutter') currentToolIsDirty = isCutterDirty;
         else if (activeTool === 'slicer') currentToolIsDirty = isSlicerDirty;
         else if (activeTool === 'loop') currentToolIsDirty = isLoopDirty;
+        else if (activeTool === 'mangle') currentToolIsDirty = isMangleDirty;
 
         if (currentToolIsDirty && activeTool !== null) {
             setPendingTool(next);
@@ -979,6 +1019,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setPreviewPitchRegions([]);
         setPreviewDuration(null);
         setPreviewLoaded(false);
+        setMangleTake(null);
     };
 
     /*
@@ -1051,6 +1092,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setIsPreviewingLimiter(false);
         setIsPreviewingCut(false);
         setIsPreviewingLoop(false);
+        setMangleTake(null);
 
         if (currentBlob && wavesurfer.current) {
             setIsPlaying(false);
@@ -1226,7 +1268,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     }, [activeTool, editorDuration, isLooping]);
 
     useEffect(() => {
-        if (wavesurfer.current) {
+        // zoom() throws while a blob is loading (nothing decoded yet). The 'ready'
+        // handler fits the zoom once it has loaded, so skipping here loses nothing.
+        if (wavesurfer.current?.getDecodedData()) {
             wavesurfer.current.zoom(zoom);
         }
     }, [zoom]);
@@ -1236,6 +1280,14 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             wavesurfer.current.setOptions({ barHeight: vZoom });
         }
     }, [vZoom]);
+
+    useEffect(() => {
+        waveHeightRef.current = waveHeight;
+        if (wavesurfer.current) {
+            wavesurfer.current.setOptions({ height: waveHeight });
+        }
+        try { localStorage.setItem(WAVE_HEIGHT_KEY, String(waveHeight)); } catch { /* not critical */ }
+    }, [waveHeight]);
 
     useEffect(() => {
         if (wavesurfer.current) {
@@ -1353,7 +1405,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 waveColor: 'rgba(255, 185, 0, 0.5)', // More transparent yellow
                 progressColor: '#FFDF9B',
                 url: blobUrl,
-                height: 256,
+                height: waveHeightRef.current,
                 minPxPerSec: zoom,
                 interact: true,
                 dragToSeek: true, // Allow seeking on drag, disable region creation via dragging
@@ -1667,6 +1719,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            if (isCoveredRef.current) return;
             if (e.code === 'Space') {
                 e.preventDefault();
                 handlePlayPause();
@@ -1791,14 +1844,25 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     }, []);
 
-    const handleWheel = (e: React.WheelEvent) => {
-        if (e.ctrlKey) {
-            e.preventDefault();
-            const delta = -Math.sign(e.deltaY);
-            const factor = 1.1;
+    /*
+     * Modifier + scroll over the wave:
+     *   Ctrl  → horizontal zoom, anchored at the pointer
+     *   Alt   → wave height (vertical zoom)
+     *   Shift → amplitude (dB) zoom
+     * Browsers turn Shift+wheel into a horizontal scroll (deltaX), so read
+     * whichever axis moved.
+     */
+    const handleWheel = (e: WheelEvent) => {
+        if (!e.ctrlKey && !e.altKey && !e.shiftKey) return;
+        const raw = e.deltaY || e.deltaX;
+        if (!raw) return;
+        e.preventDefault();
+        const dir = -Math.sign(raw);
+        const factor = 1.1;
 
+        if (e.ctrlKey) {
             let newZoom = zoom;
-            if (delta > 0) newZoom = Math.min(zoom * factor, 1200); // Increased max zoom
+            if (dir > 0) newZoom = Math.min(zoom * factor, 1200); // Increased max zoom
             else newZoom = Math.max(zoom / factor, minZoom);
 
             if (scrollContainerRef.current) {
@@ -1809,7 +1873,40 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             } else {
                 setZoomCentered(newZoom);
             }
+        } else if (e.altKey) {
+            setWaveHeight(h => clampWaveHeight(dir > 0 ? h * factor : h / factor));
+        } else {
+            setVZoom(v => {
+                const next = dir > 0 ? v * factor : v / factor;
+                return Math.round(Math.min(V_ZOOM_MAX, Math.max(V_ZOOM_MIN, next)) * 100) / 100;
+            });
         }
+    };
+    // The listener is bound once; it calls whatever handleWheel is current.
+    const handleWheelRef = useRef(handleWheel);
+    handleWheelRef.current = handleWheel;
+    useEffect(() => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => handleWheelRef.current(e);
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []);
+
+    // Drag the wave's bottom edge to make it taller or shorter.
+    const handleWaveResizeStart = (e: React.PointerEvent) => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startH = waveHeight;
+        const onMove = (ev: PointerEvent) => setWaveHeight(clampWaveHeight(startH + ev.clientY - startY));
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            document.body.style.cursor = '';
+        };
+        document.body.style.cursor = 'ns-resize';
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
     };
 
     const handlePlayPause = async () => {
@@ -2091,6 +2188,55 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
+    /** A take from the Mangler tool: it replaces whatever plays in the waveform until applied or discarded. */
+    const handleMangleTake = (blob: Blob, duration: number, description: string, cues: number[]) => {
+        setMangleTake({ blob, duration, description, cues });
+        triggerSafePause(async () => {
+            if (wavesurfer.current) {
+                await loadPreviewBlob(blob);
+                wavesurfer.current.play();
+            }
+        });
+        if (previewingVersionId) {
+            previewAudio.pause();
+            setPreviewingVersionId(null);
+        }
+    };
+
+    const handleApplyMangle = () => {
+        if (!mangleTake) return;
+        onSave(mangleTake.blob, mangleTake.duration, mangleTake.description, true, []);
+        setMangleTake(null);
+        showToast("Mangled take applied!", "success");
+    };
+
+    /** One snippet of the take, from the Mangler's list. */
+    const handleMangleAudition = (start: number, end: number) => {
+        if (!wavesurfer.current) return;
+        if (previewingVersionId) {
+            previewAudio.pause();
+            setPreviewingVersionId(null);
+        }
+        wavesurfer.current.play(start, end);
+    };
+
+    const handleMangleStopAudition = () => {
+        if (wavesurfer.current?.isPlaying()) handlePlayPause();
+    };
+
+    /** The slicer's markers as a take in the Mangler: one snippet per slice, to rearrange. */
+    const handleSlicesToMangler = () => {
+        setMangleImport({ points: [...slicePoints], key: Date.now() });
+        toggleTool('mangle');
+    };
+
+    const handleDiscardMangle = () => {
+        setMangleTake(null);
+        triggerSafePause(async () => {
+            if (currentBlob) await loadSourceBlob(currentBlob);
+        });
+    };
+
     const handleApplyNormalization = async (level: number = -1) => {
         if (!originalBuffer) return;
         triggerSafePause(async () => {
@@ -2198,6 +2344,31 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         handleDirtyChange();
     };
 
+    /** Slices at the hits, as the mangler places transient cues: at most `maxSlices`, the weakest hits dropped first. */
+    const handleDetectSlices = (level: CueLevel, maxSlices: number) => {
+        if (!originalBuffer || isSlicerLocked) return;
+        setIsProcessing(true);
+        // Let the button state paint before the (synchronous) detection runs.
+        setTimeout(() => {
+            try {
+                const left = originalBuffer.getChannelData(0);
+                const right = originalBuffer.numberOfChannels > 1 ? originalBuffer.getChannelData(1) : left;
+                const cues = transientCues([left, right], originalBuffer.sampleRate, level, maxSlices);
+                const points = cues.slice(1).map(f => +(f / originalBuffer.sampleRate).toFixed(3));
+                setSlicePoints(points);
+                setActiveSliceIdx(0);
+                handleDirtyChange();
+                if (points.length === 0) showToast("No clear hits found", "warning");
+                else showToast(`Detected ${points.length + 1} slices`, "success");
+            } catch (e) {
+                console.error(e);
+                showToast("Hit detection failed", "error");
+            } finally {
+                setIsProcessing(false);
+            }
+        }, 0);
+    };
+
     const handleApplySlicer = async () => {
         if (!originalBuffer) return;
         // Save slice markers and tempo into metadata — doesn't modify audio
@@ -2285,6 +2456,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         // Also support Numpad keys 1-9
 
         const handleKeyDown = (e: KeyboardEvent) => {
+            if (isCoveredRef.current) return;
             // Ignore if focus is in an input field (so typing name or BPM doesn't trigger slices)
             if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
@@ -3095,13 +3267,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
               * top-right was neither. The header now spans the whole modal and the
               * two columns share the space beneath it.
               */}
-            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] h-[95vh] shadow-2xl flex flex-col overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
+            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] max-h-[95vh] shadow-2xl flex flex-col overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
 
 
                 {/* Tool Switch Confirmation */}
                 <ConfirmModal
                     isOpen={pendingTool !== undefined}
-                    onClose={() => setPendingTool(undefined)}
+                    onClose={() => { setPendingTool(undefined); setMangleImport(null); }}
                     onConfirm={async () => {
                         const from = activeTool;
                         const next = pendingTool;
@@ -3240,7 +3412,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             </div>
                         )}
                     </div>
-                    <div className={`flex-1 overflow-y-auto p-2 space-y-2 history-scroll w-full ${!isHistoryExpanded && 'flex flex-col items-center'}`}>
+                    {/* Absolutely filled, so a long history scrolls instead of stretching the modal */}
+                    <div className="flex-1 min-h-0 relative w-full">
+                    <div className={`absolute inset-0 overflow-y-auto p-2 space-y-2 history-scroll w-full ${!isHistoryExpanded && 'flex flex-col items-center'}`}>
                         {[...versions].sort((a,b) => b.timestamp - a.timestamp).map((v) => {
                             const isActive = v.id === loadedVersionId;
                             const isSelected = selectedVersionIds.has(v.id);
@@ -3373,6 +3547,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             )
                         })}
                     </div>
+                    </div>
                 </div>
 
                 {/* MAIN EDITOR AREA */}
@@ -3380,95 +3555,42 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                     {/* Editor Helpers */}
 
-                    <div className="p-6 pt-4 flex flex-col h-full overflow-hidden">
+                    {/*
+                      * Tool panel, then the view bar, then the wave — top-down, so a
+                      * taller tool panel pushes the wave down. If it all outgrows the
+                      * modal this body scrolls; the transport below it stays put.
+                      */}
+                    <div className="flex-1 min-h-0 p-6 pt-4 pb-3 flex flex-col overflow-y-auto overflow-x-hidden editor-scroll [scrollbar-gutter:stable]">
                         {/* Toolbar Container */}
-                        <div className="flex flex-col mb-4 bg-[#111] relative z-20 p-4 rounded-xl border border-gray-800 shrink-0 max-w-full">
+                        <div className="flex flex-col mb-1 bg-[#111] relative z-40 p-4 rounded-xl border border-gray-800 shrink-0 max-w-full">
 
-                            {/* Top Bar: Label + Buttons + Reset */}
-                            <div className="flex items-center gap-4 w-full">
-                                {/* Label */}
-                                <div className="flex items-center gap-3 text-[10px] font-bold uppercase text-gray-500 tracking-wider shrink-0 whitespace-nowrap"
-                                    onMouseEnter={() => setHelpText("Global Edit Controls")}
-                                    onMouseLeave={() => setHelpText("")}>
-                                    <Sliders size={12} className="text-gray-500" /> Main Controls
-                                </div>
-
-                                <div className="h-6 w-px bg-gray-800/50 shrink-0"></div>
-
-                                {/* Tool Buttons - Scrollable if needed */}
-                                <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent py-1">
-                                    {[
-                                        { 
-                                            id: 'trim' as const, label: 'Trim/Fade', icon: <Scissors size={13} />, color: 'green', activeColor: 'bg-synthux-green', textColor: 'text-synthux-green', 
-                                            hasContent: isTrimDirty
-                                        },
-                                        { 
-                                            id: 'automation' as const, label: 'Automation', icon: <Activity size={13} />, color: 'orange', activeColor: 'bg-orange-500', textColor: 'text-orange-400', 
-                                            hasContent: isAutomationDirty
-                                        },
-                                        { 
-                                            id: 'loop' as const, label: 'Loop', icon: <Repeat size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', 
-                                            hasContent: false // Loops are immediately applied
-                                        },
-                                        { 
-                                            id: 'eq' as const, label: 'EQ', icon: <BarChart2 size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', 
-                                            hasContent: isEqDirty
-                                        },
-                                        { 
-                                            id: 'pitch' as const, label: 'Pitch', icon: <Music size={13} />, color: 'blue', activeColor: 'bg-synthux-blue', textColor: 'text-synthux-blue', 
-                                            hasContent: isPitchDirty
-                                        },
-                                        { 
-                                            id: 'limiter' as const, label: 'Limiter', icon: <Sliders size={13} />, color: 'red', activeColor: 'bg-red-500', textColor: 'text-red-400', 
-                                            hasContent: isLimiterDirty
-                                        },
-                                        { 
-                                            id: 'normalize' as const, label: 'Normalize', icon: <BarChart2 size={13} />, color: 'yellow', activeColor: 'bg-synthux-yellow', textColor: 'text-synthux-yellow', 
-                                            hasContent: false // Normalize is immediately applied
-                                        },
-                                        { 
-                                            id: 'cutter' as const, label: 'Cutter', icon: <Scissors size={13} />, color: 'amber', activeColor: 'bg-amber-500', textColor: 'text-amber-400', 
-                                            hasContent: isCutterDirty
-                                        },
-                                        { 
-                                            id: 'slicer' as const, label: 'Slicer', icon: <Scissors size={13} className="rotate-90" />, color: 'cyan', activeColor: 'bg-cyan-500', textColor: 'text-cyan-400', 
-                                            hasContent: isSlicerDirty
-                                        },
-                                        { 
-                                            id: 'stereo' as const, label: 'Stereo', icon: <ArrowLeftRight size={13} />, color: 'purple', activeColor: 'bg-purple-500', textColor: 'text-purple-400', 
-                                            hasContent: false
-                                        },
-                                    ].map(tool => (
-                                        <button
-                                            key={tool.id}
-                                            onClick={() => toggleTool(tool.id)}
-                                            onMouseEnter={() => setHelpText(`${activeTool === tool.id ? 'Close' : 'Open'} ${tool.label}`)}
-                                            onMouseLeave={() => setHelpText("")}
-                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap border ${activeTool === tool.id
-                                                ? `${tool.activeColor} text-white border-transparent shadow-lg shadow-${tool.color}-500/20`
-                                                : tool.hasContent
-                                                    ? `bg-gray-800/80 ${tool.textColor} border-gray-700 hover:border-${tool.color}-800`
-                                                    : 'bg-gray-800/50 text-gray-500 border-gray-800/50 hover:bg-gray-800 hover:text-gray-300 hover:border-gray-700'
-                                                }`}
-                                        >
-                                            {tool.icon}
-                                            {tool.label}
-                                            {tool.hasContent && activeTool !== tool.id && (
-                                                <span className={`w-1.5 h-1.5 rounded-full ${tool.activeColor} animate-pulse`}></span>
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-
-                            </div>
+                            {/* Tool menu: names the open tool, opens a grouped list of all of them */}
+                            <EditorToolPicker
+                                activeTool={activeTool}
+                                onToggle={toggleTool}
+                                setHelpText={setHelpText}
+                                tools={[
+                                    { id: 'trim', group: 'Edit', label: 'Trim/Fade', icon: <Scissors size={13} />, description: 'Cut the ends, fade in and out', textColor: 'text-synthux-green', activeColor: 'bg-synthux-green', hasContent: isTrimDirty },
+                                    { id: 'cutter', group: 'Edit', label: 'Cutter', icon: <Scissors size={13} />, description: 'Remove parts from the middle', textColor: 'text-amber-400', activeColor: 'bg-amber-500', hasContent: isCutterDirty },
+                                    { id: 'loop', group: 'Edit', label: 'Loop', icon: <Repeat size={13} />, description: 'Crossfade into a seamless loop', textColor: 'text-synthux-blue', activeColor: 'bg-synthux-blue', hasContent: false },
+                                    { id: 'slicer', group: 'Edit', label: 'Slicer', icon: <Scissors size={13} className="rotate-90" />, description: 'Slice markers for the card', textColor: 'text-red-400', activeColor: 'bg-red-500', hasContent: isSlicerDirty },
+                                    { id: 'stereo', group: 'Edit', label: 'Stereo', icon: <ArrowLeftRight size={13} />, description: 'Split or keep one side', textColor: 'text-purple-400', activeColor: 'bg-purple-500', hasContent: false },
+                                    { id: 'automation', group: 'Level', label: 'Automation', icon: <Activity size={13} />, description: 'Draw the volume over time', textColor: 'text-orange-400', activeColor: 'bg-orange-500', hasContent: isAutomationDirty },
+                                    { id: 'normalize', group: 'Level', label: 'Normalize', icon: <BarChart2 size={13} />, description: 'Bring the peak to a level', textColor: 'text-synthux-yellow', activeColor: 'bg-synthux-yellow', hasContent: false },
+                                    { id: 'limiter', group: 'Level', label: 'Limiter', icon: <Sliders size={13} />, description: 'Tame the peaks', textColor: 'text-red-400', activeColor: 'bg-red-500', hasContent: isLimiterDirty },
+                                    { id: 'eq', group: 'Tone', label: 'EQ', icon: <BarChart2 size={13} />, description: 'Low, mid and high', textColor: 'text-purple-400', activeColor: 'bg-purple-500', hasContent: isEqDirty },
+                                    { id: 'pitch', group: 'Tone', label: 'Pitch', icon: <Music size={13} />, description: 'Shift parts by semitones', textColor: 'text-synthux-blue', activeColor: 'bg-synthux-blue', hasContent: isPitchDirty },
+                                    { id: 'mangle', group: 'FX', label: 'Mangler', icon: <Dices size={13} />, description: 'A new take from random snippets of this file', textColor: 'text-synthux-red', activeColor: 'bg-synthux-red', hasContent: isMangleDirty },
+                                ]}
+                            />
 
                             {/* Expanded Tool Panel */}
                             {activeTool && (
-                                <div className="border-t border-gray-800 pt-2 pb-1 mt-1 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <div className="border-t border-gray-800 pt-3 pb-1 mt-3 max-h-[45vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
 
                                     {/* Trim / Fade Panel */}
                                     {activeTool === 'trim' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
@@ -3537,9 +3659,41 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         </div>
                                     )}
 
+                                    {/* Mangler Panel */}
+                                    {activeTool === 'mangle' && (
+                                        <EditorManglePanel
+                                            blob={currentBlob}
+                                            sourceKey={`editor:${slot.fileId ?? slot.name}:${loadedVersionId}`}
+                                            sourceSeconds={originalBuffer?.duration ?? editorDuration}
+                                            fileId={metadata?.id || slot.fileId}
+                                            name={slot.name}
+                                            hasTake={isMangleDirty}
+                                            disabled={isProcessing}
+                                            onTake={handleMangleTake}
+                                            importSlices={mangleImport}
+                                            onImportUsed={() => setMangleImport(null)}
+                                            playhead={currentTime}
+                                            isPlaying={isPlaying}
+                                            onAudition={handleMangleAudition}
+                                            onStopAudition={handleMangleStopAudition}
+                                            onHighlight={setWaveHighlight}
+                                            onApply={handleApplyMangle}
+                                            onDiscard={handleDiscardMangle}
+                                            onOpenFullMangler={onOpenFullMangler && (() => {
+                                                if (wavesurfer.current && isPlaying) {
+                                                    wavesurfer.current.pause();
+                                                    setIsPlaying(false);
+                                                }
+                                                onOpenFullMangler();
+                                            })}
+                                            setHelpText={setHelpText}
+                                            showToast={showToast}
+                                        />
+                                    )}
+
                                     {/* Normalize Panel */}
                                     {activeTool === 'normalize' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="bg-black/40 px-3 py-1.5 rounded-lg border border-gray-800 flex items-center gap-4">
                                                 <div className="flex flex-col">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Target Peak</div>
@@ -3603,7 +3757,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Volume Automation Panel */}
                                     {activeTool === 'automation' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             {/* Point Volume Controls */}
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1 min-w-[8rem]">
@@ -3751,7 +3905,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Loop Settings Panel */}
                                     {activeTool === 'loop' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1 min-w-[12rem]">
                                                     {(() => {
@@ -3833,7 +3987,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* EQ Panel */}
                                     {activeTool === 'eq' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 {isAdvancedEQ ? (
                                                     <div className="flex items-center gap-3 px-2">
@@ -3939,7 +4093,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Limiter Panel */}
                                     {activeTool === 'limiter' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-gray-800">
                                                 <button
                                                     onClick={() => setLimiterMode('compressor')}
@@ -4013,7 +4167,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Cutter Panel */}
                                     {activeTool === 'cutter' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[6rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Regions</div>
@@ -4079,9 +4233,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Slicer Panel */}
                                     {activeTool === 'slicer' && (
-                                        <div className="flex flex-col gap-2 min-w-max">
+                                        <div className="flex flex-col gap-2">
                                             {/* Row 1: Inspector & Primary Actions */}
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex flex-wrap items-center gap-3">
                                                 {/* Active Slice Inspector */}
                                                 <div className="flex items-center gap-3 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                     <div className="flex items-center gap-1">
@@ -4094,7 +4248,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         </button>
                                                         <div className="flex flex-col gap-0.5 min-w-[3.5rem] items-center">
                                                             <div className="text-[10px] uppercase font-bold text-gray-500">Slice</div>
-                                                            <div className="text-xs font-bold text-cyan-400">{activeSliceIdx + 1}</div>
+                                                            <div className="text-xs font-bold text-red-400">{activeSliceIdx + 1}</div>
                                                         </div>
                                                         <button
                                                             onClick={() => setActiveSliceIdx(Math.min(slicePoints.length, activeSliceIdx + 1))}
@@ -4107,7 +4261,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                                     <button
                                                         onClick={handlePlaySlice}
-                                                        className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-900/40 hover:bg-cyan-600 text-cyan-400 hover:text-white border border-cyan-500/30 transition-colors"
+                                                        className="flex items-center justify-center w-8 h-8 rounded-full bg-red-900/40 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 transition-colors"
                                                         title="Play Slice"
                                                     >
                                                         <Play size={14} className="ml-0.5" />
@@ -4128,7 +4282,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                                             type="text"
                                                                             value={slicePoints[activeSliceIdx - 1]?.toFixed(3) || ''}
                                                                             onChange={(e) => handleSliceMarkerChange(activeSliceIdx - 1, parseFloat(e.target.value))}
-                                                                            className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                                            className="w-12 text-center bg-gray-800 text-red-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
                                                                         />
                                                                         <button
                                                                             onClick={() => handleRemoveSliceMarker(activeSliceIdx - 1)}
@@ -4158,7 +4312,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                                             type="text"
                                                                             value={slicePoints[activeSliceIdx]?.toFixed(3) || ''}
                                                                             onChange={(e) => handleSliceMarkerChange(activeSliceIdx, parseFloat(e.target.value))}
-                                                                            className="w-12 text-center bg-gray-800 text-cyan-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                                            className="w-12 text-center bg-gray-800 text-red-400 text-xs font-bold py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
                                                                         />
                                                                         <button
                                                                             onClick={() => handleRemoveSliceMarker(activeSliceIdx)}
@@ -4236,11 +4390,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             </div>
 
                                             {/* Row 2: Generation & Formatting */}
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                     <div className="flex flex-col gap-0.5 min-w-[5rem]">
                                                         <div className="text-[10px] uppercase font-bold text-gray-500">Markers</div>
-                                                        <div className="text-xs font-bold text-cyan-400">{slicePoints.length} / 32</div>
+                                                        <div className="text-xs font-bold text-red-400">{slicePoints.length}</div>
                                                     </div>
 
                                                     <div className="h-6 w-px bg-gray-800"></div>
@@ -4253,28 +4407,56 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         <div className="text-[9px] uppercase font-bold text-gray-600 mr-2">Auto-Slice:</div>
                                                         {[4, 8, 16, 32].map(n => (
                                                             <button key={n} onClick={() => handleAutoSlice(n - 1)}
-                                                                className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${slicePoints.length === n - 1 ? 'bg-cyan-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}
+                                                                className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${slicePoints.length === n - 1 ? 'bg-red-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}
                                                                 onMouseEnter={() => setHelpText(`Auto-divide into ${n} slices`)}
                                                                 onMouseLeave={() => setHelpText("")}
                                                             >{n}</button>
                                                         ))}
                                                         <div className="flex items-center gap-1 pl-2 ml-1 border-l border-gray-700">
-                                                            <input
-                                                                type="number"
-                                                                min="1" max="32"
-                                                                value={customSliceCount}
-                                                                onChange={(e) => setCustomSliceCount(Math.min(32, Math.max(1, parseInt(e.target.value) || 1)))}
-                                                                className="w-10 bg-gray-900 border border-gray-700 text-cyan-400 text-[10px] font-bold py-1 px-1 rounded text-center focus:outline-none focus:border-cyan-500"
+                                                            <ScrubNumber
+                                                                value={customSliceCount} min={1} max={32} width="w-14"
+                                                                onChange={setCustomSliceCount} ariaLabel="Slice count"
+                                                                onHover={(on) => setHelpText(on ? "Number of equal slices: drag or click to type" : "")}
                                                             />
                                                             <button
                                                                 onClick={() => handleAutoSlice(customSliceCount - 1)}
-                                                                className="px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-cyan-600 text-cyan-400 hover:text-white transition-colors"
+                                                                className="px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-red-600 text-red-400 hover:text-white transition-colors"
                                                                 onMouseEnter={() => setHelpText(`Auto-divide into ${customSliceCount} slices`)}
                                                                 onMouseLeave={() => setHelpText("")}
                                                             >
                                                                 Slice
                                                             </button>
                                                         </div>
+                                                    </div>
+
+                                                    <div className="h-6 w-px bg-gray-800 mx-2"></div>
+
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="text-[9px] uppercase font-bold text-gray-600 mr-2">Detect hits:</div>
+                                                        <select
+                                                            value={detectLevel}
+                                                            onChange={(e) => setDetectLevel(e.target.value as CueLevel)}
+                                                            className="bg-gray-900 border border-gray-700 text-red-400 text-[10px] font-bold py-1 px-1 rounded focus:outline-none focus:border-red-500"
+                                                            onMouseEnter={() => setHelpText(detectLevel === 'auto' ? 'Normal, eased off until it fits the max' : CUE_LEVELS.find(l => l.value === detectLevel)?.hint || '')}
+                                                            onMouseLeave={() => setHelpText("")}
+                                                        >
+                                                            {CUE_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                                                        </select>
+                                                        <div className="text-[9px] uppercase font-bold text-gray-600 ml-1">Max</div>
+                                                        <ScrubNumber
+                                                            value={detectMaxSlices} min={2} max={255} width="w-16"
+                                                            onChange={setDetectMaxSlices} ariaLabel="Most slices"
+                                                            onHover={(on) => setHelpText(on ? "Most slices to keep: over this, the weakest hits are dropped" : "")}
+                                                        />
+                                                        <button
+                                                            onClick={() => handleDetectSlices(detectLevel, detectMaxSlices)}
+                                                            disabled={!originalBuffer || isSlicerLocked || isProcessing}
+                                                            className="px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-red-600 text-red-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            onMouseEnter={() => setHelpText(`Slice at the hits, up to ${detectMaxSlices} slices (replaces current markers)`)}
+                                                            onMouseLeave={() => setHelpText("")}
+                                                        >
+                                                            Detect
+                                                        </button>
                                                     </div>
 
                                                     <div className="h-6 w-px bg-gray-800 mx-2"></div>
@@ -4287,13 +4469,23 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     >
                                                         <Keyboard size={12} /> Map
                                                     </button>
+
+                                                    <button
+                                                        onClick={handleSlicesToMangler}
+                                                        disabled={slicePoints.length === 0}
+                                                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-synthux-red/30 text-synthux-red transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                        onMouseEnter={() => setHelpText("Open these slices in the Mangler: one snippet per slice, to reorder, remove or repitch")}
+                                                        onMouseLeave={() => setHelpText("")}
+                                                    >
+                                                        <Dices size={12} /> Edit in Mangler
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
                                     )}
                                     {/* Pitch Panel */}
                                     {activeTool === 'pitch' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[7rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Semitones</div>
@@ -4369,7 +4561,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                     {/* Stereo Panel */}
                                     {activeTool === 'stereo' && (
-                                        <div className="flex items-center gap-3 min-w-max">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[7rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Channels</div>
@@ -4431,210 +4623,40 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             )}
                         </div>
 
-                        {/* Hover Help Text */}
-
-                        <div className="absolute top-[88px] left-6 text-[10px] text-synthux-blue font-mono tracking-widest uppercase pointer-events-none transition-opacity duration-200">
+                        {/* Hover Help Text: in the flow under the toolbar, so a taller toolbar pushes it down instead of covering it */}
+                        <div className="shrink-0 h-4 mb-1 px-1 leading-4 truncate text-[10px] text-synthux-blue font-mono tracking-widest uppercase pointer-events-none">
                             {helpText || "Ready"}
                         </div>
 
-                        {/* Editor Container - SCROLLABLE WINDOW */}
-                        {/* Parent: Flex-1 to take available space. Centered content. */}
-                        <div className="flex-1 bg-[#111] border-y border-gray-800 relative z-20 flex flex-col justify-center overflow-hidden min-h-[350px] min-w-0 max-w-full">
+                        {/* VIEW TOOLBAR (42s status & zoom) - sits right on top of the wave it controls */}
+                        <div className="relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-[#111] border border-gray-800 rounded-t-xl shrink-0">
 
-                            {/* Scroll Area Wrapper - This handles the overflow-x */}
-                            <div
-                                ref={scrollContainerRef}
-                                className="w-full h-full overflow-x-auto overflow-y-hidden editor-scroll"
-                                style={{ userSelect: 'none' }}
-                                onWheel={handleWheel}
-                                onScroll={handleEditorScroll}
-                            >
-
-                                {/* Fixed Height Content Strip with Ruler */}
-                                <div className="relative my-auto top-1/2 -translate-y-1/2 flex flex-col" style={{ width: contentWidth }}>
-
-                                    {/* Playhead Ruler - Always visible seeking */}
-                                    <PlayheadRuler
-                                        duration={editorDuration}
-                                        currentTime={currentTime}
-                                        points={automationPoints}
-                                        onSeek={(t) => {
-                                            if (wavesurfer.current) wavesurfer.current.seekTo(t / editorDuration);
-                                        }}
-                                        onPointsChange={(pts) => {
-                                            setAutomationPoints(pts);
-                                            handleDirtyChange();
-                                        }}
-                                        className="w-full z-30"
-                                    />
-
-                                    {/* Waveform Area */}
-                                    <div className="relative" style={{ height: 256 }}>
-                                        {/* WaveSurfer Sticky Window */}
-                                        <div
-                                            className="sticky left-0 h-full z-0 overflow-hidden pointer-events-none"
-                                            style={{ width: viewportWidth }}
-                                        >
-                                            {/* dB Scale Background Overlay - Now inside sticky window with viewportWidth */}
-                                            {showDbScale && <DbScale width={viewportWidth} height={256} vZoom={vZoom} />}
-
-                                            <div
-                                                ref={containerRef}
-                                                className="w-full h-full bg-black/20 cursor-text touch-none pointer-events-auto"
-                                                onPointerDown={handleWaveformPointerDown}
-                                                onPointerMove={handleWaveformPointerMove}
-                                                onPointerUp={handleWaveformPointerUp}
-                                                onPointerLeave={handleWaveformPointerUp}
-                                            />
-                                        </div>
-
-                                        {/* Automation Overlay (New) */}
-                                        <AutomationOverlay
-                                            points={automationPoints}
-                                            duration={editorDuration}
-                                            width={contentWidth}
-                                            height={256}
-                                            active={activeTool === 'automation'}
-                                            onPointsChange={(pts) => {
-                                                setAutomationPoints(pts);
-                                                handleDirtyChange();
-                                                // Auto-enable panel if adding points
-                                                if (pts.length > 0 && activeTool !== 'automation') {
-                                                    setActiveTool('automation');
-                                                }
-                                            }}
-                                            onSeek={(t) => {
-                                                if (wavesurfer.current) wavesurfer.current.setTime(t);
-                                            }}
-                                            smooth={smooth}
-                                            snapPoints={slicePoints}
-                                            snapToSlices={snapToSlices}
-                                        />
-
-                                        {/* Cutter Overlay */}
-                                        <CutterOverlay
-                                            regions={cutRegions}
-                                            duration={editorDuration}
-                                            width={contentWidth}
-                                            height={256}
-                                            onRegionsChange={(updated) => {
-                                                setCutRegions(updated);
-                                                handleDirtyChange();
-                                            }}
-                                            active={activeTool === 'cutter'}
-                                            isPreviewing={isPreviewingCut}
-                                            snapPoints={slicePoints}
-                                            snapToSlices={snapToSlices}
-                                        />
-
-                                        {/* Slicer Overlay */}
-                                        <SlicerOverlay
-                                            points={slicePoints}
-                                            duration={editorDuration}
-                                            width={contentWidth}
-                                            height={256}
-                                            maxSlices={100}
-                                            onPointsChange={(points) => {
-                                                setSlicePoints(points);
-                                                handleDirtyChange();
-                                            }}
-                                            active={activeTool === 'slicer'}
-                                            activeSliceIdx={activeSliceIdx}
-                                            onActiveSliceChange={setActiveSliceIdx}
-                                            hoveredMarkerIdx={hoveredMarkerIdx}
-                                            showAlways={showGlobalSlices}
-                                            isLocked={isSlicerLocked}
-                                        />
-
-                                        {/* Pitch Selection Overlay */}
-                                        <PitchOverlay
-                                            regions={pitchRegions}
-                                            duration={isPreviewing && previewDuration ? previewDuration : editorDuration}
-                                            width={contentWidth}
-                                            height={256}
-                                            onRegionsChange={setPitchRegions}
-                                            active={activeTool === 'pitch'}
-                                            currentPitch={pitchSemitones}
-                                            isPreviewing={isPreviewing && activeTool === 'pitch'}
-                                            previewRegions={previewPitchRegions}
-                                        />
-
-                                        {/* Limiter Overlay (New) */}
-                                        <LimiterOverlay
-                                            thresholdDb={limiterThreshold}
-                                            onThresholdChange={(db) => {
-                                                setLimiterThreshold(db);
-                                                handleDirtyChange();
-                                            }}
-                                            width={contentWidth}
-                                            height={256}
-                                            vZoom={vZoom}
-                                            active={activeTool === 'limiter' && limiterMode === 'peak'}
-                                        />
-
-                                        {/* Fade Overlay - PLACED LAST FOR MAX Z-INDEX PRIORITY */}
-                                        {activeTool === 'trim' && editorDuration > 0 && (
-                                            <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
-                                                <FadeOverlay
-                                                    width={contentWidth}
-                                                    height={256}
-                                                    fadeIn={fadeIn}
-                                                    fadeOut={fadeOut}
-                                                    duration={editorDuration}
-                                                    region={regionState}
-                                                    active={activeTool === 'trim'}
-                                                    onFadeChange={(type, duration) => {
-                                                        if (activeTool !== 'trim') return;
-                                                        const rounded = Math.round(duration * 100) / 100;
-                                                        if (type === 'in') setFadeIn(rounded);
-                                                        else setFadeOut(rounded);
-                                                        if (hasTrimmed) setHasTrimmed(false);
-                                                        handleDirtyChange();
-                                                    }}
-                                                    onRegionChange={(start, end) => {
-                                                        if (activeTool !== 'trim') return;
-                                                        const regionList = regions.current?.getRegions();
-                                                        if (regionList && regionList.length > 0) {
-                                                            regionList[0].setOptions({ start, end });
-                                                        }
-                                                        setRegionState({ start, end });
-                                                        if (hasTrimmed) setHasTrimmed(false);
-                                                    }}
-                                                />
+                            {/* Shortcuts (Left corner) + 42s Status */}
+                            <div className="flex-1 flex items-center justify-start gap-4">
+                                <div className="relative group shrink-0">
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-800 focus:text-white focus:outline-none transition-colors"
+                                        aria-label="Keyboard and mouse shortcuts"
+                                    >
+                                        <Keyboard size={14} />
+                                    </button>
+                                    <div className="absolute left-0 top-full mt-2 z-50 hidden group-hover:block group-focus-within:block w-60 p-3 rounded-lg border border-gray-700 bg-[#0d0d0d] shadow-xl shadow-black/60 text-[11px] text-gray-300 pointer-events-none">
+                                        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-500">Shortcuts</div>
+                                        {([
+                                            ['Space', 'Play / pause'],
+                                            ['Ctrl + scroll', 'Horizontal zoom'],
+                                            ['Alt + scroll', 'Wave height'],
+                                            ['Shift + scroll', 'dB zoom'],
+                                            ['Drag bottom edge', 'Wave height'],
+                                        ] as const).map(([keys, what]) => (
+                                            <div key={keys} className="flex justify-between gap-3 py-0.5">
+                                                <kbd className="font-mono text-synthux-yellow">{keys}</kbd>
+                                                <span className="text-gray-400">{what}</span>
                                             </div>
-                                        )}
-
-                                        {/* Loop Overlay */}
-                                        {activeTool === 'loop' && editorDuration > 0 && (
-                                            <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: 256 }}>
-                                                <LoopOverlay
-                                                    width={contentWidth}
-                                                    height={256}
-                                                    duration={editorDuration}
-                                                    region={regionState}
-                                                    crossfade={loopCrossfade}
-                                                    onCrossfadeChange={(val) => {
-                                                        setLoopCrossfade(val);
-                                                        handleDirtyChange();
-                                                    }}
-                                                    active={activeTool === 'loop'}
-                                                    isPreview={isPreviewingLoop}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Center Line Visual */}
-                                        <div className="absolute inset-0 pointer-events-none border-t border-b border-dashed border-gray-700/30 top-1/2 -translate-y-1/2 h-0 z-0"></div>
+                                        ))}
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-
-                        {/* VIEW TOOLBAR (Zoom & 42s) - Fixed Bottom of Editor Area */}
-                        <div className="flex items-center justify-between px-6 py-2 bg-[#111] border-t border-gray-800 shrink-0 gap-4">
-
-                            {/* 42s Status (Left) */}
-                            <div className="flex-1 flex justify-start">
                                 {(() => {
                                     const duration = regionState.end - regionState.start;
                                     const isTrimOverLimit = duration > 42.01;
@@ -4691,19 +4713,19 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             </div>
 
                             {/* Zoom Controls (Right) */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 {/* Vertical Zoom (Visual Gain) */}
                                 <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-900/50 rounded-lg border border-gray-800/50 mr-1" title="Vertical Zoom (Amplitude)">
                                     <Activity size={12} className="text-gray-500" />
                                     <input
                                         type="range"
-                                        min="0.5"
-                                        max="15"
+                                        min={V_ZOOM_MIN}
+                                        max={V_ZOOM_MAX}
                                         step="0.1"
                                         value={vZoom}
                                         onChange={(e) => setVZoom(Number(e.target.value))}
                                         onDoubleClick={() => setVZoom(1.0)}
-                                        onMouseEnter={() => setHelpText("Vertical Zoom / Gain (DBL-Click to Reset)")}
+                                        onMouseEnter={() => setHelpText("Amplitude zoom · Shift+scroll · Double-click to reset")}
                                         onMouseLeave={() => setHelpText("")}
                                         className="w-[150px] h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
                                     />
@@ -4737,18 +4759,250 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     type="range" min={minZoom || 0.1} max="1000" step="0.1" value={zoom}
                                     onChange={(e) => setZoomCentered(Number(e.target.value))}
                                     onDoubleClick={() => setZoomCentered(minZoom)}
+                                    onMouseEnter={() => setHelpText("Horizontal zoom · Ctrl+scroll · Double-click to fit")}
+                                    onMouseLeave={() => setHelpText("")}
                                     className="w-[150px] h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                                 />
                                 <button onClick={handleZoomIn} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white"><ZoomIn size={16} /></button>
                             </div>
                         </div>
 
+                        {/* Editor Container - SCROLLABLE WINDOW, as tall as the wave */}
+                        <div className="shrink-0 bg-[#111] border-x border-gray-800 relative z-20 flex flex-col overflow-hidden min-w-0 max-w-full">
+
+                            {/* Scroll Area Wrapper - This handles the overflow-x */}
+                            <div
+                                ref={scrollContainerRef}
+                                className="w-full overflow-x-auto overflow-y-hidden editor-scroll"
+                                style={{ userSelect: 'none' }}
+                                onScroll={handleEditorScroll}
+                            >
+
+                                {/* Fixed Height Content Strip with Ruler */}
+                                <div className="relative flex flex-col" style={{ width: contentWidth }}>
+
+                                    {/* Playhead Ruler - Always visible seeking */}
+                                    <PlayheadRuler
+                                        duration={editorDuration}
+                                        currentTime={currentTime}
+                                        points={automationPoints}
+                                        onSeek={(t) => {
+                                            if (wavesurfer.current) wavesurfer.current.seekTo(t / editorDuration);
+                                        }}
+                                        onPointsChange={(pts) => {
+                                            setAutomationPoints(pts);
+                                            handleDirtyChange();
+                                        }}
+                                        className="w-full z-30"
+                                    />
+
+                                    {/* Waveform Area */}
+                                    <div className="relative" style={{ height: waveHeight }}>
+                                        {/* WaveSurfer Sticky Window */}
+                                        <div
+                                            className="sticky left-0 h-full z-0 overflow-hidden pointer-events-none"
+                                            style={{ width: viewportWidth }}
+                                        >
+                                            {/* dB Scale Background Overlay - Now inside sticky window with viewportWidth */}
+                                            {showDbScale && <DbScale width={viewportWidth} height={waveHeight} vZoom={vZoom} />}
+
+                                            <div
+                                                ref={containerRef}
+                                                className="w-full h-full bg-black/20 cursor-text touch-none pointer-events-auto"
+                                                onPointerDown={handleWaveformPointerDown}
+                                                onPointerMove={handleWaveformPointerMove}
+                                                onPointerUp={handleWaveformPointerUp}
+                                                onPointerLeave={handleWaveformPointerUp}
+                                            />
+                                        </div>
+
+                                        {/* Automation Overlay (New) */}
+                                        <AutomationOverlay
+                                            points={automationPoints}
+                                            duration={editorDuration}
+                                            width={contentWidth}
+                                            height={waveHeight}
+                                            active={activeTool === 'automation'}
+                                            onPointsChange={(pts) => {
+                                                setAutomationPoints(pts);
+                                                handleDirtyChange();
+                                                // Auto-enable panel if adding points
+                                                if (pts.length > 0 && activeTool !== 'automation') {
+                                                    setActiveTool('automation');
+                                                }
+                                            }}
+                                            onSeek={(t) => {
+                                                if (wavesurfer.current) wavesurfer.current.setTime(t);
+                                            }}
+                                            smooth={smooth}
+                                            snapPoints={slicePoints}
+                                            snapToSlices={snapToSlices}
+                                        />
+
+                                        {/* Cutter Overlay */}
+                                        <CutterOverlay
+                                            regions={cutRegions}
+                                            duration={editorDuration}
+                                            width={contentWidth}
+                                            height={waveHeight}
+                                            onRegionsChange={(updated) => {
+                                                setCutRegions(updated);
+                                                handleDirtyChange();
+                                            }}
+                                            active={activeTool === 'cutter'}
+                                            isPreviewing={isPreviewingCut}
+                                            snapPoints={slicePoints}
+                                            snapToSlices={snapToSlices}
+                                        />
+
+                                        {/* Slicer Overlay */}
+                                        {/* While the Mangler has a take loaded, its cue points (read-only) instead of the file's slices */}
+                                        {activeTool === 'mangle' && mangleTake ? (
+                                            <SlicerOverlay
+                                                points={mangleTake.cues}
+                                                duration={editorDuration}
+                                                width={contentWidth}
+                                                height={waveHeight}
+                                                maxSlices={255}
+                                                onPointsChange={() => { }}
+                                                active={false}
+                                                showAlways
+                                                isLocked
+                                            />
+                                        ) : (
+                                            <SlicerOverlay
+                                                points={slicePoints}
+                                                duration={editorDuration}
+                                                width={contentWidth}
+                                                height={waveHeight}
+                                                maxSlices={100}
+                                                onPointsChange={(points) => {
+                                                    setSlicePoints(points);
+                                                    handleDirtyChange();
+                                                }}
+                                                active={activeTool === 'slicer'}
+                                                activeSliceIdx={activeSliceIdx}
+                                                onActiveSliceChange={setActiveSliceIdx}
+                                                hoveredMarkerIdx={hoveredMarkerIdx}
+                                                showAlways={showGlobalSlices}
+                                                isLocked={isSlicerLocked}
+                                            />
+                                        )}
+
+                                        {/* The snippet hovered in the Mangler's list */}
+                                        {activeTool === 'mangle' && mangleTake && waveHighlight && editorDuration > 0 && (
+                                            <div
+                                                className="absolute top-0 bottom-0 z-40 pointer-events-none bg-white/10 border-x border-white/50"
+                                                style={{
+                                                    left: (waveHighlight[0] / editorDuration) * contentWidth,
+                                                    width: Math.max(1, ((waveHighlight[1] - waveHighlight[0]) / editorDuration) * contentWidth),
+                                                }}
+                                            />
+                                        )}
+
+                                        {/* Pitch Selection Overlay */}
+                                        <PitchOverlay
+                                            regions={pitchRegions}
+                                            duration={isPreviewing && previewDuration ? previewDuration : editorDuration}
+                                            width={contentWidth}
+                                            height={waveHeight}
+                                            onRegionsChange={setPitchRegions}
+                                            active={activeTool === 'pitch'}
+                                            currentPitch={pitchSemitones}
+                                            isPreviewing={isPreviewing && activeTool === 'pitch'}
+                                            previewRegions={previewPitchRegions}
+                                        />
+
+                                        {/* Limiter Overlay (New) */}
+                                        <LimiterOverlay
+                                            thresholdDb={limiterThreshold}
+                                            onThresholdChange={(db) => {
+                                                setLimiterThreshold(db);
+                                                handleDirtyChange();
+                                            }}
+                                            width={contentWidth}
+                                            height={waveHeight}
+                                            vZoom={vZoom}
+                                            active={activeTool === 'limiter' && limiterMode === 'peak'}
+                                        />
+
+                                        {/* Fade Overlay - PLACED LAST FOR MAX Z-INDEX PRIORITY */}
+                                        {activeTool === 'trim' && editorDuration > 0 && (
+                                            <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: waveHeight }}>
+                                                <FadeOverlay
+                                                    width={contentWidth}
+                                                    height={waveHeight}
+                                                    fadeIn={fadeIn}
+                                                    fadeOut={fadeOut}
+                                                    duration={editorDuration}
+                                                    region={regionState}
+                                                    active={activeTool === 'trim'}
+                                                    onFadeChange={(type, duration) => {
+                                                        if (activeTool !== 'trim') return;
+                                                        const rounded = Math.round(duration * 100) / 100;
+                                                        if (type === 'in') setFadeIn(rounded);
+                                                        else setFadeOut(rounded);
+                                                        if (hasTrimmed) setHasTrimmed(false);
+                                                        handleDirtyChange();
+                                                    }}
+                                                    onRegionChange={(start, end) => {
+                                                        if (activeTool !== 'trim') return;
+                                                        const regionList = regions.current?.getRegions();
+                                                        if (regionList && regionList.length > 0) {
+                                                            regionList[0].setOptions({ start, end });
+                                                        }
+                                                        setRegionState({ start, end });
+                                                        if (hasTrimmed) setHasTrimmed(false);
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Loop Overlay */}
+                                        {activeTool === 'loop' && editorDuration > 0 && (
+                                            <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: waveHeight }}>
+                                                <LoopOverlay
+                                                    width={contentWidth}
+                                                    height={waveHeight}
+                                                    duration={editorDuration}
+                                                    region={regionState}
+                                                    crossfade={loopCrossfade}
+                                                    onCrossfadeChange={(val) => {
+                                                        setLoopCrossfade(val);
+                                                        handleDirtyChange();
+                                                    }}
+                                                    active={activeTool === 'loop'}
+                                                    isPreview={isPreviewingLoop}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Center Line Visual */}
+                                        <div className="absolute inset-0 pointer-events-none border-t border-b border-dashed border-gray-700/30 top-1/2 -translate-y-1/2 h-0 z-0"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Resize grip: drag the wave's bottom edge (Alt+scroll does the same) */}
+                        <div
+                            onPointerDown={handleWaveResizeStart}
+                            onDoubleClick={() => setWaveHeight(WAVE_HEIGHT_DEFAULT)}
+                            onMouseEnter={() => setHelpText("Drag to resize the wave · Alt+scroll · Double-click to reset")}
+                            onMouseLeave={() => setHelpText("")}
+                            className="shrink-0 h-3 flex items-center justify-center bg-[#111] border border-t-0 border-gray-800 rounded-b-xl cursor-ns-resize group touch-none"
+                            title={`Wave height ${waveHeight}px`}
+                        >
+                            <div className="w-10 h-1 rounded-full bg-gray-700 group-hover:bg-synthux-blue transition-colors" />
+                        </div>
+                        </div>{/* /scrolling body */}
+
                         {/* Playback Controls - FIXED at bottom (outside scroll) */}
                         <div className="flex flex-col shrink-0 border-t border-gray-800 bg-[#1a1a1a] z-50 transition-all duration-200">
 
 
 
-                            <div className="flex justify-center gap-4 pb-4 pt-2">
+                            <div className="flex flex-wrap justify-center gap-4 px-6 pb-4 pt-3">
                                 <button
                                     onClick={() => {
                                         const newLooping = !isLooping;
@@ -4892,7 +5146,6 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     : transportActions}
                             </div>
                         </div>
-                    </div>
                 </div>
                 </div>{/* /the two columns */}
             </div>

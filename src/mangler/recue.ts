@@ -24,14 +24,15 @@ export const snippetCues = (snippets: readonly SnippetInfo[], totalFrames: numbe
     snippets.map(s => s.outStart + (s.xfade >> 1)).filter(f => f < totalFrames).slice(0, MAX_CUE_POINTS);
 
 /**
- * Cue points at the attacks in `signal`, always starting at 0, at most 255.
- * Over the limit, the weakest attacks go first.
+ * Cue points at the attacks in `signal`, always starting at 0, at most `maxCues`
+ * (255 by default). Over the limit, the weakest attacks go first.
  */
-export function transientCues(signal: Stereo, sampleRate: number, level: CueLevel): number[] {
+export function transientCues(signal: Stereo, sampleRate: number, level: CueLevel, maxCues = MAX_CUE_POINTS): number[] {
+    const limit = Math.max(1, Math.min(MAX_CUE_POINTS, Math.round(maxCues)));
     const pick = (sensitivity: number, minGapMs: number) => {
         const onsets = detectOnsets(signal, sampleRate, { sensitivity, minGapMs });
-        const strongest = onsets.length > MAX_CUE_POINTS - 1
-            ? [...onsets].sort((a, b) => b.strength - a.strength).slice(0, MAX_CUE_POINTS - 1)
+        const strongest = onsets.length > limit - 1
+            ? [...onsets].sort((a, b) => b.strength - a.strength).slice(0, limit - 1)
             : onsets;
         const minFirst = Math.round(sampleRate * 0.02);
         const frames = strongest.map(o => o.frame).filter(f => f >= minFirst).sort((a, b) => a - b);
@@ -43,7 +44,7 @@ export function transientCues(signal: Stereo, sampleRate: number, level: CueLeve
     // Auto: normal, then less sensitive while there are far more hits than cue points.
     let sensitivity = SENSITIVITY.normal;
     let result = pick(sensitivity, 60);
-    while (result.count > MAX_CUE_POINTS * 1.5 && sensitivity > 0.05) {
+    while (result.count > limit * 1.5 && sensitivity > 0.05) {
         sensitivity -= 0.15;
         result = pick(sensitivity, 60);
     }

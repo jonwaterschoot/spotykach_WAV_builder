@@ -40,7 +40,7 @@ const THUMB = `appearance-none bg-transparent pointer-events-none
 
 interface FieldProps {
     label: string;
-    readout: string;
+    readout: React.ReactNode;
     hint?: string;
     children: React.ReactNode;
 }
@@ -49,7 +49,9 @@ const Field: React.FC<FieldProps> = ({ label, readout, hint, children }) => (
     <div className="space-y-1.5" title={hint}>
         <div className="flex items-baseline justify-between gap-2 text-[11px]">
             <span className="text-gray-400">{label}</span>
-            <span className="font-mono text-gray-200 tabular-nums">{readout}</span>
+            {typeof readout === 'string'
+                ? <span className="font-mono text-gray-200 tabular-nums">{readout}</span>
+                : readout}
         </div>
         {children}
     </div>
@@ -66,17 +68,19 @@ interface RangeSliderProps {
     scale?: Scale;
     step?: number;
     hint?: string;
+    /** Replaces the text readout, e.g. with editable fields. */
+    readout?: React.ReactNode;
 }
 
 export const RangeSlider: React.FC<RangeSliderProps> = ({
-    label, min, max, low, high, onChange, format, scale = 'linear', step, hint,
+    label, min, max, low, high, onChange, format, scale = 'linear', step, hint, readout,
 }) => {
     const lowPos = toPosition(low, min, max, scale);
     const highPos = toPosition(high, min, max, scale);
     const value = (pos: number) => Math.min(max, Math.max(min, fromPosition(pos, min, max, scale, step)));
 
     return (
-        <Field label={label} readout={low === high ? format(low) : `${format(low)} – ${format(high)}`} hint={hint}>
+        <Field label={label} readout={readout ?? (low === high ? format(low) : `${format(low)} – ${format(high)}`)} hint={hint}>
             <div className="relative h-4">
                 <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-white/10" />
                 <div
@@ -108,11 +112,13 @@ interface SliderProps {
     step?: number;
     hint?: string;
     disabled?: boolean;
+    /** Replaces the text readout, e.g. with an editable field. */
+    readout?: React.ReactNode;
 }
 
-export const Slider: React.FC<SliderProps> = ({ label, min, max, value, onChange, format, step = 1, hint, disabled }) => (
+export const Slider: React.FC<SliderProps> = ({ label, min, max, value, onChange, format, step = 1, hint, disabled, readout }) => (
     <div className={disabled ? 'opacity-40' : undefined}>
-        <Field label={label} readout={format(value)} hint={hint}>
+        <Field label={label} readout={readout ?? format(value)} hint={hint}>
             <input
                 type="range" min={min} max={max} step={step} value={value} disabled={disabled} aria-label={label}
                 onChange={e => onChange(Number(e.target.value))}
