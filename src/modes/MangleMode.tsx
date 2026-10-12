@@ -1893,7 +1893,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                   userLibrary={userLibrary}
                   onRemoteBulkImport={async (samples, _target, origin, license) => {
                     for (const sample of samples) {
-                      try { await addFromUrl(sample.url, sample.name, origin, license, sample.path); } catch { /* next */ }
+                      try { await addFromUrl(sample.url, sample.name, sample.origin || origin, sample.license ?? license, sample.path); } catch { /* next */ }
                     }
                   }}
                   onImportToPool={async (files) => {

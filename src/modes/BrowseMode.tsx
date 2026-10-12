@@ -477,13 +477,14 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   }, []);
 
   const addManyToPool = useCallback(async (
-    samples: { url: string, name: string, path?: string }[],
+    samples: { url: string, name: string, path?: string, origin?: string, license?: string }[],
     origin?: string,
     license?: string,
   ) => {
     for (const sample of samples) {
       try {
-        await addToPool(sample.url, sample.name, origin, license, sample.path);
+        // An online sound brings its own; a pack's samples share the pack's.
+        await addToPool(sample.url, sample.name, sample.origin || origin, sample.license ?? license, sample.path);
       } catch {
         // One bad sample shouldn't abandon the rest of the selection.
       }

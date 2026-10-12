@@ -4279,7 +4279,7 @@ function App({ onExitToHub }: AppProps) {
 
   // Generalized Bulk Import Handler for both Remote (URL) and Local (File) samples
   const handleBulkSampleImport = async (
-    items: { url?: string; file?: File; name: string }[],
+    items: { url?: string; file?: File; name: string; origin?: string; license?: string }[],
     target: 'pool' | 'slots' | TapeColor,
     origin?: string,
     license?: string
@@ -4327,8 +4327,8 @@ function App({ onExitToHub }: AppProps) {
             versions: [version],
             currentVersionId: versionId,
             isParked: true, // Start as parked, will unpark if assigned to slot
-            origin: origin || (item.file ? 'Local Folder' : 'Sample Pack'),
-            license,
+            origin: item.origin || origin || (item.file ? 'Local Folder' : 'Sample Pack'),
+            license: item.license ?? license,
             sourceSamplePath: item.url
           };
 

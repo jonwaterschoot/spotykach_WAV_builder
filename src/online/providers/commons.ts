@@ -83,6 +83,10 @@ export const commons: OnlineProvider = {
             const ext = (v.url.split('?')[0].split('.').pop() || '').toLowerCase();
             if (SKIP_FORMATS.has(ext) || !v.mime.startsWith('audio') && v.mime !== 'application/ogg') continue;
             if (query.maxSeconds && v.duration && v.duration > query.maxSeconds) continue;
+            // Some MP3s carry no duration. Two minutes of 48 kHz 24-bit stereo WAV is
+            // 35 MB, so anything past 40 MB is longer than the filter whatever it is
+            // (a 200 MB launch broadcast turned up under "≤ 2 min").
+            if (query.maxSeconds && !v.duration && v.size > 40 * 1024 * 1024) continue;
             const license = fromCommons(meta(v, 'License'), meta(v, 'LicenseShortName'), meta(v, 'LicenseUrl'));
             if (!license || !query.licenses.includes(license.filter)) continue;
             const file = playable(v);

@@ -37,7 +37,11 @@ Things the live tests changed from the plan below:
 
 Verified in Chrome against the dev server: search across all four keyless archives, preview, add to the Browse pool, expand an Archive item and add a track to the mangle pool, and generate a batch from online sources.
 
-Not done yet: multi-select and drag for online rows (one row at a time for now), and everything under "Later".
+Multi-select (added the same day): rows tick like pack rows (click, shift-click a range, "Select all" per archive), and the browser's bulk bar and drag-to-pool take them. Each sound is resolved at import and keeps its own origin and license, so `onRemoteBulkImport` items may now carry `origin`/`license` of their own, which all three hosts prefer over the batch's. Sounds over the size cap or without a playable file are skipped and named in a note. An Archive item is a folder and has no box; its opened tracks do.
+
+Known gap: NASA hits have no duration until their file is fetched, so the length filter can't hold them back; a 30-minute broadcast can be added under "≤ 2 min".
+
+Not done yet: everything under "Later".
 
 ## What was checked (Oct 12, 2026)
 

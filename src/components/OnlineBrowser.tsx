@@ -5,7 +5,10 @@ import {
     RateLimitError, createBudget, dedupeKey,
     type LicenseFilter, type MaxLength, type OnlineHit, type OnlineQuery, type ProviderId,
 } from '../online';
+import { MAX_BYTES, isTooBig, resolveHit, type PlayableHit } from '../online/playable';
 import { appStorage } from '../utils/storageNamespace';
+
+export type { PlayableHit };
 
 /**
  * The Online source of the sample browser: one search over open audio archives
@@ -15,9 +18,6 @@ import { appStorage } from '../utils/storageNamespace';
  * The browser owns the player and the import, so this only finds sounds and hands
  * them over with a playable URL. Plan: docs/sample_mangler/online-sources-plan.md.
  */
-
-/** A hit with a URL settled, ready for the player or the host's import. */
-export type PlayableHit = OnlineHit & { url: string };
 
 interface OnlineBrowserProps {
     playingKey: string | null;
@@ -33,10 +33,26 @@ interface OnlineBrowserProps {
     onPlay: (hit: PlayableHit) => void;
     onAdd: (hit: PlayableHit) => Promise<void>;
     onEdit?: (hit: PlayableHit) => Promise<void>;
+    /**
+     * Multi-select, owned by the browser so its bulk bar and drag serve online rows
+     * the same as pack rows. `orderedKeys` is every selectable row in view, in order,
+     * for shift-click ranges.
+     */
+    selectedKeys: Set<string>;
+    onToggleSelect: (key: string, orderedKeys: string[], e: React.MouseEvent) => void;
+    onSelectMany: (keys: string[], select: boolean) => void;
+    /** Every selectable hit on screen, so the browser can import a selection by key. */
+    onHitsShown: (hits: OnlineHit[]) => void;
+    /** A new search: a selection of the old list's rows means nothing any more. */
+    onNewSearch: () => void;
+    /** Drag a row (or the selection) onto the host's pool; absent where there is no target. */
+    dragProps?: (hit: OnlineHit) => {
+        draggable: boolean;
+        onDragStart: (e: React.DragEvent) => void;
+        onDragEnd: () => void;
+        title?: string;
+    };
 }
-
-/** Bigger than this isn't downloaded: a 42 s sampler has no use for a 90-minute WAV. */
-const MAX_BYTES = 60 * 1024 * 1024;
 
 const LENGTHS: { value: MaxLength; label: string }[] = [
     { value: 30, label: '≤ 30 s' },
@@ -95,8 +111,7 @@ const session: {
     text: string;
     results: Partial<Record<ProviderId, ProviderResults>>;
     expanded: Record<string, Expansion>;
-    resolved: Record<string, string>;
-} = { query: null, text: '', results: {}, expanded: {}, resolved: {} };
+} = { query: null, text: '', results: {}, expanded: {} };
 
 const budget = createBudget({
     getItem: k => appStorage.getItem(k),
@@ -114,22 +129,10 @@ const formatDuration = (sec?: number) => {
 const formatBytes = (n?: number) =>
     !n ? null : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1)} MB` : `${Math.ceil(n / 1024)} kB`;
 
-/**
- * Commons' Ogg through Openverse arrives as the original. Where this browser can't
- * play Ogg (Safari), take Commons' own MP3 transcode of it instead.
- */
-const canPlayOgg = (() => {
-    try { return typeof Audio !== 'undefined' && new Audio().canPlayType('audio/ogg; codecs="vorbis"') !== ''; } catch { return false; }
-})();
-const browserUrl = (url: string) => {
-    if (canPlayOgg) return url;
-    const m = /^(https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/)(?!transcoded\/)(.+\/([^/]+\.(?:ogg|oga|ogx|opus)))$/i.exec(url);
-    return m ? `${m[1]}transcoded/${m[2]}/${m[3]}.mp3` : url;
-};
-
 export const OnlineBrowser = ({
     playingKey, isPreviewPlaying, busyKey, isAdded, locatedKey, onLocatedSeen,
     addLabel, addedLabel, onPlay, onAdd, onEdit,
+    selectedKeys, onToggleSelect, onSelectMany, onHitsShown, onNewSearch, dragProps,
 }: OnlineBrowserProps) => {
     const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
     const [text, setText] = useState(session.text);
@@ -209,21 +212,8 @@ export const OnlineBrowser = ({
         setResults({});
         setExpanded({});
         setRowError(null);
+        onNewSearch();
         activeProviders.forEach(p => runProvider(p.id, q, 1));
-    };
-
-    /** A settled URL for a hit: its own, or the first file `expand` lists. */
-    const resolve = async (hit: OnlineHit): Promise<PlayableHit | null> => {
-        if (hit.url) return { ...hit, url: browserUrl(hit.url) };
-        const cached = session.resolved[hit.key];
-        if (cached) return { ...hit, url: cached };
-        const provider = PROVIDERS_BY_ID[hit.provider];
-        if (!provider.expand) return null;
-        const files = await provider.expand(hit, {});
-        const first = files.find(f => f.url);
-        if (!first?.url) return null;
-        session.resolved[hit.key] = first.url;
-        return { ...hit, url: first.url, format: first.format, bytes: first.bytes, durationSec: first.durationSec };
     };
 
     const toggleExpand = async (hit: OnlineHit) => {
@@ -255,12 +245,12 @@ export const OnlineBrowser = ({
     const withResolved = async (hit: OnlineHit, act: (h: PlayableHit) => void | Promise<void>, checkSize: boolean) => {
         setRowError(null);
         try {
-            const playable = await resolve(hit);
+            const playable = await resolveHit(hit);
             if (!playable) {
                 setRowError({ key: hit.key, message: 'No playable file found for this one.' });
                 return;
             }
-            if (checkSize && playable.bytes && playable.bytes > MAX_BYTES) {
+            if (checkSize && isTooBig(playable)) {
                 setRowError({ key: hit.key, message: `${formatBytes(playable.bytes)} is too big to bring in (limit ${formatBytes(MAX_BYTES)}). Preview it, or pick a shorter track.` });
                 return;
             }
@@ -288,6 +278,30 @@ export const OnlineBrowser = ({
         }
         return out;
     }, [results]);
+
+    /**
+     * What can be ticked, per archive, in screen order: every row with a file of its
+     * own or one it resolves to, and an open Archive item's tracks right under it.
+     * The item itself is a folder, not a sound, so it has no box.
+     */
+    const selectable = useMemo(() => {
+        const out: Partial<Record<ProviderId, OnlineHit[]>> = {};
+        for (const p of PROVIDERS) {
+            const hits = visible[p.id];
+            if (!hits) continue;
+            out[p.id] = hits.flatMap(h => (h.expandable ? expanded[h.key]?.files ?? [] : [h]));
+        }
+        return out;
+    }, [visible, expanded]);
+
+    const orderedKeys = useMemo(
+        () => PROVIDERS.flatMap(p => (selectable[p.id] ?? []).map(h => h.key)),
+        [selectable],
+    );
+
+    useEffect(() => {
+        onHitsShown(PROVIDERS.flatMap(p => selectable[p.id] ?? []));
+    }, [selectable, onHitsShown]);
 
     const toggleIn = <T,>(list: T[], v: T): T[] => (list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
 
@@ -317,6 +331,9 @@ export const OnlineBrowser = ({
         const added = isAdded(hit.key);
         const located = locatedKey === hit.key;
         const exp = expanded[hit.key];
+        const canSelect = !hit.expandable;
+        const isSelected = canSelect && selectedKeys.has(hit.key);
+        const drag = canSelect ? dragProps?.(hit) : undefined;
         const meta = [
             hit.author,
             formatDuration(hit.durationSec),
@@ -328,11 +345,25 @@ export const OnlineBrowser = ({
             <div key={hit.key}>
                 <div
                     data-sample-path={hit.key}
-                    onClick={() => { if (located) onLocatedSeen(); }}
-                    className={`grid grid-cols-[32px_1fr_auto] gap-2 sm:gap-3 items-center px-2 sm:px-4 py-2 hover:bg-gray-800/80 transition-all group border rounded-md
-                        ${nested ? 'pl-6 sm:pl-10' : ''} ${located ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
+                    {...drag}
+                    // Same as a pack row: a click anywhere but a button ticks it.
+                    onClick={(e) => {
+                        if (located) onLocatedSeen();
+                        if (canSelect) onToggleSelect(hit.key, orderedKeys, e);
+                        else toggleExpand(hit);
+                    }}
+                    className={`grid grid-cols-[22px_32px_1fr_auto] sm:grid-cols-[30px_40px_1fr_auto] gap-2 sm:gap-3 items-center px-2 sm:px-4 py-2 hover:bg-gray-800/80 transition-all group border rounded-md cursor-pointer
+                        ${nested ? 'pl-6 sm:pl-10' : ''} ${located || isSelected ? 'border-synthux-orange bg-synthux-orange/10 relative z-10' : 'border-transparent'}`}
                     style={located ? { animation: 'locatePulse 2s ease-in-out infinite' } : undefined}
                 >
+                    <div className="flex items-center justify-center">
+                        {canSelect && (
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-synthux-orange border-synthux-orange shadow-[0_0_8px_rgba(249,115,22,0.3)]' : 'bg-black/40 border-gray-700 group-hover:border-gray-500'}`}>
+                                {isSelected && <Check size={10} className="text-black stroke-[3]" />}
+                            </div>
+                        )}
+                    </div>
+
                     <button
                         onClick={(e) => { e.stopPropagation(); withResolved(hit, onPlay, false); }}
                         className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full transition-all ${isPlaying && isPreviewPlaying ? 'text-black bg-synthux-yellow scale-110 shadow-lg' : 'text-gray-400 hover:text-white bg-black hover:bg-gray-700 border border-gray-700'}`}
@@ -590,6 +621,9 @@ export const OnlineBrowser = ({
                     const r = results[p.id]!;
                     const hits = visible[p.id] ?? [];
                     const hidden = r.hits.length - hits.length;
+                    const keys = (selectable[p.id] ?? []).map(h => h.key);
+                    const picked = keys.filter(k => selectedKeys.has(k)).length;
+                    const allPicked = keys.length > 0 && picked === keys.length;
                     return (
                         <div key={p.id} className="bg-black/20 rounded-lg overflow-hidden border border-white/5">
                             <h3 className="sticky top-0 z-20 bg-[#151515] text-[10px] font-bold text-gray-400 uppercase tracking-widest py-2 px-4 shadow-sm border-b border-gray-800 flex items-center justify-between gap-2">
@@ -597,10 +631,26 @@ export const OnlineBrowser = ({
                                     {p.label}
                                     {r.loading && <Loader size={11} className="animate-spin text-synthux-blue" />}
                                 </span>
-                                <span className="text-[9px] opacity-50 font-mono lowercase">
-                                    {hits.length} shown
-                                    {typeof r.total === 'number' && ` of ${r.total.toLocaleString()} found`}
-                                    {hidden > 0 && ` · ${hidden} already listed above`}
+                                <span className="flex items-center gap-2">
+                                    <span className="text-[9px] opacity-50 font-mono lowercase">
+                                        {hits.length} shown
+                                        {typeof r.total === 'number' && ` of ${r.total.toLocaleString()} found`}
+                                        {hidden > 0 && ` · ${hidden} already listed above`}
+                                    </span>
+                                    {keys.length > 0 && (
+                                        <button
+                                            onClick={() => onSelectMany(keys, !allPicked)}
+                                            title={p.id === 'archive' ? 'Ticks the tracks of the items you have opened' : undefined}
+                                            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all border ${allPicked
+                                                ? 'bg-synthux-orange/20 border-synthux-orange/40 text-synthux-orange'
+                                                : 'bg-black/40 border-white/10 text-gray-500 hover:text-gray-300'}`}
+                                        >
+                                            <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center transition-colors ${allPicked ? 'bg-synthux-orange border-synthux-orange' : 'bg-black/60 border-gray-700'}`}>
+                                                {allPicked ? <Check size={8} className="text-black stroke-[4]" /> : picked > 0 ? <span className="w-1.5 h-0.5 bg-gray-500 rounded-full" /> : null}
+                                            </span>
+                                            <span className="uppercase tracking-widest text-[8px]">{allPicked ? 'Deselect all' : 'Select all'}</span>
+                                        </button>
+                                    )}
                                 </span>
                             </h3>
                             {r.error && (
