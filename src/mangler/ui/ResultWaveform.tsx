@@ -233,7 +233,9 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                 <div style={{ width: `${z * 100}%`, height: 1 }} aria-hidden />
                 <canvas
                     ref={canvasRef}
-                    style={{ height: h, width: view.width || '100%' }}
+                    // 100%, not the measured px: a fixed width would hold the view open
+                    // and it could never shrink with the window. The bitmap follows `view`.
+                    style={{ height: h, width: '100%' }}
                     className={`sticky left-0 top-0 block -mt-px touch-none ${crop ? 'cursor-ew-resize' : onPick ? 'cursor-pointer' : ''}`}
                     onPointerDown={e => {
                         if (!crop || !onCropChange) return;

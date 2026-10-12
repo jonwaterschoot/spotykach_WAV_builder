@@ -221,6 +221,7 @@ Start with the engine and a bare screen, so the sound can be judged before any U
 - [x] New Studio project from one result or all kept ones (added Oct 12): `buildDetachedState` + `createProjectFromState`, the same name → workspace → created steps as Browse's "Import into a project"
 - [x] `FileRecord.pendingDiskWrite`: Studio's library sync used to mark a record that isn't in `User_Library/` as missing, and then the autosave skipped it, so a library save from the mangler would never reach the folder. Flagged records are written instead, and the flag is cleared once the file is on disk
 - [ ] Later: `BroadcastChannel` merge in Studio so both can be open
+- [x] Mangler inside Studio (added Oct 12): `MangleMode` takes a `studio` link and opens as an overlay over the project. Two ways in: a smaller third option in the empty-slot choice modal, and a "Sample Mangler" button at the foot of the sample browser's source column. On open the source pool is filled with the project's files (slots first, then the pool) and every other source is switched off, not removed; the "Project" button repeats it. Pool entries are keyed `project:<fileId>:<versionId>`, so a file edited in Studio comes in again as a new source. Results go straight into the project ("Add to project"), the first one into the empty slot the mangler was opened from. Library, Browse pool and New project are hidden there: a library save from inside Studio would be overwritten by Studio's own autosave
 
 **Phase 5 — Refinement**
 
@@ -265,6 +266,10 @@ All edits go through one engine mechanism: `render(..., { fixed })` renders posi
 **Added Oct 12 — Fill by count**
 
 - [x] *Fill: By length / By count*. By count makes exactly N snippets (1–128 on the slider, 255 allowed) and the file ends where the last one does, so variations differ in length; the slider shows a typical length. Over 42 s it stops there with fewer snippets and the card says so. With *Loop the file* the tail folds into the start. Deleting a snippet in count mode shortens the file instead of refilling the end. Length mode renders exactly as before
+
+**Added Oct 12 — Guide**
+
+- [x] A short interactive guide (`src/mangler/ui/ManglerTour.tsx`) that spotlights the columns in order of operations: fill the pool, set the ranges, generate, listen/keep/refine, save. Opens by itself on the first visit (`mangler_tour_seen`), and again from *Guide* in the header. Arrow keys or Enter step, Escape closes. Targets are `data-tour` attributes in `MangleMode`
 
 ## Open questions and risks
 

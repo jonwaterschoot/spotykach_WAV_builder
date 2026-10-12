@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, Dices, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { PresetManifestEntry, SamplePack } from '../data/samplePacks';
 import { resolveAssetPath, toSampleKey } from '../utils/assetUtils';
@@ -117,6 +117,11 @@ interface SampleBrowserProps {
      * not pack samples, so it doesn't subscribe.
      */
     onSampleDrag?: (drag: { count: number; commit: () => Promise<void> } | null) => void;
+    /**
+     * Studio only: opens the Sample Mangler over the project, its pool filled with
+     * the project's files. Drawn at the foot of the source column; absent, it isn't.
+     */
+    onOpenMangler?: () => void;
 }
 
 /**
@@ -163,6 +168,7 @@ export const SampleBrowser = ({
     forceStop,
     onOpenPreset,
     onSampleDrag,
+    onOpenMangler,
     addLabel = 'Add to pool',
     addedLabel = 'In pool',
 }: SampleBrowserProps) => {
@@ -1265,6 +1271,26 @@ export const SampleBrowser = ({
                         </div>
 
                     </div>
+
+                    {/* Outside the scroll, so it is there whichever source is open. */}
+                    {onOpenMangler && (
+                        <div className="shrink-0 p-3 border-t border-gray-800">
+                            <button
+                                onClick={onOpenMangler}
+                                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left border border-synthux-red/30
+                                    hover:border-synthux-red/70 hover:bg-synthux-red/10 transition-colors group"
+                                title="Open the Sample Mangler with this project's slot and pool files as its sources"
+                            >
+                                <Dices size={18} className="shrink-0 text-synthux-red" />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-bold text-gray-200 group-hover:text-white">Sample Mangler</span>
+                                    <span className="block text-[10px] text-gray-500 leading-snug">
+                                        New sounds from random snippets of this project's files
+                                    </span>
+                                </span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Main View: Sample List */}

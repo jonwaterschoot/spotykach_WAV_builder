@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Crop as CropIcon, Pause, Pencil, Play, Plus, RefreshCw, Scissors, Star, Trash2, Undo2, Unlock, X, ZoomIn,
+  Briefcase, ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, Plus, RefreshCw, Scissors, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -12,7 +12,7 @@ import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle } from '../utils/storageUtils';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
 import { LEVEL_LABEL, resultLicense, sourceLicense } from '../mangler/license';
-import { addResultsToBrowsePool, resultsAsDetached, saveResultsToLibrary } from '../mangler/save';
+import { addResultsToBrowsePool, resultsAsDetached, resultsAsProjectFiles, saveResultsToLibrary } from '../mangler/save';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
@@ -62,6 +62,7 @@ import {
 } from '../mangler/settings';
 import { RangeSlider, Segmented, Slider, Toggle } from '../mangler/ui/Sliders';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
+import { ManglerTour } from '../mangler/ui/ManglerTour';
 
 const SETTINGS_KEY = 'mangler_settings';
 const PLAY_MODE_KEY = 'mangler_play_mode';
@@ -105,6 +106,8 @@ const loadPlayMode = (): PlayMode => {
   return saved === 'full' || saved === 'fades' || saved === 'cue' ? saved : 'fades';
 };
 const SEED_KEY = 'mangler_seed';
+/** Set once the guide has been seen, so it opens by itself only on the first visit. */
+const TOUR_KEY = 'mangler_tour_seen';
 /** About 230 MB decoded. Above it the batch still runs, with a warning. */
 const POOL_WARN_SECONDS = 600;
 
@@ -173,10 +176,40 @@ interface BatchState {
   decodeTotal: number;
 }
 
+/** One of the open project's files, offered to the source pool. */
+export interface StudioSourceFile {
+  /** FileRecord id and current version id: together they say whether it changed. */
+  fileId: string;
+  versionId: string;
+  name: string;
+  blob: Blob;
+  duration: number;
+  origin?: string;
+  license?: string;
+}
+
+/**
+ * Set when the mangler runs inside Studio, over the open project. Its sources come
+ * from the project's slots and pool, and its results go back into the project, so
+ * the routes that leave (Browse pool, user library, new project) are left out.
+ */
+export interface StudioLink {
+  projectName?: string | null;
+  /** Slots first, in tape order, then the rest of the pool. */
+  files: StudioSourceFile[];
+  /** The empty slot it was opened from, e.g. "Red 3". The next result added goes there. */
+  targetLabel?: string;
+  onAddToProject: (files: FileRecord[]) => void;
+}
+
+/** A pool entry's `sourceSamplePath` when it came from a project file (one version of it). */
+const projectKey = (f: Pick<StudioSourceFile, 'fileId' | 'versionId'>) => `project:${f.fileId}:${f.versionId}`;
+
 interface MangleModeProps {
   onExitToHub: () => void;
   onEnterStudio?: () => void;
   onEnterBrowse?: () => void;
+  studio?: StudioLink;
 }
 
 /** A save waiting on the user: which results, and where to. */
@@ -187,7 +220,7 @@ type PendingSave = { route: 'library' | 'pool'; results: MangleResultEntry[] };
  * into one file of up to 42 s. No project and no folder: the pool and the results
  * live in IndexedDB until a result is saved. See docs/sample_mangler.
  */
-export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStudio, onEnterBrowse }) => {
+export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStudio, onEnterBrowse, studio }) => {
   const [sources, setSources] = useState<MangleSourceEntry[]>([]);
   const [results, setResults] = useState<MangleResultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -198,6 +231,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [dragging, setDragging] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(() => !appStorage.getItem(TOUR_KEY));
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [pooledPrompt, setPooledPrompt] = useState<number | null>(null);
@@ -237,7 +271,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const { toasts, showToast, removeToast } = useToasts();
   const player = useAudioPlayer();
 
-  useEscapeLayer(!pickerOpen, () => {
+  useEscapeLayer(!pickerOpen && !tourOpen, () => {
     onExitToHub();
     return true;
   });
@@ -245,6 +279,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     setPickerOpen(false);
     return true;
   });
+
+  const closeTour = useCallback(() => {
+    appStorage.setItem(TOUR_KEY, '1');
+    setTourOpen(false);
+  }, []);
 
   // The picker shows the user library read-only when there is one; the project
   // flow offers the stored workspace by name. Neither asks for permission here.
@@ -388,8 +427,81 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     deleteMangleSourcesFromDB([id]);
   }, [player]);
 
+  /** The header's delete: every switched-on source, so select-all then delete clears the pool. */
+  const [confirmRemoveEnabled, setConfirmRemoveEnabled] = useState(false);
+  const removeEnabledSources = useCallback(() => {
+    const ids = new Set(sources.filter(s => s.enabled).map(s => s.id));
+    if (ids.size === 0) return;
+    if (player.activeFileId && ids.has(player.activeFileId)) player.stop();
+    setSources(prev => prev.filter(s => !ids.has(s.id)));
+    deleteMangleSourcesFromDB([...ids]);
+    showToast(`${ids.size} source${ids.size === 1 ? '' : 's'} removed from the pool`, 'success');
+  }, [sources, player, showToast]);
+
   const enabledSources = useMemo(() => sources.filter(s => s.enabled), [sources]);
   const enabledSeconds = useMemo(() => enabledSources.reduce((sum, s) => sum + s.duration, 0), [enabledSources]);
+
+  /**
+   * Inside Studio: the project's files into the pool, switched on, and every other
+   * source switched off (not removed, so its parts and the results made from it
+   * survive). A file edited in Studio since it was added comes in as a new source,
+   * and its old version is one of the "others".
+   */
+  const studioFiles = studio?.files;
+  const projectName = studio?.projectName;
+  const fillFromProject = useCallback(async () => {
+    if (!studioFiles) return;
+    if (studioFiles.length === 0) {
+      showToast('The project has no files yet. Add sources with Packs or Files.', 'info');
+      return;
+    }
+    const keys = new Set(studioFiles.map(projectKey));
+    const have = new Set(sources.map(s => s.sourceSamplePath));
+    const now = Date.now();
+    const added: MangleSourceEntry[] = studioFiles
+      .filter(f => !have.has(projectKey(f)))
+      .map((f, i) => ({
+        id: newId(),
+        name: f.name,
+        origin: f.origin || (projectName ? `Project ${projectName}` : 'Project'),
+        license: f.license,
+        sourceSamplePath: projectKey(f),
+        blob: f.blob,
+        duration: f.duration,
+        enabled: true,
+        addedAt: now + i,
+      }));
+    let switchedOff = 0;
+    const changed: MangleSourceEntry[] = [];
+    const kept = sources.map(s => {
+      const enabled = !!s.sourceSamplePath && keys.has(s.sourceSamplePath);
+      if (s.enabled === enabled) return s;
+      if (!enabled) switchedOff++;
+      const next = { ...s, enabled };
+      changed.push(next);
+      return next;
+    });
+    setSources([...kept, ...added]);
+    try {
+      await Promise.all([...changed, ...added].map(putMangleSourceToDB));
+    } catch (e) {
+      console.error(e);
+      showToast('Could not store the project files (storage full?). They are in the pool until a reload.', 'error');
+    }
+    const parts = [
+      added.length ? `${added.length} added` : `all ${studioFiles.length} already in the pool`,
+      switchedOff ? `${switchedOff} other source${switchedOff === 1 ? '' : 's'} switched off` : '',
+    ].filter(Boolean);
+    showToast(`From the project: ${parts.join(', ')}`, 'success');
+  }, [studioFiles, projectName, sources, showToast]);
+
+  // Opening from Studio fills the pool once, as soon as the stored pool has loaded.
+  const autoFilled = useRef(false);
+  useEffect(() => {
+    if (!loaded || !studioFiles || autoFilled.current) return;
+    autoFilled.current = true;
+    fillFromProject();
+  }, [loaded, studioFiles, fillFromProject]);
 
   // ---------------------------------------------------------------------------
   // Batches
@@ -949,6 +1061,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     return ok;
   }, [showToast]);
 
+  /** Saved means worth keeping here too. */
+  const markKept = useCallback((list: MangleResultEntry[]) => {
+    const ids = new Set(list.map(r => r.id));
+    setResults(prev => prev.map(r => (ids.has(r.id) && !r.kept ? { ...r, kept: true } : r)));
+    for (const r of list) if (!r.kept) putMangleResultToDB({ ...r, kept: true }).catch(console.error);
+  }, []);
+
   const requestSave = useCallback((route: PendingSave['route'], list: MangleResultEntry[]) => {
     const ok = savable(list);
     if (ok.length) setPendingSave({ route, results: ok });
@@ -968,15 +1087,27 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           ? `Saved to the user library as ${names[0]}`
           : `${names.length} files saved to the user library`, 'success');
       }
-      // Saved means worth keeping here too.
-      const ids = new Set(list.map(r => r.id));
-      setResults(prev => prev.map(r => (ids.has(r.id) && !r.kept ? { ...r, kept: true } : r)));
-      for (const r of list) if (!r.kept) putMangleResultToDB({ ...r, kept: true }).catch(console.error);
+      markKept(list);
     } catch (e) {
       console.error(e);
       showToast(e instanceof Error ? e.message : 'Could not save', 'error');
     }
-  }, [pendingSave, showToast]);
+  }, [pendingSave, showToast, markKept]);
+
+  /** Inside Studio: straight into the project. The first one fills the slot it was opened from. */
+  const studioTarget = studio?.targetLabel;
+  const onAddToProject = studio?.onAddToProject;
+  const addToProject = useCallback((list: MangleResultEntry[]) => {
+    const ok = savable(list);
+    if (!ok.length || !onAddToProject) return;
+    onAddToProject(resultsAsProjectFiles(ok));
+    markKept(ok);
+    const rest = ok.length - (studioTarget ? 1 : 0);
+    showToast([
+      studioTarget ? `${ok[0].name} is in ${studioTarget}` : '',
+      rest ? `${rest} file${rest === 1 ? '' : 's'} added to the project pool` : '',
+    ].filter(Boolean).join('; '), 'success');
+  }, [savable, onAddToProject, studioTarget, markKept, showToast]);
 
   const downloadResult = useCallback((r: MangleResultEntry) => {
     if (savable([r]).length) downloadBlob(r.blob, `${r.name}.wav`);
@@ -1071,7 +1202,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
             text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
         >
-          <ChevronLeft size={14} /> Hub
+          <ChevronLeft size={14} /> {studio ? 'Studio' : 'Hub'}
         </button>
         <div className="min-w-0 text-center">
           <span className="text-xs font-bold uppercase tracking-[0.2em] text-synthux-red">Sample Mangler</span>
@@ -1079,13 +1210,20 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             Random snippets from your sources, joined into one file of up to 42 s.
           </span>
         </div>
-        <span className="w-16" aria-hidden />
+        <button
+          onClick={() => setTourOpen(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+            text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+          title="A short guide to the order of operations"
+        >
+          <HelpCircle size={14} /> Guide
+        </button>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-[minmax(240px,300px)_minmax(260px,320px)_1fr]">
 
         {/* Source pool */}
-        <section className="min-h-0 flex flex-col border-r border-white/10">
+        <section data-tour="sources" className="min-h-0 flex flex-col border-r border-white/10">
           <div className="shrink-0 px-4 pt-4 pb-2 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer" title="Switch every source on or off">
               <input
@@ -1098,7 +1236,28 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               />
               <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Source pool</h2>
             </label>
+            <button
+              onClick={() => setConfirmRemoveEnabled(true)}
+              disabled={enabledSources.length === 0}
+              className="mr-auto ml-1 p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5 transition-colors
+                disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:bg-transparent"
+              title={enabledSources.length === sources.length
+                ? 'Remove every source from the pool'
+                : `Remove the ${enabledSources.length} switched-on source${enabledSources.length === 1 ? '' : 's'} from the pool`}
+            >
+              <Trash2 size={13} />
+            </button>
             <div className="flex items-center gap-1.5">
+              {studio && (
+                <button
+                  onClick={fillFromProject}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-synthux-red
+                    border border-synthux-red/40 hover:bg-synthux-red/10 transition-colors"
+                  title="Add the project's slot and pool files to the pool, and switch every other source off"
+                >
+                  <Briefcase size={12} /> Project
+                </button>
+              )}
               <button
                 onClick={() => setPickerOpen(true)}
                 className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-white
@@ -1216,7 +1375,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </section>
 
         {/* Settings */}
-        <section className="min-h-0 overflow-y-auto border-r border-white/10 px-4 py-4 space-y-4">
+        <section data-tour="settings" className="min-h-0 overflow-y-auto border-r border-white/10 px-4 py-4 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Settings</h2>
             <select
@@ -1345,9 +1504,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </Group>
         </section>
 
-        {/* Generate + results */}
-        <section className="min-h-0 flex flex-col">
-          <div className="shrink-0 px-4 py-3 border-b border-white/10 flex flex-wrap items-center gap-3">
+        {/* Generate + results (min-w-0: a grid column otherwise never gets narrower than its content) */}
+        <section className="min-h-0 min-w-0 flex flex-col">
+          <div data-tour="generate" className="shrink-0 px-4 py-3 border-b border-white/10 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-400">Seed</span>
               <input
@@ -1415,7 +1574,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             </div>
           )}
 
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+          {/* Cards stop at a readable width on wide screens and shrink with the window. */}
+          <div data-tour="results" className="flex-1 min-h-0 min-w-0 overflow-y-auto p-4 space-y-3 [&>article]:max-w-[1400px]">
             {loaded && results.length === 0 && !batch && (
               <p className="text-sm text-gray-500 text-center mt-16 leading-relaxed">
                 Set the ranges, then Generate. Each variation uses the same settings with its own seed.
@@ -1452,7 +1612,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               const cropping = cropEdit?.id === r.id ? cropEdit : null;
               return (
                 <article key={r.id}
-                  className={`rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
+                  className={`min-w-0 rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
                   <div className="flex items-center gap-2 mb-2">
                     <button
                       onClick={() => togglePlay(r)}
@@ -1503,18 +1663,30 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       className="text-gray-400 hover:text-white">
                       <Download size={15} />
                     </IconButton>
-                    <IconButton title="Save to the Studio user library" onClick={() => requestSave('library', [r])}
-                      disabled={blocked} className="text-gray-400 hover:text-synthux-yellow">
-                      <Library size={15} />
-                    </IconButton>
-                    <IconButton title="Add to the Browse pool" onClick={() => requestSave('pool', [r])}
-                      disabled={blocked} className="text-gray-400 hover:text-synthux-green">
-                      <Layers size={15} />
-                    </IconButton>
-                    <IconButton title="New Studio project with this file" onClick={() => startProject([r])}
-                      disabled={blocked} className="text-gray-400 hover:text-synthux-orange">
-                      <FolderPlus size={15} />
-                    </IconButton>
+                    {studio ? (
+                      <button onClick={() => addToProject([r])} disabled={blocked}
+                        title={studio.targetLabel ? `Put it in slot ${studio.targetLabel}` : 'Add it to the project pool'}
+                        className="shrink-0 h-8 flex items-center gap-1 px-2 rounded-md text-[11px] font-bold text-synthux-orange
+                          border border-synthux-orange/40 hover:bg-synthux-orange/10 transition-colors
+                          disabled:opacity-25 disabled:cursor-not-allowed">
+                        <Plus size={13} /> {studio.targetLabel ?? 'Project'}
+                      </button>
+                    ) : (
+                      <>
+                        <IconButton title="Save to the Studio user library" onClick={() => requestSave('library', [r])}
+                          disabled={blocked} className="text-gray-400 hover:text-synthux-yellow">
+                          <Library size={15} />
+                        </IconButton>
+                        <IconButton title="Add to the Browse pool" onClick={() => requestSave('pool', [r])}
+                          disabled={blocked} className="text-gray-400 hover:text-synthux-green">
+                          <Layers size={15} />
+                        </IconButton>
+                        <IconButton title="New Studio project with this file" onClick={() => startProject([r])}
+                          disabled={blocked} className="text-gray-400 hover:text-synthux-orange">
+                          <FolderPlus size={15} />
+                        </IconButton>
+                      </>
+                    )}
                     <IconButton title="Discard" onClick={() => discard(r.id)} className="text-gray-500 hover:text-synthux-red">
                       <Trash2 size={15} />
                     </IconButton>
@@ -1647,7 +1819,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             })}
           </div>
 
-          <div className="shrink-0 px-4 py-2 border-t border-white/10 flex items-center gap-3 text-[10px] text-gray-500">
+          <div data-tour="save" className="shrink-0 px-4 py-2 border-t border-white/10 flex items-center gap-3 text-[10px] text-gray-500">
             <span>
               {results.length} result{results.length === 1 ? '' : 's'} · {results.filter(r => r.kept).length} kept ·{' '}
               {(resultsBytes / 1024 / 1024).toFixed(0)} MB in browser storage
@@ -1655,15 +1827,23 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             {keptResults.length > 0 && (
               <span className="flex items-center gap-1 ml-2">
                 <span className="text-gray-400">Kept:</span>
-                <FooterButton onClick={() => requestSave('library', keptResults)} icon={<Library size={12} />}>
-                  Save to library
-                </FooterButton>
-                <FooterButton onClick={() => requestSave('pool', keptResults)} icon={<Layers size={12} />}>
-                  Browse pool
-                </FooterButton>
-                <FooterButton onClick={() => startProject(keptResults)} icon={<FolderPlus size={12} />}>
-                  New project
-                </FooterButton>
+                {studio ? (
+                  <FooterButton onClick={() => addToProject(keptResults)} icon={<Plus size={12} />}>
+                    Add to project
+                  </FooterButton>
+                ) : (
+                  <>
+                    <FooterButton onClick={() => requestSave('library', keptResults)} icon={<Library size={12} />}>
+                      Save to library
+                    </FooterButton>
+                    <FooterButton onClick={() => requestSave('pool', keptResults)} icon={<Layers size={12} />}>
+                      Browse pool
+                    </FooterButton>
+                    <FooterButton onClick={() => startProject(keptResults)} icon={<FolderPlus size={12} />}>
+                      New project
+                    </FooterButton>
+                  </>
+                )}
               </span>
             )}
             {results.some(r => !r.kept) && !busy && (
@@ -1674,6 +1854,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </div>
         </section>
       </div>
+
+      {tourOpen && <ManglerTour onClose={closeTour} />}
 
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-50 border-4 border-dashed border-synthux-red/60 bg-synthux-red/5
@@ -1804,6 +1986,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </span>
         )}
         confirmLabel={pendingSave?.route === 'library' ? 'Save' : 'Add'}
+      />
+
+      <ConfirmModal
+        isOpen={confirmRemoveEnabled}
+        onClose={() => setConfirmRemoveEnabled(false)}
+        onConfirm={() => { setConfirmRemoveEnabled(false); removeEnabledSources(); }}
+        title={enabledSources.length === sources.length ? 'Clear the source pool' : 'Remove the switched-on sources'}
+        message={`${enabledSources.length === sources.length ? `All ${sources.length}` : enabledSources.length} source${enabledSources.length === 1 ? '' : 's'} will be removed from the pool. Results made from them are kept.`}
+        confirmLabel="Remove"
+        isDestructive
       />
 
       <ConfirmModal

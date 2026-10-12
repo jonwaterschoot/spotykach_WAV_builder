@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { X, FolderOpen, HardDrive } from 'lucide-react';
+import { X, FolderOpen, HardDrive, Dices } from 'lucide-react';
 
 interface BrowserChoiceModalProps {
     isOpen: boolean;
     onClose: () => void;
     onChoice: (choice: 'os' | 'sample-browser', remember: boolean) => void;
+    /** The smaller third way: make a sound for the slot in the Sample Mangler. Never remembered. */
+    onMangler?: () => void;
 }
 
-const BrowserChoiceModal = ({ isOpen, onClose, onChoice }: BrowserChoiceModalProps) => {
+const BrowserChoiceModal = ({ isOpen, onClose, onChoice, onMangler }: BrowserChoiceModalProps) => {
     const [remember, setRemember] = useState(false);
 
     if (!isOpen) return null;
@@ -49,6 +51,19 @@ const BrowserChoiceModal = ({ isOpen, onClose, onChoice }: BrowserChoiceModalPro
                             Local File System
                         </span>
                     </button>
+
+                    {onMangler && (
+                        <button
+                            onClick={onMangler}
+                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm text-gray-400 border border-gray-800
+                                hover:border-synthux-red/60 hover:text-synthux-red transition-all"
+                            title="Make a new sound from random snippets of this project's files"
+                        >
+                            <Dices size={16} />
+                            <span className="font-bold">Sample Mangler</span>
+                            <span className="text-[10px] uppercase tracking-wide text-gray-500">from this project</span>
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-2 px-2">

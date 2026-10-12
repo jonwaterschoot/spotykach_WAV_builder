@@ -82,6 +82,35 @@ export async function saveResultsToLibrary(results: MangleResultEntry[]): Promis
     return names;
 }
 
+/**
+ * Results as files of the project open in Studio, when the mangler runs inside it.
+ * Parked: the host decides which one, if any, goes into a slot. Named the way
+ * Studio names an import (upper case, no extension).
+ */
+export const resultsAsProjectFiles = (results: MangleResultEntry[]): FileRecord[] =>
+    results.map(r => {
+        const id = newId();
+        const versionId = newId();
+        return {
+            id,
+            name: r.name.toUpperCase(),
+            originalName: `${r.name}.wav`,
+            versions: [{
+                id: versionId,
+                timestamp: Date.now(),
+                description: 'Original',
+                blob: r.blob,
+                duration: r.duration,
+            }],
+            currentVersionId: versionId,
+            isParked: true,
+            origin: RESULT_ORIGIN,
+            license: resultLicense(r.recipe).text,
+            tags: ['mangled'],
+            metadata: { slicePoints: r.recipe.cuePoints.map(f => f / 48000) },
+        };
+    });
+
 /** The shape `buildDetachedState` lays out on the grid, for a new project. */
 export const resultsAsDetached = (results: MangleResultEntry[]): DetachedSample[] =>
     results.map(r => ({
