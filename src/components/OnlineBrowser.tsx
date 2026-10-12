@@ -154,6 +154,8 @@ export const OnlineBrowser = ({
     const [apiKey, setApiKey] = useState(() => appStorage.getItem(KEY_STORE) ?? '');
     const [keyDraft, setKeyDraft] = useState('');
     const [showKeyField, setShowKeyField] = useState(false);
+    /** The archive the help panel explains. */
+    const [infoId, setInfoId] = useState<ProviderId>(PROVIDERS[0].id);
     const [rowError, setRowError] = useState<{ key: string; message: string } | null>(null);
     /** Re-render once a minute so "N left" and waits stay current. */
     const [, setTick] = useState(0);
@@ -555,80 +557,166 @@ export const OnlineBrowser = ({
                     )}
                 </div>
 
-                {/* Archives */}
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5">
-                    {PROVIDERS.map(p => {
-                        const how = access(p);
-                        const on = prefs.providers.includes(p.id) && how !== 'none';
-                        const spend = budgetFor(p);
-                        const left = spend.limits.perDay - budget.state(spend.id, spend.limits).usedDay;
-                        // A count is worth showing where the cap is real and small enough to meet.
-                        const showLeft = on && (p.id === 'openverse' || p.needsKey);
-                        const keyOffer = p.needsKey && how !== 'own-key';
-                        return (
-                            <div key={p.id} className={`rounded-lg border px-3 py-2 transition-colors ${on ? 'border-white/15 bg-white/5' : 'border-gray-800 bg-black/30'}`}>
-                                <label className={`flex items-center gap-2 ${how === 'none' ? 'cursor-default' : 'cursor-pointer'}`}>
+                {/*
+                  * Archives: a short list to switch them on and off, and one larger
+                  * panel beside it that explains whichever row is picked. The help
+                  * text used to sit in every card at 10px, five times over.
+                  */}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-[minmax(220px,300px)_1fr] gap-3">
+                    <div className="flex flex-col gap-1" role="listbox" aria-label="Archives">
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest px-1 mb-1">Archives</p>
+                        {PROVIDERS.map(p => {
+                            const how = access(p);
+                            const on = prefs.providers.includes(p.id) && how !== 'none';
+                            const spend = budgetFor(p);
+                            const left = spend.limits.perDay - budget.state(spend.id, spend.limits).usedDay;
+                            // A count is worth showing where the cap is real and small enough to meet.
+                            const showLeft = on && (p.id === 'openverse' || p.needsKey);
+                            const picked = infoId === p.id;
+                            return (
+                                <div
+                                    key={p.id}
+                                    role="option"
+                                    aria-selected={picked}
+                                    tabIndex={0}
+                                    onClick={() => setInfoId(p.id)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setInfoId(p.id); } }}
+                                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-synthux-blue
+                                        ${picked ? 'border-synthux-blue bg-synthux-blue/20 shadow-[inset_3px_0_0_0_var(--color-synthux-blue)]' : on ? 'border-white/10 bg-white/5 hover:border-white/25' : 'border-gray-800 bg-black/30 hover:border-gray-700'}`}
+                                >
                                     <input
                                         type="checkbox"
                                         checked={on}
                                         disabled={how === 'none'}
-                                        onChange={() => setPrefs(prev => ({ ...prev, providers: toggleIn(prev.providers, p.id) }))}
-                                        className="accent-synthux-blue"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={() => {
+                                            setPrefs(prev => ({ ...prev, providers: toggleIn(prev.providers, p.id) }));
+                                            setInfoId(p.id);
+                                        }}
+                                        title={how === 'none' ? 'Needs an API key: see the panel' : on ? 'Leave out of searches' : 'Include in searches'}
+                                        className="accent-synthux-blue w-4 h-4 shrink-0"
                                     />
-                                    <span className={`text-xs font-bold ${on ? 'text-gray-200' : 'text-gray-500'}`}>{p.label}</span>
-                                    {how === 'shared' && <span className="text-[9px] text-gray-500">shared key</span>}
-                                    {how === 'own-key' && <span className="text-[9px] text-synthux-green">your key</span>}
+                                    <span className={`text-sm font-bold truncate ${on ? 'text-gray-100' : 'text-gray-500'}`}>{p.label}</span>
+                                    {how === 'shared' && <span className="shrink-0 text-[10px] text-gray-500">shared key</span>}
+                                    {how === 'own-key' && <span className="shrink-0 text-[10px] text-synthux-green">your key</span>}
+                                    {how === 'none' && <span className="shrink-0 text-[10px] text-synthux-yellow">needs key</span>}
                                     {showLeft && (
-                                        <span className="ml-auto text-[9px] font-mono text-gray-500" title={p.limitNote}>
-                                            {left} left today
+                                        <span
+                                            className={`ml-auto shrink-0 font-mono text-[11px] tabular-nums ${left <= spend.limits.perDay * 0.1 ? 'text-synthux-yellow' : 'text-gray-400'}`}
+                                            title={`${left} of ${spend.limits.perDay} searches left today`}
+                                        >
+                                            {left}
                                         </span>
                                     )}
-                                </label>
-                                <p className="text-[10px] text-gray-500 leading-snug mt-0.5 pl-5">{p.blurb}</p>
-                                <p className="text-[10px] text-gray-600 leading-snug mt-1 pl-5">
-                                    <span className="text-gray-500">Audio:</span> {p.quality}
-                                </p>
-                                <p className="text-[10px] text-gray-600 leading-snug pl-5">
-                                    <span className="text-gray-500">Limits:</span> {p.limitNote}
-                                </p>
+                                    {/* Points at the panel it fills; on a phone the panel is below, not beside. */}
+                                    <ChevronRight
+                                        size={14}
+                                        className={`hidden md:block shrink-0 transition-opacity ${showLeft ? '' : 'ml-auto'} ${picked ? 'text-synthux-blue opacity-100' : 'opacity-0'}`}
+                                    />
+                                </div>
+                            );
+                        })}
+                        <p className="text-[10px] text-gray-600 px-1 mt-1">The number is searches left today, where an archive has a daily cap.</p>
+                    </div>
+
+                    {(() => {
+                        const p = PROVIDERS_BY_ID[infoId];
+                        const how = access(p);
+                        const spend = budgetFor(p);
+                        const used = budget.state(spend.id, spend.limits).usedDay;
+                        const left = spend.limits.perDay - used;
+                        const keyOffer = p.needsKey && how !== 'own-key';
+                        const showMeter = p.id === 'openverse' || p.needsKey;
+                        return (
+                            <div className="rounded-xl border border-white/10 bg-black/40 p-4 sm:p-5 min-h-[220px]" aria-live="polite">
+                                <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                                    <h3 className="text-lg font-black text-white tracking-tight">{p.label}</h3>
+                                    <a
+                                        href={p.homepage}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white"
+                                    >
+                                        {new URL(p.homepage).hostname.replace(/^www\./, '')} <ExternalLink size={12} />
+                                    </a>
+                                </div>
+                                <p className="mt-1 text-sm text-gray-300 leading-relaxed">{p.blurb}</p>
+
+                                <dl className="mt-4 grid grid-cols-1 sm:grid-cols-[90px_1fr] gap-x-4 gap-y-3 text-sm leading-relaxed">
+                                    <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Audio</dt>
+                                    <dd className="text-gray-300">{p.quality}</dd>
+                                    <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Limits</dt>
+                                    <dd className="text-gray-300">{p.limitNote}</dd>
+                                    {p.needsKey && (
+                                        <>
+                                            <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Access</dt>
+                                            <dd className="text-gray-300">
+                                                {how === 'own-key' && 'Your own key, straight to Freesound. Stored in this browser only.'}
+                                                {how === 'shared' && 'WAV Builder\'s shared key, through its proxy. Add your own key for the full limits.'}
+                                                {how === 'none' && 'Needs your own free API key (see below).'}
+                                            </dd>
+                                        </>
+                                    )}
+                                    {showMeter && how !== 'none' && (
+                                        <>
+                                            <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Today</dt>
+                                            <dd>
+                                                <div className="flex items-baseline gap-2 text-gray-300">
+                                                    <span className="font-mono text-base text-white tabular-nums">{left}</span>
+                                                    <span className="text-xs text-gray-500">of {spend.limits.perDay} searches left in this browser</span>
+                                                </div>
+                                                <div className="mt-1.5 h-1.5 w-full max-w-xs rounded-full bg-white/10 overflow-hidden">
+                                                    <div
+                                                        className={`h-full ${left <= spend.limits.perDay * 0.1 ? 'bg-synthux-yellow' : 'bg-synthux-blue'}`}
+                                                        style={{ width: `${Math.max(0, Math.min(100, (left / spend.limits.perDay) * 100))}%` }}
+                                                    />
+                                                </div>
+                                            </dd>
+                                        </>
+                                    )}
+                                </dl>
+
                                 {how === 'own-key' && (
-                                    <button onClick={forgetKey} className="mt-1 ml-5 text-[10px] text-gray-500 hover:text-red-400" title="Remove your key from this browser">
+                                    <button onClick={forgetKey} className="mt-4 text-xs text-gray-400 hover:text-red-400" title="Remove your key from this browser">
                                         Forget my key{PROXY_URL ? ' (back to the shared key)' : ''}
                                     </button>
                                 )}
                                 {keyOffer && !showKeyField && (
                                     <button
                                         onClick={() => setShowKeyField(true)}
-                                        className="mt-1 ml-5 inline-flex items-center gap-1 text-[10px] text-synthux-blue hover:underline"
+                                        className="mt-4 inline-flex items-center gap-1.5 text-sm text-synthux-blue hover:underline"
                                     >
-                                        <KeyRound size={10} /> {how === 'shared' ? 'Use your own key for more' : 'Add your API key'}
+                                        <KeyRound size={14} /> {how === 'shared' ? 'Use your own key for more' : 'Add your API key'}
                                     </button>
                                 )}
                                 {keyOffer && showKeyField && (
-                                    <div className="mt-1.5 pl-5">
-                                        <div className="flex gap-1">
+                                    <div className="mt-4 max-w-lg">
+                                        <div className="flex gap-2">
                                             <input
                                                 value={keyDraft}
                                                 onChange={(e) => setKeyDraft(e.target.value)}
                                                 onKeyDown={(e) => { if (e.key === 'Enter') saveKey(); }}
                                                 placeholder="Paste your key"
-                                                className="flex-1 min-w-0 bg-black/50 border border-gray-700 rounded px-2 py-1 text-[11px] font-mono text-gray-200"
+                                                className="flex-1 min-w-0 bg-black/50 border border-gray-700 focus:border-synthux-blue rounded-lg px-3 py-1.5 text-sm font-mono text-gray-200 outline-none"
                                             />
-                                            <button onClick={saveKey} disabled={!keyDraft.trim()} className="px-2 rounded bg-synthux-blue text-black text-[11px] font-bold disabled:opacity-40">
+                                            <button onClick={saveKey} disabled={!keyDraft.trim()} className="px-3 rounded-lg bg-synthux-blue text-black text-sm font-bold disabled:opacity-40">
                                                 Save
                                             </button>
                                         </div>
-                                        <p className="text-[10px] text-gray-500 leading-snug mt-1">
-                                            Free, needs a Freesound account:{' '}
-                                            <a href="https://freesound.org/apiv2/apply" target="_blank" rel="noreferrer" className="text-synthux-blue hover:underline">freesound.org/apiv2/apply</a>.
-                                            Name it (e.g. “WAV Builder”), leave the callback URL empty, describe it in a line, accept
-                                            the terms. Copy the “Client secret/Api key” column. Kept in this browser only.
-                                        </p>
+                                        <ol className="mt-3 list-decimal pl-5 space-y-1 text-xs text-gray-400 leading-relaxed">
+                                            <li>
+                                                Sign in at{' '}
+                                                <a href="https://freesound.org/apiv2/apply" target="_blank" rel="noreferrer" className="text-synthux-blue hover:underline">freesound.org/apiv2/apply</a>{' '}
+                                                (free, needs a Freesound account).
+                                            </li>
+                                            <li>Name it, e.g. “WAV Builder”. Leave the callback URL empty. Describe it in a line and accept the terms.</li>
+                                            <li>Copy the “Client secret/Api key” column and paste it here. It stays in this browser.</li>
+                                        </ol>
                                     </div>
                                 )}
                             </div>
                         );
-                    })}
+                    })()}
                 </div>
             </div>
 
