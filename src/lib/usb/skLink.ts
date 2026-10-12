@@ -642,8 +642,10 @@ async function waitForPort(timeoutMs: number): Promise<SerialPort | null> {
 
 /**
  * Sends the enter SysEx to the Spotykach USB MIDI port and waits for the reply.
- * No reply in 3 s means the firmware has no USB transfer (release firmware
- * ignores SysEx).
+ * No reply means the firmware has no USB transfer (release firmware ignores
+ * SysEx), but only after a second try: on the first use in a page the ports open
+ * lazily, and a reply can come before the input listens. A MIDI port that
+ * disappears meanwhile means the device did switch and its reply was lost.
  */
 export async function enterTransferMode(): Promise<void> {
     let access: MIDIAccess;
@@ -658,29 +660,50 @@ export async function enterTransferMode(): Promise<void> {
     if (!outputs.length) {
         throw new MidiPortNotFoundError();
     }
+    const output = outputs[0];
 
-    const reply = new Promise<number>((resolve, reject) => {
-        const timer = setTimeout(() => {
-            inputs.forEach(i => { i.onmidimessage = null; });
-            reject(new Error("Spotykach didn't respond. Its firmware may not support USB transfer yet." + RELEASE_PORT_HINT));
-        }, 3000);
-        inputs.forEach(input => {
-            input.onmidimessage = (e: MIDIMessageEvent) => {
-                const d = e.data;
-                if (d && d.length === 7 && d[0] === 0xF0 && d[1] === 0x7D && d[2] === 0x53 && d[3] === 0x4B && d[4] === 0x02) {
-                    clearTimeout(timer);
-                    inputs.forEach(i => { i.onmidimessage = null; });
-                    resolve(d[5]);
-                }
-            };
-        });
-    });
+    // Open both ends before sending, so the reply can't arrive before anyone listens.
     try {
-        outputs[0].send(SYSEX_ENTER);
+        await Promise.all([output.open(), ...inputs.map(i => i.open())]);
     } catch (e) {
-        throw new Error("Can't send to the Spotykach MIDI port." + RELEASE_PORT_HINT, { cause: e });
+        throw new Error("Can't open the Spotykach MIDI port." + RELEASE_PORT_HINT, { cause: e });
     }
-    const status = await reply;
+
+    let status: number | null = null;
+    let replied: (status: number) => void = () => {};
+    inputs.forEach(input => {
+        input.onmidimessage = (e: MIDIMessageEvent) => {
+            const d = e.data;
+            if (d && d.length === 7 && d[0] === 0xF0 && d[1] === 0x7D && d[2] === 0x53 && d[3] === 0x4B && d[4] === 0x02) {
+                status = d[5];
+                replied(d[5]);
+            }
+        };
+    });
+    const switched = () => output.state === 'disconnected';
+
+    try {
+        for (let attempt = 0; attempt < 2 && status === null; attempt++) {
+            if (switched()) return;
+            try {
+                output.send(SYSEX_ENTER);
+            } catch (e) {
+                if (switched()) return;
+                throw new Error("Can't send to the Spotykach MIDI port." + RELEASE_PORT_HINT, { cause: e });
+            }
+            await new Promise<void>(resolve => {
+                const timer = setTimeout(resolve, attempt === 0 ? 2000 : 3000);
+                replied = () => { clearTimeout(timer); resolve(); };
+            });
+        }
+    } finally {
+        inputs.forEach(i => { i.onmidimessage = null; });
+    }
+
+    if (status === null) {
+        if (switched()) return;
+        throw new Error("Spotykach didn't respond. Its firmware may not support USB transfer yet." + RELEASE_PORT_HINT);
+    }
     if (status === 1) throw new Error('Spotykach is busy (loading, saving or recording). Finish that and try again.');
     if (status === 2) throw new Error('No SD card found in Spotykach.');
     if (status !== 0) throw new Error(`Spotykach refused transfer mode (${status}).`);

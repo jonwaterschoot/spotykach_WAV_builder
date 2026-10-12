@@ -306,7 +306,9 @@ Phase 3 results (Oct 11):
 - [x] In USB mode, show `config.txt` and project-copy options as "needs card reader"
 - [x] Per-slot progress for USB writes and a time estimate before a batch (about 20–40 s per full slot)
 - [x] Help text: Chromium only, close DAWs holding the MIDI port on Windows, `dialout` group on Linux
-- [ ] Hardware test of the UI on the uploader firmware (below)
+- [ ] Hardware test of the UI on the uploader firmware (below; first run Oct 12)
+- [x] Transfer window for a sync: overall progress with time left, every slot, a log, Cancel
+- [x] Card route in the main header (SD | USB) next to Import / Build; header menus open on hover, News moved into the gear menu
 - [ ] Merge to `main` (flag still on) once the USB firmware is released; then remove the flag
 
 Phase 4 results (Oct 12):
@@ -323,6 +325,12 @@ Phase 4 results (Oct 12):
 - **Fixed on the way:** the sync modal kept its rows from the first scan, so Refresh (and now a source switch) showed a stale table. It now rebuilds them from each new diff, keeping the mode.
 - **Simulated device test passed** (the Phase 3 device model, the real `importUtils`, `exportUtils` and `UsbBackend`): diff statuses over USB (id match, stale 4.1.3 header, unmatched conflict, card-only, project-only) with no audio read; `load()` byte-exact with progress; `applySyncDiff` through `load()`; a batch that doesn't fit refused before any upload; per-slot progress; the snapshot's `via` and card size; snapshot verdicts (same, re-saved on the device, other card size, files gone); `scanDeviceChanges` from the snapshot.
 - **Not done:** a source chooser in the Export modal (its SD export picks a folder; over USB the sync modal does the same job), a Cancel button for a running USB batch, and playing a card slot over USB (it would need a download).
+- **First hardware run (Oct 12, Windows, uploader firmware).** The modal listed the card over USB with names, the duplicate group (`ICMT.h` `7661ad00…` in five slots) and the snapshot line ("2 changed, 7 added"), and a Standard Build synced as expected. The first Connect said "Spotykach didn't respond"; Try again connected at once. Asked for: recover from that by itself, a transfer overview with time left, the route more prominent, and a lighter header.
+- **Round 2 (Oct 12):**
+  - **First connect.** The MIDI ports opened lazily on first use in a page, so the device's reply could arrive before the input listened. `enterTransferMode()` now opens both ports before sending, resends once after 2 s of silence, and treats a MIDI port that disappears as "it switched and the reply was lost" instead of an error. Only then "didn't respond".
+  - **Transfer window** (`TransferProgressModal`, `src/session/transferJob.ts`) replaces the spinner while a sync runs, on both routes: a bar by bytes with "about 2 min 10 s left" from the rate so far, every slot (direction, name, size, queued / % / done / already there / failed / not run), and a log with timings and KB/s per slot. Cancel stops between slots and mid-transfer over USB (downloads take the signal too now); the slot being written keeps its old file. `exportSDStructure` reports per slot through `onSlot` (start, progress, done, skipped, deleted).
+  - **Header.** With USB on, Import / Build sits in a card group with an SD | USB toggle (green dot when Spotykach is connected); the choice is the same one the modal's bar shows. Connecting still happens in the modal, since entering transfer mode mutes the device. Notes and config.txt stay in the bar, News moved into the gear menu, and the Project and gear menus open on hover (click still works, and touch).
+  - With USB on, Import / Build opens on the chosen route even without a card folder; the bar then says to pick one or use USB.
 - **Hardware test to do**, uploader firmware, Windows first: open with `?usb=1`, Import / Build SD, switch to USB, Connect (and Authorise port on first use, also after closing the picker by clicking outside it). Check the grid against `skUsb.slots()`, the snapshot line after a build, a Standard Build of a few changed slots (progress, time estimate, then in sync on rescan), a pull of a card-only slot into the project, a build that doesn't fit, unplugging mid-upload (the slot keeps its old file, the modal shows Connect again), then the same project over the card reader showing in sync.
 
 ## Open questions and risks

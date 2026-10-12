@@ -42,6 +42,18 @@ export interface ExportSDOptions {
     onConvert?: (blob: Blob, metadata?: import('../types').WavMetadata) => Promise<Blob>;
     /** Stops the build between slots, and mid-upload over USB (the slot keeps its old file). */
     signal?: AbortSignal;
+    /** Per slot, for a transfer window: started, write progress, written, skipped or deleted. */
+    onSlot?: (event: SlotWriteEvent) => void;
+}
+
+export interface SlotWriteEvent {
+    /** "Blue2" */
+    slot: string;
+    phase: 'start' | 'progress' | 'done' | 'skipped' | 'deleted';
+    /** 0–1, with `progress`. */
+    fraction?: number;
+    /** The hardware WAV's size, with `done` and `skipped`. */
+    bytes?: number;
 }
 
 /**
@@ -851,6 +863,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     if (decision === 'delete' || decision === 'delete_local') {
                         try { await card.deleteSlot(color, slot.id); } catch (e) { }
                         delete snapshot.slots[slotRef];
+                        options.onSlot?.({ slot: slotRef, phase: 'deleted' });
                         continue;
                     }
 
@@ -866,6 +879,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
                         if (version?.blob) {
                             processed++;
+                            options.onSlot?.({ slot: slotRef, phase: 'start' });
                             onProgress?.(`Writing ${color} Tape ${slot.id}...`, 20 + ((processed / Math.max(1, activeSlots)) * 50));
                             
                             let blobToWrite = version.blob;
@@ -882,11 +896,13 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             }
 
                             const slotProgress = 20 + (((processed - 1) / Math.max(1, activeSlots)) * 50);
-                            const onSlotProgress = card.kind === 'usb'
-                                ? (fraction: number) => onProgress?.(`Uploading ${color} Tape ${slot.id}… ${Math.round(fraction * 100)}%`, slotProgress + (fraction * 50) / Math.max(1, activeSlots))
-                                : undefined;
+                            const onSlotProgress = (fraction: number) => {
+                                options.onSlot?.({ slot: slotRef, phase: 'progress', fraction });
+                                if (card.kind === 'usb') onProgress?.(`Uploading ${color} Tape ${slot.id}… ${Math.round(fraction * 100)}%`, slotProgress + (fraction * 50) / Math.max(1, activeSlots));
+                            };
                             const wrote = await card.writeSlot(color, slot.id, blobToWrite, { compare, onProgress: onSlotProgress, signal: options.signal });
                             if (wrote) writtenCount++; else skippedCount++;
+                            options.onSlot?.({ slot: slotRef, phase: wrote ? 'done' : 'skipped', bytes: blobToWrite.size });
 
                             // Written or already identical: either way the card now holds this.
                             const written = await readWavHeaderInfo(blobToWrite).catch(() => null);

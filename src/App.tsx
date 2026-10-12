@@ -36,7 +36,7 @@ const WorkspaceBackupModal = React.lazy(() => import('./components/WorkspaceBack
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2 } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2, Usb } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -72,6 +72,8 @@ import { appStorage } from './utils/storageNamespace';
 import { isUsbTransferEnabled } from './lib/usb/flag';
 import { preloadUsb, usbSession, useUsbSession } from './lib/usb/usbSession';
 import { CardSourceBar, type CardSource } from './components/CardSourceBar';
+import { TransferProgressModal } from './components/TransferProgressModal';
+import { useTransferJob } from './session/transferJob';
 import { describeSnapshotCheck } from './lib/card/cardSnapshot';
 import type { CardBackend } from './lib/card/cardBackend';
 
@@ -306,6 +308,8 @@ function App({ onExitToHub }: AppProps) {
   const [cardSource, setCardSource] = useState<CardSource>(() =>
     usbEnabled && appStorage.getItem('spotykach_cardSource') === 'usb' ? 'usb' : 'reader');
   const usb = useUsbSession();
+  /** The running (or just finished) sync, for the transfer window. */
+  const transfer = useTransferJob();
 
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
@@ -4446,10 +4450,10 @@ function App({ onExitToHub }: AppProps) {
     showToast('Empty slot browser preference reset', 'success');
   };
   const handleOpenSyncModal = async (mode: 'push' | 'import' = 'push') => {
-    // No card folder picked: USB is the only way in.
-    const source: CardSource = !sdHandle && usbEnabled ? 'usb' : cardSource;
-    if (source === 'reader' && !sdHandle) return;
-    if (source !== cardSource) setCardSource(source);
+    // With USB on, the chosen route opens even without a card folder: the modal
+    // says so and offers Change SD or USB.
+    const source = cardSource;
+    if (source === 'reader' && !sdHandle && !usbEnabled) return;
     if (source === 'usb') preloadUsb();
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
@@ -4578,20 +4582,6 @@ function App({ onExitToHub }: AppProps) {
               {/* MIDDLE / RIGHT — Action buttons grouped */}
               <div className="flex items-center gap-1.5 shrink-0 ml-auto">
 
-                {/* News */}
-                <button
-                  onClick={() => setShowNews(true)}
-                  title="What's New"
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider
-                    ${showNews ? 'border-synthux-orange text-white bg-synthux-orange/10 shadow-[0_0_10px_rgba(249,113,71,0.2)]' : 'border-white/10 text-gray-400 hover:text-white hover:bg-white/5'}
-                  `}
-                >
-                  <Newspaper size={14} strokeWidth={2.5} />
-                  <span className="hidden md:inline text-synthux-orange">News</span>
-                </button>
-
-                <div className="h-5 w-px bg-gray-800 mx-0.5" />
-
                 {/* Project Notes — Prominent as requested */}
                 <button
                   onClick={() => setShowProjectNotes(!showProjectNotes)}
@@ -4617,8 +4607,40 @@ function App({ onExitToHub }: AppProps) {
 
                 <div className="h-5 w-px bg-gray-800 mx-0.5" />
 
-                {/* Combined SD Action — only when SD connected */}
-                {(sdHandle || usbEnabled) && (
+                {/* Card: the route (USB on only) and Import / Build */}
+                {usbEnabled ? (
+                  <div className="flex items-stretch rounded-lg border border-orange-500/30 overflow-hidden">
+                    <div role="group" aria-label="Reach the card through" className="flex items-center gap-0.5 p-0.5 bg-black/30">
+                      <button
+                        onClick={() => handleCardSourceChange('reader')}
+                        aria-pressed={cardSource === 'reader'}
+                        title={sdHandle ? `Card reader: ${sdHandle.name}` : 'Card reader: the SD card in this computer'}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${cardSource === 'reader' ? 'bg-orange-500/20 text-orange-300' : 'text-gray-500 hover:text-white'}`}
+                      >
+                        <RiSdCardMiniLine size={13} />
+                        <span className="hidden xl:inline">SD</span>
+                      </button>
+                      <button
+                        onClick={() => handleCardSourceChange('usb')}
+                        aria-pressed={cardSource === 'usb'}
+                        title={usb.backend ? 'USB: Spotykach connected' : 'USB: Spotykach through its rear USB port (experimental)'}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${cardSource === 'usb' ? 'bg-orange-500/20 text-orange-300' : 'text-gray-500 hover:text-white'}`}
+                      >
+                        <Usb size={13} />
+                        <span className="hidden xl:inline">USB</span>
+                        {usb.backend && <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-label="connected" />}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => handleOpenSyncModal('push')}
+                      className="flex items-center gap-1.5 px-3 border-l border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 transition-all text-[11px] font-bold uppercase tracking-wider"
+                      title={cardSource === 'usb' ? 'Import / Build over USB' : 'Import / Build with the card reader'}
+                    >
+                      <span className="hidden sm:inline">Import / Build</span>
+                      <span className="sm:hidden">Sync</span>
+                    </button>
+                  </div>
+                ) : sdHandle && (
                   <button
                     onClick={() => handleOpenSyncModal('push')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
@@ -4648,6 +4670,7 @@ function App({ onExitToHub }: AppProps) {
 
                 {/* Project Dropdown */}
                 <Dropdown
+                  openOnHover
                   label={<span className="flex items-center gap-1.5 shrink-0"><Folder size={13} /> <span className="hidden lg:inline">Project</span></span>}
                   items={[
                     {
@@ -4731,8 +4754,16 @@ function App({ onExitToHub }: AppProps) {
                 {/* System/Info Dropdown */}
                 <Dropdown
                   iconOnly
+                  openOnHover
+                  title="News, settings and help"
                   label={<Settings size={16} />}
                   items={[
+                    {
+                      label: "What's New",
+                      icon: <Newspaper size={14} />,
+                      onClick: () => setShowNews(true)
+                    },
+                    { type: 'divider' },
                     {
                       label: 'Settings',
                       icon: <Settings size={14} />,
@@ -5415,12 +5446,42 @@ function App({ onExitToHub }: AppProps) {
                 onClose={() => setSyncModalState(null)}
                 onConfirm={async (decisions, options: ExportOptions, importDecisions) => {
                   const projectName = syncModalState?.projectName;
+                  const syncDiff = syncModalState?.diff;
                   setSyncModalState(null); // Close modal
 
                   if (!workHandle || !projectName) return;
 
                   setIsProcessing(true);
                   setProgressMsg(`Syncing ${projectName}...`);
+
+                  // Every slot this sync moves, for the transfer window.
+                  const MB = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+                  const slotText = (slot: string) => slot.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
+                  const localName = (slot: string) => syncDiff?.slots[slot]?.localFile?.name ?? slot;
+                  const localSize = (slot: string) => {
+                    const lf = syncDiff?.slots[slot]?.localFile;
+                    return lf?.versions.find(v => v.id === lf.currentVersionId)?.blob?.size ?? 0;
+                  };
+                  const cardName = (slot: string) => {
+                    const sd = syncDiff?.slots[slot];
+                    return sd?.remoteMeta?.name ?? sd?.remote?.name ?? sd?.remote?.fileName ?? slot;
+                  };
+                  const signal = transfer.start(`Syncing ${projectName}`, cardSource, [
+                    ...Object.entries(importDecisions).map(([slot, dec]) => ({
+                      slot, direction: 'down' as const, name: cardName(slot),
+                      bytes: syncDiff?.slots[slot]?.remote?.size ?? dec.file?.size ?? 0,
+                    })),
+                    ...Object.entries(decisions).filter(([slot, d]) => slot !== 'config' && d !== 'skip').map(([slot, d]) => ({
+                      slot, direction: d === 'delete' ? 'delete' as const : 'up' as const,
+                      name: d === 'delete' ? cardName(slot) : localName(slot),
+                      bytes: d === 'delete' ? 0 : localSize(slot),
+                    })),
+                  ]);
+                  const started = new Map<string, number>();
+                  const rate = (slot: string, bytes: number) => {
+                    const seconds = (Date.now() - (started.get(slot) ?? Date.now())) / 1000;
+                    return seconds >= 0.5 ? ` in ${seconds.toFixed(1)} s (${Math.round(bytes / 1024 / seconds)} KB/s)` : '';
+                  };
 
                     try {
                       const { loadProjectFromDirectory, verifyProjectBlobs } = await import('./utils/exportUtils');
@@ -5431,6 +5492,7 @@ function App({ onExitToHub }: AppProps) {
                       if (unreadable.length > 0) {
                         const fileList = unreadable.map(u => u.fileName).slice(0, 3).join(', ') + (unreadable.length > 3 ? '...' : '');
                         showToast(`Unreadable files detected: ${fileList}. Please refresh or re-link project folder.`, 'error');
+                        transfer.close();
                         setIsProcessing(false);
                         setProgressMsg('');
                         return;
@@ -5471,13 +5533,20 @@ function App({ onExitToHub }: AppProps) {
                         if (cardSource === 'usb' && !usbCard) throw new Error('Spotykach is not connected. Connect it and try again.');
 
                         for (const [slotId, dec] of importEntries) {
+                          signal.throwIfAborted();
+                          started.set(slotId, Date.now());
+                          transfer.update(slotId, 'down', { status: 'active', fraction: 0 });
                           let cardFile = dec.file;
                           if (!cardFile && usbCard) {
-                            const where = `${dec.color} ${dec.slotIndex}`;
                             cardFile = await usbCard.readFile(dec.color as TapeColor, dec.slotIndex,
-                              (f) => setProgressMsg(`Downloading ${where} from Spotykach… ${Math.round(f * 100)}%`));
+                              (fraction) => transfer.update(slotId, 'down', { fraction }), signal);
                           }
-                          if (!cardFile) continue;
+                          if (!cardFile) {
+                            transfer.update(slotId, 'down', { status: 'skipped' });
+                            continue;
+                          }
+                          transfer.update(slotId, 'down', { status: 'done', fraction: 1, bytes: cardFile.size });
+                          transfer.log(`↓ ${slotText(slotId)}  ${cardName(slotId)}  ${MB(cardFile.size)}${usbCard ? rate(slotId, cardFile.size) : ''}`);
                           const arrayBuffer = await cardFile.arrayBuffer();
                           const blob = new Blob([arrayBuffer], { type: cardFile.type || 'audio/wav' });
                           // The original name (INAM) when the card file has one, not `1.WAV`.
@@ -5557,12 +5626,31 @@ function App({ onExitToHub }: AppProps) {
                           includeConfig: options.includeConfig,
                           forceOverwrite: options.forceOverwrite,
                           onConvert: convertAudioToWav,
+                          signal,
+                          onSlot: (e) => {
+                            if (e.phase === 'start') {
+                              started.set(e.slot, Date.now());
+                              transfer.update(e.slot, 'up', { status: 'active', fraction: 0 });
+                            } else if (e.phase === 'progress') {
+                              transfer.update(e.slot, 'up', { fraction: e.fraction ?? 0 });
+                            } else if (e.phase === 'done') {
+                              transfer.update(e.slot, 'up', { status: 'done', fraction: 1, bytes: e.bytes });
+                              transfer.log(`↑ ${slotText(e.slot)}  ${localName(e.slot)}  ${MB(e.bytes ?? 0)}${rate(e.slot, e.bytes ?? 0)}`);
+                            } else if (e.phase === 'skipped') {
+                              transfer.update(e.slot, 'up', { status: 'skipped', bytes: e.bytes });
+                              transfer.log(`= ${slotText(e.slot)}  ${localName(e.slot)}  already on the card`);
+                            } else if (e.phase === 'deleted') {
+                              transfer.update(e.slot, 'delete', { status: 'done' });
+                              transfer.log(`× ${slotText(e.slot)}  removed from the card`);
+                            }
+                          },
                         }, (msg, _p) => setProgressMsg(msg || 'Pushing to SK...'));
                         // Project data like any other: left unsaved so the next save keeps it.
                         if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
                       }
 
-                      showToast("Hardware Sync Complete", "success");
+                      transfer.log('Sync complete.', 'ok');
+                      transfer.finish();
                       scanProjects(workHandle, sdHandle);
                       if (cardSource === 'usb') void usbSession.refreshInfo();
                       // ── Background SK snapshot (non-blocking, opt-in per build) ──
@@ -5576,8 +5664,14 @@ function App({ onExitToHub }: AppProps) {
                           .catch(e => console.warn('SK backup error (non-fatal):', e));
                       }
                     } catch (e: any) {
-                      console.error(e);
-                      showToast("Sync Failed: " + e.message, "error");
+                      if (signal.aborted) {
+                        transfer.log('Cancelled. Slots already written stay on the card; the slot being written keeps its old file.', 'warn');
+                        transfer.finish();
+                      } else {
+                        console.error(e);
+                        transfer.log(`Error: ${e.message}`, 'error');
+                        transfer.finish(e.message);
+                      }
                     } finally {
                       setIsProcessing(false);
                       setProgressMsg('');
@@ -5984,7 +6078,7 @@ function App({ onExitToHub }: AppProps) {
 
       {/* PROCESSING OVERLAY */}
       {
-        isProcessing && (
+        isProcessing && !transfer.job && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center animate-in fade-in duration-200">
             <div className="bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 min-w-[300px]">
               <Loader className="animate-spin text-indigo-500" size={32} />
@@ -5993,6 +6087,11 @@ function App({ onExitToHub }: AppProps) {
           </div>
         )
       }
+
+      {/* SYNC TRANSFER WINDOW (replaces the overlay while a sync runs) */}
+      {transfer.job && (
+        <TransferProgressModal job={transfer.job} onCancel={transfer.cancel} onClose={transfer.close} />
+      )}
 
 
       <LogModal 

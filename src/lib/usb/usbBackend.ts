@@ -179,9 +179,10 @@ export class UsbBackend implements CardBackend {
         return desc;
     }
 
-    async readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void): Promise<File> {
+    async readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<File> {
+        signal?.throwIfAborted();
         if (!(await this.entry(tape, slot))) throw new Error(`${tape} ${slot} is empty on the card.`);
-        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), this.hello.maxChunk, { onProgress });
+        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), this.hello.maxChunk, { onProgress, signal });
         return new File([toBuffer(bytes)], slotFileName(slot), { type: 'audio/wav' });
     }
 

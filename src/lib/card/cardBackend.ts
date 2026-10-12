@@ -107,7 +107,7 @@ export interface CardBackend {
     /** One slot with its header fields. Null when the slot is empty. */
     readHeader(tape: TapeColor, slot: number): Promise<SlotDescriptor | null>;
     /** The whole file. Over USB this is a download. */
-    readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void): Promise<File>;
+    readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<File>;
     /** True when it wrote, false when `compare` found the slot already holds `blob`. */
     writeSlot(tape: TapeColor, slot: number, blob: Blob, options?: WriteSlotOptions): Promise<boolean>;
     deleteSlot(tape: TapeColor, slot: number): Promise<void>;
