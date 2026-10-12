@@ -224,12 +224,18 @@ Start with the engine and a bare screen, so the sound can be judged before any U
 
 **Phase 5 — Refinement**
 
-- [ ] Snippet list per result: source, length, gain, direction, note, shift (done in Phase 2); per-snippet "apply C" in Suggest mode
-- [ ] "Same seed" re-render after a slider change
-- [ ] Lock a snippet and reroll the others
-- [ ] Snap snippet starts to zero crossings (hard cuts) or to onsets (an optional "transient start" toggle)
-- [ ] Better resampling (windowed sinc) if the linear one sounds too dull on big shifts
-- [ ] Help text in `AboutHelpModal` and a news post
+All edits go through one engine mechanism: `render(..., { fixed })` renders position *i* from the given snippet (region, shift, direction, gain, crossfade) instead of new dice, while the planner still draws for it so the snippets after it keep theirs.
+
+- [x] Add a select / deselect all option to the source pool (checkbox by the heading, indeterminate when mixed)
+- [x] Option to delete a single snippet: the others stay as they were, they move up, and the end is refilled from the same seed
+- [x] Snippet list per result: source, length, gain, direction, note, shift (done in Phase 2); per-snippet "apply C" (toggle, any mode) and "all confident to C"
+- [x] Snippet playback from the detailed list: play/stop per row on a separate region player (`useResultAudio`) that stops at the snippet's end. The direction column is now → / ← so it no longer reads as a play button
+- [x] Zoom: taller waveform, −, +, fit (1–64×), snippet numbers, red scrollbar. Only the visible slice is drawn, from the decoded audio. Clicking plays the snippet under the cursor
+- [x] "Same seed" re-render after a slider change (locked snippets stay). Edits replace the result in place with one Undo step
+- [x] Lock a snippet and reroll the others: new variations, the current settings, locked snippets at their positions
+- [x] Snap snippet starts to zero crossings (hard cuts) or to onsets ("Snippet start: Anywhere / Zero / Transient")
+- [x] Better resampling: windowed sinc from a kernel table, the default ("Clean"); linear stays as "Lo-fi". Results made before keep linear when edited
+- [x] Help text in `AboutHelpModal` (Format Help → Sample Mangler) and a news post (`public/news/sample-mangler.md`, draft: no version or image yet)
 
 ## Open questions and risks
 
