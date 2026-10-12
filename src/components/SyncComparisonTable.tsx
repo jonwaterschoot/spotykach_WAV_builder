@@ -3,7 +3,8 @@ import { Play, Square, ArrowRight, X, FileAudio } from 'lucide-react';
 
 export interface SyncItem {
     id: string;
-    file: File;
+    /** Absent over USB, where the card file costs a download. */
+    file?: File;
     type: 'new' | 'update';
     slot: string;
     sourceName: string;
@@ -74,7 +75,8 @@ export const SyncComparisonTable = ({ items, onDecisionChange }: SyncComparisonT
                 >
                     {/* Play Button */}
                     <button
-                        onClick={() => handlePlay(item.id, item.file)}
+                        onClick={() => item.file && handlePlay(item.id, item.file)}
+                        disabled={!item.file}
                         className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${previewId === item.id ? 'bg-synthux-orange text-black' : 'bg-gray-800 text-gray-400 hover:text-white'
                             }`}
                     >

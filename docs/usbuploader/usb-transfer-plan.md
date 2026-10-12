@@ -1,6 +1,6 @@
 # WAV Builder — USB transfer integration plan
 
-Oct 10, 2026 · Jon · revised Oct 11, 2026 (checked against the firmware source of both branches)
+Oct 10, 2026 · Jon · revised Oct 12, 2026 (checked against the firmware source of both branches)
 
 ## Summary
 
@@ -299,14 +299,31 @@ Phase 3 results (Oct 11):
 
 **Phase 4 — UI and switching (`feat/usb-transfer`)**
 
-- [ ] Source chooser in the export and sync modals: Card reader or USB
-- [ ] "Authorise port" button that stays visible while the device waits in transfer mode (port picker closed by accident, or the click expired)
-- [ ] Browse view from headers only; "Pull from device" action for slots that aren't in the project
-- [ ] Card snapshot check on every connect, both sources (see Architecture)
-- [ ] In USB mode, show `config.txt` and project-copy options as "needs card reader"
-- [ ] Per-slot progress for USB writes and a time estimate before a batch (about 20–40 s per full slot)
-- [ ] Help text: Chromium only, close DAWs holding the MIDI port on Windows, `dialout` group on Linux
+- [x] Source chooser in the sync modal (Import / Build SD): Card reader or USB. Not in the Export modal yet (see below)
+- [x] "Authorise port" button that stays visible while the device waits in transfer mode (port picker closed by accident, or the click expired)
+- [x] Browse view from headers only; "Pull from device" action for slots that aren't in the project. The sync modal is the browse view: over USB its card grid comes from LIST and header reads, and a pull or pool decision downloads the slot when the build runs
+- [x] Card snapshot check on every connect, both sources (see Architecture)
+- [x] In USB mode, show `config.txt` and project-copy options as "needs card reader"
+- [x] Per-slot progress for USB writes and a time estimate before a batch (about 20–40 s per full slot)
+- [x] Help text: Chromium only, close DAWs holding the MIDI port on Windows, `dialout` group on Linux
+- [ ] Hardware test of the UI on the uploader firmware (below)
 - [ ] Merge to `main` (flag still on) once the USB firmware is released; then remove the flag
+
+Phase 4 results (Oct 12):
+
+- **Upstream unchanged.** `uploader` is still at `550d80b`.
+- **One connection, `usbSession`** (`src/lib/usb/usbSession.ts`): connect, authorise, disconnect and the HELLO info, as a small store with a React hook. The sync modal and `window.skUsb` share it, so they never fight over the port. It imports the protocol code only when connecting, so `skLink` and `usbBackend` stay separate chunks.
+- **Source bar in the sync modal** (`CardSourceBar`, shown with `?usb=1` only): Card reader / USB, the connection state, Connect, Authorise port (while the device may be waiting in transfer mode), Disconnect, firmware and free space from HELLO, and a help list. The choice is remembered (`spotykach_cardSource`), not locked. Connecting, disconnecting or a lost connection rescans the modal. With no card folder picked, Import / Build SD opens on USB. With the flag on, a missing card shows in the bar instead of the blocking overlay, so the switch stays reachable.
+- **The sync diff never downloads over USB.** On the card reader, a card file nothing in its header ties to the project is still compared by content. Over USB that stays a conflict, and duplicates use `ICMT.h` only. `newFiles` / `updatedFiles` carry `file` only on the reader and a `load()` that downloads, which `applySyncDiff` uses. In the simulator, a diff of four 0.6 MB slots read 16 KB.
+- **Pull over USB:** the confirm step downloads each pulled or pooled slot with progress ("Downloading Pink 1 from Spotykach… 40%") before the build writes anything.
+- **Build over USB:** `exportSDStructure` runs `checkSpace` on the whole batch first (sizes estimated from each version's WAV header or duration), and refuses before any upload when it doesn't fit. Uploads report per-slot progress. The snapshot records `via: 'usb'` and the card size (`CardSnapshot.totalKiB`). An `AbortSignal` is plumbed through (between slots, and mid-upload), but nothing in the UI cancels yet.
+- **Card snapshot check** (`src/lib/card/cardSnapshot.ts`): every sync diff carries `cardCheck`, the live headers against the project's snapshot. Per slot: same, changed, new or removed. The card is called different when most of the files the project wrote are gone, or (USB) the card size differs. The modal shows one line: what changed since this project last wrote the card, or that it looks like a different card and a build binds the project to it.
+- **`scanDeviceChanges`** compares with the snapshot when it can't reach `project.json` (USB). The card reader keeps `project.json` and file dates.
+- **USB mode in the modal:** `config.txt` is left out of the decisions and shown as "needs the card reader", Snapshot card to project is shown off, and the confirmation gives a time ("About 3 min over USB, 80 MB at about 450 KB/s"). Card slots without a file at hand still show as occupied in both grids (`SlotEntry.occupied`), with no play button.
+- **Fixed on the way:** the sync modal kept its rows from the first scan, so Refresh (and now a source switch) showed a stale table. It now rebuilds them from each new diff, keeping the mode.
+- **Simulated device test passed** (the Phase 3 device model, the real `importUtils`, `exportUtils` and `UsbBackend`): diff statuses over USB (id match, stale 4.1.3 header, unmatched conflict, card-only, project-only) with no audio read; `load()` byte-exact with progress; `applySyncDiff` through `load()`; a batch that doesn't fit refused before any upload; per-slot progress; the snapshot's `via` and card size; snapshot verdicts (same, re-saved on the device, other card size, files gone); `scanDeviceChanges` from the snapshot.
+- **Not done:** a source chooser in the Export modal (its SD export picks a folder; over USB the sync modal does the same job), a Cancel button for a running USB batch, and playing a card slot over USB (it would need a download).
+- **Hardware test to do**, uploader firmware, Windows first: open with `?usb=1`, Import / Build SD, switch to USB, Connect (and Authorise port on first use, also after closing the picker by clicking outside it). Check the grid against `skUsb.slots()`, the snapshot line after a build, a Standard Build of a few changed slots (progress, time estimate, then in sync on rescan), a pull of a card-only slot into the project, a build that doesn't fit, unplugging mid-upload (the slot keeps its old file, the modal shows Connect again), then the same project over the card reader showing in sync.
 
 ## Open questions and risks
 

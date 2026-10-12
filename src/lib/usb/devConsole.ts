@@ -1,6 +1,7 @@
 /**
- * `window.skUsb`: drives the USB backend from the browser console, for testing on
- * hardware before the USB UI exists. Loaded only with the USB flag on.
+ * `window.skUsb`: drives the USB backend from the browser console, for hardware
+ * tests. Shares the app's connection (`usbSession`), so the sync modal sees a
+ * console connect and the other way round. Loaded only with the USB flag on.
  *
  *   await skUsb.connect()            // SysEx, serial port, HELLO
  *   await skUsb.authorize()          // first use, if connect() asks for a click
@@ -11,25 +12,26 @@
  *   await skUsb.exit()
  */
 import type { TapeColor } from '../../types';
-import { authorizePort, connect, MidiPortNotFoundError, NeedsAuthorizationError } from './skLink';
-import type { Connection } from './skLink';
-import { UsbBackend } from './usbBackend';
+import type { UsbBackend } from './usbBackend';
+import { usbSession } from './usbSession';
 
-let backend: UsbBackend | null = null;
-
-const adopt = (connection: Connection): UsbBackend => {
-    backend = new UsbBackend(connection);
-    backend.ondisconnect = (error) => {
-        console.warn(`[usb] ${error.message}`);
-        backend = null;
-    };
-    console.info('[usb] connected', connection.hello);
+const need = (): UsbBackend => {
+    const backend = usbSession.state.backend;
+    if (!backend) throw new Error('Not connected: run skUsb.connect() first.');
     return backend;
 };
 
-const need = (): UsbBackend => {
-    if (!backend) throw new Error('Not connected: run skUsb.connect() first.');
-    return backend;
+/** The session's result, or its error thrown, like the console calls always did. */
+const settle = (backend: UsbBackend | null): UsbBackend => {
+    if (backend) {
+        console.info('[usb] connected', backend.hello);
+        return backend;
+    }
+    const { status, error } = usbSession.state;
+    if (status === 'needs-authorization') {
+        console.info('[usb] If the rings are lit for transfer, run: await skUsb.authorize()  (the device waits about a minute for it)');
+    }
+    throw new Error(error ?? 'Not connected.');
 };
 
 const pickFile = (): Promise<File | null> => new Promise(resolve => {
@@ -51,22 +53,15 @@ const progress = (label: string) => {
 
 const api = {
     get backend() {
-        return backend;
+        return usbSession.state.backend;
     },
 
     async connect() {
-        try {
-            return adopt(await connect());
-        } catch (e) {
-            if (e instanceof NeedsAuthorizationError || e instanceof MidiPortNotFoundError) {
-                console.info('[usb] If the rings are lit for transfer, run: await skUsb.authorize()  (the device waits about a minute for it)');
-            }
-            throw e;
-        }
+        return settle(await usbSession.connect());
     },
 
     async authorize() {
-        return adopt(await authorizePort());
+        return settle(await usbSession.authorize());
     },
 
     async info() {
@@ -126,8 +121,7 @@ const api = {
     },
 
     async exit() {
-        await backend?.close();
-        backend = null;
+        await usbSession.disconnect();
     },
 };
 

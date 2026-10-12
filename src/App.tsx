@@ -69,6 +69,11 @@ import { collapseVersionHistoryOnSave } from './utils/versionHistory';
 import { useProjectSession } from './session/ProjectSession';
 import { useEscapeLayer } from './shell/escapeStack';
 import { appStorage } from './utils/storageNamespace';
+import { isUsbTransferEnabled } from './lib/usb/flag';
+import { preloadUsb, usbSession, useUsbSession } from './lib/usb/usbSession';
+import { CardSourceBar, type CardSource } from './components/CardSourceBar';
+import { describeSnapshotCheck } from './lib/card/cardSnapshot';
+import type { CardBackend } from './lib/card/cardBackend';
 
 const sanitizeFilename = (name: string) => {
   return name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.\-_]/g, '');
@@ -294,6 +299,13 @@ function App({ onExitToHub }: AppProps) {
 
   /** The sync modal's card can't be read (ejected); checked while the modal is open. */
   const [sdCardMissing, setSdCardMissing] = useState(false);
+
+  /** Experimental, behind ?usb=1: the sync modal can also reach the card over Spotykach's rear USB. */
+  const usbEnabled = useMemo(() => isUsbTransferEnabled(), []);
+  /** Where the sync modal reaches the card. The last choice is remembered, not a lock. */
+  const [cardSource, setCardSource] = useState<CardSource>(() =>
+    usbEnabled && appStorage.getItem('spotykach_cardSource') === 'usb' ? 'usb' : 'reader');
+  const usb = useUsbSession();
 
   const [activeSKProject, setActiveSKProject] = useState<string | null>(null);
   const [deviceDiff, setDeviceDiff] = useState<import('./utils/importUtils').DeviceDiff | null>(null);
@@ -1308,23 +1320,51 @@ function App({ onExitToHub }: AppProps) {
    * against no card instead, flagged missing: the modal opens and asks for the
    * card rather than failing with a toast.
    */
-  const scanSyncDiff = async (projectState: AppState, handle: FileSystemDirectoryHandle) => {
+  const scanSyncDiff = async (projectState: AppState, source: CardSource = cardSource) => {
     const { calculateSyncDiff } = await import('./utils/importUtils');
+    const { unreachableCard } = await import('./lib/card/cardBackend');
+    if (source === 'usb') {
+      // Not connected yet: the modal opens on its Connect bar, against no card.
+      setSdCardMissing(false);
+      return calculateSyncDiff(projectState, (await cardFor('usb')) ?? unreachableCard);
+    }
+    if (!sdHandle) {
+      setSdCardMissing(true);
+      return calculateSyncDiff(projectState, unreachableCard);
+    }
     const { FolderBackend, CardUnavailableError } = await import('./lib/card/folderBackend');
     try {
-      const diff = await calculateSyncDiff(projectState, new FolderBackend(handle));
+      const diff = await calculateSyncDiff(projectState, new FolderBackend(sdHandle));
       setSdCardMissing(false);
       return diff;
     } catch (e) {
       if (!(e instanceof CardUnavailableError)) throw e;
-      const { unreachableCard } = await import('./lib/card/cardBackend');
       setSdCardMissing(true);
       return calculateSyncDiff(projectState, unreachableCard);
     }
   };
 
-  const handleSKRefresh = async () => {
-    if (!sdHandle || !syncModalState) return;
+  /** The card on a route: the picked folder, or the connected Spotykach. Null when there is none. */
+  const cardFor = async (source: CardSource): Promise<CardBackend | null> => {
+    if (source === 'usb') {
+      const backend = usbSession.state.backend;
+      return backend?.connected ? backend : null;
+    }
+    if (!sdHandle) return null;
+    const { FolderBackend } = await import('./lib/card/folderBackend');
+    return new FolderBackend(sdHandle);
+  };
+
+  const handleCardSourceChange = (source: CardSource) => {
+    if (source === cardSource) return;
+    setCardSource(source);
+    try { appStorage.setItem('spotykach_cardSource', source); } catch { /* remembered for this session only */ }
+    if (source === 'usb') preloadUsb();
+    void handleSKRefresh(source);
+  };
+
+  const handleSKRefresh = async (source: CardSource = cardSource) => {
+    if (!syncModalState) return;
 
     setIsProcessing(true);
     setProgressMsg('Scanning SK folder on SD...');
@@ -1337,12 +1377,16 @@ function App({ onExitToHub }: AppProps) {
         projectState = await loadProjectFromDirectory(projectName, workHandle, (msg) => setProgressMsg(msg || 'Loading...'));
       }
 
-      const diff = await scanSyncDiff(projectState, sdHandle);
+      const diff = await scanSyncDiff(projectState, source);
 
       setSyncModalState(prev => prev ? { ...prev, diff } : null);
-      // A missing card shows in the modal itself.
-      const { FolderBackend } = await import('./lib/card/folderBackend');
-      if (await new FolderBackend(sdHandle).isReachable()) showToast("SD Card rescanned", "success");
+      // A missing card or a USB connection to make shows in the modal itself.
+      if (source === 'usb') {
+        if (usbSession.state.backend?.connected) showToast("Spotykach rescanned", "success");
+      } else if (sdHandle) {
+        const { FolderBackend } = await import('./lib/card/folderBackend');
+        if (await new FolderBackend(sdHandle).isReachable()) showToast("SD Card rescanned", "success");
+      }
     } catch (e: any) {
       console.error(e);
       showToast("SK scan failed: " + e.message, 'error');
@@ -1364,8 +1408,8 @@ function App({ onExitToHub }: AppProps) {
   const sdCardMissingRef = useRef(sdCardMissing);
   sdCardMissingRef.current = sdCardMissing;
   useEffect(() => {
-    if (!syncModalOpen || !sdHandle) {
-      if (!syncModalOpen) setSdCardMissing(false);
+    if (!syncModalOpen || !sdHandle || cardSource !== 'reader') {
+      if (!syncModalOpen || cardSource !== 'reader') setSdCardMissing(false);
       return;
     }
     let cancelled = false;
@@ -1385,7 +1429,15 @@ function App({ onExitToHub }: AppProps) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [syncModalOpen, sdHandle]);
+  }, [syncModalOpen, sdHandle, cardSource]);
+
+  // Over USB, rescan when Spotykach connects or goes away while the modal is open.
+  const lastUsbBackend = useRef(usb.backend);
+  useEffect(() => {
+    const changed = lastUsbBackend.current !== usb.backend;
+    lastUsbBackend.current = usb.backend;
+    if (changed && syncModalOpen && cardSource === 'usb') void handleSKRefreshRef.current('usb');
+  }, [usb.backend, syncModalOpen, cardSource]);
 
   // Dirty tracking moved into useProjectSession — see session/ProjectSession.tsx.
 
@@ -4394,11 +4446,15 @@ function App({ onExitToHub }: AppProps) {
     showToast('Empty slot browser preference reset', 'success');
   };
   const handleOpenSyncModal = async (mode: 'push' | 'import' = 'push') => {
-    if (!sdHandle) return;
+    // No card folder picked: USB is the only way in.
+    const source: CardSource = !sdHandle && usbEnabled ? 'usb' : cardSource;
+    if (source === 'reader' && !sdHandle) return;
+    if (source !== cardSource) setCardSource(source);
+    if (source === 'usb') preloadUsb();
     setIsProcessing(true);
     setProgressMsg(mode === 'push' ? 'Scanning SK slot differences...' : 'Scanning SK folder on SD...');
     try {
-      const diff = await scanSyncDiff(state, sdHandle);
+      const diff = await scanSyncDiff(state, source);
       setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: mode });
     } catch (e: any) {
       showToast('SK scan failed: ' + e.message, 'error');
@@ -4562,7 +4618,7 @@ function App({ onExitToHub }: AppProps) {
                 <div className="h-5 w-px bg-gray-800 mx-0.5" />
 
                 {/* Combined SD Action — only when SD connected */}
-                {sdHandle && (
+                {(sdHandle || usbEnabled) && (
                   <button
                     onClick={() => handleOpenSyncModal('push')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
@@ -5273,7 +5329,7 @@ function App({ onExitToHub }: AppProps) {
                 onImportZip={handleImportZip}
                 onExportZip={handleExportZip}
                 onBuildProject={async (projectName) => {
-                  if (!workHandle || !sdHandle) {
+                  if (!workHandle || (cardSource === 'reader' && !sdHandle)) {
                     showToast("Both Project Folder and SD Card must be connected.", 'error');
                     return;
                   }
@@ -5288,7 +5344,7 @@ function App({ onExitToHub }: AppProps) {
 
                     // 2. Scan the card and calculate the diff
                     setProgressMsg('Scanning SD Card...');
-                    const diff = await scanSyncDiff(projectState, sdHandle);
+                    const diff = await scanSyncDiff(projectState);
 
                     setSyncModalState({ isOpen: true, projectName, diff, defaultMode: 'push' });
 
@@ -5301,14 +5357,14 @@ function App({ onExitToHub }: AppProps) {
                   }
                 }}
                 onImportSK={async () => {
-                  if (!sdHandle) {
+                  if (cardSource === 'reader' && !sdHandle) {
                     showToast("SD card not connected.", 'error');
                     return;
                   }
                   setIsProcessing(true);
                   setProgressMsg('Scanning SK folder on SD...');
                   try {
-                    const diff = await scanSyncDiff(state, sdHandle);
+                    const diff = await scanSyncDiff(state);
                     setSyncModalState({ isOpen: true, projectName: currentProjectName || '', diff, defaultMode: 'import' });
                   } catch (e: any) {
                     console.error(e);
@@ -5328,10 +5384,34 @@ function App({ onExitToHub }: AppProps) {
                 projectName={syncModalState?.projectName || ''}
                 diff={syncModalState.diff}
                 defaultMode={syncModalState.defaultMode ?? 'push'}
-                onChangeSDCard={handleSetSDFolder}
-                onRefresh={handleSKRefresh}
+                onChangeSDCard={cardSource === 'reader' ? handleSetSDFolder : undefined}
+                onRefresh={() => handleSKRefresh()}
                 isRefreshing={isProcessing}
-                cardMissing={sdCardMissing}
+                // With USB on, the source bar says the card is missing and leaves the switch reachable.
+                cardMissing={!usbEnabled && sdCardMissing}
+                usbMode={cardSource === 'usb'}
+                blockedReason={cardSource === 'usb'
+                  ? (usb.backend ? undefined : 'Connect Spotykach first')
+                  : (sdCardMissing ? 'SD card not found' : undefined)}
+                sourceBar={usbEnabled ? (() => {
+                  const reachable = cardSource === 'usb' ? !!usb.backend : !sdCardMissing;
+                  const check = syncModalState.diff.cardCheck;
+                  return (
+                    <CardSourceBar
+                      source={cardSource}
+                      onSourceChange={handleCardSourceChange}
+                      readerLabel={sdHandle?.name}
+                      readerMissing={sdCardMissing}
+                      usb={usb}
+                      onConnect={() => { void usbSession.connect(); }}
+                      onAuthorize={() => { void usbSession.authorize(); }}
+                      onDisconnect={() => { void usbSession.disconnect(); }}
+                      cardNote={reachable && check ? describeSnapshotCheck(check) : null}
+                      cardNoteIsWarning={check?.verdict === 'different-card'}
+                      disabled={isProcessing}
+                    />
+                  );
+                })() : undefined}
                 onClose={() => setSyncModalState(null)}
                 onConfirm={async (decisions, options: ExportOptions, importDecisions) => {
                   const projectName = syncModalState?.projectName;
@@ -5386,13 +5466,22 @@ function App({ onExitToHub }: AppProps) {
 
                         const { v4: uuidv4 } = await import('uuid');
                         const { readWavMetadata } = await import('./utils/importUtils');
+                        // Over USB the card files aren't at hand: download each one now.
+                        const usbCard = cardSource === 'usb' ? await cardFor('usb') : null;
+                        if (cardSource === 'usb' && !usbCard) throw new Error('Spotykach is not connected. Connect it and try again.');
 
                         for (const [slotId, dec] of importEntries) {
-                          if (!dec.file) continue;
-                          const arrayBuffer = await dec.file.arrayBuffer();
-                          const blob = new Blob([arrayBuffer], { type: dec.file.type || 'audio/wav' });
+                          let cardFile = dec.file;
+                          if (!cardFile && usbCard) {
+                            const where = `${dec.color} ${dec.slotIndex}`;
+                            cardFile = await usbCard.readFile(dec.color as TapeColor, dec.slotIndex,
+                              (f) => setProgressMsg(`Downloading ${where} from Spotykach… ${Math.round(f * 100)}%`));
+                          }
+                          if (!cardFile) continue;
+                          const arrayBuffer = await cardFile.arrayBuffer();
+                          const blob = new Blob([arrayBuffer], { type: cardFile.type || 'audio/wav' });
                           // The original name (INAM) when the card file has one, not `1.WAV`.
-                          const fileName = (await readWavMetadata(blob))?.name || dec.file.name || `${slotId}.wav`;
+                          const fileName = (await readWavMetadata(blob))?.name || cardFile.name || `${slotId}.wav`;
 
                           const versionId = uuidv4();
                           const fileId = uuidv4();
@@ -5447,17 +5536,21 @@ function App({ onExitToHub }: AppProps) {
                       // ─── PHASE B: EXPORT / BUILD (Write to SD) ───
                       const hasPushDecisions = Object.values(decisions).some(d => d !== 'skip');
                       if (hasPushDecisions || (options.includeConfig && options.configDecision === 'push_to_sk')) {
-                        if (!sdHandle) throw new Error("Hardware folder access lost. Please re-select SD folder.");
-                        
+                        const card = await cardFor(cardSource);
+                        if (!card) throw new Error(cardSource === 'usb'
+                          ? 'Spotykach is not connected. Connect it and try again.'
+                          : "Hardware folder access lost. Please re-select SD folder.");
+
                         const { exportSDStructure } = await import('./utils/exportUtils');
                         const cardSnapshot = await exportSDStructure(newState, { // Use newState which includes pooled files
+                          card,
                           includeProject: true,
                           directWrite: true,
                           smartSync: options.skMode === 'overwrite',
                           skMode: options.skMode,
                           userLibrary: userLibrary,
                           mirrorProjectToSD: getDurabilityPrefs().mirrorProjectsToSD,
-                          destinationHandle: sdHandle,
+                          destinationHandle: sdHandle ?? undefined,
                           workHandle: workHandle,
                           projectName: projectName,
                           syncDecisions: finalDecisions,
@@ -5471,8 +5564,9 @@ function App({ onExitToHub }: AppProps) {
 
                       showToast("Hardware Sync Complete", "success");
                       scanProjects(workHandle, sdHandle);
+                      if (cardSource === 'usb') void usbSession.refreshInfo();
                       // ── Background SK snapshot (non-blocking, opt-in per build) ──
-                      if (options.skSnapshot && workHandle && sdHandle && projectName) {
+                      if (options.skSnapshot && cardSource === 'reader' && workHandle && sdHandle && projectName) {
                         createSKBackup(projectName, workHandle, sdHandle)
                           .then(() => {
                             if (currentProjectName === projectName) {

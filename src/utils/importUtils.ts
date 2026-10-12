@@ -1,9 +1,11 @@
-import type { AppState, TapeColor, FileRecord, AudioVersion, ProjectSummary } from '../types';
+import type { AppState, CardSnapshot, TapeColor, FileRecord, AudioVersion, ProjectSummary } from '../types';
 import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { hashBlob } from './assetUtils';
 import type { CardBackend, SlotDescriptor } from '../lib/card/cardBackend';
 import { readCardSlots, slotFile } from '../lib/card/cardBackend';
+import { checkCardSnapshot } from '../lib/card/cardSnapshot';
+import type { SnapshotCheck } from '../lib/card/cardSnapshot';
 
 export type ImportType =
     | 'PROJECT_BACKUP'
@@ -387,7 +389,10 @@ const localFrames = async (blob: Blob): Promise<number | undefined> => {
 export interface SyncDiffItemNew {
     slot: string;
     name: string;
-    file: File;
+    /** The card file, when the route has it without a download (card reader). */
+    file?: File;
+    /** The card file, downloaded over USB when `file` is absent. */
+    load: (onProgress?: (fraction: number) => void) => Promise<File>;
     slotIndex: number;
     color: TapeColor;
     size: number;
@@ -395,7 +400,10 @@ export interface SyncDiffItemNew {
 export interface SyncDiffItemUpdate {
     slot: string;
     name: string;
-    file: File;
+    /** The card file, when the route has it without a download (card reader). */
+    file?: File;
+    /** The card file, downloaded over USB when `file` is absent. */
+    load: (onProgress?: (fraction: number) => void) => Promise<File>;
     existingFileId: string;
     existingName: string;
     size: number;
@@ -404,7 +412,8 @@ export interface SyncDiffItemUpdate {
 // Diff Types for Device Scanning
 export interface DeviceFileChange {
     slot: string; // e.g. "A1"
-    file: File;
+    /** The card file. Folder route only: over USB it would cost a download. */
+    file?: File;
     color?: import('../types').TapeColor;
     slotId?: number;
     // For Modified:
@@ -444,6 +453,8 @@ export interface SyncDiff {
         location?: 'root' | 'sk';
     };
     duplicates: DuplicateGroup[];
+    /** The card against the project's card snapshot: same card, changed since, or another card. */
+    cardCheck?: SnapshotCheck;
     // Legacy support (optional, can simulate if needed or refactor consumers)
     newFiles: SyncDiffItemNew[];
     updatedFiles: SyncDiffItemUpdate[];
@@ -499,9 +510,11 @@ export const detectCueChunk = async (file: File): Promise<boolean> => {
 
 // 1. Calculate Diff
 /**
- * Compares the project with the card. Runs on slot descriptors (header reads);
- * the card file's bytes are only fetched when nothing in its header ties it to
- * the project file, or when the diff has to hand the file over for an import.
+ * Compares the project with the card. Runs on slot descriptors (header reads).
+ * On the card reader the bytes are at hand, so a card file nothing in its header
+ * ties to the project is compared by content. Over USB that would be a download
+ * of up to 16 MB per slot, so the diff never downloads: such a slot stays a
+ * conflict, and an import downloads it through `load()` when the user confirms.
  */
 export const calculateSyncDiff = async (
     projectState: AppState,
@@ -509,11 +522,18 @@ export const calculateSyncDiff = async (
 ): Promise<SyncDiff> => {
     const cardConfig = await card.readConfig?.() ?? null;
     const cardSlots = await readCardSlots(card);
+    // The card size settles a card swap, but only USB can read it.
+    const totalKiB = card.kind === 'usb' ? (await card.info()).totalKiB : undefined;
     const remoteBytes = new Map<string, Promise<File>>();
     const remoteFileOf = (slotId: string, desc: SlotDescriptor): Promise<File> => {
         if (!remoteBytes.has(slotId)) remoteBytes.set(slotId, slotFile(card, desc));
         return remoteBytes.get(slotId)!;
     };
+    /** The card file's SHA-256, when its bytes come without a download. */
+    const remoteHashOf = async (slotId: string, desc: SlotDescriptor): Promise<string | null> =>
+        desc.file ? hashBlob(await remoteFileOf(slotId, desc)) : null;
+    const loaderOf = (desc: SlotDescriptor) => (onProgress?: (fraction: number) => void): Promise<File> =>
+        desc.file ? Promise.resolve(desc.file) : card.readFile(desc.tape, desc.slot, onProgress);
 
     // hash → [{slotId, side, name}] — used for duplicate detection
     const hashRegistry = new Map<string, DuplicateEntry[]>();
@@ -528,6 +548,7 @@ export const calculateSyncDiff = async (
         summary: { matches: 0, conflicts: 0, localOnly: 0, remoteOnly: 0 },
         totalCount: 0,
         duplicates: [],
+        cardCheck: checkCardSnapshot(projectState.cardSnapshot, cardSlots, totalKiB),
         newFiles: [],
         updatedFiles: [],
     };
@@ -606,9 +627,9 @@ export const calculateSyncDiff = async (
                     isMatch = true;
                 } else if (currentVer?.blob) {
                     // 3–4. Nothing of ours ties them: compare the bytes. This matches a
-                    // version that was itself imported from this card.
-                    remoteHash = await hashBlob(await remoteFileOf(slotId, remote));
-                    isMatch = localHash === remoteHash;
+                    // version that was itself imported from this card. Not over USB.
+                    remoteHash = await remoteHashOf(slotId, remote);
+                    isMatch = remoteHash !== null && localHash === remoteHash;
                     if (isMatch) {
                         match = 'bytes';
                     } else if (!remoteMeta?.id && remoteMeta?.name && sameName(remoteMeta.name, localFile)) {
@@ -634,8 +655,8 @@ export const calculateSyncDiff = async (
                 if (!isMatch) {
                     // ICMT.h when present, so a card file lines up with the project version
                     // it was exported from; otherwise the bytes.
-                    const rHash = remoteMeta?.hash ?? remoteHash ?? await hashBlob(await remoteFileOf(slotId, remote));
-                    registerHash(rHash, { slotId, side: 'sd', name: remoteMeta?.name ?? remote.fileName });
+                    const rHash = remoteMeta?.hash ?? remoteHash ?? await remoteHashOf(slotId, remote);
+                    if (rHash) registerHash(rHash, { slotId, side: 'sd', name: remoteMeta?.name ?? remote.fileName });
                 }
 
                 if (isMatch) {
@@ -648,7 +669,8 @@ export const calculateSyncDiff = async (
                     diff.updatedFiles.push({
                         slot: slotId,
                         name: remoteMeta?.name ?? remote.fileName,
-                        file: await remoteFileOf(slotId, remote),
+                        file: remote.file,
+                        load: loaderOf(remote),
                         existingFileId: localFile.id,
                         existingName: localFile.name,
                         size: remote.size
@@ -663,7 +685,8 @@ export const calculateSyncDiff = async (
                 diff.newFiles.push({
                     slot: slotId,
                     name: remoteMeta?.name ?? remote.fileName,
-                    file: await remoteFileOf(slotId, remote),
+                    file: remote.file,
+                    load: loaderOf(remote),
                     slotIndex: index,
                     color: color,
                     size: remote.size
@@ -716,7 +739,8 @@ export const calculateSyncDiff = async (
             }
         }
         if (slotDiff.status === 'REMOTE_ONLY' && slotDiff.remote) {
-            const h = slotDiff.remoteMeta?.hash ?? await hashBlob(await remoteFileOf(slotId, slotDiff.remote));
+            const h = slotDiff.remoteMeta?.hash ?? await remoteHashOf(slotId, slotDiff.remote);
+            if (!h) continue;
             const existing = hashRegistry.get(h);
             if (!existing?.find(e => e.slotId === slotId && e.side === 'sd')) {
                 registerHash(h, { slotId, side: 'sd', name: slotDiff.remoteMeta?.name ?? slotDiff.remote.fileName });
@@ -760,15 +784,16 @@ export const applySyncDiff = async (
 
         onProgress?.(`Importing new file: ${item.name} into ${item.slot}...`);
 
-        const arrayBuffer = await item.file.arrayBuffer();
-        const safeBlob = new Blob([arrayBuffer], { type: item.file.type });
+        const source = item.file ?? await item.load();
+        const arrayBuffer = await source.arrayBuffer();
+        const safeBlob = new Blob([arrayBuffer], { type: source.type });
 
         const newFileId = uuidv4();
         // Create File Record
         const newFile: FileRecord = {
             id: newFileId,
             name: item.name,
-            originalName: item.file.name,
+            originalName: source.name,
             versions: [{
                 id: uuidv4(),
                 timestamp: Date.now(),
@@ -802,15 +827,16 @@ export const applySyncDiff = async (
 
         onProgress?.(`Syncing update: ${item.name} for ${item.slot} (${decision})...`);
 
-        const arrayBuffer = await item.file.arrayBuffer();
-        const safeBlob = new Blob([arrayBuffer], { type: item.file.type });
+        const source = item.file ?? await item.load();
+        const arrayBuffer = await source.arrayBuffer();
+        const safeBlob = new Blob([arrayBuffer], { type: source.type });
 
         if (decision === 'keep_both') {
             const newFileId = uuidv4();
             const newFile: FileRecord = {
                 id: newFileId,
                 name: item.name + " (Sync)",
-                originalName: item.file.name,
+                originalName: source.name,
                 versions: [{
                     id: uuidv4(),
                     timestamp: Date.now(),
@@ -875,7 +901,43 @@ export interface DeviceDiff {
     syncedFiles: DeviceFileChange[];
 }
 
-export const scanDeviceChanges = async (card: CardBackend): Promise<DeviceDiff | null> => {
+/**
+ * What changed on the card since the last export. The card reader reads
+ * `SK/project.json` and compares file dates. USB reaches neither, so with
+ * `fromSnapshot` it compares the header reads with the project's card snapshot.
+ */
+export const scanDeviceChanges = async (
+    card: CardBackend,
+    fromSnapshot?: { snapshot?: CardSnapshot; projectName: string },
+): Promise<DeviceDiff | null> => {
+    if (!card.files) {
+        if (!fromSnapshot?.snapshot) return null;
+        try {
+            const cardSlots = await readCardSlots(card);
+            const check = checkCardSnapshot(fromSnapshot.snapshot, cardSlots);
+            const diff: DeviceDiff = {
+                projectId: fromSnapshot.projectName,
+                projectName: fromSnapshot.projectName,
+                newFiles: [],
+                updatedFiles: [],
+                syncedFiles: [],
+            };
+            for (const [key, desc] of cardSlots) {
+                const change: DeviceFileChange = {
+                    slot: key, file: desc.file, color: desc.tape, slotId: desc.slot,
+                    originalFileId: fromSnapshot.snapshot.slots[key]?.fileId,
+                };
+                const drift = check.slots[key];
+                if (drift === 'new') diff.newFiles.push(change);
+                else if (drift === 'changed') diff.updatedFiles.push(change);
+                else diff.syncedFiles.push(change);
+            }
+            return diff;
+        } catch (e) {
+            console.error("Failed to scan device changes", e);
+            return null;
+        }
+    }
     try {
         // 1. Read Project Manifest (folder route only: USB can't reach project.json)
         let projectIdentity: any = null;

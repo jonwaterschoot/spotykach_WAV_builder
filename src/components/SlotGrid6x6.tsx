@@ -23,6 +23,8 @@ export interface SlotEntry {
     num: number;
     blob: Blob | null;
     name?: string;
+    /** Holds a file even without a blob to play: a card slot over USB, where the audio costs a download. */
+    occupied?: boolean;
 }
 
 export interface SlotActionBadge {
@@ -166,7 +168,7 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
                             const isHighlighted = highlightedSlot === slotKey;
                             const isHovered = hoveredSlotKey === slotKey;
 
-                            if (!entry || !entry.blob) {
+                            if (!entry || (!entry.blob && !entry.occupied)) {
                                 return (
                                     <div
                                         key={slotKey}
@@ -206,7 +208,7 @@ export const SlotGrid6x6: React.FC<SlotGrid6x6Props> = ({
                                     >
                                         {isPlaying
                                             ? <Pause size={8} fill="currentColor" className="shrink-0" style={{ color: hex }} />
-                                            : <Play size={8} fill="currentColor" className="shrink-0 opacity-60" style={{ color: hex }} />
+                                            : entry.blob && <Play size={8} fill="currentColor" className="shrink-0 opacity-60" style={{ color: hex }} />
                                         }
                                         <span className="text-[10px] font-mono font-bold leading-none truncate" style={{ color: hex }}>
                                             {cellLabel}

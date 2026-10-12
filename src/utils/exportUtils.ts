@@ -40,6 +40,8 @@ export interface ExportSDOptions {
     includeConfig?: boolean;
     forceOverwrite?: boolean;
     onConvert?: (blob: Blob, metadata?: import('../types').WavMetadata) => Promise<Blob>;
+    /** Stops the build between slots, and mid-upload over USB (the slot keeps its old file). */
+    signal?: AbortSignal;
 }
 
 /**
@@ -708,6 +710,18 @@ export const versionSlices = async (file: FileRecord, version: AudioVersion): Pr
     };
 };
 
+/**
+ * The size of a version's hardware WAV (48 kHz stereo float), before converting
+ * it: from its WAV header, or its duration. Null when neither is known.
+ */
+const estimateHardwareSize = async (version: AudioVersion): Promise<number | null> => {
+    const HEADER = 4096; // fmt, LIST and cue chunks, generously
+    const info = version.blob ? await readWavHeaderInfo(version.blob).catch(() => null) : null;
+    if (info?.frames && info.sampleRate) return Math.ceil(info.frames * 48000 / info.sampleRate) * 8 + HEADER;
+    if (version.duration > 0) return Math.ceil(version.duration * 48000) * 8 + HEADER;
+    return null;
+};
+
 const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
     id: file.id,
     name: file.originalName || file.name,
@@ -790,26 +804,49 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             const snapshot: CardSnapshot = {
                 updatedAt: now,
                 slots: { ...(state.cardSnapshot?.slots ?? {}) },
+                totalKiB: state.cardSnapshot?.totalKiB,
             };
             let writtenCount = 0;
             let skippedCount = 0;
             const activeSlots = TAPE_COLORS.reduce((acc, c) => acc + state.tapes[c].slots.filter(s => s.fileId).length, 0);
             let processed = 0;
 
+            const decisionFor = (slotRef: string, fileId: string | null): SlotSyncDecision | undefined => {
+                if (Array.isArray(options.syncDecisions)) return options.syncDecisions.find(d => d.id === slotRef)?.decision;
+                if (options.syncDecisions) return options.syncDecisions[slotRef];
+                return fileId ? 'export' : undefined;
+            };
+            const writes = (d: SlotSyncDecision | undefined) => d === 'export' || d === 'keep_local' || d === 'use_backup';
+
+            // Over USB, check the whole batch fits before writing any of it. The card
+            // reader can't read the card's free space.
+            if (card.checkSpace) {
+                const planned: import('../lib/card/cardBackend').PlannedWrite[] = [];
+                for (const color of TAPE_COLORS) {
+                    for (const slot of state.tapes[color].slots) {
+                        if (!slot.fileId || !writes(decisionFor(`${color}${slot.id}`, slot.fileId))) continue;
+                        const file = state.files[slot.fileId];
+                        const version = file?.versions.find(v => v.id === file.currentVersionId);
+                        const size = version ? await estimateHardwareSize(version) : null;
+                        if (size) planned.push({ tape: color, slot: slot.id, size });
+                    }
+                }
+                const space = await card.checkSpace(planned);
+                if (!space.ok) {
+                    const size = (kib: number) => kib < 10 * 1024 ? `${kib} KB` : `${(kib / 1024).toFixed(0)} MB`;
+                    throw new Error(`Not enough space on the card: this build needs about ${size(space.neededKiB)} free, the card has ${size(space.freeKiB)}. Remove some slots first.`);
+                }
+                const info = await card.info();
+                if (info.totalKiB) snapshot.totalKiB = info.totalKiB;
+            }
+
             for (const color of TAPE_COLORS) {
                 const tape = state.tapes[color];
 
                 for (const slot of tape.slots) {
+                    options.signal?.throwIfAborted();
                     const slotRef = `${color}${slot.id}`;
-                    let decision: SlotSyncDecision | undefined = undefined;
-
-                    if (Array.isArray(options.syncDecisions)) {
-                        decision = options.syncDecisions.find(d => d.id === slotRef)?.decision;
-                    } else if (options.syncDecisions) {
-                        decision = options.syncDecisions[slotRef];
-                    } else if (!options.syncDecisions && slot.fileId) {
-                        decision = 'export';
-                    }
+                    const decision = decisionFor(slotRef, slot.fileId);
 
                     if (decision === 'delete' || decision === 'delete_local') {
                         try { await card.deleteSlot(color, slot.id); } catch (e) { }
@@ -822,7 +859,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                         continue;
                     }
 
-                    if (decision === 'export' || decision === 'keep_local' || decision === 'use_backup') {
+                    if (writes(decision)) {
                         const fileId = slot.fileId;
                         const file = state.files[fileId];
                         const version = file?.versions.find(v => v.id === file.currentVersionId);
@@ -844,7 +881,11 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                                 }
                             }
 
-                            const wrote = await card.writeSlot(color, slot.id, blobToWrite, { compare });
+                            const slotProgress = 20 + (((processed - 1) / Math.max(1, activeSlots)) * 50);
+                            const onSlotProgress = card.kind === 'usb'
+                                ? (fraction: number) => onProgress?.(`Uploading ${color} Tape ${slot.id}… ${Math.round(fraction * 100)}%`, slotProgress + (fraction * 50) / Math.max(1, activeSlots))
+                                : undefined;
+                            const wrote = await card.writeSlot(color, slot.id, blobToWrite, { compare, onProgress: onSlotProgress, signal: options.signal });
                             if (wrote) writtenCount++; else skippedCount++;
 
                             // Written or already identical: either way the card now holds this.

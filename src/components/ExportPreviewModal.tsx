@@ -27,12 +27,17 @@ interface SlotRow {
     localName?: string;
     localBlob?: Blob | null;
     hardwareName?: string;
+    /** The card file, when the route has it without a download. Null over USB. */
     hardwareBlob?: Blob | null;
+    /** The card holds a file in this slot, whether or not its bytes are at hand. */
+    onCard: boolean;
     /** Only the card file's name and length tie it to the project file (`match: 'name'`). */
     probableMatch?: boolean;
     /** Same audio, but the card file's header is out of date (see `SyncSlotDiff.staleHeader`). */
     staleHeader?: boolean;
     size: number;
+    /** The card file's size, from the listing. */
+    remoteSize: number;
     primary: SKPrimaryDecision;
     toPool: boolean;
 }
@@ -40,6 +45,7 @@ interface SlotRow {
 export interface ImportDecision {
     pullToSlot: boolean;
     toPool: boolean;
+    /** The card file. Null over USB: the caller downloads it. */
     file: File | null;
     color: string;
     slotIndex: number;
@@ -61,7 +67,23 @@ interface ExportPreviewModalProps {
     onChangeSDCard?: () => void;
     /** The card can't be read any more (ejected): nothing may be written or imported. */
     cardMissing?: boolean;
+    /** Card reader / USB switch and connection, under the header. */
+    sourceBar?: React.ReactNode;
+    /**
+     * Over USB: only the slot files are reachable (no config.txt, no SK backup),
+     * and every slot costs an upload or a download, so the confirmation gives a time.
+     */
+    usbMode?: boolean;
+    /** Why nothing can be applied right now (USB not connected). */
+    blockedReason?: string;
 }
+
+/** Measured on Windows, uploader firmware: 460–481 KB/s up, 470 KB/s down. */
+const USB_BYTES_PER_SECOND = 450 * 1024;
+
+const formatDuration = (seconds: number) => seconds < 90
+    ? `${Math.max(1, Math.round(seconds))} s`
+    : `${Math.round(seconds / 60)} min`;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -145,7 +167,7 @@ function defaultToPool(
  * written back to another slot — is `cardFate`, and every surface reads that one.
  */
 function isCardRemoval(r: SlotRow): boolean {
-    if (!r.hardwareBlob) return false;
+    if (!r.onCard) return false;
     if (r.primary === 'delete_sk') return true;
     return r.primary === 'push_to_sk' && r.status === 'CONFLICT';
 }
@@ -507,9 +529,12 @@ const CardLossPanel: React.FC<{
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
-    isOpen, onClose, onConfirm, diff, projectName, defaultMode = 'push',
-    onRefresh, isRefreshing, onChangeSDCard, cardMissing = false
+    isOpen, onClose, onConfirm, diff: cardDiff, projectName, defaultMode = 'push',
+    onRefresh, isRefreshing, onChangeSDCard, cardMissing = false,
+    sourceBar, usbMode = false, blockedReason,
 }) => {
+    // USB can't reach config.txt: leave it out of the decisions, show it as locked.
+    const diff = useMemo(() => usbMode ? { ...cardDiff, config: undefined } : cardDiff, [cardDiff, usbMode]);
     const [mode, setMode] = useState<'import' | 'push'>(defaultMode);
 
     useEffect(() => {
@@ -537,11 +562,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 localName: lf?.name,
                 localBlob: lv?.blob || null,
                 // The original name (INAM) when the card file has one, not `1.WAV`.
-                hardwareName: sd.remoteMeta?.name ?? sd.remoteFile?.name,
+                hardwareName: sd.remoteMeta?.name ?? sd.remote?.name ?? sd.remoteFile?.name ?? sd.remote?.fileName,
                 hardwareBlob: sd.remoteFile || null,
+                onCard: !!sd.remote,
                 probableMatch: sd.match === 'name',
                 staleHeader: sd.staleHeader,
-                size: lv?.blob?.size || sd.remoteFile?.size || 0,
+                size: lv?.blob?.size || sd.remote?.size || 0,
+                remoteSize: sd.remote?.size ?? 0,
                 primary: defaultPrimary(status, preset, currentMode, sd.staleHeader),
                 toPool: defaultToPool(status, preset, currentMode),
             });
@@ -634,6 +661,19 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         if (!diff.config) return 'skip';
         return defaultPrimary(diff.config.status as any, initialPreset, mode);
     });
+
+    // A rescan (Refresh, another source, a USB connect) brings a new diff: start
+    // over from it, keeping the mode.
+    const shownDiff = useRef(diff);
+    useEffect(() => {
+        if (shownDiff.current === diff) return;
+        shownDiff.current = diff;
+        setIsCustomOverride(false);
+        setRescueBeforeClean(false);
+        const preset: QuickPreset = mode === 'import' ? 'import_pool_only' : 'push_sync';
+        setRows(buildRows(preset, mode));
+        setConfigDecision(diff.config ? defaultPrimary(diff.config.status as SlotRow['status'], preset, mode) : 'skip');
+    }, [diff, buildRows, mode]);
 
     const handleModeToggle = (m: 'import' | 'push') => {
         setMode(m);
@@ -807,9 +847,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             skMode: currentPreset === 'push_clean' ? 'clean' : 'overwrite',
             configDecision,
             // Legacy fields App.tsx still reads
-            includeConfig: true,
+            includeConfig: !usbMode,
             forceOverwrite: true,
-            skSnapshot,
+            skSnapshot: skSnapshot && !usbMode,
         } as any, importDecisions);
         setIsApplying(false);
     };
@@ -847,40 +887,33 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             projectSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, blob: r.localBlob, name: r.localName };
             if (isUntouched) dimmedProjectSlots[key] = true;
         }
-        if (r.hardwareBlob) {
-            sdSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, blob: r.hardwareBlob, name: r.hardwareName };
+        // Over USB a card slot has no blob (`hardwareBlob` null) but is still occupied.
+        const cardEntry = r.onCard ? { blob: r.hardwareBlob ?? null, name: r.hardwareName } : null;
+        const projectEntry = r.localBlob ? { blob: r.localBlob, name: r.localName } : null;
+        if (cardEntry) {
+            sdSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, ...cardEntry, occupied: true };
             if (isUntouched) dimmedSdSlots[key] = true;
         }
 
         // ── FUTURE (AFTER) ────────────────────────────────────────────────────
         // Project side future
-        let prAfterBlob = r.localBlob;
-        let prAfterName = r.localName;
-        if (r.primary === 'pull_to_slot') {
-            prAfterBlob = r.hardwareBlob;
-            prAfterName = r.hardwareName;
-        } else if (r.primary === 'delete_local') {
-            prAfterBlob = null;
-            prAfterName = undefined;
-        }
-        if (prAfterBlob) {
-            afterProjectSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, blob: prAfterBlob, name: prAfterName };
-            if (prAfterBlob === r.localBlob) dimmedAfterProjectSlots[key] = true;
+        const prChanges = r.primary === 'pull_to_slot' || r.primary === 'delete_local';
+        const prAfter = r.primary === 'pull_to_slot' ? cardEntry
+            : r.primary === 'delete_local' ? null
+            : projectEntry;
+        if (prAfter) {
+            afterProjectSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, ...prAfter, occupied: true };
+            if (!prChanges) dimmedAfterProjectSlots[key] = true;
         }
 
         // SD side future
-        let sdAfterBlob = r.hardwareBlob;
-        let sdAfterName = r.hardwareName;
-        if (r.primary === 'push_to_sk') {
-            sdAfterBlob = r.localBlob;
-            sdAfterName = r.localName;
-        } else if (r.primary === 'delete_sk') {
-            sdAfterBlob = null;
-            sdAfterName = undefined;
-        }
-        if (sdAfterBlob) {
-            afterSdSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, blob: sdAfterBlob, name: sdAfterName };
-            if (sdAfterBlob === r.hardwareBlob) dimmedAfterSdSlots[key] = true;
+        const sdChanges = r.primary === 'push_to_sk' || r.primary === 'delete_sk';
+        const sdAfter = r.primary === 'push_to_sk' ? projectEntry
+            : r.primary === 'delete_sk' ? null
+            : cardEntry;
+        if (sdAfter) {
+            afterSdSlots[key] = { slotKey: key, color: r.tapeColor, num: r.slotNum, ...sdAfter, occupied: true };
+            if (!sdChanges) dimmedAfterSdSlots[key] = true;
         }
 
         // ── Visual Indicators (Current Grids Only) ───────────────────────────
@@ -1022,6 +1055,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         </button>
                     </div>
                 </div>
+                {sourceBar}
                 {/* ════ SHARED PRESETS HEADER ══════════════════════════════════ */}
                 <div className="px-6 py-4 bg-[#111] border-b border-white/5 flex items-start justify-between gap-4 flex-wrap shrink-0">
                     <div className="flex items-stretch gap-2 flex-wrap">
@@ -1309,7 +1343,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 <div className="flex flex-wrap gap-2 min-h-[24px]">
                                     {rows.filter(r => r.toPool).map(r => {
                                         const hex = TAPE_DOT_COLORS[r.tapeColor] || '#888';
-                                        const lbl = `${r.hardwareBlob ? 'SD' : 'PR'} ${TAPE_LETTER[r.tapeColor] || r.tapeColor[0]}${r.slotNum}`;
+                                        const lbl = `${r.onCard ? 'SD' : 'PR'} ${TAPE_LETTER[r.tapeColor] || r.tapeColor[0]}${r.slotNum}`;
                                         const isHighlighted = highlightedSlot === r.slot;
                                         return (
                                             <span
@@ -1351,6 +1385,18 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     <Check size={32} className="text-green-500" />
                                     <p className="font-medium text-gray-300">Hardware matches project</p>
                                     <p className="text-sm">Toggle "Show all slots" to review everything.</p>
+                                </div>
+                            )}
+
+                            {usbMode && (cardDiff.config?.localConfig || showAll) && (
+                                <div className="grid grid-cols-[40px_1fr] gap-0 border-b border-white/5 opacity-60">
+                                    <div className="flex items-center justify-center py-3 border-r border-white/5">
+                                        <Archive size={14} className="text-gray-500" />
+                                    </div>
+                                    <div className="p-3 flex items-center gap-3 min-w-0">
+                                        <p className="text-xs text-gray-300 font-bold">config.txt</p>
+                                        <p className="text-[10px] text-gray-500">Needs the card reader: USB reaches the slot files only.</p>
+                                    </div>
                                 </div>
                             )}
 
@@ -1632,8 +1678,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                         </button>
                         <button
                             onClick={handleConfirm}
-                            disabled={isApplying || actionCount === 0 || cardMissing}
-                            title={cardMissing ? 'SD card not found' : undefined}
+                            disabled={isApplying || actionCount === 0 || cardMissing || !!blockedReason}
+                            title={cardMissing ? 'SD card not found' : blockedReason}
                             className={`px-8 py-3 ${mode === 'push' ? 'bg-orange-600 hover:bg-orange-500 shadow-[0_8px_24px_rgba(249,115,22,0.3)]' : 'bg-indigo-600 hover:bg-indigo-500 shadow-[0_8px_24px_rgba(79,70,229,0.3)]'} disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl flex items-center gap-3 transition-all transform hover:-translate-y-0.5`}
                         >
                             {isApplying ? <Loader size={20} className="animate-spin" /> : 
@@ -1859,6 +1905,38 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                     </div>
                                 )}
 
+                                {usbMode && (pushCount > 0 || pullCount > 0) && (() => {
+                                    // Pushes: the project version's size, close to the hardware WAV for
+                                    // a WAV source. Pulls: the card file's size from the listing.
+                                    const bytes = rows.reduce((sum, r) => sum
+                                        + (r.primary === 'push_to_sk' ? r.size : 0)
+                                        + (r.primary === 'pull_to_slot' || r.toPool ? r.remoteSize : 0), 0);
+                                    return (
+                                        <div className="p-5 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex items-center gap-4">
+                                            <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-400">
+                                                <Loader size={18} />
+                                            </div>
+                                            <div>
+                                                <p className="text-white text-[13px] font-bold">About {formatDuration(bytes / USB_BYTES_PER_SECOND)} over USB</p>
+                                                <p className="text-[10px] text-gray-500 mt-0.5 font-medium">
+                                                    {(bytes / 1024 / 1024).toFixed(0)} MB at about 450 KB/s. Keep Spotykach connected until it finishes.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {usbMode ? (
+                                    <div className="p-5 rounded-2xl border border-white/5 flex items-center gap-4 opacity-60">
+                                        <div className="p-2.5 rounded-xl bg-white/5 text-gray-600">
+                                            <Shield size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-white text-[13px] font-bold">Snapshot card to project</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider font-medium">Needs the card reader</p>
+                                        </div>
+                                    </div>
+                                ) : (
                                 <button
                                     type="button"
                                     onClick={() => setSkSnapshot(v => !v)}
@@ -1882,6 +1960,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         <div className={`w-5 h-5 rounded-full bg-white transition-transform ${skSnapshot ? 'translate-x-5' : 'translate-x-0'}`} />
                                     </div>
                                 </button>
+                                )}
                             </div>
 
                         <div className="flex flex-col gap-4">

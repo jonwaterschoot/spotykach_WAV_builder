@@ -71,6 +71,8 @@ export interface CardSnapshotSlot {
 export interface CardSnapshot {
     updatedAt: string; // ISO date
     slots: Record<string, CardSnapshotSlot>;
+    /** Card size from the last USB write (HELLO). A different size is a different card. */
+    totalKiB?: number;
 }
 
 export interface UserLibraryMetadata {

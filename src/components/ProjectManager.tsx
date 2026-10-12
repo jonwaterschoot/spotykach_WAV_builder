@@ -347,7 +347,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                         allFiles.forEach(f => {
                             const color = f.slot.replace(/\d+$/, '');
                             const num = parseInt(f.slot.replace(/^\D+/, ''), 10);
-                            sdSlots[f.slot] = { slotKey: f.slot, color, num, blob: f.file, name: f.slot };
+                            sdSlots[f.slot] = { slotKey: f.slot, color, num, blob: f.file ?? null, name: f.slot };
                         });
                         return (
                             <div className="px-4 pt-3 pb-4 bg-[#0a0a0a] border-t border-white/5 flex justify-center">
