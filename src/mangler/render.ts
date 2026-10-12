@@ -14,7 +14,33 @@ export const MANGLE_SAMPLE_RATE = 48000;
 export interface MangleSource {
     channels: Stereo;
     enabled: boolean;
+    /**
+     * The parts of the source new snippets may come from, as `[start, end)`
+     * frames. Absent or empty: the whole file. A snippet never crosses a part's
+     * edge; one longer than its part is cut to it.
+     */
+    regions?: [number, number][];
 }
+
+/** Sorted, merged, clamped parts; `null` means the whole file. */
+export function usableRegions(source: MangleSource): [number, number][] | null {
+    const length = source.channels[0].length;
+    const parts = (source.regions ?? [])
+        .map(([a, b]) => [Math.max(0, Math.min(length, Math.floor(a))), Math.max(0, Math.min(length, Math.floor(b)))] as [number, number])
+        .filter(([a, b]) => b - a >= 2)
+        .sort((x, y) => x[0] - y[0]);
+    const merged: [number, number][] = [];
+    for (const part of parts) {
+        const last = merged[merged.length - 1];
+        if (last && part[0] <= last[1]) last[1] = Math.max(last[1], part[1]);
+        else merged.push([...part]);
+    }
+    return merged.length ? merged : null;
+}
+
+/** Frames a source offers new snippets: the sum of its parts. */
+const usableLength = (source: MangleSource) =>
+    (usableRegions(source) ?? [[0, source.channels[0].length]]).reduce((sum, [a, b]) => sum + b - a, 0);
 
 export interface SnippetPitch {
     frequency: number;
@@ -129,11 +155,13 @@ export function render(
      * reversed snippet begins at the region's end, so that end is what snaps,
      * and onsets don't apply to it (played backwards, an onset is a cut-off).
      */
-    const snapStart = (src: Stereo, start: number, readLength: number, used: number, reverse: boolean) => {
+    const snapStart = (
+        src: Stereo, start: number, readLength: number, used: number, reverse: boolean, lo: number, hi: number,
+    ) => {
         const mode = settings.snapStart;
         if (mode === 'off') return start;
         const srcLength = src[0].length;
-        const maxStart = Math.max(0, srcLength - readLength);
+        const maxStart = Math.max(lo, hi - readLength);
         let next: number;
         if (mode === 'onset' && !reverse) {
             next = findOnset(src, start, Math.min(used, Math.round(0.5 * sr)), sr);
@@ -141,12 +169,12 @@ export function render(
             const anchor = reverse ? Math.min(srcLength - 1, start + used - 1) : start;
             next = start + nearestZeroCrossing(src, anchor, Math.round(0.005 * sr)) - anchor;
         }
-        return Math.max(0, Math.min(maxStart, next));
+        return Math.max(lo, Math.min(maxStart, next));
     };
 
     const planner = new Planner(
         createRng(seed),
-        sources.map(s => ({ length: s.channels[0].length, enabled: s.enabled })),
+        sources.map(s => ({ length: usableLength(s), enabled: s.enabled })),
         settings,
         sr,
     );
@@ -198,7 +226,24 @@ export function render(
             for (;;) {
                 const src = sources[source].channels;
                 const srcLength = src[0].length;
-                const length = Math.max(2, Math.min(plan.length, srcLength));
+                // Which part of the source, and where in it (0-1). Without parts
+                // this is the whole file and `startFraction` as it is, so renders
+                // from before parts existed come out bit-identical.
+                const parts = usableRegions(sources[source]);
+                let lo = 0, hi = srcLength, local = startFraction;
+                if (parts) {
+                    const total = parts.reduce((sum, [a, b]) => sum + b - a, 0);
+                    let u = startFraction * total;
+                    for (const [a, b] of parts) {
+                        if (u < b - a || b === parts[parts.length - 1][1]) {
+                            lo = a; hi = b; local = Math.min(1, Math.max(0, u / (b - a)));
+                            break;
+                        }
+                        u -= b - a;
+                    }
+                }
+                const span = hi - lo;
+                const length = Math.max(2, Math.min(plan.length, span));
 
                 // Pitch: detect on the planned region, then widen the read so the
                 // snippet keeps its planned length after the shift.
@@ -207,7 +252,7 @@ export function render(
                 let shift = detune;
                 let choice: PitchChoice | undefined;
                 if (settings.repitch !== 'off') {
-                    const at = Math.floor(startFraction * (srcLength - length));
+                    const at = lo + Math.floor(local * (span - length));
                     const region: Stereo = [src[0].subarray(at, at + length), src[1].subarray(at, at + length)];
                     const estimate = detectPitchYin(monoMix(region), sr);
                     if (estimate) {
@@ -225,9 +270,9 @@ export function render(
                     }
                 }
                 const ratio = ratioFor(shift);
-                const readLength = Math.min(srcLength, Math.ceil(length * ratio) + 1);
-                let start = Math.floor(startFraction * (srcLength - readLength));
-                start = snapStart(src, start, readLength, Math.ceil(length * ratio), plan.reverse);
+                const readLength = Math.min(span, Math.ceil(length * ratio) + 1);
+                let start = lo + Math.floor(local * (span - readLength));
+                start = snapStart(src, start, readLength, Math.ceil(length * ratio), plan.reverse, lo, hi);
                 // One hit per snippet: stop before the next attack in the region.
                 let outLength = length;
                 if (settings.oneHit) {

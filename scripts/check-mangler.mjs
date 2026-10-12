@@ -271,6 +271,33 @@ section('Scales, pitch choices, transients');
     check(JSON.stringify(snippetCues(a.snippets, a.left.length)) === JSON.stringify(a.cuePoints), 'snippet cues match what a render writes');
 }
 
+section('Source parts and crop');
+{
+    // Two parts of the 5 s noise source: 1.0-1.5 s and 3.0-4.0 s.
+    const parts = [[1 * SR, 1.5 * SR], [3 * SR, 4 * SR]];
+    const partSources = [{ ...sources[1], regions: parts }];
+    const partRender = render(partSources, sanitizeSettings({ outputSeconds: 10, snippetMinMs: 100, snippetMaxMs: 2000, repitch: 'off', snapStart: 'zero' }), 21);
+    const inside = partRender.snippets.every(s => parts.some(([a, b]) => s.sourceStart >= a && s.sourceStart + s.sourceLength <= b));
+    check(inside, 'parts: every snippet stays inside one part', `${partRender.snippets.length} snippets`);
+    check(partRender.snippets.every(s => s.length <= SR), 'parts: a snippet longer than its part is cut to it');
+    const both = new Set(partRender.snippets.map(s => (s.sourceStart < 2 * SR ? 0 : 1)));
+    check(both.size === 2, 'parts: both parts are used');
+    const whole = render([{ ...sources[1], regions: [] }], settings, 3);
+    const plainSrc = render([sources[1]], settings, 3);
+    check(sameArray(whole.left, plainSrc.left), 'no parts = the whole file, bit-identical');
+
+    const { cropResult, clampCrop } = await import('../src/mangler/crop.ts');
+    const crop = { start: 5 * SR, end: 20 * SR };
+    const cropped = cropResult(a, crop);
+    check(cropped.left.length === 15 * SR, 'crop: 5-20 s is 15 s');
+    check(cropped.cuePoints[0] === 0 && cropped.cuePoints.slice(1).every(c => c > 0 && c < 15 * SR), 'crop: cues shifted, one at 0',
+        `${cropped.cuePoints.length} cues`);
+    check(Math.abs(cropped.left[0]) < 0.01 && Math.abs(cropped.left[cropped.left.length - 1]) < 0.01, 'crop: faded at the cut edges');
+    check(cropped.left[1000] === a.left[5 * SR + 1000], 'crop: the audio inside is untouched');
+    check(clampCrop({ start: 40 * SR, end: 99 * SR }, 42 * SR).end === 42 * SR && clampCrop({ start: 50 * SR, end: 60 * SR }, 42 * SR) === null,
+        'crop: clamped to the file, null when nothing is left');
+}
+
 section('Presets and edges');
 {
     const glitch = render(sources, sanitizeSettings({ ...DEFAULT_SETTINGS, ...PRESETS.Glitch, snippetMaxMs: 40 }), 1);
