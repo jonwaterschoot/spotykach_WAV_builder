@@ -1224,8 +1224,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
         {/* Source pool */}
         <section data-tour="sources" className="min-h-0 flex flex-col border-r border-white/10">
-          <div className="shrink-0 px-4 pt-4 pb-2 flex items-center justify-between">
-            <label className="flex items-center gap-2 cursor-pointer" title="Switch every source on or off">
+          {/*
+            * Wraps: in Studio a third button (Project) makes the row wider than the
+            * column, and the buttons then take a line of their own.
+            */}
+          <div className="shrink-0 px-4 pt-4 pb-2 flex flex-wrap items-center gap-y-2">
+            <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap" title="Switch every source on or off">
               <input
                 type="checkbox"
                 checked={sources.length > 0 && enabledSources.length === sources.length}
@@ -1247,7 +1251,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             >
               <Trash2 size={13} />
             </button>
-            <div className="flex items-center gap-1.5">
+            <div className="ml-auto flex items-center gap-1.5">
               {studio && (
                 <button
                   onClick={fillFromProject}
