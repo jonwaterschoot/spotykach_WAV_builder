@@ -23,6 +23,8 @@ export interface MangleRecipe {
     cuePoints: number[];
     cuesCapped: boolean;
     peakReductionDb: number;
+    /** Where the cue points came from: the snippet starts (absent), or the hits found at this level. */
+    cueSource?: 'snippets' | import('./recue').CueLevel;
 }
 
 export const recipeFromResult = (

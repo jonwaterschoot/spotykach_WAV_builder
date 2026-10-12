@@ -149,3 +149,15 @@ export function resultToWav(result: MangleResult, name: string): Blob {
         processing: ['mangled'],
     });
 }
+
+/** The same audio with other cue points: a re-cue rewrites the WAV, not the sound. */
+export function wavWithCues(left: Float32Array, right: Float32Array, cuePoints: number[], name: string): Blob {
+    const buffer = new AudioBuffer({ length: left.length, numberOfChannels: 2, sampleRate: MANGLE_SAMPLE_RATE });
+    buffer.copyToChannel(left as Float32Array<ArrayBuffer>, 0);
+    buffer.copyToChannel(right as Float32Array<ArrayBuffer>, 1);
+    return encodeWAV(buffer, {
+        name,
+        slicePoints: cuePoints.map(f => f / MANGLE_SAMPLE_RATE),
+        processing: ['mangled'],
+    });
+}

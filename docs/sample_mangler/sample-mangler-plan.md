@@ -237,6 +237,22 @@ All edits go through one engine mechanism: `render(..., { fixed })` renders posi
 - [x] Better resampling: windowed sinc from a kernel table, the default ("Clean"); linear stays as "Lo-fi". Results made before keep linear when edited
 - [x] Help text in `AboutHelpModal` (Format Help → Sample Mangler) and a news post (`public/news/sample-mangler.md`, draft: no version or image yet)
 
+**Phase 6 — Refinement**
+
+- [x] When zoomed in, use red lines for the cue points (snippet starts that aren't cues, after a re-cue, show as faint dashes)
+- [x] When clicking or playing a snippet:
+      - [x] do not color the whole left of the waveform (only from where playback started to the playhead)
+      - [x] move to that item in the detailed list (a waveform click opens the list; the playing row scrolls into view and follows the playhead in Full mode)
+      - [x] offer pure cue-to-cue playback as well as cue plus fade zones
+      - [x] playback mode toggle, "Click plays: Full / Fades / Cue". Full plays from the clicked point to the end; Fades the snippet with its crossfades; Cue only what lies between two cue points (the hits, after a re-cue)
+      - [x] crossfade zones drawn as an orange gradient
+- [x] Drag handle (⋮⋮) to reorder snippets in the list; locks move with their snippets
+- [x] Transient detection (`detectOnsets` in `dsp.ts`):
+      - [x] "One hit per snippet": a snippet ends before the next attack in its source region, so each cue holds one sound
+      - [x] Regenerate only the cue points of a finished result: "Cues: at snippets / at hits (auto, gentle, normal, aggressive)". The audio is untouched; the WAV is rewritten with the new cue list, max 255 (weakest hits dropped first). Edits keep a hits setting and find the hits again
+- [x] Per-snippet pitch menu in the list: own, the scale, nearest of any note, or ±1…12 st (on top of the random detune). Stored as `SnippetInfo.choice` + `detune`; old `toCApplied` results read as "to C"
+- [x] Scales: root + preset (root only, chromatic, major, minor, dorian, lydian, mixolydian, pentatonics, fifths) or a custom scale from a one-octave key diagram (`ScaleKeys`). Apply and "scale" in the list snap to the nearest scale note, within half an octave
+
 ## Open questions and risks
 
 - **Desktop only (decided Oct 11).** The door gets `desktopOnly: true`. 10 minutes of decoded sources won't fit in a phone tab's memory, and the three-column layout needs a wide screen. No phone layout is planned.

@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Pause, Play, Plus, RefreshCw, Square, Star, Trash2, Undo2, Unlock, X, ZoomIn,
+  Pause, Play, Plus, RefreshCw, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -28,19 +28,39 @@ import type { FileRecord, UserLibrary } from '../types';
 const SampleBrowser = React.lazy(() =>
   import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser })),
 );
-import { runBatch, resultToWav, type BatchHandle, type BatchSource } from '../mangler/batch';
-import type { MangleResult, SnippetInfo } from '../mangler/render';
+import { runBatch, resultToWav, wavWithCues, type BatchHandle, type BatchSource } from '../mangler/batch';
+import type { MangleResult, PitchChoice, SnippetInfo } from '../mangler/render';
+import { withChoice } from '../mangler/pitchChoice';
+import { CUE_LEVELS, snippetCues, transientCues, type CueLevel } from '../mangler/recue';
+import { NOTE_NAMES } from '../lib/audio/pitch';
+import { SnippetTable } from '../mangler/ui/SnippetTable';
+import { ScaleKeys } from '../mangler/ui/ScaleKeys';
+import { formatDb, formatMs, formatSeconds } from '../mangler/ui/format';
 import { useResultAudio } from '../mangler/ui/useResultAudio';
 import { recipeFromResult, resultName, usedSources, waveformPeaks, type RecipeSource } from '../mangler/recipe';
 import { deriveSeed, randomSeed } from '../mangler/rng';
 import {
-  DEFAULT_SETTINGS, OUTPUT_MAX_SECONDS, PRESETS, SNIPPET_MAX_MS, SNIPPET_MIN_MS, VARIATIONS_MAX, XFADE_MAX_MS,
-  sanitizeSettings, type MangleSettings,
+  DEFAULT_SETTINGS, OUTPUT_MAX_SECONDS, PRESETS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, VARIATIONS_MAX, XFADE_MAX_MS,
+  maskFromIntervals, sanitizeSettings, scaleName, type MangleSettings,
 } from '../mangler/settings';
 import { RangeSlider, Segmented, Slider, Toggle } from '../mangler/ui/Sliders';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
 
 const SETTINGS_KEY = 'mangler_settings';
+const PLAY_MODE_KEY = 'mangler_play_mode';
+const SR = 48000;
+
+/**
+ * What a click on a snippet or the waveform plays. Full: from there to the end.
+ * Fades: the snippet with its crossfades in and out. Cue: only what lies
+ * between two cue points, which is what the hardware's slice mode plays.
+ */
+type PlayMode = 'full' | 'fades' | 'cue';
+
+const loadPlayMode = (): PlayMode => {
+  const saved = appStorage.getItem(PLAY_MODE_KEY);
+  return saved === 'full' || saved === 'fades' || saved === 'cue' ? saved : 'fades';
+};
 const SEED_KEY = 'mangler_seed';
 /** About 230 MB decoded. Above it the batch still runs, with a warning. */
 const POOL_WARN_SECONDS = 600;
@@ -51,12 +71,6 @@ const newId = () =>
     : Math.random().toString(36).substring(2, 15);
 
 const stripExtension = (name: string) => name.replace(/\.[^/.]+$/, '');
-
-const formatMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)} s` : `${Math.round(ms)} ms`);
-const formatSeconds = (s: number) =>
-  s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} s`;
-const formatDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(db % 1 ? 1 : 0)} dB`;
-const formatSt = (st: number) => `${st > 0 ? '+' : ''}${st.toFixed(Math.abs(st) < 10 ? 1 : 0)} st`;
 
 /** The global player plays FileRecords; a one-version record is all it needs. */
 const playable = (id: string, name: string, blob: Blob, duration: number): FileRecord => ({
@@ -160,6 +174,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   /** The version before the last edit, per result. In memory only: one step back. */
   const [undo, setUndo] = useState<Record<string, MangleResultEntry>>({});
   const [hover, setHover] = useState<{ id: string; index: number } | null>(null);
+  const [playMode, setPlayMode] = useState<PlayMode>(loadPlayMode);
+  const [recueing, setRecueing] = useState<string | null>(null);
   const region = useResultAudio();
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -213,6 +229,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   }, [zooms, results, loadAudio]);
 
   useEffect(() => { appStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { appStorage.setItem(PLAY_MODE_KEY, playMode); }, [playMode]);
   useEffect(() => { appStorage.setItem(SEED_KEY, JSON.stringify({ seed, locked })); }, [seed, locked]);
 
   // Leaving mid-batch stops the worker; what has already arrived is stored.
@@ -497,9 +514,19 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       seeds: [r.recipe.seed],
       fixed,
       onResult: async (result) => {
-        const entry = makeEntry(result, editSettings, r.recipe.sources, {
+        let entry = makeEntry(result, editSettings, r.recipe.sources, {
           id: r.id, name: r.name, kept: r.kept, batchId: r.batchId, createdAt: r.createdAt, locked,
         });
+        // Cues found at the hits are found again on the edited audio.
+        const level = r.recipe.cueSource;
+        if (level && level !== 'snippets') {
+          const cuePoints = transientCues([result.left, result.right], SR, level);
+          entry = {
+            ...entry,
+            blob: wavWithCues(result.left, result.right, cuePoints, r.name),
+            recipe: { ...entry.recipe, cuePoints, cuesCapped: false, cueSource: level },
+          };
+        }
         await storeEntry(entry);
         region.forget(r.id);
         setUndo(prev => ({ ...prev, [r.id]: r }));
@@ -522,15 +549,63 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     editResult(r, fixed, recipeSettings(r), `Removing snippet ${index + 1}`, locked);
   }, [editResult]);
 
-  /** Moves the given snippets onto C, or back off it. */
-  const setToC = useCallback((r: MangleResultEntry, indices: number[], on: boolean) => {
+  /** Sets the pitch of the given snippets: own, the scale, a note, or a shift. */
+  const setPitch = useCallback((r: MangleResultEntry, indices: number[], choice: PitchChoice | undefined) => {
     const targets = new Set(indices);
-    const fixed = r.recipe.snippets.map((s, i) => {
-      if (!targets.has(i) || !s.pitch || !!s.toCApplied === on) return s;
-      return { ...s, shift: s.shift + (on ? s.pitch.toC : -s.pitch.toC), toCApplied: on };
-    });
-    editResult(r, fixed, recipeSettings(r), on ? 'Moving to C' : 'Back to the original pitch');
+    const editSettings = recipeSettings(r);
+    const fixed = r.recipe.snippets.map((s, i) => (targets.has(i) ? withChoice(s, choice, editSettings) : s));
+    const label = !choice ? 'Back to the original pitch'
+      : choice.kind === 'scale' ? 'Moving to the scale'
+        : choice.kind === 'note' ? `Moving to ${NOTE_NAMES[choice.pc]}` : `Shifting ${choice.st > 0 ? '+' : ''}${choice.st} st`;
+    editResult(r, fixed, editSettings, indices.length > 1 ? `${label} (${indices.length} snippets)` : label);
   }, [editResult]);
+
+  /** Moves snippet `from` to position `to`; the locks move with their snippets. */
+  const moveSnippet = useCallback((r: MangleResultEntry, from: number, to: number) => {
+    const order = r.recipe.snippets.map((_, i) => i);
+    const [moved] = order.splice(from, 1);
+    order.splice(to, 0, moved);
+    const fixed = order.map(i => r.recipe.snippets[i]);
+    const wasLocked = new Set(r.locked ?? []);
+    const locked = order.map((old, now) => (wasLocked.has(old) ? now : -1)).filter(i => i >= 0);
+    editResult(r, fixed, recipeSettings(r), `Moving snippet ${from + 1} to ${to + 1}`, locked);
+  }, [editResult]);
+
+  /** New cue points for a result, the audio untouched: at the snippets, or at the hits. */
+  const recue = useCallback(async (r: MangleResultEntry, level: 'snippets' | CueLevel) => {
+    if (batchRef.current || recueing) return;
+    setRecueing(r.id);
+    try {
+      const buffer = await region.load(r.id, r.blob);
+      const left = buffer.getChannelData(0);
+      const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+      const cuePoints = level === 'snippets'
+        ? snippetCues(r.recipe.snippets, left.length)
+        : transientCues([left, right], SR, level);
+      const entry: MangleResultEntry = {
+        ...r,
+        blob: wavWithCues(left, right, cuePoints, r.name),
+        recipe: {
+          ...r.recipe,
+          cuePoints,
+          cuesCapped: level === 'snippets' && r.recipe.snippets.length > cuePoints.length,
+          cueSource: level === 'snippets' ? undefined : level,
+        },
+      };
+      if (player.activeFileId === r.id) player.stop();
+      await storeEntry(entry);
+      setUndo(prev => ({ ...prev, [r.id]: r }));
+      setResults(prev => prev.map(x => (x.id === r.id ? entry : x)));
+      showToast(level === 'snippets'
+        ? `${cuePoints.length} cue points, one per snippet`
+        : `${cuePoints.length} cue points at the hits`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Could not find the cue points', 'error');
+    } finally {
+      setRecueing(null);
+    }
+  }, [recueing, region, player, storeEntry, showToast]);
 
   const toggleLock = useCallback((r: MangleResultEntry, index: number) => {
     const current = new Set(r.locked ?? []);
@@ -587,22 +662,55 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     });
   }, [undo, player, region, storeEntry]);
 
-  /** Plays one snippet, start to end, with the snippet player. */
-  const playSnippet = useCallback((r: MangleResultEntry, index: number) => {
-    const s = r.recipe.snippets[index];
-    if (!s) return;
-    if (player.isPlaying) player.pause();
-    const sr = 48000;
-    region.playRegion({ resultId: r.id, index, start: s.outStart / sr, end: (s.outStart + s.length) / sr }, r.blob);
-  }, [player, region]);
-
   /** The snippet under a point of the file (0-1): the last one started by then. */
   const snippetAt = (r: MangleResultEntry, fraction: number) => {
-    const frame = fraction * r.duration * 48000;
+    const frame = fraction * r.duration * SR;
     let index = 0;
     r.recipe.snippets.forEach((s, i) => { if (s.outStart + (s.xfade >> 1) <= frame) index = i; });
     return index;
   };
+
+  const snippetCue = (s: SnippetInfo) => s.outStart + (s.xfade >> 1);
+
+  /** Plays snippet `index` the way the play mode says. */
+  const playSnippet = useCallback((r: MangleResultEntry, index: number) => {
+    const s = r.recipe.snippets[index];
+    if (!s) return;
+    if (player.isPlaying) player.pause();
+    const next = r.recipe.snippets[index + 1];
+    const [start, end] = playMode === 'full'
+      ? [snippetCue(s), r.duration * SR]
+      : playMode === 'fades'
+        ? [s.outStart, s.outStart + s.length]
+        : [snippetCue(s), next ? snippetCue(next) : r.duration * SR];
+    region.playRegion({ resultId: r.id, index, start: start / SR, end: end / SR }, r.blob);
+  }, [player, region, playMode]);
+
+  /** A click on the waveform at `fraction`, the way the play mode says. */
+  const playAt = useCallback((r: MangleResultEntry, fraction: number) => {
+    if (player.activeFileId === r.id && player.isPlaying) {
+      player.seek(fraction * player.duration);
+      return;
+    }
+    setExpanded(r.id); // so the list can show where this is
+    if (playMode === 'fades') {
+      playSnippet(r, snippetAt(r, fraction));
+      return;
+    }
+    if (player.isPlaying) player.pause();
+    const end = r.duration;
+    if (playMode === 'full') {
+      region.playRegion({ resultId: r.id, index: -1, start: fraction * end, end }, r.blob);
+      return;
+    }
+    // Cue: between the cue points around the click (which may be hits, not snippets).
+    const frame = fraction * end * SR;
+    const cues = r.recipe.cuePoints.length ? r.recipe.cuePoints : [0];
+    let k = 0;
+    cues.forEach((c, i) => { if (c <= frame) k = i; });
+    const stop = cues[k + 1] !== undefined ? cues[k + 1] / SR : end;
+    region.playRegion({ resultId: r.id, index: -1, start: cues[k] / SR, end: stop }, r.blob);
+  }, [player, region, playMode, playSnippet]);
 
     const cancelBatch = useCallback(() => {
     region.stop();
@@ -949,6 +1057,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             <Segmented label="Snippet start" value={settings.snapStart} onChange={v => update('snapStart', v)}
               options={[{ value: 'off', label: 'Anywhere' }, { value: 'zero', label: 'Zero' }, { value: 'onset', label: 'Transient' }]}
               hint="Zero: on a zero crossing, so hard cuts don't click. Transient: on the strongest attack in the first half second" />
+            <Toggle label="One hit per snippet" checked={settings.oneHit} onChange={v => update('oneHit', v)}
+              hint="For drum loops: a snippet ends before the next hit in its source, so each cue point holds one sound. Best with Transient start" />
             <Slider label="Reverse" min={0} max={100} value={Math.round(settings.reverseProbability * 100)}
               onChange={v => update('reverseProbability', v / 100)} format={v => `${v}%`}
               hint="Chance that a snippet plays backwards" />
@@ -973,9 +1083,37 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </Group>
 
           <Group title="Pitch">
-            <Segmented label="Repitch to C" value={settings.repitch} onChange={v => update('repitch', v)}
+            <Segmented label="Repitch" value={settings.repitch} onChange={v => update('repitch', v)}
               options={[{ value: 'off', label: 'Off' }, { value: 'suggest', label: 'Suggest' }, { value: 'apply', label: 'Apply' }]}
-              hint="Suggest only detects and lists; Apply shifts every snippet with a clear pitch to the nearest C" />
+              hint="Suggest only detects and lists; Apply moves every snippet with a clear pitch to the nearest note of the scale" />
+            <div className="space-y-2" title="The notes Apply (and 'scale' in the snippet list) move snippets to">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-gray-400">Scale</span>
+                <span className="flex items-center gap-1">
+                  <select value={settings.scaleRoot} onChange={e => update('scaleRoot', Number(e.target.value))}
+                    aria-label="Root note"
+                    className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[11px] text-gray-200">
+                    {NOTE_NAMES.map((n, pc) => <option key={n} value={pc}>{n}</option>)}
+                  </select>
+                  <select
+                    value={scaleName(settings.scaleMask) ?? ''}
+                    onChange={e => {
+                      const preset = SCALES.find(sc => sc.name === e.target.value);
+                      if (preset) update('scaleMask', maskFromIntervals(preset.intervals));
+                    }}
+                    aria-label="Scale"
+                    className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[11px] text-gray-200"
+                  >
+                    {scaleName(settings.scaleMask) === null && <option value="">Custom</option>}
+                    {SCALES.map(sc => <option key={sc.name} value={sc.name}>{sc.name}</option>)}
+                  </select>
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <ScaleKeys root={settings.scaleRoot} mask={settings.scaleMask} onChange={m => update('scaleMask', m)} />
+                <span className="text-[10px] text-gray-500 leading-tight text-right">Click keys<br />for a custom<br />scale</span>
+              </div>
+            </div>
             <Slider label="Pitch confidence" min={0} max={1} step={0.05} value={settings.pitchConfidence}
               onChange={v => update('pitchConfidence', v)} format={v => v.toFixed(2)}
               disabled={settings.repitch !== 'apply'}
@@ -1029,6 +1167,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               <Slider label="Variations" min={1} max={VARIATIONS_MAX} value={settings.variations}
                 onChange={v => update('variations', v)} format={String} />
             </div>
+
+            <Segmented label="Click plays" value={playMode} onChange={setPlayMode}
+              options={[{ value: 'full', label: 'Full' }, { value: 'fades', label: 'Fades' }, { value: 'cue', label: 'Cue' }]}
+              hint="Full: from there to the end. Fades: the snippet with its crossfades. Cue: only what lies between two cue points, as the slice mode plays it" />
 
             <div className="ml-auto flex items-center gap-2">
               {busy ? (
@@ -1085,13 +1227,22 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               const zoom = zooms[r.id];
               const regionHere = region.playing?.resultId === r.id ? region.playing : null;
               const total = r.duration || 1;
-              const progress = player.activeFileId === r.id
+              const globalHere = player.activeFileId === r.id;
+              const progress = globalHere
                 ? progressOf(r.id)
                 : regionHere && region.position !== null ? region.position / total : null;
-              const marked = regionHere && regionHere.index >= 0
-                ? regionHere.index
-                : hover?.id === r.id ? hover.index : -1;
-              const markedSnippet = marked >= 0 ? r.recipe.snippets[marked] : null;
+              // The row to show: the one playing, following the playhead in Full mode.
+              const activeIndex = regionHere
+                ? regionHere.index >= 0 && playMode !== 'full'
+                  ? regionHere.index
+                  : region.position !== null ? snippetAt(r, region.position / total) : -1
+                : globalHere && progress !== null && player.isPlaying ? snippetAt(r, progress) : -1;
+              // Tint what is playing (a bounded region, so not in Full mode), else the hovered row.
+              const hovered = hover?.id === r.id ? r.recipe.snippets[hover.index] : undefined;
+              const highlight: [number, number] | null = regionHere && playMode !== 'full'
+                ? [regionHere.start / total, regionHere.end / total]
+                : hovered ? [hovered.outStart / frames, (hovered.outStart + hovered.length) / frames] : null;
+              const transient = !!r.recipe.cueSource && r.recipe.cueSource !== 'snippets';
               return (
                 <article key={r.id}
                   className={`rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
@@ -1158,6 +1309,22 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         Undo
                       </CardAction>
                     )}
+                    <label className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-400"
+                      title="Where the cue points go. The audio stays the same; only the WAV's cue list changes">
+                      Cues
+                      {recueing === r.id && <Loader size={10} className="animate-spin" />}
+                      <select
+                        value={r.recipe.cueSource ?? 'snippets'}
+                        disabled={busy || recueing !== null}
+                        onChange={e => recue(r, e.target.value as 'snippets' | CueLevel)}
+                        className="bg-transparent text-gray-200 text-[10px] cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        <option value="snippets" className="bg-synthux-panel">at snippets</option>
+                        {CUE_LEVELS.map(l => (
+                          <option key={l.value} value={l.value} className="bg-synthux-panel">at hits: {l.label.toLowerCase()}</option>
+                        ))}
+                      </select>
+                    </label>
                     <CardAction
                       onClick={() => setZooms(prev => {
                         const next = { ...prev };
@@ -1175,18 +1342,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                   <ResultWaveform
                     peaks={r.peaks}
                     audio={zoom !== undefined ? region.decoded[r.id] : undefined}
-                    boundaries={r.recipe.snippets.map(s => (s.outStart + (s.xfade >> 1)) / frames)}
+                    cues={r.recipe.cuePoints.map(f => f / frames)}
+                    edges={transient ? r.recipe.snippets.map(s => snippetCue(s) / frames) : undefined}
+                    fades={r.recipe.snippets.filter(s => s.xfade > 0).map(s => [s.outStart / frames, (s.outStart + s.xfade) / frames] as [number, number])}
                     progress={progress}
-                    highlight={markedSnippet
-                      ? [markedSnippet.outStart / frames, (markedSnippet.outStart + markedSnippet.length) / frames]
-                      : null}
+                    playedFrom={regionHere ? regionHere.start / total : 0}
+                    highlight={highlight}
                     zoom={zoom}
                     onZoom={z => setZooms(prev => ({ ...prev, [r.id]: z }))}
-                    onPick={f => {
-                      // The whole file playing: seek it. Otherwise play the snippet clicked.
-                      if (player.activeFileId === r.id && player.isPlaying) player.seek(f * player.duration);
-                      else playSnippet(r, snippetAt(r, f));
-                    }}
+                    onPick={f => playAt(r, f)}
                   />
 
                   <button onClick={() => setExpanded(isOpen ? null : r.id)}
@@ -1198,13 +1362,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     <SnippetTable
                       entry={r}
                       busy={busy}
+                      activeIndex={activeIndex}
                       playingIndex={regionHere ? regionHere.index : -1}
                       onPlay={i => playSnippet(r, i)}
                       onHover={i => setHover(i === null ? null : { id: r.id, index: i })}
                       onDelete={i => deleteSnippet(r, i)}
+                      onMove={(from, to) => moveSnippet(r, from, to)}
                       onToggleLock={i => toggleLock(r, i)}
-                      onToggleC={(i, on) => setToC(r, [i], on)}
-                      onAllToC={indices => setToC(r, indices, true)}
+                      onPitch={(indices, choice) => setPitch(r, indices, choice)}
                       onReroll={() => rerollUnlocked(r)}
                       variations={settings.variations}
                     />
@@ -1423,130 +1588,6 @@ const CardAction: React.FC<{
     className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed
       ${active ? 'border-synthux-red/60 text-white bg-synthux-red/20' : 'border-white/10 text-gray-400 hover:text-white hover:bg-white/5'}`}>
     {icon} {children}
-  </button>
-);
-
-interface SnippetTableProps {
-  entry: MangleResultEntry;
-  busy: boolean;
-  playingIndex: number;
-  onPlay: (index: number) => void;
-  onHover: (index: number | null) => void;
-  onDelete: (index: number) => void;
-  onToggleLock: (index: number) => void;
-  onToggleC: (index: number, on: boolean) => void;
-  onAllToC: (indices: number[]) => void;
-  onReroll: () => void;
-  variations: number;
-}
-
-/** Every snippet of one result: where it came from, what was done to it, and the edits. */
-const SnippetTable: React.FC<SnippetTableProps> = ({
-  entry, busy, playingIndex, onPlay, onHover, onDelete, onToggleLock, onToggleC, onAllToC, onReroll, variations,
-}) => {
-  const { recipe } = entry;
-  const sr = 48000;
-  const locked = new Set(entry.locked ?? []);
-  const threshold = recipe.settings.pitchConfidence ?? 0.8;
-  const confident = recipe.snippets
-    .map((s, i) => (s.pitch && !s.toCApplied && s.pitch.confidence >= threshold ? i : -1))
-    .filter(i => i >= 0);
-
-  return (
-    <div className="mt-2">
-      <div className="flex flex-wrap items-center gap-1.5 mb-1.5 text-[10px] text-gray-500">
-        {confident.length > 0 && (
-          <CardAction onClick={() => onAllToC(confident)} disabled={busy} icon={<span className="font-bold">C</span>}
-            title={`Move every snippet with a pitch confidence of ${Math.round(threshold * 100)}% or more to the nearest C`}>
-            All confident to C ({confident.length})
-          </CardAction>
-        )}
-        {locked.size > 0 && (
-          <CardAction onClick={onReroll} disabled={busy} icon={<Dices size={11} />}
-            title="New variations that keep the locked snippets where they are and roll the rest, with the current settings">
-            Reroll the rest ×{variations} ({locked.size} locked)
-          </CardAction>
-        )}
-        <span className="ml-auto">Lock snippets to keep them in a reroll · edits can be undone once</span>
-      </div>
-      <div className="max-h-72 overflow-y-auto rounded border border-white/5" onMouseLeave={() => onHover(null)}>
-        <table className="w-full text-[10px] font-mono">
-          <thead className="sticky top-0 bg-synthux-panel text-gray-500 z-10">
-            <tr className="text-left">
-              <th className="px-1 py-1 font-normal w-6" aria-label="Play" />
-              <th className="px-2 py-1 font-normal">#</th>
-              <th className="px-2 py-1 font-normal">at</th>
-              <th className="px-2 py-1 font-normal">source</th>
-              <th className="px-2 py-1 font-normal text-right">length</th>
-              <th className="px-2 py-1 font-normal text-right">gain</th>
-              <th className="px-2 py-1 font-normal" title="Direction: forwards or reversed">dir</th>
-              <th className="px-2 py-1 font-normal">pitch</th>
-              <th className="px-1 py-1 font-normal" aria-label="Actions" />
-            </tr>
-          </thead>
-          <tbody className="text-gray-300">
-            {recipe.snippets.map((s, i) => {
-              const isPlaying = playingIndex === i;
-              const isLocked = locked.has(i);
-              return (
-                <tr key={i} onMouseEnter={() => onHover(i)}
-                  className={`border-t border-white/5 group ${isPlaying ? 'bg-synthux-red/15' : isLocked ? 'bg-synthux-yellow/5' : 'hover:bg-white/[0.03]'}`}>
-                  <td className="px-1 py-0.5">
-                    <button onClick={() => onPlay(i)} title={isPlaying ? 'Stop' : 'Play this snippet'}
-                      className={`h-5 w-5 flex items-center justify-center rounded ${isPlaying ? 'text-synthux-red' : 'text-gray-500 hover:text-white'}`}>
-                      {isPlaying ? <Square size={10} fill="currentColor" /> : <Play size={11} />}
-                    </button>
-                  </td>
-                  <td className="px-2 py-0.5 text-gray-600">{i + 1}</td>
-                  <td className="px-2 py-0.5 text-gray-500">{(s.outStart / sr).toFixed(2)}</td>
-                  <td className="px-2 py-0.5 truncate max-w-[10rem]" title={recipe.sources[s.source]?.name}>
-                    {recipe.sources[s.source]?.name ?? '?'}
-                  </td>
-                  <td className="px-2 py-0.5 text-right">{formatMs((s.length / sr) * 1000)}</td>
-                  <td className="px-2 py-0.5 text-right">{Number.isFinite(s.measuredDb) ? formatDb(s.gainDb) : 'silent'}</td>
-                  <td className="px-2 py-0.5 text-gray-400" title={s.reverse ? 'Reversed' : 'Forwards'}>{s.reverse ? '←' : '→'}</td>
-                  <td className="px-2 py-0.5">
-                    {s.pitch
-                      ? `${s.pitch.note} (${Math.round(s.pitch.confidence * 100)}%) → C ${formatSt(s.pitch.toC)}`
-                      : <span className="text-gray-600">no pitch</span>}
-                    {Math.abs(s.shift) > 0.01 && <span className="text-synthux-yellow"> · shifted {formatSt(s.shift)}</span>}
-                  </td>
-                  <td className="px-1 py-0.5">
-                    <span className="flex items-center justify-end gap-0.5">
-                      {s.pitch && (
-                        <RowButton onClick={() => onToggleC(i, !s.toCApplied)} disabled={busy}
-                          title={s.toCApplied ? 'Back to its own pitch' : `Move to C (${formatSt(s.pitch.toC)})`}
-                          className={s.toCApplied ? 'text-synthux-yellow' : 'text-gray-500 hover:text-white'}>
-                          <span className="font-bold text-[10px]">C</span>
-                        </RowButton>
-                      )}
-                      <RowButton onClick={() => onToggleLock(i)} title={isLocked ? 'Unlock' : 'Lock: keep this snippet in a reroll'}
-                        className={isLocked ? 'text-synthux-yellow' : 'text-gray-600 hover:text-white'}>
-                        {isLocked ? <Lock size={11} /> : <Unlock size={11} />}
-                      </RowButton>
-                      <RowButton onClick={() => onDelete(i)} disabled={busy || recipe.snippets.length < 2}
-                        title="Remove this snippet; the rest move up and the end is refilled"
-                        className="text-gray-600 hover:text-synthux-red">
-                        <Trash2 size={11} />
-                      </RowButton>
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-const RowButton: React.FC<{
-  onClick: () => void; title: string; className: string; children: React.ReactNode; disabled?: boolean;
-}> = ({ onClick, title, className, children, disabled }) => (
-  <button onClick={onClick} title={title} aria-label={title} disabled={disabled}
-    className={`h-5 w-5 flex items-center justify-center rounded hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed ${className}`}>
-    {children}
   </button>
 );
 

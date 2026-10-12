@@ -6,10 +6,16 @@ interface ResultWaveformProps {
     peaks: number[];
     /** Decoded audio, for detail when zoomed in. */
     audio?: AudioBuffer;
-    /** Snippet starts, 0–1 of the file. */
-    boundaries: number[];
+    /** Cue points, 0–1 of the file. Red when zoomed. */
+    cues: number[];
+    /** Snippet starts, 0–1, drawn faintly where they aren't also cues (after a re-cue). */
+    edges?: number[];
+    /** Crossfade zones, 0–1: tinted orange so the overlaps show. */
+    fades?: [number, number][];
     /** Playhead, 0–1, or null when nothing in this result plays. */
     progress: number | null;
+    /** Where playback started, 0–1: only `[playedFrom, progress]` is coloured as played. */
+    playedFrom?: number;
     /** A span to tint, 0–1: the snippet playing or hovered. */
     highlight?: [number, number] | null;
     /** Click, as a fraction of the whole file. */
@@ -30,7 +36,7 @@ export const MAX_ZOOM = 64;
  * to 64× never asks for a canvas wider than browsers allow.
  */
 export const ResultWaveform: React.FC<ResultWaveformProps> = ({
-    peaks, audio, boundaries, progress, highlight, onPick, zoom, onZoom, height = 56,
+    peaks, audio, cues, edges, fades, progress, playedFrom = 0, highlight, onPick, zoom, onZoom, height = 56,
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,13 +99,40 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
             ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
         }
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        // Crossfades: an orange swell across each overlap.
+        for (const [f0, f1] of fades ?? []) {
+            const x0 = toX(f0), x1 = toX(f1);
+            if (x1 < 0 || x0 > width || x1 - x0 < 1.5) continue;
+            const gradient = ctx.createLinearGradient(x0, 0, x1, 0);
+            gradient.addColorStop(0, 'rgba(245,139,68,0.04)');
+            gradient.addColorStop(0.5, 'rgba(245,139,68,0.32)');
+            gradient.addColorStop(1, 'rgba(245,139,68,0.04)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x0, 0, x1 - x0, h);
+        }
+
         ctx.lineWidth = 1;
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        const cueSet = new Set(cues.map(c => Math.round(c * total)));
+        if (edges) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+            ctx.setLineDash([2, 3]);
+            for (const e of edges) {
+                const x = Math.round(toX(e)) + 0.5;
+                if (x < -1 || x > width + 1 || cueSet.has(Math.round(e * total))) continue;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, h);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+        }
+
+        ctx.strokeStyle = zoomed ? 'rgba(240,15,19,0.85)' : 'rgba(255,255,255,0.12)';
+        ctx.fillStyle = zoomed ? 'rgba(255,120,120,0.9)' : 'rgba(255,255,255,0.35)';
         ctx.font = '9px ui-monospace, monospace';
-        const labelEvery = Math.max(1, Math.ceil(28 / Math.max(1, total / Math.max(1, boundaries.length))));
-        boundaries.forEach((b, i) => {
-            const x = Math.round(toX(b)) + 0.5;
+        const labelEvery = Math.max(1, Math.ceil(28 / Math.max(1, total / Math.max(1, cues.length))));
+        cues.forEach((c, i) => {
+            const x = Math.round(toX(c)) + 0.5;
             if (x < -1 || x > width + 1) return;
             ctx.beginPath();
             ctx.moveTo(x, 0);
@@ -109,9 +142,10 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
         });
 
         const played = progress === null ? -Infinity : toX(progress);
+        const playStart = progress === null ? Infinity : toX(playedFrom);
         const column = (x: number, amp: number) => {
             const a = Math.max(0.5, amp * (h - 6) / 2);
-            ctx.fillStyle = x < played ? '#f00f13' : 'rgba(255,255,255,0.55)';
+            ctx.fillStyle = x >= playStart && x < played ? '#f00f13' : 'rgba(255,255,255,0.55)';
             ctx.fillRect(x, mid - a, 1, 2 * a);
         };
 
@@ -145,7 +179,7 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(Math.round(played), 0, 1, h);
         }
-    }, [view, peaks, audio, boundaries, progress, highlight, z, h, zoomed]);
+    }, [view, peaks, audio, cues, edges, fades, progress, playedFrom, highlight, z, h, zoomed]);
 
     const setZoom = (next: number) => onZoom?.(Math.min(MAX_ZOOM, Math.max(1, next)));
 
@@ -158,7 +192,7 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                     <ZoomButton title="Fit the whole file" onClick={() => setZoom(1)} disabled={z === 1}><Maximize2 size={11} /></ZoomButton>
                     <span className="font-mono ml-1 tabular-nums">{z}×</span>
                     {!audio && z > 1 && <span className="ml-2">loading detail…</span>}
-                    <span className="ml-auto">Click a snippet to play it</span>
+                    <span className="ml-auto">Red lines are cue points · orange is crossfade · click to play</span>
                 </div>
             )}
             <div

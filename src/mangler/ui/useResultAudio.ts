@@ -31,7 +31,9 @@ export function useResultAudio() {
     /** Seconds into the result while a region plays. */
     const [position, setPosition] = useState<number | null>(null);
 
-    const context = () => (contextRef.current ??= new AudioContext());
+    // 48 kHz like the results, so a decoded result has the file's own frames
+    // (re-cueing writes them back) rather than the device's rate.
+    const context = () => (contextRef.current ??= new AudioContext({ sampleRate: 48000 }));
 
     const load = useCallback((id: string, blob: Blob): Promise<AudioBuffer> => {
         const hit = decodedRef.current[id];
