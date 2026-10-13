@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, FolderOpen, HardDrive, Loader } from 'lucide-react';
+import { AlertTriangle, FolderOpen, HardDrive, Loader, Usb } from 'lucide-react';
 
 /** Which half of the conversation the modal is having. */
 export type SDCardWriteStage = 'intro' | 'checking' | 'existing';
@@ -26,6 +26,8 @@ interface SDCardWriteModalProps {
   /** The card already has `SK/` and the user wants to write into it anyway. */
   onConfirmOverwrite: () => void;
   onCancel: () => void;
+  /** Write over Spotykach's rear USB instead (experimental). Shown only when given. */
+  onUseUsb?: () => void;
   /** Set when the picker or the card itself refused. */
   error?: string | null;
 }
@@ -54,6 +56,7 @@ export const SDCardWriteModal: React.FC<SDCardWriteModalProps> = ({
   onPickCard,
   onConfirmOverwrite,
   onCancel,
+  onUseUsb,
   error,
 }) => {
   if (!isOpen) return null;
@@ -142,6 +145,19 @@ export const SDCardWriteModal: React.FC<SDCardWriteModalProps> = ({
                       {knownCard ? 'Choose a different card' : 'Choose the card'}
                     </span>
                   </button>
+                  {onUseUsb && (
+                    <button
+                      onClick={onUseUsb}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 bg-black/30
+                        text-left transition-all hover:bg-white/5 hover:border-white/20"
+                    >
+                      <Usb size={18} className="shrink-0 text-gray-400" />
+                      <span className="text-sm font-bold text-gray-200">
+                        Over USB, card stays in Spotykach
+                        <span className="ml-2 text-[9px] uppercase tracking-widest text-orange-300">Experimental</span>
+                      </span>
+                    </button>
+                  )}
                 </>
               )}
             </div>

@@ -5,6 +5,7 @@ import { paramsFromHash } from '../shell/useAppMode';
 import {
   canWriteToSDDirectly, hydratePreset, missingAssetCount, writeToSD,
 } from '../utils/presetLoader';
+import { usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
 
 const PresetsPanel = React.lazy(() =>
   import('../components/PresetsPanel').then(m => ({ default: m.PresetsPanel }))
@@ -52,6 +53,7 @@ export const PresetsMode: React.FC<PresetsModeProps> = ({ onExitToHub }) => {
   // Firefox and Safari have no directory picker, so the same tree is offered as a
   // ZIP instead of leaving the tier at a dead end.
   const canWriteDirectly = canWriteToSDDirectly();
+  const usbTransfer = useUsbTransferEnabled() && usbTransferSupported();
 
   const handleWriteToSD = async (
     entry: PresetManifestEntry,
@@ -117,6 +119,7 @@ export const PresetsMode: React.FC<PresetsModeProps> = ({ onExitToHub }) => {
               onClose={onExitToHub}
               presets={presets}
               focusPresetId={focusPresetId}
+              usbTransfer={usbTransfer}
               onWriteToSD={handleWriteToSD}
               writeLabel={canWriteDirectly ? 'Write to SD card' : 'Build SD ZIP'}
               writeHint={canWriteDirectly

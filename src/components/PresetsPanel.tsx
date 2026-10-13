@@ -6,6 +6,7 @@ import { hashForMode } from '../shell/useAppMode';
 import { presetGradient } from '../utils/presetGradients';
 import { canWriteToSDDirectly, type PresetProgress } from '../utils/presetLoader';
 import { SDCardWriteModal, type SDCardWriteStage } from './modals/SDCardWriteModal';
+import { UsbPresetWriteModal } from './modals/UsbPresetWriteModal';
 // Static, not lazy: `requestPermission` needs the click's transient activation, and
 // awaiting a dynamic import first is exactly how that gets spent.
 import { ensureWritable } from '../utils/configFile';
@@ -54,6 +55,8 @@ interface PresetsPanelProps {
      * seconds. Nothing is run: the buttons on the card are still the only way in.
      */
     focusPresetId?: string | null;
+    /** Offer USB as a third way onto the card (experimental, Settings ▸ System). */
+    usbTransfer?: boolean;
 }
 
 export const PresetsPanel: React.FC<PresetsPanelProps> = ({
@@ -67,6 +70,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
     writeHint,
     knownCard,
     focusPresetId,
+    usbTransfer,
 }) => {
     const [busy, setBusy] = useState<{ id: string; action: PresetAction } | null>(null);
     const [progress, setProgress] = useState<{ msg: string; pct: number } | null>(null);
@@ -81,6 +85,9 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
         handle?: FileSystemDirectoryHandle;
         error?: string | null;
     } | null>(null);
+
+    /** The preset being written over USB: its own dialog, which does the whole write. */
+    const [usbEntry, setUsbEntry] = useState<PresetManifestEntry | null>(null);
 
     const isStandalone = mode === 'standalone';
 
@@ -250,6 +257,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                 void run(entry, 'sd', onWriteToSD, handle);
             }}
             onCancel={() => setCardPrompt(null)}
+            onUseUsb={usbTransfer ? () => { setUsbEntry(cardPrompt.entry); setCardPrompt(null); } : undefined}
         />
     );
 
@@ -580,6 +588,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
             <div className="h-full w-full flex flex-col bg-[#0e0e0e] overflow-hidden">
                 {body}
                 {cardModal}
+                {usbEntry && <UsbPresetWriteModal entry={usbEntry} onClose={() => setUsbEntry(null)} />}
             </div>
         );
     }
@@ -590,6 +599,7 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                 {body}
             </div>
             {cardModal}
+            {usbEntry && <UsbPresetWriteModal entry={usbEntry} onClose={() => setUsbEntry(null)} />}
         </div>
     );
 };

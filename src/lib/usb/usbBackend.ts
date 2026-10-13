@@ -185,7 +185,7 @@ export class UsbBackend implements CardBackend {
     async readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<File> {
         signal?.throwIfAborted();
         if (!(await this.entry(tape, slot))) throw new Error(`${tape} ${slot} is empty on the card.`);
-        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), { onProgress, signal });
+        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), { onProgress, signal }).catch(unmask);
         return new File([toBuffer(bytes)], slotFileName(slot), { type: 'audio/wav' });
     }
 
@@ -205,7 +205,7 @@ export class UsbBackend implements CardBackend {
 
         const bytes = new Uint8Array(await blob.arrayBuffer());
         this.validate(tape, slot, bytes, info);
-        await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, { onProgress, signal });
+        await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, { onProgress, signal }).catch(unmask);
 
         // What LIST would now say, without paying for a LIST.
         this.headers.delete(slotKey(tape, slot));
@@ -316,6 +316,19 @@ export class UsbBackend implements CardBackend {
             && JSON.stringify(theirs.processing ?? []) === JSON.stringify(ours.processing ?? []);
     }
 }
+
+/**
+ * The transfer package (1.0.1) appends its detail with `e.message += …`. When the
+ * browser's serial port itself fails, `e` is a DOMException whose `message` can't be
+ * set, and what comes out is a TypeError about a getter. The real error is in the
+ * console (`[spotykach] upload at byte …`); say what it means instead.
+ */
+const unmask = (e: unknown): never => {
+    if (e instanceof TypeError && /getter/.test(e.message)) {
+        throw new Error('The USB connection to Spotykach failed (the serial port reported an error). Reconnect to continue.', { cause: e });
+    }
+    throw e;
+};
 
 /** A fresh `ArrayBuffer` holding exactly these bytes. */
 const toBuffer = (bytes: Uint8Array): ArrayBuffer =>

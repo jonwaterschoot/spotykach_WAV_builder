@@ -105,3 +105,69 @@ export const writeToSD = async (
 /** How many slots a hydrate left empty, so a caller can say so instead of writing a quiet gap. */
 export const missingAssetCount = (state: AppState): number =>
     state.loadIssues?.missingAssets?.length ?? 0;
+
+/** A slot a preset fills, read from its descriptor alone. */
+export interface PresetSlot {
+    tape: import('../types').TapeColor;
+    slot: number;
+    name: string;
+}
+
+/**
+ * Which slots a preset fills, from the descriptor JSON only: no audio is fetched.
+ * What the USB write shows before anything is downloaded or replaced.
+ */
+export const presetSlots = async (entry: PresetManifestEntry): Promise<PresetSlot[]> => {
+    const response = await fetch(resolveAssetPath(entry.descriptorPath));
+    if (!response.ok) throw new Error(`Failed to fetch preset descriptor: HTTP ${response.status}`);
+    const { parseProjectDescriptor } = await import('./projectDescriptorUtils');
+    const { TAPE_COLORS } = await import('../types');
+    const descriptor = parseProjectDescriptor(await response.json());
+    const slots: PresetSlot[] = [];
+    for (const tape of TAPE_COLORS) {
+        for (const s of descriptor.tapes[tape]?.slots ?? []) {
+            const file = s.fileId ? descriptor.files[s.fileId] : undefined;
+            if (file && s.id >= 1 && s.id <= 6) slots.push({ tape, slot: s.id, name: file.originalName });
+        }
+    }
+    return slots;
+};
+
+/**
+ * A preset onto the card over USB: download the audio, then write its slots. Other
+ * slots and `config.txt` stay as they are (USB reaches the slots only).
+ */
+export const writePresetOverUsb = async (
+    entry: PresetManifestEntry,
+    card: import('../lib/card/cardBackend').CardBackend,
+    options: {
+        onProgress?: PresetProgress;
+        onSlot?: (event: import('./exportUtils').SlotWriteEvent) => void;
+        signal?: AbortSignal;
+        /** Slots already written in an earlier, interrupted run ("Blue1"): left alone. */
+        skip?: string[];
+    } = {},
+): Promise<{ missing: number }> => {
+    const { state } = await hydratePreset(entry, (msg, pct) => options.onProgress?.(msg, pct));
+    options.signal?.throwIfAborted();
+    const { TAPE_COLORS } = await import('../types');
+    const decisions: Record<string, 'export' | 'skip'> = {};
+    for (const tape of TAPE_COLORS) {
+        for (const s of state.tapes[tape].slots) {
+            if (s.fileId) decisions[`${tape}${s.id}`] = options.skip?.includes(`${tape}${s.id}`) ? 'skip' : 'export';
+        }
+    }
+    const { exportSDStructure } = await import('./exportUtils');
+    await exportSDStructure(state, {
+        card,
+        skMode: 'overwrite',
+        directWrite: true,
+        includeProject: false,
+        includeConfig: false,
+        onConvert: toHardwareWav,
+        onSlot: options.onSlot,
+        signal: options.signal,
+        syncDecisions: decisions,
+    }, (msg) => options.onProgress?.(msg || 'Writing…', 100));
+    return { missing: missingAssetCount(state) };
+};

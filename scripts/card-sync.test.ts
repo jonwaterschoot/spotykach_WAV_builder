@@ -217,6 +217,17 @@ const run = async () => {
         check(diff.slots.Green1.status === 'MATCH' && diff.slots.Green1.staleHeader === true, 'renamed in the app: a header update writes the name');
     }
 
+    console.log('\nUSB: a preset write leaves the slots it does not fill');
+    {
+        const dev = device();
+        const own = new Uint8Array(await assembleWav(pcm(1, 440)).arrayBuffer());
+        dev.files.set('2:0', own);   // Pink 1, recorded on the device
+        dev.files.set('0:0', own);   // Blue 1, which the preset fills
+        await exportSDStructure({ ...project(), cardSnapshot: undefined }, { card: dev.backend, directWrite: true, skMode: 'overwrite', includeProject: false, includeConfig: false });
+        check(dev.files.get('2:0') === own, 'Pink 1, not in the preset, is untouched');
+        check(dev.files.get('0:0') !== own && dev.files.size === 4, 'Blue 1 is replaced, nothing else removed', String(dev.files.size));
+    }
+
     console.log('\nUSB: a slot file from before 4.2');
     const legacy: AppState = { ...state, cardSnapshot: undefined };
     const oldKick = assembleWav(pcm(1, 60), { id: 'kick', hash: 'x', name: 'kick.wav', slicePoints: [0, 0.5] });
