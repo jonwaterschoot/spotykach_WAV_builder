@@ -71,7 +71,7 @@ import { collapseVersionHistoryOnSave } from './utils/versionHistory';
 import { useProjectSession } from './session/ProjectSession';
 import { useEscapeLayer } from './shell/escapeStack';
 import { appStorage } from './utils/storageNamespace';
-import { isUsbTransferEnabled } from './lib/usb/flag';
+import { useUsbTransferEnabled } from './lib/usb/flag';
 import { preloadUsb, usbSession, useUsbSession } from './lib/usb/usbSession';
 import { CardSourceBar, type CardSource } from './components/CardSourceBar';
 import { TransferProgressModal } from './components/TransferProgressModal';
@@ -309,12 +309,18 @@ function App({ onExitToHub }: AppProps) {
   /** The sync modal's card can't be read (ejected); checked while the modal is open. */
   const [sdCardMissing, setSdCardMissing] = useState(false);
 
-  /** Experimental, behind ?usb=1: the sync modal can also reach the card over Spotykach's rear USB. */
-  const usbEnabled = useMemo(() => isUsbTransferEnabled(), []);
+  /** Experimental (Settings ▸ System, or ?usb=1): the sync modal can also reach the card over Spotykach's rear USB. */
+  const usbEnabled = useUsbTransferEnabled();
   /** Where the sync modal reaches the card. The last choice is remembered, not a lock. */
   const [cardSource, setCardSource] = useState<CardSource>(() =>
     usbEnabled && appStorage.getItem('spotykach_cardSource') === 'usb' ? 'usb' : 'reader');
   const usb = useUsbSession();
+  // Turned off in Settings: back to the card reader, and let go of the device.
+  useEffect(() => {
+    if (usbEnabled) return;
+    setCardSource(prev => prev === 'usb' ? 'reader' : prev);
+    if (usbSession.state.backend) void usbSession.disconnect();
+  }, [usbEnabled]);
   /** The running (or just finished) sync, for the transfer window. */
   const transfer = useTransferJob();
   /** The header's SD | USB toggle: gets the route ready and asks what to do with the card. */

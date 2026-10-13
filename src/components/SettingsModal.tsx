@@ -5,6 +5,7 @@ import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { VisualFilters } from '../types';
 import { getDurabilityPrefs, setDurabilityPref, type DurabilityPrefs } from '../utils/durabilityPrefs';
 import { appStorage } from '../utils/storageNamespace';
+import { UsbTransferSetting } from './UsbTransferSetting';
 
 /**
  * Settings — Phase 7, step 1.
@@ -1134,6 +1135,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             more="The next empty slot you fill will ask again whether to use the app’s own Sample Browser or your operating system’s file picker, instead of going straight to whichever one you told it to remember."
                         />
                     </div>
+
+                    <UsbTransferSetting Explainer={Explainer} />
 
                     {/* Danger zone. The reset used to sit inside a `flex items-center
                         justify-between` row together with its own heading and its explainer,

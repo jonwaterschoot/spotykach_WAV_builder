@@ -14,7 +14,7 @@ The protocol code is the npm package [`@synthuxacademy/spotykach-transfer`](http
 
 - `usbBackend.ts`: `CardBackend` over the package's `SkLink`. LIST, a 4 KB header read plus a tail read (for our `ICMT` on files from 4.1.3 and earlier), upload checks, free space.
 - `usbSession.ts`: one connection shared by the UI and the console; loads the package only when connecting.
-- `flag.ts`: `?usb=1` / `?usb=0`.
+- `flag.ts`: the Settings switch (`useUsbTransferEnabled`, `setUsbTransferEnabled`), and `?usb=1` / `?usb=0`.
 - `devConsole.ts`: `window.skUsb` for hardware tests.
 
 ## What WAV Builder adds on top
