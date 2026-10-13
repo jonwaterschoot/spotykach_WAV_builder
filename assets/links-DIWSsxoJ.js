@@ -1,0 +1,1 @@
+const n=()=>`${window.location.origin}${window.location.pathname}#/submit#guide`,t=s=>/^#\/?submit(?:[?#&].*)?$/i.test(s)&&/[?#&]guide(?:[=&#]|$)/i.test(s.replace(/^#/,"")),a="jonwtr";const o="synthux.academy",i=()=>`jon@${o}`,e=(s="Spotykach submission")=>`mailto:${i()}?subject=${encodeURIComponent(s)}`;export{a as D,e as a,n as b,t as h,i as s};

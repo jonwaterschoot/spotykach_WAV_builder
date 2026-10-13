@@ -21,7 +21,8 @@
     "date": "2026-10-12",
     "file": "sample-mangler.md",
     "category": "Feature",
-    "image": "images/samplemangler_standalone.jpg"
+    "image": "images/samplemangler_standalone.jpg",
+    "pinned": true
   },
   {
     "id": "413",
@@ -37,7 +38,6 @@
     "date": "2026-08-29",
     "file": "4.1.0-submit.md",
     "image": "images/submit-hub-door.webp",
-    "pinned": true,
     "category": "Feature"
   },
   {
