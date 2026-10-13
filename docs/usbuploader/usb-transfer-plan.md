@@ -192,13 +192,13 @@ The USB firmware is a separate, unreleased branch. Nothing we merge to `main` ma
 
 **Tracking upstream**
 
-> **Since Oct 13, 2026:** Synthux publishes the host side as the npm package `@synthuxacademy/spotykach-transfer`, and `skLink.ts` (our port) is gone. The package is the protocol code; changes to it go as a PR to the Spotykach repo. The bullets below are the earlier approach. Current: `src/lib/usb/PROTOCOL.md`.
+> **Since Oct 13, 2026:** Synthux publishes the host side as the npm package `@synthuxacademy/spotykach-transfer`, and `skLink.ts` (our port) is gone. The package is the protocol code; changes to it would go as a PR to the Spotykach repo, and none are planned. The bullets below are the earlier approach. Current: `src/lib/usb/PROTOCOL.md`.
 
 - Pin the commit in one place: `src/lib/usb/PROTOCOL.md` (or a header comment in `skLink.ts`) holds the upstream commit and protocol version our code was ported from.
 - All protocol code lives in `src/lib/usb/skLink.ts` (frames, CRC, commands) and `src/lib/usb/usbBackend.ts` (mapping to `CardBackend`). A protocol change touches only these.
 - Check the branch before each USB work session: `git ls-remote https://github.com/Synthux-Academy/Spotykach.git refs/heads/uploader` against the pinned commit; if it moved, diff `docs/usb-transfer.md`, `src/transfer/protocol.h` and `web/index.html`.
 - Accept HELLO `proto_major == 1` only. Log `proto_minor` and `fw_version` so bug reports show which firmware was involved.
-- Share our format notes with Vlad (the extra `INFO` sub-chunks, `ICMT` JSON) so his page's `readWavMetadata` and any future firmware writer leave them alone.
+- ~~Share our format notes with Vlad~~: obsolete, slot files will carry only what the package writes.
 
 **Compatibility test checklist (run before each release that touches the header)**
 
@@ -342,40 +342,55 @@ Phase 4 results (Oct 12):
 - **Hardware test passed (Oct 12, Windows, uploader firmware)** after round 4: a Build over the card reader (regression), "Import into a new project" with the whole card over USB and over the card reader, and "Choose slots…" on an empty project all worked as expected. Not yet tried on macOS or Linux.
 - **The checklist this was run against:** open with `?usb=1`, Import / Build SD, switch to USB, Connect (and Authorise port on first use, also after closing the picker by clicking outside it). Check the grid against `skUsb.slots()`, the snapshot line after a build, a Standard Build of a few changed slots (progress, time estimate, then in sync on rescan), a pull of a card-only slot into the project, a build that doesn't fit, unplugging mid-upload (the slot keeps its old file, the modal shows Connect again), then the same project over the card reader showing in sync.
 
-## For Vlad
+## Asks to Synthux: none
 
-> **Answered with `@synthuxacademy/spotykach-transfer` 1.0.1 (Oct 12), checked Oct 13:** 1 fixed (`encodeWav` pads `INAM` to 4). 2 open (`encodeWav`/`convertAudio` write only `INAM` and cues). 3 firmware, not visible in the package. 4 same rule, but `utf8Truncate` isn't exported, so we keep a copy. 5 open (`SlotEntry` has no `ICMT`). The open web-side items go to Synthux as a PR on the Spotykach repo.
+Decided Oct 13, 2026: WAV Builder asks no changes of the Spotykach firmware or of `@synthuxacademy/spotykach-transfer`. Where we needed something, we change our side instead (see the next section). The five asks sent to Vlad on Oct 12, and where they ended up:
 
-Context: WAV Builder writes `RIFF/WAVE`, `fmt `, `LIST/INFO` (`IART`, `INAM`, `ITMP`, `ICMT`), `data`, `cue `. `ICMT` holds JSON `{id, h, p, t}`: our record UUID, a SHA-256 of the audio, processing flags and tempo. We use `id` + `h` to match card slots to project files without downloading them. Files are uploaded as they are, not re-encoded.
+| Ask | Outcome |
+| --- | --- |
+| 1. Misaligned audio in `encodeWav()` | Fixed by Synthux: the package aligns, and firmware 1.4.0.b1 reads misaligned files safely. Release firmware 1.3.1 still needs aligned files; the package's are. |
+| 2. Keep our `INFO` sub-chunks when re-encoding | Dropped: slot files will carry nothing beyond what the package writes. |
+| 3. Device re-save keeps `LIST` | Dropped: a re-saved slot shows as changed, which is what it is. |
+| 4. One shared `INAM` cutting rule | Dropped: the package cuts slot file names; the snapshot stores the name as written. |
+| 5. `ICMT` in the slot list | Dropped: the slot list's name, frames, cues and size are compared with the snapshot instead. |
 
-1. **Bug: misaligned audio in `encodeWav()`.** The header is `64 + padded INAM` bytes, so `data` starts at 2 mod 4 whenever the padded `INAM` length is 2 mod 4 (`kick.wav` puts the audio at byte 74). `init_read_audio` then `f_read`s into `buffer + (512 − start % 512)`, and `SD_read` hands that unaligned address to the SDMMC IDMA. Every sample is shifted by 2 bytes, and the resulting NaNs mute the engine until a power cycle. We now pad `IART` so our `data` always starts on a multiple of 4. Fix options: pad in `encodeWav()`, or fix it once in firmware (bounce unaligned buffers in `SD_read`, or read from a sector-aligned offset in `init_read_audio` and copy from inside the buffer).
-2. **Keep foreign `LIST/INFO` sub-chunks when re-encoding.** `encodeWav()` writes only `INAM` + `cue `, so a WAV Builder file pushed through your page loses `ICMT` and we can only match it by name + frame count. Please copy every existing `INFO` sub-chunk except `INAM` through unchanged.
-3. **Firmware re-save keeps `LIST`.** `DeckStorage::save()` writes a bare 44-byte header (spec §10.2), so a slot edited on the device loses its name and our id. Keeping the old `LIST` chunk (before `data`, 4-byte aligned) would fix it for both tools.
-4. **Pin the `INAM` rule.** UTF-8, at most 64 bytes, cut at a character boundary, NUL-terminated, padded to even length. We copied your `utf8Truncate()`. If the two tools cut long or non-ASCII names differently, the same file gets two names and name matching fails. Can this go into the spec as fixed, or into a shared module?
-5. **Nice to have: `ICMT` (or a hash field) in LIST.** We currently do one 4 KB header read per occupied slot (about 36 × 4 KB, 1–2 s) only to get `ICMT`. If LIST returned it, that read would go away.
+If something on the protocol side ever does need changing: fork the Spotykach repo, change `web/spotykach-transfer` with its tests, and open a PR there (`src/lib/usb/PROTOCOL.md`).
 
-Code (pinned to commit `7535186`):
+## Card identity without `ICMT` (decided Oct 13, not built yet)
 
-- [`wavHeader.ts` `buildInfoChunk`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/audio/wavHeader.ts#L63-L109): the `LIST/INFO` layout, the `ICMT` JSON and the alignment padding (items 1, 2). [`utf8Truncate`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/audio/wavHeader.ts#L35-L42) is the `INAM` cut (item 4), and [`readWavHeaderInfo`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/audio/wavHeader.ts#L241) is our reader.
-- [`scripts/check-wav-header.mjs`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/scripts/check-wav-header.mjs): a JS port of `wav_header()` and `wav_info()` from both firmwares. It sweeps name lengths 0–70 and fails on audio that isn't 4-byte aligned. Run it on any file: `node scripts/check-wav-header.mjs path/to/file.wav`.
-- [`usbBackend.ts` `validate`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/usb/usbBackend.ts#L268-L297): what we refuse before an upload (your `is_loadable()`, alignment, frame, cue and size limits).
-- [`skLink.ts`](https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/7535186/src/lib/usb/skLink.ts): our port of your protocol client from `web/index.html`.
-
-## Proposal (Oct 13): card identity without `ICMT`
-
-Not decided. The aim: no changes needed in Spotykach's code.
+The aim: no changes needed in Spotykach's code.
 
 - **Card files are written by the package's `encodeWav`** (name and cues, audio aligned), over USB and through the card reader alike. No `ICMT`, `ITMP` or `IART` on the card.
 - **The project's card snapshot holds the identity.** Per slot: file id, version hash, and what the slot list reports (name, frames, cue count, file size). A slot whose list entry equals the snapshot is the file the project wrote; anything else is changed or new.
 - **Gains:** no header read per slot over USB (the list is enough), no PR to Spotykach, and one card format shared with Synthux's own page.
 - **Costs:** a card can no longer tell a project it has never seen which file a slot was (no id inside), and tempo and processing flags aren't stored in card files. Cards written before the change are matched once by name and frame count, or by the tail read for 4.1.3 files.
+- **Hashes cover the audio only** (the `data` chunk), not the header, so the same audio has the same hash whichever tool wrote the file. Existing whole-file hashes are recomputed in the background; older slot files keep matching by their `ICMT` id meanwhile.
+- **Unaffected:** project bundles (`project.json` holds the ids), presets (sample-pack paths), and loose-file imports (always a new project file, as before).
 - **Checked:** 72 `encodeWav` files (names 0–70 bytes, non-ASCII, cues) load on ports of release firmware 1.3.1 (WAV code identical to `main` `7da8061`) and of the uploader firmware.
 
 ## Open questions and risks
 
 - **Protocol stability.** The spec is marked draft v1 and the branch is unreleased. Check `proto_major` in HELLO and keep the link code in two files so a v1.1 (pipelined uploads) is a contained change.
-- **Device re-saves drop metadata.** Those slots land in step 4 of the ladder until the firmware keeps `LIST` (For Vlad, item 3).
+- **Device re-saves drop metadata.** The firmware writes a bare header, so a re-saved slot shows as changed and can be imported. No firmware change asked.
 - **One app at a time.** If Vlad's page or a DAW holds the serial or MIDI port, WAV Builder can't connect. Show a clear message rather than a generic error.
 - **Windows driver binding.** The device uses the same VID/PID in MIDI and CDC mode, which Windows may cache badly (spec §9.2). Test there early.
 - **No card serial in the browser.** Neither USB v1 nor the File System Access API exposes a card ID, so the card snapshot is a fingerprint, not a guarantee.
 - **Timing.** About 20–40 s per full slot means a 36-slot push can take 15–25 minutes over USB. Keep the card reader as the recommended path for full rebuilds, and show the estimate before a long batch.
+
+
++++
+
+- "so our own alignment fix still matters for people on 1.3.1." 
+  → what does this entail? what is that fix, will it become obsolete?
+
+- One shared rule for cutting long names	Same rule, but his function isn't shared, so we keep our copy  
+  → how so his function is not shared, what's the consequence, should this be part of the package he built?
+
+- During sync with an SD card: ...  A fix on our side: hash only the audio data, not the header.
+  → sounds like a good idea any reason to not do it this way?
+
+- "Project files keep their ids. What changes is where the link "slot Blue 1 holds project file X, version Y" is stored"
+  → ok for proposal fingerprint, to check that the slot still holds what we wrote there.
+
+- The one capability we give up is recognising slot files on an SD card from a project the app doesn't know.
+  → does this have any consequence for the sharing of project bundles and presets?  

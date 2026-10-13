@@ -38,4 +38,4 @@ Before starting: back up the SD card (copy the whole `SK` folder), close any DAW
 
 13. A card written by WAV Builder 4.1.3 (the live site) on firmware 1.4.0.b1: listed over USB with names and matched to the project (this uses the tail read for the old layout).
 
-Round 2 repeats A–D if card files move to the package's `encodeWav` (proposal: "Card identity without `ICMT`" in [usb-transfer-plan.md](usb-transfer-plan.md)).
+Round 2 repeats A–D once card files are written by the package's `encodeWav` ("Card identity without `ICMT`" in [usb-transfer-plan.md](usb-transfer-plan.md)), plus one more check: a project ZIP saved by 4.1.3 imports with its ids, slots and slices.
