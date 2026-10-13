@@ -72,7 +72,8 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         const startTime = performance.now();
 
         const step = (now: number) => {
-            const progress = Math.min((now - startTime) / FADE_MS, 1);
+            // rAF's timestamp is the frame's start, which can be before `startTime`.
+            const progress = Math.min(Math.max((now - startTime) / FADE_MS, 0), 1);
             if (audioRef.current) audioRef.current.volume = startVolume * (1 - progress);
             fadeRafRef.current = progress < 1 ? requestAnimationFrame(step) : null;
         };
@@ -104,7 +105,8 @@ export const AudioPlayerProvider = ({ children }: { children: React.ReactNode })
         const startTime = performance.now();
 
         const step = (now: number) => {
-            const progress = Math.min((now - startTime) / FADE_MS, 1);
+            // rAF's timestamp is the frame's start, which can be before `startTime`.
+            const progress = Math.min(Math.max((now - startTime) / FADE_MS, 0), 1);
             if (audioRef.current) audioRef.current.volume = progress;
             fadeRafRef.current = progress < 1 ? requestAnimationFrame(step) : null;
         };

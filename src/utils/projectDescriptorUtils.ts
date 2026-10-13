@@ -335,14 +335,8 @@ const guessMimeFromPath = (path: string): string => {
  */
 const getAudioDuration = async (blob: Blob): Promise<number> => {
     try {
-        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-        if (!Ctx) return 0;
-        const ctx = new Ctx();
-        const buffer = await blob.arrayBuffer();
-        const decoded = await ctx.decodeAudioData(buffer);
-        const dur = decoded.duration;
-        await ctx.close();
-        return dur;
+        const { decodeOffline } = await import('../lib/audio/decodeOffline');
+        return (await decodeOffline(await blob.arrayBuffer())).duration;
     } catch {
         return 0;
     }

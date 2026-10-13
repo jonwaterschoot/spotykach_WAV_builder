@@ -27,9 +27,8 @@ export const MiniWaveform = ({ blob, buffer: propBuffer, width = 100, height = 4
             if (!buffer && blob) {
                 // Decode blob
                 try {
-                    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                    const arrayBuffer = await blob.arrayBuffer();
-                    buffer = await ctx.decodeAudioData(arrayBuffer);
+                    const { decodeOffline } = await import('../lib/audio/decodeOffline');
+                    buffer = await decodeOffline(await blob.arrayBuffer());
                 } catch (e) {
                     console.error("Failed to decode for mini waveform", e);
                     return;
