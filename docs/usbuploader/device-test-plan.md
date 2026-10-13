@@ -8,7 +8,7 @@ Round 1 tests the `feat/usb-transfer` branch after the switch to `@synthuxacadem
 | --- | --- | --- |
 | Firmware with USB transfer | `v.1.4.0.b1` (uploader `67168e0`) | `spotykach_1.4.0.b1.bin` on the Spotykach releases page |
 | Release firmware | `v1.3.1` (`bdc0f77`) | `spotykach_1.3.1.bin`, same page |
-| WAV Builder | `feat/usb-transfer` | `npm run dev`, open `http://localhost:5173/?usb=1` in Chrome or Edge |
+| WAV Builder | `feat/usb-transfer` | `npm run dev`, open `http://localhost:5173/` in Chrome or Edge, turn on Settings ▸ System ▸ USB transfer |
 | WAV Builder, live | 4.1.3 | the public site, for the old-card test only |
 
 Before starting: back up the SD card (copy the whole `SK` folder), close any DAW (on Windows only one app can open the MIDI port), use a USB data cable on the rear port.
@@ -103,14 +103,14 @@ Log
 
 ## B. Same card, card reader
 
-10. Put the card in the computer, open the build/sync preview without `?usb=1`: the slots pushed in A show as in sync.
+10. Put the card in the computer, open the build/sync preview on the card reader: the slots pushed in A show as in sync.
 
 → everything normal
 
 ## C. Release firmware (1.3.1)
 
 11. Flash 1.3.1, insert the card from A and B: every slot loads and plays clean, slices present.
-12. Open WAV Builder with `?usb=0` (the flag is remembered per browser): no USB controls anywhere.
+12. Turn USB transfer off in Settings ▸ System: no USB controls anywhere, without a reload. Turn it on again: the confirm window links to the firmware.
 
 - http://localhost:5173/#/studio still shows usb controls, but obviously they do not work
 
@@ -122,6 +122,31 @@ Log
 13. A card written by WAV Builder 4.1.3 (the live site) on firmware 1.4.0.b1: listed over USB with names and matched to the project (this uses the tail read for the old layout).
 
 Round 2 (ready: the slot-file change is built, `a70bad7`) repeats A–D now that card files are written by the package's `encodeWav` ("Card identity without `ICMT`" in [usb-transfer-plan.md](usb-transfer-plan.md)), plus one more check: a project ZIP saved by 4.1.3 imports with its ids, slots and slices.
+
+## E. Preset → SD over USB (firmware 1.4.0.b1)
+
+USB transfer on in Settings ▸ System. Hub ▸ Starter Presets ▸ Write to SD card ▸ **Over USB**.
+
+14. Connect from the dialog. The grid shows the preset's slots: filled (grey), replaced (red, listed by name and size), the rest left alone.
+15. With a few occupied slots in the preset's range: **Save these N first** downloads a ZIP laid out as `SK/<T>/<n>.WAV` with a README naming each slot. Copying its `SK/` onto the card through a card reader puts them back.
+16. Write Free the Rhythm (12 slots), then Hainbach's Spotykach Tapes (36). Each slot plays on the device, with its slices; slots outside the preset still hold what they held.
+17. **Copy timings** at the end and paste them here: total time, KB/s, per-slot seconds. These replace the estimate in the dialog (470 KB/s, about 35 s per full slot).
+18. Stop halfway, and pull the cable halfway on another run: the slot being written keeps its old file; the slots before it hold the preset.
+19. **Done, let Spotykach play**: the device leaves transfer mode.
+
+### Results, E (Oct 13, 18:43–18:54)
+
+- **15:** the ZIP of the replaced slots downloaded in good shape.
+- **16 (Hainbach's Spotykach Tapes, 36 slots): passed, the device plays the samples.** Total 10 min 26 s: about 10 s to fetch the audio, then 286.5 MB written in 10 min 16 s (477 KB/s). Per slot 413–501 KB/s, 2.6–29.3 s; 17 s on average. Slowest: Pink 5 and 6 (413 and 424 KB/s). Time follows the bytes: a full 42 s slot (16.1 MB) takes about 34 s.
+- **HELLO reports firmware 1.3.1** on the 1.4.0.b1 beta. To tell Synthux.
+- **Follow-ups, built:** the dialog lists the steps (done, now, to do), the elapsed time and the time left (from this run's own pace, 17 s per slot before the first one is done), and the slots finished so far. The estimate before writing is the measured 17 s per slot, with the full-length worst case beside it. "Let Spotykach play" now leaves the dialog open with the report (clicked too early on this run, which closed it); the report also goes to the browser console.
+- **16 (Free the Rhythm, 12 slots), 19:09–19:11: failed at Green 3 (slot 9), nothing touched.** 8 slots written, 57.2 MB in 2 min 05 s (469 KB/s, 444–499 per slot). The serial port's write failed and the connection ended. The real error was hidden: the transfer package (1.0.1) appends its detail with `e.message += …`, which throws on the browser's DOMException ("Cannot set property message … only a getter"). The original is the `[spotykach] upload at byte …` warning in the console. Cause still open: a USB reset on the Windows side (power saving on the hub or port), or the device dropping off. To check: that console line, whether Spotykach restarted, and whether Green 3 still plays its old file.
+- **Built after this run:** the backend turns the getter TypeError into "The USB connection to Spotykach failed". The dialog keeps its slot count when the connection drops (it showed "9 of 0"), and offers **Continue / Reconnect and continue (N left)**, which writes only the slots the interrupted run didn't finish. To report to Synthux: the `e.message +=` in `_sendChunk` and `_readRange`.
+- **After the failure:** Green 3–6 still held the Hainbach files, so the failed slot kept its old file. Spotykach left transfer mode by itself and played again: the device ended the session, not the cable.
+- **16 again (Free the Rhythm), 19:35–19:38: passed.** 12 slots, 94.8 MB in 3 min 29 s (466 KB/s). The console showed **24 resent chunks**: "Spotykach received a corrupted request (the request stopped arriving)", spread over most slots. The package resends those and they cost little speed (Green 1 at 370 KB/s, Green 2 at 419), but they show frames from the computer reaching the device cut short. The failed run was probably one of these that the device didn't recover from. For Synthux, with the console log: frequency, firmware 1.4.0.b1 (HELLO says 1.3.1), Windows.
+- **Studio, the same preset loaded as a project:** over USB, slots written by the preset show "Same name?". A preset write keeps no card snapshot, and USB can't compare content without a download. Expected; the card reader route matches them by audio.
+- **App bugs found on the way, fixed:** (1) the first load of a preset in Studio broke playback ("The AudioContext encountered an error from the audio device", ×10) until a reload: every mini waveform opened its own `AudioContext` and never closed it, 36 at once. They decode offline now (`decodeOffline`), as does the duration read in preset hydration. (2) "Failed to set the 'volume' property … 7.943": the play/stop fade took progress from the frame's timestamp, which can be before the fade started, so it went negative. Clamped.
+- **Not run yet:** 18 (stop, cable pulled), and Continue after a failure.
 
 ## Results, round 1 (Oct 13)
 
@@ -140,5 +165,5 @@ Round 2 (ready: the slot-file change is built, `a70bad7`) repeats A–D now that
   - Custom view: a slot in sync couldn't be copied to the pool (all SD actions disabled). Now **Move SD → Pool** works on in-sync slots. Dragging an SD slot onto the pool zone is still to be checked on the device.
   - A8 (cable pulled mid-push): passed, the slot keeps its old file.
 - **B: passed.**
-- **C: passed.** C12 isn't a bug: `?usb=1` is remembered in this browser, so the controls stay until `?usb=0`. Step 12 should read: open WAV Builder with `?usb=0`.
+- **C: passed.** C12 isn't a bug: `?usb=1` is remembered in this browser, so the controls stay until `?usb=0`. Since then the switch is in Settings ▸ System, with a confirm window that links to the firmware.
 - **D:** not run yet.
