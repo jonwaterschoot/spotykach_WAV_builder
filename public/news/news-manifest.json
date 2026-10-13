@@ -1,10 +1,27 @@
 [
   {
+    "id": "usb-beta",
+    "title": "USB transfer, in beta",
+    "date": "2026-10-13",
+    "file": "usb-transfer-beta.md",
+    "image": "images/usbtransfer_writepresets.jpg",
+    "category": "Feature"
+  },
+  {
+    "id": "online",
+    "title": "Search open audio archives",
+    "date": "2026-10-13",
+    "file": "online-sources.md",
+    "image": "images/searchopenarchives_samplebrowser.jpg",
+    "category": "Feature"
+  },
+  {
     "id": "mangler",
     "title": "Sample Mangler: a door for happy accidents",
     "date": "2026-10-12",
     "file": "sample-mangler.md",
-    "category": "Feature"
+    "category": "Feature",
+    "image": "images/samplemangler_standalone.jpg"
   },
   {
     "id": "413",

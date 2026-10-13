@@ -4,6 +4,8 @@ There's a seventh door on the hub. The **Sample Mangler** takes a pool of sounds
 
 It is meant to be unpredictable. Each snippet gets its own length, loudness, direction and maybe pitch, picked by dice inside ranges you set.
 
+![The Sample Mangler](images/samplemangler_standalone.jpg)
+
 ## How it goes
 
 - **Fill the pool** from the packs, from files, or by dropping audio on the screen.
@@ -13,6 +15,14 @@ It is meant to be unpredictable. Each snippet gets its own length, loudness, dir
 - **Save** it as a WAV, to the Browse pool, to the Studio user library, or straight into a new Studio project.
 
 Every result has a seed. Type it back in with the same settings and you get the same file.
+
+## In the editor too
+
+The waveform editor's new **Tools** menu has a Mangler under FX: a new take from random snippets of the file you have open, with a cue point at each snippet. *Apply* saves it as a new version in the slot's history; the original stays.
+
+![The editor's Tools menu](images/ToolsmenuEditor.jpg)
+
+![The Mangler tool in the editor](images/samplemangler_editorfxtools.jpg)
 
 ## Licences travel along
 

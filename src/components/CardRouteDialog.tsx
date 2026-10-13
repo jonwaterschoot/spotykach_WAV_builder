@@ -151,7 +151,7 @@ export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
         </div>
     );
 
-    const timeNote = route === 'usb' ? ' Over USB each full slot takes 20–40 s; you see the progress.' : '';
+    const timeNote = route === 'usb' ? ' Over USB a full slot takes about 35 s; you see the progress.' : '';
 
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
