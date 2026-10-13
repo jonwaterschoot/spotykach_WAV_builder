@@ -81,8 +81,14 @@ export class Processor {
     // Simple trim
     async trim(buffer: AudioBuffer, start: number, end: number): Promise<AudioBuffer> {
         const sampleRate = buffer.sampleRate;
-        const startSample = Math.floor(start * sampleRate);
-        const endSample = Math.ceil(end * sampleRate);
+        // Nearest frame at both ends. Rounding the start down and the end up made a
+        // 42.000 s region 2,016,001 frames: one more than the device takes.
+        const startSample = Math.round(start * sampleRate);
+        let endSample = startSample + Math.round((end - start) * sampleRate);
+        // A region dragged to "42 s" lands a hair either side; within half a
+        // millisecond it means the device's exact limit (DEVICE_MAX_FRAMES at 48 kHz).
+        const deviceFrames = 42 * sampleRate;
+        if (Math.abs(endSample - startSample - deviceFrames) <= sampleRate / 2000) endSample = startSample + deviceFrames;
 
         // Clamp to valid range to prevent off-by-one errors (trailing zeros)
         const safeStart = Math.max(0, Math.min(buffer.length, startSample));
