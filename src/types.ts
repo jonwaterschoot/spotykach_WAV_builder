@@ -56,9 +56,19 @@ export interface WavMetadata {
 /** What WAV Builder last wrote to one card slot. */
 export interface CardSnapshotSlot {
     fileId: string;
-    /** `ICMT.h`: SHA-256 of the source version. */
+    /** `ICMT.h` on slot files written before 4.2: SHA-256 of the whole source version. */
     hash?: string;
+    /** SHA-256 of the version's audio alone, up to the device's limit (`audioHashOf`). */
+    audioHash?: string;
     frames?: number;
+    /**
+     * The slot file's fingerprint as written: `INAM`, file size and cue count (with
+     * `frames`). What the device's slot list reports, so a slot can be recognised as
+     * the file the project wrote without reading it. Absent on snapshots from before 4.2.
+     */
+    name?: string;
+    size?: number;
+    cues?: number;
     writtenAt: string; // ISO date
     via: 'reader' | 'usb';
 }

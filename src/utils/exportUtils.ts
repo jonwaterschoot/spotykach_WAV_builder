@@ -5,6 +5,7 @@ import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
 import { collapseVersionHistoryOnSave } from './versionHistory';
 import { hashBlob } from './assetUtils';
 import { readWavHeaderInfo } from '../lib/audio/wavHeader';
+import { audioHashOf, DEVICE_MAX_FRAMES, toSlotFile, type SlotFile } from '../lib/audio/slotFile';
 
 // ==========================================
 // SHARED HELPERS
@@ -54,6 +55,8 @@ export interface SlotWriteEvent {
     fraction?: number;
     /** The hardware WAV's size, with `done` and `skipped`. */
     bytes?: number;
+    /** With `done` and `skipped`: the version was longer than the device holds and was cut. */
+    cut?: { fromFrames: number; toFrames: number };
 }
 
 /**
@@ -734,6 +737,33 @@ const estimateHardwareSize = async (version: AudioVersion): Promise<number | nul
     return null;
 };
 
+/**
+ * A version as a slot file (src/lib/audio/slotFile.ts): converted to 48 kHz stereo
+ * float when it isn't already (Studio's ffmpeg converter when given, else the
+ * browser's decoder), then encoded by the transfer package with its name and slice
+ * points and cut at `maxFrames`.
+ */
+const hardwareSlotFile = async (
+    version: AudioVersion,
+    metadata: WavMetadata,
+    maxFrames: number,
+    convert: ExportSDOptions['onConvert'],
+    onConverting?: () => void,
+): Promise<SlotFile> => {
+    const options = { name: metadata.name, slicePoints: metadata.slicePoints, maxFrames };
+    const blob = version.blob!;
+    try {
+        return await toSlotFile(blob, options);
+    } catch {
+        // Not 48 kHz stereo float yet.
+    }
+    onConverting?.();
+    if (convert && blob.type.startsWith('audio/')) return toSlotFile(await convert(blob, metadata), options);
+    const { audioEngine } = await import('../lib/audio/audioEngine');
+    const { blob: wav } = await audioEngine.loadAndProcessAudio(blob, metadata);
+    return toSlotFile(wav, options);
+};
+
 const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
     id: file.id,
     name: file.originalName || file.name,
@@ -830,6 +860,9 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             };
             const writes = (d: SlotSyncDecision | undefined) => d === 'export' || d === 'keep_local' || d === 'use_backup';
 
+            // The device's own limit over USB (HELLO); 42 s at 48 kHz otherwise.
+            const maxFrames = (card.kind === 'usb' ? (await card.info()).maxFrames : undefined) ?? DEVICE_MAX_FRAMES;
+
             // Over USB, check the whole batch fits before writing any of it. The card
             // reader can't read the card's free space.
             if (card.checkSpace) {
@@ -882,34 +915,39 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             options.onSlot?.({ slot: slotRef, phase: 'start' });
                             onProgress?.(`Writing ${color} Tape ${slot.id}...`, 20 + ((processed / Math.max(1, activeSlots)) * 50));
                             
-                            let blobToWrite = version.blob;
-                            let metadata: WavMetadata | undefined;
-                            if (options.onConvert && version.blob.type.startsWith('audio/')) {
-                                onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
-                                try {
-                                    metadata = await slotWavMetadata(file, version);
-                                    blobToWrite = await options.onConvert(version.blob, metadata);
-                                } catch (e) {
-                                    console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
-                                    throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted to prevent incompatible files on SD.`);
-                                }
+                            const metadata = await slotWavMetadata(file, version);
+                            let slotWav: SlotFile;
+                            try {
+                                slotWav = await hardwareSlotFile(version, metadata, maxFrames, options.onConvert, () => onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`));
+                            } catch (e) {
+                                console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
+                                throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted to prevent incompatible files on SD.`);
                             }
+                            const audioHash = await audioHashOf(version.blob, maxFrames) ?? await audioHashOf(slotWav.blob, maxFrames);
+                            const cut = slotWav.truncated ? { fromFrames: slotWav.sourceFrames, toFrames: slotWav.fingerprint.frames } : undefined;
 
                             const slotProgress = 20 + (((processed - 1) / Math.max(1, activeSlots)) * 50);
                             const onSlotProgress = (fraction: number) => {
                                 options.onSlot?.({ slot: slotRef, phase: 'progress', fraction });
                                 if (card.kind === 'usb') onProgress?.(`Uploading ${color} Tape ${slot.id}… ${Math.round(fraction * 100)}%`, slotProgress + (fraction * 50) / Math.max(1, activeSlots));
                             };
-                            const wrote = await card.writeSlot(color, slot.id, blobToWrite, { compare, onProgress: onSlotProgress, signal: options.signal });
+                            const wrote = await card.writeSlot(color, slot.id, slotWav.blob, {
+                                compare,
+                                onProgress: onSlotProgress,
+                                signal: options.signal,
+                                expected: { fingerprint: slotWav.fingerprint, audioHash, previous: state.cardSnapshot?.slots[slotRef] },
+                            });
                             if (wrote) writtenCount++; else skippedCount++;
-                            options.onSlot?.({ slot: slotRef, phase: wrote ? 'done' : 'skipped', bytes: blobToWrite.size });
+                            options.onSlot?.({ slot: slotRef, phase: wrote ? 'done' : 'skipped', bytes: slotWav.blob.size, cut });
 
                             // Written or already identical: either way the card now holds this.
-                            const written = await readWavHeaderInfo(blobToWrite).catch(() => null);
                             snapshot.slots[slotRef] = {
                                 fileId: file.id,
-                                hash: metadata?.hash,
-                                frames: written?.frames,
+                                audioHash: audioHash ?? undefined,
+                                frames: slotWav.fingerprint.frames,
+                                name: slotWav.fingerprint.name,
+                                size: slotWav.fingerprint.size,
+                                cues: slotWav.fingerprint.cues,
                                 writtenAt: wrote ? now : (snapshot.slots[slotRef]?.writtenAt ?? now),
                                 via: card.kind === 'usb' ? 'usb' : 'reader',
                             };
@@ -1013,15 +1051,15 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     const file = state.files[slot.fileId];
                     const version = file?.versions.find(v => v.id === file.currentVersionId);
                     if (version?.blob) {
-                        let blobToWrite = version.blob;
-                        if (options.onConvert && version.blob.type.startsWith('audio/')) {
-                            onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`);
-                            try {
-                                blobToWrite = await options.onConvert(version.blob, await slotWavMetadata(file, version));
-                            } catch (e) {
-                                console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
-                                throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted.`);
-                            }
+                        // The same slot file a direct write makes: the ZIP ends up on a card too.
+                        let blobToWrite: Blob;
+                        try {
+                            const metadata = await slotWavMetadata(file, version);
+                            blobToWrite = (await hardwareSlotFile(version, metadata, DEVICE_MAX_FRAMES, options.onConvert,
+                                () => onProgress?.(`Processing ${color} Tape ${slot.id} for Hardware...`))).blob;
+                        } catch (e) {
+                            console.error(`Failed to convert ${color} Tape ${slot.id} to WAV`, e);
+                            throw new Error(`Critical: Failed to convert ${color} Tape ${slot.id} for hardware. Export aborted.`);
                         }
                         tapeFolder.file(`${slot.id}.WAV`, blobToWrite);
                         filesAdded++;

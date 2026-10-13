@@ -11,6 +11,7 @@
     "submission": "node scripts/import-submission.mjs",
     "check:wav": "node scripts/check-wav-header.mjs",
     "check:slots": "node scripts/check-slot-files.mjs",
+    "check:card": "node scripts/check-card-sync.mjs",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

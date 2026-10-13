@@ -4,8 +4,32 @@
  * the same way over either route. Neither route can read a card serial, so this
  * is a fingerprint (slot, `ICMT.id`, hash, frames), not a guarantee.
  */
-import type { CardSnapshot } from '../../types';
+import type { CardSnapshot, CardSnapshotSlot } from '../../types';
 import type { SlotDescriptor } from './cardBackend';
+import { sameFingerprint, type SlotFingerprint } from '../audio/slotFile';
+
+/**
+ * What a slot reports about itself without its audio: name, size, frames, cue count.
+ * Over USB the slot list has all four; over the card reader frames and cues need the
+ * header read. Undefined while frames aren't known.
+ */
+export const listedFingerprint = (desc: SlotDescriptor): SlotFingerprint | undefined =>
+    desc.frames === undefined ? undefined : {
+        name: desc.name ?? desc.meta?.name ?? '',
+        size: desc.size,
+        frames: desc.frames,
+        cues: desc.cueCount ?? desc.meta?.slicePoints?.length ?? 0,
+    };
+
+/** The fingerprint the project wrote, on snapshots from 4.2 on. */
+export const snapshotFingerprint = (snap: CardSnapshotSlot | undefined): SlotFingerprint | undefined =>
+    snap && snap.size !== undefined && snap.frames !== undefined
+        ? { name: snap.name ?? '', size: snap.size, frames: snap.frames, cues: snap.cues ?? 0 }
+        : undefined;
+
+/** The slot still holds the file the project last wrote there. */
+export const slotMatchesSnapshot = (desc: SlotDescriptor, snap: CardSnapshotSlot | undefined): boolean =>
+    sameFingerprint(listedFingerprint(desc), snapshotFingerprint(snap));
 
 /**
  * Per slot, against the snapshot:
@@ -48,6 +72,13 @@ export function checkCardSnapshot(
             slots[key] = 'removed';
             continue;
         }
+        // From 4.2: the fingerprint the device lists, no id inside the file.
+        if (snapshotFingerprint(snap)) {
+            if (slotMatchesSnapshot(desc, snap)) { stillThere++; slots[key] = 'same'; }
+            else slots[key] = 'changed';
+            continue;
+        }
+        // Snapshots from before 4.2: our ICMT id and hash inside the slot file.
         const meta = desc.meta;
         if (meta?.id !== snap.fileId) {
             slots[key] = 'changed';

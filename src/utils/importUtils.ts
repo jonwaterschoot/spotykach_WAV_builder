@@ -3,8 +3,9 @@ import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { hashBlob } from './assetUtils';
 import type { CardBackend, SlotDescriptor } from '../lib/card/cardBackend';
-import { readCardSlots, slotFile } from '../lib/card/cardBackend';
-import { checkCardSnapshot } from '../lib/card/cardSnapshot';
+import { readCardSlots, slotFile, slotKey } from '../lib/card/cardBackend';
+import { checkCardSnapshot, slotMatchesSnapshot } from '../lib/card/cardSnapshot';
+import { audioHashOf, DEVICE_MAX_CUES } from '../lib/audio/slotFile';
 import type { SnapshotCheck } from '../lib/card/cardSnapshot';
 
 export type ImportType =
@@ -361,17 +362,28 @@ export interface SyncSlotDiff {
      * audio, so not a conflict; a build should still rewrite it once.
      */
     staleHeader?: boolean;
+    /**
+     * CONFLICT, but the card file is an older version this project wrote itself
+     * (matched by the card snapshot or by `ICMT.id`): the project already has it, so
+     * a build overwrites it without pooling a copy.
+     */
+    ownOlderVersion?: boolean;
 }
 
 /**
  * The matching ladder, strongest first:
+ * - `snapshot`: the slot lists the fingerprint (name, size, frames, cues) the project's
+ *   card snapshot recorded for this file; MATCH when the version's audio is unchanged,
+ *   else CONFLICT (an older version the project wrote). Slot files from 4.2 on
  * - `id`: `ICMT.id` is this slot's file record (MATCH, or CONFLICT when it changed)
  * - `hash`: `ICMT.h` is this slot's audio under another record (MATCH)
+ * - `audio`: same audio, different header (card reader: the card file's audio hash
+ *   is the version's). MATCH, rewritten once in the current format
  * - `bytes`: the files are identical, no metadata needed (MATCH)
  * - `name`: only `INAM` and the length agree. Probably the same file, but left
  *   as a CONFLICT for the user to confirm
  */
-export type SlotMatch = 'id' | 'hash' | 'bytes' | 'name';
+export type SlotMatch = 'snapshot' | 'id' | 'hash' | 'audio' | 'bytes' | 'name';
 
 /** Does a card file's INAM name this record? Compared after the same 64-byte cut. */
 const sameName = (inam: string, file: FileRecord): boolean => {
@@ -383,6 +395,18 @@ const sameName = (inam: string, file: FileRecord): boolean => {
 const localFrames = async (blob: Blob): Promise<number | undefined> => {
     const info = await readWavHeaderInfo(blob).catch(() => null);
     return info?.sampleRate === 48000 ? info.frames : undefined;
+};
+
+/**
+ * The name and cue count a version's slot file would get (see `exportSDStructure`):
+ * `INAM` cut to 64 bytes, and the slice points that fall inside `frames`.
+ */
+const slotFileMeta = async (file: FileRecord, version: AudioVersion, frames: number): Promise<{ name: string; cues: number }> => {
+    const { versionSlices } = await import('./exportUtils');
+    const slices = (await versionSlices(file, version)).slicePoints ?? [];
+    const cues = new Set(slices.map(s => Math.round(s * 48000)).filter(f => f >= 0 && f < frames)).size;
+    const name = new TextDecoder().decode(utf8Truncate(file.originalName || file.name, MAX_INAM_BYTES));
+    return { name, cues: Math.min(cues, DEVICE_MAX_CUES) };
 };
 
 // Legacy Interface Support (to prevent build break until consumers are updated)
@@ -521,7 +545,9 @@ export const calculateSyncDiff = async (
     card: CardBackend
 ): Promise<SyncDiff> => {
     const cardConfig = await card.readConfig?.() ?? null;
-    const cardSlots = await readCardSlots(card);
+    // A slot that still lists what the project wrote needs no header read (over USB).
+    const snapshotSlots = projectState.cardSnapshot?.slots ?? {};
+    const cardSlots = await readCardSlots(card, listed => slotMatchesSnapshot(listed, snapshotSlots[slotKey(listed.tape, listed.slot)]));
     // The card size settles a card swap, but only USB can read it.
     const totalKiB = card.kind === 'usb' ? (await card.info()).totalKiB : undefined;
     const remoteBytes = new Map<string, Promise<File>>();
@@ -594,6 +620,7 @@ export const calculateSyncDiff = async (
 
             const remoteMeta = remote?.meta ?? null;
             let match: SlotMatch | undefined;
+            let ownOlderVersion = false;
 
             if (localFile && remote) {
                 // Both exist - Compare
@@ -604,7 +631,16 @@ export const calculateSyncDiff = async (
                 const localHash = currentVer?.blob ? (currentVer.hash ?? await hashBlob(currentVer.blob)) : null;
                 let remoteHash: string | null = null;
 
-                if (remoteMeta?.id && localFile.id === remoteMeta.id) {
+                const snap = snapshotSlots[slotId];
+                if (snap?.fileId === localFile.id && slotMatchesSnapshot(remote, snap)) {
+                    // 0. What the project last wrote here. Unchanged when the version's audio is.
+                    match = 'snapshot';
+                    const localAudio = currentVer?.blob ? await audioHashOf(currentVer.blob) : null;
+                    // Same audio, and the slot file would get the same name and slices.
+                    const would = currentVer ? await slotFileMeta(localFile, currentVer, remote.frames ?? snap.frames ?? 0) : null;
+                    isMatch = !!localAudio && localAudio === snap.audioHash
+                        && !!would && would.name === (snap.name ?? '') && would.cues === (snap.cues ?? 0);
+                } else if (remoteMeta?.id && localFile.id === remoteMeta.id) {
                     // 1. Same file record. It changed if processing, audio or length differ.
                     match = 'id';
                     const localProc = (currentVer?.processing || []).slice().sort();
@@ -626,13 +662,20 @@ export const calculateSyncDiff = async (
                     match = 'hash';
                     isMatch = true;
                 } else if (currentVer?.blob) {
-                    // 3–4. Nothing of ours ties them: compare the bytes. This matches a
-                    // version that was itself imported from this card. Not over USB.
-                    remoteHash = await remoteHashOf(slotId, remote);
-                    isMatch = remoteHash !== null && localHash === remoteHash;
-                    if (isMatch) {
+                    // 3–4. Nothing of ours ties them: compare the audio, then the bytes. The
+                    // audio matches a version under another header (an older WAV Builder, or
+                    // Synthux's page); the bytes match a version imported from this card.
+                    // Both need the card file, so not over USB.
+                    const localAudio = remote.file ? await audioHashOf(currentVer.blob) : null;
+                    const remoteAudio = localAudio && remote.file ? await audioHashOf(remote.file) : null;
+                    remoteHash = remoteAudio && remoteAudio === localAudio ? null : await remoteHashOf(slotId, remote);
+                    if (remoteAudio && remoteAudio === localAudio) {
+                        isMatch = true;
+                        match = 'audio';
+                    } else if (remoteHash !== null && localHash === remoteHash) {
+                        isMatch = true;
                         match = 'bytes';
-                    } else if (!remoteMeta?.id && remoteMeta?.name && sameName(remoteMeta.name, localFile)) {
+                    } else if ((remoteMeta?.name ?? remote.name) && sameName((remoteMeta?.name ?? remote.name)!, localFile)) {
                         // 3. Only INAM (Vlad's page, another tool). Probably the same file
                         // when the length agrees too; the user confirms.
                         const frames = await localFrames(currentVer.blob);
@@ -665,6 +708,7 @@ export const calculateSyncDiff = async (
                 } else {
                     status = 'CONFLICT';
                     diff.summary.conflicts++;
+                    ownOlderVersion = match === 'snapshot' || match === 'id';
 
                     diff.updatedFiles.push({
                         slot: slotId,
@@ -693,17 +737,6 @@ export const calculateSyncDiff = async (
                 });
             }
 
-            // Same file, but the card copy has a different number of slices: built
-            // before the build took slices from the version. Rewrite it once.
-            let slicesStale = false;
-            const matchedVer = localFile?.versions.find(v => v.id === localFile.currentVersionId);
-            if (status === 'MATCH' && match === 'id' && localFile && matchedVer) {
-                const { versionSlices } = await import('./exportUtils');
-                const local = (await versionSlices(localFile, matchedVer)).slicePoints?.length ?? 0;
-                const onCard = remoteMeta?.slicePoints?.length ?? 0;
-                slicesStale = local !== onCard;
-            }
-
             diff.slots[slotId] = {
                 slotId,
                 color,
@@ -714,10 +747,11 @@ export const calculateSyncDiff = async (
                 remoteFile: remote?.file,
                 remoteMeta,
                 match,
-                // `bytes` included: a slot imported from a 4.1.3 card matches its card file
-                // byte for byte, and should still move to the current layout once.
-                staleHeader: status === 'MATCH' && match !== 'name'
-                    && (!remoteMeta?.hash || (remote?.dataOffset ?? 0) % 4 !== 0 || slicesStale),
+                // Anything matched by its content rather than the snapshot is a slot file
+                // from before 4.2 (our ICMT, or another layout): rewrite it once as a 4.2
+                // slot file, so the snapshot recognises it from then on.
+                staleHeader: status === 'MATCH' && match !== 'name' && match !== 'snapshot',
+                ownOlderVersion,
             };
         }
     }

@@ -4595,6 +4595,9 @@ function App({ onExitToHub }: AppProps) {
     const MB = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
     const slotText = (slot: string) => slot.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
     const localName = (slot: string) => syncDiff?.slots[slot]?.localFile?.name ?? slot;
+    /** The device holds 42 s; a longer version goes to the card cut there, and the project keeps it whole. */
+    const cutNote = (slot: string, cut: { fromFrames: number; toFrames: number }) =>
+      `  ${slotText(slot)}: ${(cut.fromFrames / 48000).toFixed(1)} s, cut to ${(cut.toFrames / 48000).toFixed(1)} s on the card (the device plays no more). The project keeps the whole file.`;
     const localSize = (slot: string) => {
       const lf = syncDiff?.slots[slot]?.localFile;
       return lf?.versions.find(v => v.id === lf.currentVersionId)?.blob?.size ?? 0;
@@ -4773,9 +4776,11 @@ function App({ onExitToHub }: AppProps) {
               } else if (e.phase === 'done') {
                 transfer.update(e.slot, 'up', { status: 'done', fraction: 1, bytes: e.bytes });
                 transfer.log(`↑ ${slotText(e.slot)}  ${localName(e.slot)}  ${MB(e.bytes ?? 0)}${rate(e.slot, e.bytes ?? 0)}`);
+                if (e.cut) transfer.log(cutNote(e.slot, e.cut));
               } else if (e.phase === 'skipped') {
                 transfer.update(e.slot, 'up', { status: 'skipped', bytes: e.bytes });
                 transfer.log(`= ${slotText(e.slot)}  ${localName(e.slot)}  already on the card`);
+                if (e.cut) transfer.log(cutNote(e.slot, e.cut));
               } else if (e.phase === 'deleted') {
                 transfer.update(e.slot, 'delete', { status: 'done' });
                 transfer.log(`× ${slotText(e.slot)}  removed from the card`);

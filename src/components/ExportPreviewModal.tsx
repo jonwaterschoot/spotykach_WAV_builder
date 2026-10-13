@@ -35,6 +35,8 @@ interface SlotRow {
     probableMatch?: boolean;
     /** Same audio, but the card file's header is out of date (see `SyncSlotDiff.staleHeader`). */
     staleHeader?: boolean;
+    /** A conflict where the card file is an older version this project wrote (`SyncSlotDiff.ownOlderVersion`). */
+    ownOlderVersion?: boolean;
     size: number;
     /** The card file's size, from the listing. */
     remoteSize: number;
@@ -135,6 +137,8 @@ function defaultToPool(
     _mode: 'import' | 'push' = 'push',
     /** Clean Mirror only: the user took the offer to keep the doomed files. */
     rescueBeforeClean = false,
+    /** The card file is an older version this project wrote: the project has it, no copy needed. */
+    ownOlderVersion = false,
 ): boolean {
     if (preset === 'import_pool_only') {
         // "Standard Import" = Pool incoming SD files only (no slot changes)
@@ -151,8 +155,9 @@ function defaultToPool(
         // not the only way out of it.
         return rescueBeforeClean && (status === 'CONFLICT' || status === 'REMOTE_ONLY');
     }
-    // Preservation by default: if we are overwriting a slot in Push Sync, pool the old file.
-    return preset === 'push_sync' && status === 'CONFLICT';
+    // Preservation by default: if we are overwriting a slot in Push Sync, pool the old
+    // file, unless it is just an older version of the project's own.
+    return preset === 'push_sync' && status === 'CONFLICT' && !ownOlderVersion;
 }
 
 /**
@@ -223,7 +228,7 @@ function cardFate(r: SlotRow, moves: Record<string, string[]>): CardFate | null 
 function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset, rescueBeforeClean = false): boolean {
     const slotsMatch = rows.every(r =>
         r.primary === defaultPrimary(r.status, preset, 'push', r.staleHeader) &&
-        r.toPool === defaultToPool(r.status, preset, 'push', rescueBeforeClean));
+        r.toPool === defaultToPool(r.status, preset, 'push', rescueBeforeClean, r.ownOlderVersion));
     if (!configStatus) return slotsMatch;
     const configMatch = configDecision === defaultPrimary(configStatus, preset);
     return slotsMatch && configMatch;
@@ -569,10 +574,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 onCard: !!sd.remote,
                 probableMatch: sd.match === 'name',
                 staleHeader: sd.staleHeader,
+                ownOlderVersion: sd.ownOlderVersion,
                 size: lv?.blob?.size || sd.remote?.size || 0,
                 remoteSize: sd.remote?.size ?? 0,
                 primary: defaultPrimary(status, preset, currentMode, sd.staleHeader),
-                toPool: defaultToPool(status, preset, currentMode),
+                toPool: defaultToPool(status, preset, currentMode, false, sd.ownOlderVersion),
             });
         });
         return rows.sort((a, b) => a.tapeColor.localeCompare(b.tapeColor) || a.slotNum - b.slotNum);
@@ -702,7 +708,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         setRows(prev => prev.map(r => ({
             ...r,
             primary: defaultPrimary(r.status, preset, mode, r.staleHeader),
-            toPool: defaultToPool(r.status, preset, mode, false),
+            toPool: defaultToPool(r.status, preset, mode, false, r.ownOlderVersion),
         })));
         if (diff.config) {
             setConfigDecision(defaultPrimary(diff.config.status as any, preset, mode));
@@ -1537,11 +1543,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
                                         <div className="flex items-center justify-center p-2 border-r border-white/5">
                                             {row.status === 'MATCH' && (row.staleHeader
-                                                ? <span title="Same audio, but the card file has an outdated header. Rewriting it adds the name and moves our id before the audio." className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync · old header</span>
+                                                ? <span title="Same audio, but the card file was written before 4.2 (or by another tool). Rewriting it once makes it a 4.2 slot file, which later builds recognise without reading it." className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync · old header</span>
                                                 : <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync</span>)}
                                             {row.status === 'EMPTY' && <span className="text-[8px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded-full font-bold">Empty</span>}
-                                            {row.status === 'CONFLICT' && (row.probableMatch
-                                                ? <span title="Same name and length, but the card file has no WAV Builder id. Probably the same file." className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Same name?</span>
+                                            {row.status === 'CONFLICT' && (row.ownOlderVersion
+                                                ? <span title="The card holds an older version of this project file, written by this project. A build replaces it; the project already has that version, so nothing is pooled." className="text-[8px] text-indigo-300 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Changed</span>
+                                                : row.probableMatch
+                                                ? <span title="Same name and length, but nothing else ties the card file to this project file. Probably the same file." className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Same name?</span>
                                                 : <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Conflict</span>)}
                                             {row.status === 'LOCAL_ONLY' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
                                             {row.status === 'REMOTE_ONLY' && <span className="text-[8px] text-orange-300 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowLeft size={7} /> SK only</span>}

@@ -13,6 +13,8 @@ import { readWavHeaderInfo } from '../audio/wavHeader';
 import type { WavHeaderInfo } from '../audio/wavHeader';
 import type { CardBackend, CardInfo, PlannedWrite, SlotDescriptor, SpaceCheck, WriteSlotOptions } from '../card/cardBackend';
 import { slotKey } from '../card/cardBackend';
+import { snapshotFingerprint } from '../card/cardSnapshot';
+import { sameFingerprint, type SlotFingerprint } from '../audio/slotFile';
 import { CMD, SLOT_LOADABLE, SLOT_OCCUPIED, checkUploadable } from '@synthuxacademy/spotykach-transfer';
 import type { Connection, DeviceInfo, SkLink, SlotEntry } from '@synthuxacademy/spotykach-transfer';
 
@@ -121,6 +123,7 @@ export class UsbBackend implements CardBackend {
             label: `Spotykach (firmware ${this.hello.firmware || 'unknown'})`,
             totalKiB: this.hello.totalKiB,
             freeKiB: this.hello.freeKiB,
+            maxFrames: this.hello.maxFrames,
         };
     }
 
@@ -187,14 +190,14 @@ export class UsbBackend implements CardBackend {
     }
 
     async writeSlot(tape: TapeColor, slot: number, blob: Blob, options: WriteSlotOptions = {}): Promise<boolean> {
-        const { compare = 'content', onProgress, signal } = options;
+        const { compare = 'content', onProgress, signal, expected } = options;
         signal?.throwIfAborted();
         // Walks the chunk headers only, so `cue ` after the audio is counted too.
         const info = await readWavHeaderInfo(blob);
 
         if (compare !== 'always') {
             const existing = await this.entry(tape, slot);
-            if (existing && await this.holds(tape, slot, existing, blob, info, compare)) {
+            if (existing && await this.holds(tape, slot, existing, blob, info, compare, expected)) {
                 onProgress?.(1);
                 return false;
             }
@@ -288,9 +291,21 @@ export class UsbBackend implements CardBackend {
      * compares our `ICMT` (id, hash, processing) and the frame count from a header
      * read; a blob without our id and hash is always written.
      */
-    private async holds(tape: TapeColor, slot: number, existing: SlotEntry, blob: Blob, info: WavHeaderInfo, compare: 'content' | 'size'): Promise<boolean> {
+    private async holds(
+        tape: TapeColor, slot: number, existing: SlotEntry, blob: Blob, info: WavHeaderInfo,
+        compare: 'content' | 'size', expected?: WriteSlotOptions['expected'],
+    ): Promise<boolean> {
         if (existing.fileSize !== blob.size) return false;
         if (compare === 'size') return true;
+        if (expected) {
+            // Slot files from 4.2 carry no id. The device lists the same fingerprint as the
+            // new file, and the project last wrote this slot from the same audio.
+            const listed: SlotFingerprint = { name: existing.name, size: existing.fileSize, frames: existing.frames, cues: existing.cues };
+            const previous = expected.previous;
+            return sameFingerprint(listed, expected.fingerprint)
+                && !!expected.audioHash && previous?.audioHash === expected.audioHash
+                && sameFingerprint(listed, snapshotFingerprint(previous));
+        }
         const ours = info.metadata;
         if (!ours?.id || !ours.hash) return false;
         const theirs = (await this.readHeader(tape, slot))?.meta;

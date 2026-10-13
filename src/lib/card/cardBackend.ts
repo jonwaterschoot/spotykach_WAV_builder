@@ -10,7 +10,8 @@
  * Slots are addressed by tape colour and slot number; the backend owns the
  * `SK/<T>/<N>.WAV` layout.
  */
-import type { TapeColor, WavMetadata } from '../../types';
+import type { CardSnapshotSlot, TapeColor, WavMetadata } from '../../types';
+import type { SlotFingerprint } from '../audio/slotFile';
 import type { WriteCompare } from '../../utils/exportUtils';
 
 export type CardKind = 'folder' | 'usb';
@@ -22,6 +23,8 @@ export interface CardInfo {
     /** USB only: HELLO reports the card size and free space. */
     totalKiB?: number;
     freeKiB?: number;
+    /** USB only, from HELLO: the longest file the device holds, in frames. */
+    maxFrames?: number;
 }
 
 /**
@@ -69,6 +72,13 @@ export interface CardConfig {
 export interface WriteSlotOptions {
     /** How to decide that the slot already holds this blob. Default `content`. */
     compare?: WriteCompare;
+    /**
+     * For `content` over USB, where the card file can't be read cheaply: the slot
+     * file's fingerprint, and what the project last wrote to this slot. The slot
+     * holds `blob` when the device lists the same fingerprint and the snapshot says
+     * it was written from the same audio. The folder route compares bytes instead.
+     */
+    expected?: { fingerprint: SlotFingerprint; audioHash: string | null; previous?: CardSnapshotSlot };
     /** 0–1. */
     onProgress?: (fraction: number) => void;
     signal?: AbortSignal;
@@ -124,11 +134,18 @@ export interface CardBackend {
 /** "Red3", the key the sync diff and the card snapshot use. */
 export const slotKey = (tape: TapeColor, slot: number): string => `${tape}${slot}`;
 
-/** Every occupied slot with its header read, keyed by `slotKey`. */
-export const readCardSlots = async (card: CardBackend): Promise<Map<string, SlotDescriptor>> => {
+/**
+ * Every occupied slot, keyed by `slotKey`, with its header read unless
+ * `listingIsEnough` says the listing already settles it (over USB: a slot that
+ * matches the project's card snapshot needs no header read).
+ */
+export const readCardSlots = async (
+    card: CardBackend,
+    listingIsEnough?: (listed: SlotDescriptor) => boolean,
+): Promise<Map<string, SlotDescriptor>> => {
     const slots = new Map<string, SlotDescriptor>();
     for (const listed of await card.listSlots()) {
-        const desc = await card.readHeader(listed.tape, listed.slot);
+        const desc = listingIsEnough?.(listed) ? listed : await card.readHeader(listed.tape, listed.slot);
         if (desc) slots.set(slotKey(desc.tape, desc.slot), desc);
     }
     return slots;
