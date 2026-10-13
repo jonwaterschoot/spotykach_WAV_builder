@@ -75,7 +75,10 @@ export function UsbTransferSetting({ Explainer }: { Explainer: React.FC<Explaine
                                 Firmware {USB_FIRMWARE.version} on GitHub <ExternalLink size={11} />
                             </a>
                             <p className="text-gray-400">
-                                The card reader stays the safer route for a full rebuild: a USB slot takes 20–40 seconds.
+                                Use a good data cable, from Spotykach straight to a USB-A port on the computer. Avoid hubs, even powered ones.
+                            </p>
+                            <p className="text-gray-400">
+                                The card reader stays the safer route for a full rebuild: over USB a full slot takes about 35 seconds.
                                 Slot files written over USB play on 1.3.1 too.
                             </p>
                             {!supported && (

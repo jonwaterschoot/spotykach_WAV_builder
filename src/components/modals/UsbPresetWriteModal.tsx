@@ -285,6 +285,7 @@ export const UsbPresetWriteModal: React.FC<UsbPresetWriteModalProps> = ({ entry,
                     {!backend && step.kind === 'plan' && (
                         <div className="space-y-3">
                             <p>Connect Spotykach with a USB cable to its rear port. It goes into transfer mode and is silent until you're done here.</p>
+                            <p className="text-[11px] text-gray-400">Connect Spotykach straight to a USB-A port on the computer with a good data cable. Avoid hubs, even powered ones: transfers there stalled and dropped off. Front USB-C ports can run at half speed.</p>
                             {usb.error && <p className="text-[11px] text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{usb.error}</p>}
                             {usb.status === 'needs-authorization' ? (
                                 <button onClick={() => void usbSession.authorize()} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-synthux-orange/40 bg-synthux-orange/10 hover:bg-synthux-orange/20 text-sm font-bold text-synthux-orange">
@@ -355,7 +356,7 @@ export const UsbPresetWriteModal: React.FC<UsbPresetWriteModalProps> = ({ entry,
                                     <p><span className="text-gray-200 font-bold">One click, then a long wait: about {duration(typical)}</span> for {plan.slots.length} slots,
                                         {' '}up to {duration(worstCase)} if every sample is a full 42 seconds. USB writes about 477 KB/s, so a slot takes 2–34 seconds by its length.
                                         {' '}The audio downloads from the cloud first, in seconds.</p>
-                                    <p>Keep the cable in until it's done. If it comes out, the slot being written keeps its old file.</p>
+                                    <p>Keep the cable in until it's done. If it comes out, the slot being written keeps its old file. Straight to a USB-A port, no hub.</p>
                                     {plan.freeKiB !== undefined && <p>Free on the card: {mb(plan.freeKiB * 1024)}.</p>}
                                 </div>
                             </div>

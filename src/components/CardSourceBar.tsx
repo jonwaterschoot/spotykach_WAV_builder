@@ -138,12 +138,13 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
             {source === 'usb' && showHelp && (
                 <ul className="text-[11px] text-gray-400 leading-relaxed list-disc pl-5 flex flex-col gap-0.5">
                     <li>Needs firmware with USB transfer, and Chrome, Edge or another Chromium browser on a computer.</li>
+                    <li>Connect Spotykach straight to a USB-A port on the computer with a good data cable. Avoid hubs, even powered ones: transfers there stalled and dropped off. Front USB-C ports can run at half speed.</li>
                     <li>Connect sends Spotykach into transfer mode: its rings light up and its audio is muted. Disconnect, or Play A or Play B on the device, brings it back.</li>
                     <li>The first time, the browser asks which port to use: select Spotykach. If that window was closed while the rings are lit, click Authorise port.</li>
                     <li>Windows: close apps that hold the Spotykach MIDI port (your DAW) before connecting.</li>
                     <li>Linux: your user needs to be in the <code>dialout</code> group for the serial port.</li>
                     <li>USB reaches the 36 slot files only. config.txt, the project copy on the card and Snapshot card to project need the card reader.</li>
-                    <li>A full slot takes about 20–40 s each way. For a full rebuild the card reader is much faster.</li>
+                    <li>A full slot takes about 35 s each way (477 KB/s). For a full rebuild the card reader is much faster.</li>
                 </ul>
             )}
             {cardNote && (
