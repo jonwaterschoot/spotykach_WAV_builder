@@ -41,6 +41,12 @@ export interface FileRecord {
      * Used by buildDescriptorFromState to omit the blob on settings-only re-export.
      */
     sourceSamplePath?: string;
+    /**
+     * Added to the user library from outside Studio (the Sample Mangler writes the
+     * IDB store, not the folder). Studio's folder sync writes it to `User_Library/`
+     * instead of marking it missing, and clears the flag once it is on disk.
+     */
+    pendingDiskWrite?: boolean;
 }
 
 export interface WavMetadata {

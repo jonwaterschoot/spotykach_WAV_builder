@@ -18,6 +18,7 @@ import { AboutHelpModal } from './components/AboutHelpModal';
 // dynamic modal imports
 import { ExportProgressModal } from './components/ExportProgressModal';
 import BrowserChoiceModal from './components/BrowserChoiceModal';
+import type { StudioSourceFile } from './modes/MangleMode';
 import { TapeIcon } from './components/TapeIcon';
 import { DuplicateResolveModal } from './components/DuplicateResolveModal';
 import { BulkConflictModal } from './components/BulkConflictModal';
@@ -34,6 +35,7 @@ const ExportModal = React.lazy(() => import('./components/ExportModal').then(m =
 const LibrarySyncModal = React.lazy(() => import('./components/LibrarySyncModal').then(m => ({ default: m.LibrarySyncModal })));
 const WorkspaceBackupModal = React.lazy(() => import('./components/WorkspaceBackupModal').then(m => ({ default: m.WorkspaceBackupModal })));
 const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m => ({ default: m.ConfigModal })));
+const MangleMode = React.lazy(() => import('./modes/MangleMode'));
 
 // dynamic modal imports
 import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2, Usb } from 'lucide-react';
@@ -168,6 +170,9 @@ function App({ onExitToHub }: AppProps) {
   const [showExport, setShowExport] = useState(false);
   const [showExportProgress, setShowExportProgress] = useState(false);
   const [showSampleBrowser, setShowSampleBrowser] = useState(false);
+  /** The Sample Mangler over the project, and the empty slot it was opened from (if any). */
+  const [showMangler, setShowMangler] = useState(false);
+  const [manglerTarget, setManglerTarget] = useState<{ color: TapeColor; slotId: number } | null>(null);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
 
   const [sampleBrowserPos, setSampleBrowserPos] = useState({
@@ -1848,8 +1853,13 @@ function App({ onExitToHub }: AppProps) {
             const updatedVersions = canonical.versions.map(v =>
               v.id === canonical.currentVersionId ? { ...v, blob: diskFile } : v
             );
-            nextFiles[canonical.id] = { ...canonical, versions: updatedVersions };
+            // On disk now, so a pending write from outside Studio is done.
+            nextFiles[canonical.id] = { ...canonical, pendingDiskWrite: undefined, versions: updatedVersions };
             diskFileNamesProcessed.add(lowerName);
+          } else if (canonical.pendingDiskWrite) {
+            // Added by the Sample Mangler through IDB: not missing, just not written
+            // yet. The autosave below puts it in User_Library/.
+            nextFiles[canonical.id] = canonical;
           } else {
             // Not on disk: keep in index but mark as missing
             nextFiles[canonical.id] = canonical;
@@ -4155,6 +4165,8 @@ function App({ onExitToHub }: AppProps) {
       const active = document.activeElement as HTMLElement;
       if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') return;
       if (active !== document.body && active?.getAttribute('tabindex') !== null) return;
+      // The mangler covers the grid; its lists scroll with the arrows.
+      if (showMangler) return;
 
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
       e.preventDefault();
@@ -4208,7 +4220,7 @@ function App({ onExitToHub }: AppProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedSlots, lastSelectedSlot, anchorSlot]);
+  }, [selectedSlots, lastSelectedSlot, anchorSlot, showMangler]);
 
   const handleAllViewSlotClick = (slotId: number, color: TapeColor) => {
     // 1. Switch Context
@@ -4419,7 +4431,7 @@ function App({ onExitToHub }: AppProps) {
 
   // Generalized Bulk Import Handler for both Remote (URL) and Local (File) samples
   const handleBulkSampleImport = async (
-    items: { url?: string; file?: File; name: string }[],
+    items: { url?: string; file?: File; name: string; origin?: string; license?: string }[],
     target: 'pool' | 'slots' | TapeColor,
     origin?: string,
     license?: string
@@ -4467,8 +4479,8 @@ function App({ onExitToHub }: AppProps) {
             versions: [version],
             currentVersionId: versionId,
             isParked: true, // Start as parked, will unpark if assigned to slot
-            origin: origin || (item.file ? 'Local Folder' : 'Sample Pack'),
-            license,
+            origin: item.origin || origin || (item.file ? 'Local Folder' : 'Sample Pack'),
+            license: item.license ?? license,
             sourceSamplePath: item.url
           };
 
@@ -4539,6 +4551,64 @@ function App({ onExitToHub }: AppProps) {
       setIsProcessing(false);
       setProgressMsg('');
     }
+  };
+
+  // ─── Sample Mangler ───
+  // Runs over the project: its source pool is filled from the slots and the pool,
+  // and its results come back as project files.
+
+  const openMangler = (slotId: number | null) => {
+    setManglerTarget(slotId !== null ? { color: currentTapeColor, slotId } : null);
+    setShowSampleBrowser(false);
+    setShowBrowserChoiceModal(false);
+    setTargetSlotForUpload(null);
+    setShowMangler(true);
+  };
+
+  const closeMangler = () => {
+    setShowMangler(false);
+    setManglerTarget(null);
+  };
+
+  /** Slot files first, in tape order, then the rest of the pool. Only versions with audio. */
+  const manglerFiles = useMemo<StudioSourceFile[]>(() => {
+    if (!showMangler) return [];
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const color of TAPE_COLORS) {
+      for (const slot of state.tapes[color].slots) {
+        if (slot.fileId && !seen.has(slot.fileId)) { seen.add(slot.fileId); ids.push(slot.fileId); }
+      }
+    }
+    for (const id of Object.keys(state.files)) if (!seen.has(id)) ids.push(id);
+    return ids.flatMap(id => {
+      const file = state.files[id];
+      const version = file?.versions.find(v => v.id === file.currentVersionId);
+      if (!file || !version?.blob) return [];
+      return [{
+        fileId: file.id, versionId: version.id, name: file.name, blob: version.blob,
+        duration: version.duration, origin: file.origin, license: file.license,
+      }];
+    });
+  }, [showMangler, state.files, state.tapes]);
+
+  /** The first file fills the slot the mangler was opened from, if it is still empty; the rest are parked. */
+  const handleManglerAdd = (files: FileRecord[]) => {
+    if (files.length === 0) return;
+    const target = manglerTarget;
+    setState(prev => {
+      const nextFiles = { ...prev.files };
+      for (const f of files) nextFiles[f.id] = f;
+      if (!target) return { ...prev, files: nextFiles };
+      const tape = prev.tapes[target.color];
+      const index = tape.slots.findIndex(s => s.id === target.slotId);
+      if (index < 0 || tape.slots[index].fileId) return { ...prev, files: nextFiles };
+      const slots = [...tape.slots];
+      slots[index] = { ...slots[index], fileId: files[0].id };
+      nextFiles[files[0].id] = { ...files[0], isParked: false };
+      return { ...prev, files: nextFiles, tapes: { ...prev.tapes, [target.color]: { ...tape, slots } } };
+    });
+    setManglerTarget(null);
   };
 
   const handleResetEmptySlotBrowserPreference = () => {
@@ -5511,6 +5581,8 @@ function App({ onExitToHub }: AppProps) {
                           onAssignVersion={handleAssignVersion}
                           onMoveVersionToPool={handleMoveVersionToPool}
                           showToast={showToast}
+                          onOpenFullMangler={() => openMangler(null)}
+                          isCovered={showMangler}
                         />
                       );
                     })()}
@@ -5547,6 +5619,7 @@ function App({ onExitToHub }: AppProps) {
                   setShowSampleBrowser(true);
                 }
               }}
+              onMangler={() => openMangler(targetSlotForUpload)}
             />
 
             {
@@ -5917,9 +5990,26 @@ function App({ onExitToHub }: AppProps) {
                     setShowPresetsPanel(true);
                   }}
                   forceStop={showEditor}
+                  onOpenMangler={() => openMangler(targetSlotForUpload)}
                 />
               </Suspense>
               </Rnd>
+            )}
+
+            {showMangler && (
+              <div className="fixed inset-0 z-[90]">
+                <Suspense fallback={null}>
+                  <MangleMode
+                    onExitToHub={closeMangler}
+                    studio={{
+                      projectName: currentProjectName,
+                      files: manglerFiles,
+                      targetLabel: manglerTarget ? `${manglerTarget.color} ${manglerTarget.slotId}` : undefined,
+                      onAddToProject: handleManglerAdd,
+                    }}
+                  />
+                </Suspense>
+              </div>
             )}
 
             <Suspense fallback={null}>

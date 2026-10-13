@@ -3,12 +3,14 @@ import type { AppState } from '../types';
 import { dbName } from './storageNamespace';
 
 const DB_NAME = dbName('spotykach-wav-builder');
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE_NAME = 'app-state';
 const USER_LIBRARY_STORE = 'user-library';
 const CUSTOM_FOLDERS_STORE = 'custom-folders';
 const BROWSE_POOL_STORE = 'browse-pool';
 const SUBMISSION_STORE = 'submission-draft';
+const MANGLE_SOURCES_STORE = 'mangle-sources';
+const MANGLE_RESULTS_STORE = 'mangle-results';
 
 const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -27,6 +29,12 @@ const initDB = async () => {
             }
             if (!db.objectStoreNames.contains(SUBMISSION_STORE)) {
                 db.createObjectStore(SUBMISSION_STORE);
+            }
+            if (!db.objectStoreNames.contains(MANGLE_SOURCES_STORE)) {
+                db.createObjectStore(MANGLE_SOURCES_STORE, { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains(MANGLE_RESULTS_STORE)) {
+                db.createObjectStore(MANGLE_RESULTS_STORE, { keyPath: 'id' });
             }
         },
     });
@@ -307,3 +315,80 @@ export const loadCustomFoldersFromDB = async (): Promise<CustomFolderRecord[]> =
         return [];
     }
 };
+
+/**
+ * Sample Mangler: one record per source and per result, not one array under
+ * `'current'` like the Browse pool. A result is a 16 MB WAV; rewriting every one
+ * of them to change a kept flag would be the whole pool on each click.
+ */
+export interface MangleSourceEntry {
+    id: string;
+    name: string;
+    /** "Local file", or the pack the sample came from. */
+    origin: string;
+    license?: string;
+    sourceSamplePath?: string;
+    /** The file as it was added, in its own format. Decoded per batch. */
+    blob: Blob;
+    duration: number;
+    /** The pool's switch: left out of the next batch when false. */
+    enabled: boolean;
+    addedAt: number;
+    /** Seconds: the parts new snippets may come from. Absent or empty: the whole file. */
+    regions?: [number, number][];
+}
+
+export interface MangleResultEntry {
+    id: string;
+    name: string;
+    /** 48 kHz stereo float WAV with a cue point at each snippet start. */
+    blob: Blob;
+    duration: number;
+    /** Seed, settings, sources and snippet list: enough to render it again. */
+    recipe: import('../mangler/recipe').MangleRecipe;
+    /** Waveform outline, so the list draws without decoding 16 MB per row. */
+    peaks: number[];
+    kept: boolean;
+    batchId: number;
+    createdAt: number;
+    /** Snippet positions held when rerolling ("lock a snippet, reroll the others"). */
+    locked?: number[];
+    /**
+     * Changed in the editor: a copy whose audio no longer follows its recipe, so it
+     * can be played, cropped, re-cued and saved, but not re-rendered.
+     */
+    edited?: boolean;
+}
+
+const loadAll = async <T>(store: string): Promise<T[]> => {
+    try {
+        const db = await initDB();
+        return (await db.getAll(store)) as T[];
+    } catch (e) {
+        console.error(`Failed to load ${store}`, e);
+        return [];
+    }
+};
+
+const putOne = async (store: string, value: unknown) => {
+    const db = await initDB();
+    await db.put(store, value);
+};
+
+const deleteMany = async (store: string, ids: string[]) => {
+    try {
+        const db = await initDB();
+        const tx = db.transaction(store, 'readwrite');
+        await Promise.all([...ids.map(id => tx.store.delete(id)), tx.done]);
+    } catch (e) {
+        console.error(`Failed to delete from ${store}`, e);
+    }
+};
+
+export const loadMangleSourcesFromDB = () => loadAll<MangleSourceEntry>(MANGLE_SOURCES_STORE);
+export const putMangleSourceToDB = (entry: MangleSourceEntry) => putOne(MANGLE_SOURCES_STORE, entry);
+export const deleteMangleSourcesFromDB = (ids: string[]) => deleteMany(MANGLE_SOURCES_STORE, ids);
+
+export const loadMangleResultsFromDB = () => loadAll<MangleResultEntry>(MANGLE_RESULTS_STORE);
+export const putMangleResultToDB = (entry: MangleResultEntry) => putOne(MANGLE_RESULTS_STORE, entry);
+export const deleteMangleResultsFromDB = (ids: string[]) => deleteMany(MANGLE_RESULTS_STORE, ids);

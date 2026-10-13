@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.0] - 2026-10-13
+
+**Sample Mangler: new sounds from random snippets.** A new hub door (`#/mangle`). It cuts
+snippets out of a pool of sources (sample packs, your own files, online sounds) and joins them
+into one file of up to 42 s, with a cue point at each snippet. Sliders set ranges, a seeded dice
+picks the values, and every click renders a batch of variations to keep or discard.
+
+- **Snippets:** length, loudness, direction, crossfade, and pitch (to a note, a scale or a
+  plain shift, detected with YIN). Fill by length or by count; snap starts to a zero crossing
+  or an onset; cues at snippets or at transients.
+- **Sources:** mark the parts of a source snippets may come from; switch sources on and off.
+- **Results:** edit snippet by snippet (lock, delete, repitch, reroll the rest), crop, play a
+  snippet or cue to cue, and re-render with the same seed after changing a slider.
+- **Out:** download, the Browse pool, the Studio library, or straight into a project.
+- **In Studio:** opens over the project with its files as the pool, from an empty slot or the
+  sample browser. The editor has a Mangler tool for snippets of the open file.
+- **Licenses follow the snippets used:** a no-derivatives source blocks saving; personal-use
+  sources mark the result; every credit line is copied into it.
+
+**Online sources in the sample browser.** Search open audio archives from Browse, Studio and
+the Mangler's picker: Openverse, Wikimedia Commons, the Internet Archive and NASA without a key,
+and Freesound through a shared key (or your own). Filter by license (CC0/public domain by
+default) and length, preview, add one or many. Each sound keeps its author and license.
+
+- **Lossless where the archive has it:** the Archive's FLAC or WAV over its MP3; Commons'
+  original file.
+- **Freesound originals:** rows show the original's format and size. *Get original* downloads
+  it from freesound.org (sign in there), and dropping that file on the panel adds it with its
+  credit. AIFF is converted to WAV, since Chrome can't decode it.
+- Per-archive limits are shown and counted in the browser. Maintenance notes:
+  `docs/sample_mangler/online-sources.md`.
+
+### Also
+
+- Editor: one tool menu instead of a row that overflowed; drag-to-scrub number fields; the
+  waveform's height can be dragged.
+- Browse: the sort menu opens to the left, inside the window.
+
 **Card files say what they are in their first few hundred bytes.** Every WAV written to
 the card now carries the original file name, and our id and content hash sit *before* the
 audio instead of after it. A header read is enough to identify a slot, which is what the

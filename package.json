@@ -1,7 +1,7 @@
 {
   "name": "spotykach-wav-builder",
   "private": true,
-  "version": "4.1.3",
+  "version": "4.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,8 @@
     "check:wav": "node scripts/check-wav-header.mjs",
     "check:slots": "node scripts/check-slot-files.mjs",
     "check:card": "node scripts/check-card-sync.mjs",
+    "check:mangler": "node scripts/check-mangler.mjs",
+    "check:online": "node scripts/check-online.mjs",
     "preview": "vite preview --host",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

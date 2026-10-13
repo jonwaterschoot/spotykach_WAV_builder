@@ -1,4 +1,4 @@
-import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film, Maximize2 } from 'lucide-react';
+import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film, Maximize2, Dices } from 'lucide-react';
 import { version } from '../../package.json';
 import { useEffect, useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
@@ -448,6 +448,36 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                             </tr>
                                         </tbody>
                                     </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Sample Mangler */}
+                        <div className="border border-gray-700 rounded-lg overflow-hidden">
+                            <SectionHeader id="mangler" title="Sample Mangler" icon={Dices} />
+
+                            {expandedSection === 'mangler' && (
+                                <div className="p-6 bg-black/20 text-gray-300 space-y-4 font-body text-sm leading-relaxed">
+                                    <p>
+                                        The <strong className="text-white">Sample Mangler</strong> door cuts random snippets out of a pool of sounds and
+                                        joins them into one file of up to 42&nbsp;s, with a cue point at every snippet start, so the slice mode jumps
+                                        between them. Desktop only; nothing touches your drive until you save.
+                                    </p>
+                                    <ol className="list-decimal list-inside space-y-2">
+                                        <li><strong className="text-white">Fill the source pool</strong> with <em>Packs</em> (the sample browser), <em>Files</em>, or by dropping audio anywhere on the screen. The checkbox next to a source leaves it out of the next batch; the one by the heading switches them all. A source you preview gets a playhead bar you can drag. The scissors open it up close, to mark the parts the mangler may take snippets from.</li>
+                                        <li><strong className="text-white">Set the ranges.</strong> Two-handled sliders set a range, and the dice pick a value inside it for every snippet: length, crossfade, loudness spread, detune. Presets give a starting point. <em>Fill</em> decides when a file is done: <em>By length</em> fills a set length with as many snippets as fit; <em>By count</em> makes a set number of snippets, so every variation comes out a different length (42&nbsp;s at most).</li>
+                                        <li><strong className="text-white">Generate.</strong> Every variation uses the same settings with its own seed. Star the ones you like: unstarred results are cleared when the next batch starts. Typing a seed in gives that exact result again as the first variation.</li>
+                                        <li><strong className="text-white">Refine.</strong> Open <em>Snippets</em> on a result to play each one, set its pitch, lock it, delete it, or drag it (⋮⋮) to another place. Click, Shift-click and Ctrl-click select several: drag them and they land together where you drop them, or press Delete. <em>Crop</em> keeps only the stretch between two handles, and later edits keep the same stretch. <em>Editor</em> opens a copy in the audio editor; saving there adds an edited copy next to the original. <em>Same seed, current settings</em> renders it again after you move a slider, so you hear only what that slider does. Lock a few snippets and <em>Reroll the rest</em> for new variations around them. <em>Undo</em> goes one step back. <em>Zoom</em> opens a taller waveform with the cue points in red and the crossfades in orange.</li>
+                                        <li><strong className="text-white">Listen.</strong> <em>Click plays</em> sets what a click on a snippet or the waveform plays: <em>Full</em> from there to the end, <em>Fades</em> the snippet with its crossfades, <em>Cue</em> only what lies between two cue points, as the slice mode plays it. The list follows along.</li>
+                                        <li><strong className="text-white">Save.</strong> Download the WAV, add it to the Browse pool, save it to the Studio user library, or start a new Studio project with it.</li>
+                                    </ol>
+                                    <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-2">
+                                        <p><strong className="text-white">Pitch.</strong> Each snippet's pitch is detected (YIN). <em>Suggest</em> lists it, <em>Apply</em> moves every snippet above the confidence threshold to the nearest note of the scale (at most half an octave). Pick a root and a scale, or click the keys for your own; <em>Root only</em> on C is the plain "everything to C". In the snippet list each snippet can go to the scale, to one note, or up or down by a set interval. Noise, drums and chords show <em>no pitch</em> and are left alone.</p>
+                                        <p><strong className="text-white">Drum loops.</strong> <em>One hit per snippet</em> ends each snippet before the next hit in its source. After rendering, <em>Cues: at hits</em> moves the cue points onto the hits in the finished file (gentle, normal, aggressive, or auto to fit the 255 cue points) without changing the sound.</p>
+                                        <p><strong className="text-white">Snippet start.</strong> <em>Zero</em> starts each snippet on a zero crossing, so hard cuts don&apos;t click. <em>Transient</em> starts it on the strongest attack in its first half second.</p>
+                                        <p><strong className="text-white">Licenses.</strong> A result follows the sources it actually uses. Personal-use samples can be saved, and the note travels with the file: fine in your own music, not to be shared as a sample. A result using a no-derivatives source can&apos;t be saved at all.</p>
+                                        <p><strong className="text-white">Saving to the library</strong> goes through the browser&apos;s storage. Close Studio in other tabs first; Studio copies the file into <code className="bg-gray-800 px-1 rounded text-synthux-yellow">User_Library/</code> the next time it opens.</p>
+                                    </div>
                                 </div>
                             )}
                         </div>

@@ -4,6 +4,8 @@ declare const __APP_VERSION__: string;
 
 interface ImportMetaEnv {
   readonly VITE_SAMPLE_ASSET_BASE_URL?: string;
+  /** The online proxy Worker (workers/online-proxy), e.g. https://wavbuilder-online.<you>.workers.dev */
+  readonly VITE_ONLINE_PROXY_URL?: string;
   /**
    * Overrides the storage namespace derived from BASE_URL. Unset on the live
    * site. See `src/utils/storageNamespace.ts` — a second build published at a

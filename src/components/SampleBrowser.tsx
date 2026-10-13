@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon } from 'lucide-react';
+import { X, Play, Pause, Download, FolderOpen, Loader, Check, User, Briefcase, Plus, RefreshCw, Trash2, Edit2, Pencil, Settings, Crosshair, Dices, ChevronDown, ChevronRight, Layers, Menu, Package, Link as LinkIcon, Globe } from 'lucide-react';
 import { SAMPLE_PACKS, fetchSampleManifest } from '../data/samplePacks';
 import type { PresetManifestEntry, SamplePack } from '../data/samplePacks';
 import { resolveAssetPath, toSampleKey } from '../utils/assetUtils';
@@ -9,6 +9,9 @@ import type { UserLibrary, ProjectSummary, FileRecord, TapeColor } from '../type
 import { TAPE_COLORS, COLOR_MAP } from '../types';
 // dynamic utility imports
 import { LocalFolderBrowser } from './LocalFolderBrowser';
+import { OnlineBrowser, type PlayableHit } from './OnlineBrowser';
+import { licenseTextFor, originFor, type OnlineHit } from '../online';
+import { isTooBig, resolveHit } from '../online/playable';
 
 const EMPTY_LIBRARY: UserLibrary = { files: {}, metadata: {} };
 const NO_PROJECTS: ProjectSummary[] = [];
@@ -39,7 +42,15 @@ interface SampleBrowserProps {
      * project exists, so every project-bound action is hidden and the only exit
      * is the caller's selection pool.
      */
-    mode?: 'standalone' | 'project';
+    mode?: 'standalone' | 'project' | 'picker';
+    /**
+     * `picker` only: the add button's words, e.g. "Add to mangle pool". A picker is
+     * standalone with less: list, search, preview and that one button. The pack's
+     * downloads and preset links are left out.
+     */
+    addLabel?: string;
+    /** `picker` only: the button once the sample is in the host's pool. */
+    addedLabel?: string;
     userLibrary?: UserLibrary;
     projects?: ProjectSummary[];
     onOpenLibraryManager?: (tab?: 'upload' | 'project' | 'manage' | 'settings', highlightFileId?: string) => void;
@@ -49,7 +60,8 @@ interface SampleBrowserProps {
     selectionMode?: 'global' | 'slot-selection';
     onImportToPool?: (files: { file: File, path: string }[]) => Promise<void>;
     onImportToTape?: (files: { file: File, path: string }[], targetTape: TapeColor) => Promise<void>;
-    onRemoteBulkImport?: (samples: { url: string, name: string, path?: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
+    /** A sample's own `origin`/`license` (an online sound's) wins over the batch's. */
+    onRemoteBulkImport?: (samples: { url: string, name: string, path?: string, origin?: string, license?: string }[], target: 'pool' | 'slots' | import('../types').TapeColor, origin?: string, license?: string) => Promise<void>;
     /**
      * Edit one sample straight from the row — Phase 7, step 5.
      *
@@ -109,6 +121,11 @@ interface SampleBrowserProps {
      * not pack samples, so it doesn't subscribe.
      */
     onSampleDrag?: (drag: { count: number; commit: () => Promise<void> } | null) => void;
+    /**
+     * Studio only: opens the Sample Mangler over the project, its pool filled with
+     * the project's files. Drawn at the foot of the source column; absent, it isn't.
+     */
+    onOpenMangler?: () => void;
 }
 
 /**
@@ -122,6 +139,11 @@ interface BrowsableSample {
     /** True for a file the browser holds in memory rather than fetches by path. */
     _isVirtual?: boolean;
     _blob?: Blob;
+    /** An online sound: the file's URL, kept apart from `path`, which is its key. */
+    _url?: string;
+    /** An online sound brings its own origin and license; a pack's rows share the pack's. */
+    _origin?: string;
+    _license?: string;
 }
 
 // OS Folder Handle Type
@@ -155,9 +177,13 @@ export const SampleBrowser = ({
     forceStop,
     onOpenPreset,
     onSampleDrag,
+    onOpenMangler,
+    addLabel = 'Add to pool',
+    addedLabel = 'In pool',
 }: SampleBrowserProps) => {
 
-    const isStandalone = mode === 'standalone';
+    const isStandalone = mode !== 'project';
+    const isPicker = mode === 'picker';
     // Locked decision: the library is IDB-resident and needs no work folder, so it
     // rides along in standalone — but read-only, and only when there's something in it.
     const hasUserLibrary = Object.keys(userLibrary.files).length > 0;
@@ -266,6 +292,20 @@ export const SampleBrowser = ({
     const [selectedSamplePaths, setSelectedSamplePaths] = useState<Set<string>>(new Set());
     const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
     const [showActionMenu, setShowActionMenu] = useState(false);
+    /** A bulk import resolving and downloading; online sounds can take a moment each. */
+    const [isBulkImporting, setIsBulkImporting] = useState(false);
+    /** "2 skipped: too big" after a bulk import that couldn't take everything. */
+    const [bulkNote, setBulkNote] = useState<string | null>(null);
+
+    /**
+     * Online rows have no pack to look them up in, so the ones on screen are kept by
+     * key here. Never pruned: a selection can outlive a collapsed Archive item, and a
+     * page's worth of hits is small.
+     */
+    const onlineHitsRef = useRef(new Map<string, OnlineHit>());
+    const rememberOnlineHits = useCallback((hits: OnlineHit[]) => {
+        hits.forEach(h => onlineHitsRef.current.set(h.key, h));
+    }, []);
 
     /**
      * Everything already taken, under every spelling it might arrive in.
@@ -361,6 +401,7 @@ export const SampleBrowser = ({
     const isUserLibrarySelected = selectedPackId === 'my-library';
     const isProjectSamplesSelected = selectedPackId === 'project-samples';
     const isCustomFolderSelected = selectedPackId === 'custom-folder';
+    const isOnlineSelected = selectedPackId === 'online';
 
     // --------------------------------------------------------------------------------
     // 1. Initial Data Loading (Custom Folders from DB)
@@ -429,6 +470,7 @@ export const SampleBrowser = ({
      */
     const importPathsTo = async (paths: string[], target: 'pool' | 'slots' | TapeColor) => {
         if (paths.length === 0 || !onRemoteBulkImport) return [];
+        if (selectedPackId === 'online') return importOnlineTo(paths, target);
 
         // Read from the resolved pack rather than re-finding it in the built-in list,
         // so the library, project sources and mounted folders bulk-import too — they
@@ -460,10 +502,45 @@ export const SampleBrowser = ({
         return samplesToImport;
     };
 
+    /**
+     * The online half of `importPathsTo`. Each sound is resolved first (a NASA hit
+     * learns its file only now), and each carries its own origin and license, since
+     * every one has its own author to credit. One call to the host, so Studio shows
+     * one progress run, not one per sound.
+     */
+    const importOnlineTo = async (keys: string[], target: 'pool' | 'slots' | TapeColor) => {
+        if (!onRemoteBulkImport) return [];
+        const items: { url: string; name: string; path: string; origin: string; license: string }[] = [];
+        let tooBig = 0;
+        let missing = 0;
+        for (const key of keys) {
+            const hit = onlineHitsRef.current.get(key);
+            const playable = hit ? await resolveHit(hit).catch(() => null) : null;
+            if (!playable) { missing++; continue; }
+            if (isTooBig(playable)) { tooBig++; continue; }
+            items.push({ url: playable.url, name: playable.title, path: key, origin: originFor(playable), license: licenseTextFor(playable) });
+        }
+        const skipped = [tooBig && `${tooBig} too big`, missing && `${missing} with no playable file`].filter(Boolean);
+        setBulkNote(skipped.length ? `Skipped ${skipped.join(', ')}.` : null);
+        if (items.length === 0) return [];
+        await onRemoteBulkImport(items, target);
+        setAddedSamples(prev => {
+            const next = new Set(prev);
+            items.forEach(i => next.add(i.path));
+            return next;
+        });
+        return items;
+    };
+
     const handleBulkActionWithTarget = async (target: 'pool' | 'slots' | TapeColor) => {
         setShowActionMenu(false);
-        const sent = await importPathsTo(Array.from(selectedSamplePaths), target);
-        if (sent.length > 0) setSelectedSamplePaths(new Set());
+        setIsBulkImporting(true);
+        try {
+            const sent = await importPathsTo(Array.from(selectedSamplePaths), target);
+            if (sent.length > 0) setSelectedSamplePaths(new Set());
+        } finally {
+            setIsBulkImporting(false);
+        }
     };
 
     // --------------------------------------------------------------------------------
@@ -893,7 +970,7 @@ export const SampleBrowser = ({
                     previewUrlRef.current = blobUrl;
                     audioRef.current.src = blobUrl;
                 } else {
-                    audioRef.current.src = resolveAssetPath(sample.path);
+                    audioRef.current.src = sample._url || resolveAssetPath(sample.path);
                 }
                 setPlaybackTime(0);
                 audioRef.current.play().catch(e => console.error("Preview failed", e));
@@ -954,7 +1031,7 @@ export const SampleBrowser = ({
     const handleImport = async (sample: any) => {
         setImportingSample(sample.path);
         try {
-            let url = resolveAssetPath(sample.path);
+            let url = sample._url || resolveAssetPath(sample.path);
             if (sample._isVirtual && sample._blob) {
                 url = URL.createObjectURL(sample._blob);
             }
@@ -962,8 +1039,8 @@ export const SampleBrowser = ({
             await onImport(
                 url,
                 sample.name,
-                selectedPack?.name || 'Local Folder',
-                selectedPack?.license,
+                sample._origin || selectedPack?.name || 'Local Folder',
+                sample._license ?? selectedPack?.license,
                 sample.path
             );
             setAddedSamples(prev => new Set(prev).add(sample.path));
@@ -979,15 +1056,15 @@ export const SampleBrowser = ({
         if (!onEditSample) return;
         setEditingSample(sample.path);
         try {
-            let url = resolveAssetPath(sample.path);
+            let url = sample._url || resolveAssetPath(sample.path);
             if (sample._isVirtual && sample._blob) {
                 url = URL.createObjectURL(sample._blob);
             }
             await onEditSample(
                 url,
                 sample.name,
-                selectedPack?.name || 'Local Folder',
-                selectedPack?.license,
+                sample._origin || selectedPack?.name || 'Local Folder',
+                sample._license ?? selectedPack?.license,
                 sample.path
             );
             setAddedSamples(prev => new Set(prev).add(sample.path));
@@ -997,6 +1074,15 @@ export const SampleBrowser = ({
             setEditingSample(null);
         }
     };
+
+    /** An online hit as a row the player and the import already understand. */
+    const onlineSample = (hit: PlayableHit): BrowsableSample => ({
+        path: hit.key,
+        name: hit.title,
+        _url: hit.url,
+        _origin: originFor(hit),
+        _license: licenseTextFor(hit),
+    });
 
     const handleBulkImport = async (files: { file: File, path: string }[]) => {
         for (const { file, path } of files) {
@@ -1096,6 +1182,24 @@ export const SampleBrowser = ({
                                     {pack.name}
                                 </button>
                             ))}
+                        </div>
+
+                        {/* ONLINE — open archives, searched from here. Needs nothing set up, so second. */}
+                        <div className="mb-4">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase px-1 mb-2">Online</h3>
+                            <button
+                                data-source
+                                onClick={() => { setSelectedPackId('online'); setSelectedProjectId(null); setSelectedCustomFolderId(null); }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${isOnlineSelected
+                                    ? 'bg-synthux-orange/20 text-synthux-orange border border-synthux-orange/50'
+                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                    }`}
+                            >
+                                <Globe size={14} /> Search open archives
+                            </button>
+                            <p className="px-3 pt-1.5 text-[10px] text-gray-600 leading-relaxed">
+                                Public domain and Creative Commons sounds from Openverse, Wikimedia Commons, the Internet Archive, NASA and Freesound.
+                            </p>
                         </div>
 
                         {/* PROJECT SAMPLES — a project source needs a work folder, so Studio only. */}
@@ -1254,12 +1358,59 @@ export const SampleBrowser = ({
                         </div>
 
                     </div>
+
+                    {/* Outside the scroll, so it is there whichever source is open. */}
+                    {onOpenMangler && (
+                        <div className="shrink-0 p-3 border-t border-gray-800">
+                            <button
+                                onClick={onOpenMangler}
+                                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left border border-synthux-red/30
+                                    hover:border-synthux-red/70 hover:bg-synthux-red/10 transition-colors group"
+                                title="Open the Sample Mangler with this project's slot and pool files as its sources"
+                            >
+                                <Dices size={18} className="shrink-0 text-synthux-red" />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-bold text-gray-200 group-hover:text-white">Sample Mangler</span>
+                                    <span className="block text-[10px] text-gray-500 leading-snug">
+                                        New sounds from random snippets of this project's files
+                                    </span>
+                                </span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Main View: Sample List */}
                 <div className="flex-1 bg-synthux-main flex flex-col overflow-hidden relative noise-texture">
                     <div ref={scrollRef} className="flex-1 p-3 sm:p-6 overflow-y-auto relative z-10">
-                        {selectedPack ? (
+                        {isOnlineSelected ? (
+                            <OnlineBrowser
+                                playingKey={playingSample}
+                                isPreviewPlaying={isPreviewPlaying}
+                                busyKey={importingSample ?? editingSample}
+                                isAdded={(key) => allAddedPaths.paths.has(key)}
+                                locatedKey={locatedSamplePath}
+                                onLocatedSeen={() => setLocatedSamplePath(null)}
+                                addLabel={selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? addLabel : 'Add'}
+                                addedLabel={isStandalone ? addedLabel : 'Added'}
+                                onPlay={(hit) => handlePlay(onlineSample(hit))}
+                                onAdd={(hit) => handleImport(onlineSample(hit))}
+                                onEdit={onEditSample ? (hit) => handleEdit(onlineSample(hit)) : undefined}
+                                selectedKeys={selectedSamplePaths}
+                                onToggleSelect={(key, orderedKeys, e) => toggleSampleSelection(key, orderedKeys.map(k => ({ path: k })), e)}
+                                onSelectMany={(keys, select) => selectAllInCategory(keys.map(k => ({ path: k })), select)}
+                                onHitsShown={rememberOnlineHits}
+                                onNewSearch={() => { resetSelection(); setBulkNote(null); }}
+                                dragProps={canDragSamples ? (hit) => ({
+                                    draggable: true,
+                                    onDragStart: (e) => handleSampleDragStart(e, { path: hit.key, name: hit.title }),
+                                    onDragEnd: () => onSampleDrag?.(null),
+                                    title: selectedSamplePaths.has(hit.key) && selectedSamplePaths.size > 1
+                                        ? `Drag to add all ${selectedSamplePaths.size} selected sounds to the pool`
+                                        : 'Drag to the pool, or use the button on the right',
+                                }) : undefined}
+                            />
+                        ) : selectedPack ? (
                             <>
                                 <div className="mb-6 sm:mb-10 w-full">
                                     {/* HERO BANNER */}
@@ -1350,7 +1501,7 @@ export const SampleBrowser = ({
                                             )}
                                         </div>
 
-                                        {((selectedPack.links && selectedPack.links.length > 0) || showPresetLink) && (
+                                        {!isPicker && ((selectedPack.links && selectedPack.links.length > 0) || showPresetLink) && (
                                             <div className="space-y-10 border-t border-white/5 pt-8">
                                                 {/* ZIP DOWNLOADS — and, beside them, the same pack already built for the card */}
                                                 {(packZipLinks.length > 0 || showPresetLink) && (
@@ -1656,14 +1807,14 @@ export const SampleBrowser = ({
                                                                                 ) : isAdded ? (
                                                                                     <>
                                                                                         <Check size={14} />
-                                                                                        <span className="sm:hidden">{isStandalone ? 'In pool' : 'Added'}</span>
-                                                                                        <span className="hidden sm:inline">{isStandalone ? 'In pool (add again)' : 'Added (Add Again)'}</span>
+                                                                                        <span className="sm:hidden">{isStandalone ? addedLabel : 'Added'}</span>
+                                                                                        <span className="hidden sm:inline">{isStandalone ? `${addedLabel} (add again)` : 'Added (Add Again)'}</span>
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
                                                                                         <Download size={14} />
                                                                                         <span className="sm:hidden">{selectionMode === 'slot-selection' ? 'Assign' : 'Add'}</span>
-                                                                                        <span className="hidden sm:inline">{selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? 'Add to pool' : 'Add'}</span>
+                                                                                        <span className="hidden sm:inline">{selectionMode === 'slot-selection' ? 'Assign' : isStandalone ? addLabel : 'Add'}</span>
                                                                                     </>
                                                                                 )}
                                                                             </button>
@@ -1774,6 +1925,14 @@ export const SampleBrowser = ({
                 onEnded={() => setIsPreviewPlaying(false)}
             />
 
+            {/* What the last online bulk import left out. Above the bar when nothing went and the selection stays. */}
+            {bulkNote && isOnlineSelected && (
+                <div className={`fixed ${selectedSamplePaths.size > 0 ? 'bottom-40' : 'bottom-24'} left-1/2 -translate-x-1/2 z-[100] max-w-[95vw] flex items-center gap-3 bg-black/90 border border-white/10 rounded-full px-5 py-2.5 text-xs text-gray-300 shadow-2xl`}>
+                    {bulkNote}
+                    <button onClick={() => setBulkNote(null)} className="text-gray-500 hover:text-white"><X size={14} /></button>
+                </div>
+            )}
+
             {/* Bulk Action Sticky Bar — matches LocalFolderBrowser pattern */}
             {selectedSamplePaths.size > 0 && (
                 <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] max-w-[95vw] animate-in slide-in-from-bottom-4 duration-300">
@@ -1838,9 +1997,12 @@ export const SampleBrowser = ({
                         <div className="flex items-center gap-2 border-l border-white/10 pl-4">
                             <button
                                 onClick={() => handleBulkActionWithTarget(isStandalone ? 'pool' : 'slots')}
-                                className="bg-synthux-orange hover:bg-synthux-orange/80 text-black py-2 px-6 rounded-full font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-synthux-orange/20"
+                                disabled={isBulkImporting}
+                                className="bg-synthux-orange hover:bg-synthux-orange/80 text-black py-2 px-6 rounded-full font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-synthux-orange/20 disabled:opacity-70 disabled:cursor-wait"
                             >
-                                <Plus size={14} /> {isStandalone ? 'Add to pool' : 'Import Selection'}
+                                {isBulkImporting
+                                    ? <><Loader size={14} className="animate-spin" /> Adding…</>
+                                    : <><Plus size={14} /> {isStandalone ? addLabel : 'Import Selection'}</>}
                             </button>
 
                             {!isStandalone && (

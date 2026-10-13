@@ -75,3 +75,52 @@ export const licenseStatement = (choice: string, custom: string): string => {
     if (choice === 'custom') return custom.trim();
     return LICENSES_BY_ID[choice]?.statement || '';
 };
+
+/**
+ * How far a sample may travel once it is cut up and reused — what the Sample
+ * Mangler needs to know about each source.
+ *
+ * - `open`: CC0, CC-BY, CC-BY-SA, WTFPL. No limits; attribution and SA carry over.
+ * - `personal`: usable in your own music, not to be passed on as a sample
+ *   (`music-no-resale`, NC, "no resale", "not to be redistributed").
+ * - `no-derivatives`: may not be modified at all, so a result using it can't be saved.
+ */
+export type LicenseLevel = 'open' | 'personal' | 'no-derivatives';
+
+export interface LicenseClass {
+    level: LicenseLevel;
+    /** Share-alike: a result carries the same terms. */
+    shareAlike: boolean;
+    /** Credit required. */
+    attribution: boolean;
+}
+
+/**
+ * Sorts free license text into a level. Pack licenses are stored as text (the
+ * statements above, or custom terms), so this reads words, and when in doubt it
+ * answers `personal`, never `open`. Empty text is the caller's call: a local file
+ * is the user's own, a pack with no terms is not.
+ */
+export function classifyLicense(text: string | undefined | null): LicenseClass {
+    // A "Credit:" line names a title and an author (online sounds carry one, see
+    // src/online/licenses.ts). Their words are not terms, and "SA Recordings" must
+    // not read as share-alike.
+    const t = (text ?? '')
+        .split('\n')
+        .filter(line => !/^\s*credit:/i.test(line))
+        .join('\n')
+        .toLowerCase();
+    const shareAlike = /(^|[^a-z])sa([^a-z]|$)|share[- ]?alike|same licen[cs]e/.test(t);
+    const attribution = /cc[- ]?by|attribution|credit/.test(t) && !/no attribution/.test(t);
+
+    if (/(^|[^a-z])nd([^a-z]|$)|no[- ]?deriv|noderiv|no modification|not be modified|may not (be )?(modif|alter|remix)/.test(t)) {
+        return { level: 'no-derivatives', shareAlike, attribution };
+    }
+    if (/(^|[^a-z])nc([^a-z]|$)|non-?commercial|no[- ]?resal|no[- ]?resell|not (to )?be (re)?sold|resold|redistribut|personal use/.test(t)) {
+        return { level: 'personal', shareAlike, attribution };
+    }
+    if (/cc0|public domain|cc[- ]?by|creative commons attribution|wtfpl|do what the f/.test(t)) {
+        return { level: 'open', shareAlike, attribution };
+    }
+    return { level: 'personal', shareAlike, attribution };
+}

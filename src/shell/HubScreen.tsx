@@ -1,5 +1,5 @@
 import React, { Suspense, useState } from 'react';
-import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, Send, HelpCircle } from 'lucide-react';
+import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, Send, HelpCircle, Dices } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
 
@@ -107,6 +107,19 @@ const DOORS: Door[] = [
     // The only door here that is a form. It reads folders on a desktop, but every
     // field in it works on a phone, so this one is not fenced off.
   },
+  {
+    mode: 'mangle',
+    label: 'Sample Mangler',
+    tagline: 'Experimental',
+    body: 'Cut random snippets from the packs or your own files and join them into one 42 s file for the Spotykach. Every batch is a surprise.',
+    icon: <Dices size={26} strokeWidth={1.75} />,
+    accentText: 'text-synthux-red',
+    accentBorder: 'hover:border-synthux-red/60',
+    accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(240,15,19,0.45)]',
+    ready: true,
+    // Decoded sources take hundreds of MB and the screen has three columns.
+    desktopOnly: true,
+  },
 ];
 
 interface HubScreenProps {
@@ -114,7 +127,7 @@ interface HubScreenProps {
 }
 
 /**
- * The landing screen: six doors, no project, no permission prompts.
+ * The landing screen: seven doors, no project, no permission prompts.
  * Doors whose mode isn't built yet still route to their own hash — the router
  * falls back to Studio until the matching phase lands.
  */
@@ -168,7 +181,7 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
           <Smartphone size={18} className="shrink-0 text-synthux-green mt-0.5" />
           <p className="text-xs text-gray-400 leading-relaxed">
             <span className="text-gray-200 font-bold">On a phone, Browse Samples is the door that works.</span>{' '}
-            Listen through the packs and download what you like. The other four need a desktop
+            Listen through the packs and download what you like. Most of the others need a desktop
             browser, because they open folders on your drive and lay out grids and waveforms that a phone
             screen can't hold.
           </p>
