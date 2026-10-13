@@ -1,6 +1,6 @@
 # Sample Mangler: a door for happy accidents
 
-There's a seventh door on the hub. The **Sample Mangler** takes a pool of sounds, from the sample packs or your own files, cuts random snippets out of them and joins those into one file of up to 42 seconds. Every snippet starts on a cue point, so on the Spotykach the slice mode jumps from one fragment to the next.
+There's a new door on the hub, under *Tools & extras*. The **Sample Mangler** takes a pool of sounds, from the sample packs or your own files, cuts random snippets out of them and joins those into one file of up to 42 seconds. Every snippet starts on a cue point, so on the Spotykach the slice mode jumps from one fragment to the next.
 
 It is meant to be unpredictable. Each snippet gets its own length, loudness, direction and maybe pitch, picked by dice inside ranges you set.
 

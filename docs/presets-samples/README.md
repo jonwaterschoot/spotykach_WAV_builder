@@ -1,6 +1,6 @@
 # Submitting a sample pack or a preset
 
-**The app has a tool for this.** Open the WAV Builder and take the **Submit a Pack** door — or go
+**The app has a tool for this.** Open the WAV Builder and follow **Submit a pack** under the hub's doors — or go
 straight to <https://jonwaterschoot.github.io/spotykach_WAV_builder/#/submit>.
 
 It asks for everything a submission needs, one thing at a time, and hands you a small ZIP to send.

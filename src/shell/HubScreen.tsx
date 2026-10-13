@@ -1,5 +1,5 @@
 import React, { Suspense, useState } from 'react';
-import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, Send, HelpCircle, Dices } from 'lucide-react';
+import { Library, HardDrive, Sliders, FolderOpen, AudioWaveform, ArrowRight, Monitor, Smartphone, HelpCircle, Dices } from 'lucide-react';
 import logoImg from '../assets/img/Spotykach_Logo.webp?url';
 import type { AppMode } from './useAppMode';
 
@@ -38,8 +38,8 @@ const DOORS: Door[] = [
   {
     mode: 'browse',
     label: 'Browse Samples',
-    tagline: 'No setup',
-    body: 'Listen through the sample packs and download what you like. No folders, no permissions, nothing to install.',
+    tagline: 'Start here · no setup',
+    body: 'Listen through the packs, collect what you like, and download it as a ready card (6×6) or as loose files. Works on a phone.',
     icon: <Library size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-green',
     accentBorder: 'hover:border-synthux-green/60',
@@ -50,7 +50,7 @@ const DOORS: Door[] = [
     mode: 'presets',
     label: 'Preset to SD Card',
     tagline: 'One step',
-    body: 'Pick a curated project and write it straight to the card, ready for the hardware. No project to name.',
+    body: 'A ready-made card from a curated set, written straight to your SD card. No project to name.',
     icon: <HardDrive size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-orange',
     accentBorder: 'hover:border-synthux-orange/60',
@@ -61,8 +61,8 @@ const DOORS: Door[] = [
   {
     mode: 'config',
     label: 'Device Config',
-    tagline: 'MIDI & settings',
-    body: 'Read and write the config.txt on your card (MIDI channel, device options) without opening a project.',
+    tagline: 'MIDI & preloading',
+    body: "Change the Spotykach's settings in config.txt (MIDI channels, preloading, transport, slice mode) without opening a project.",
     icon: <Sliders size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-blue',
     accentBorder: 'hover:border-synthux-blue/60',
@@ -73,8 +73,8 @@ const DOORS: Door[] = [
   {
     mode: 'editor',
     label: 'Edit One File',
-    tagline: 'No project',
-    body: 'Open a single audio file, trim, fade, EQ and pitch it, then download it or send it to the Browse pool.',
+    tagline: "Studio's editor, for one file",
+    body: 'Trim, fade, EQ, pitch and slice a single audio file, then download it or send it to the Browse pool. No project needed.',
     icon: <AudioWaveform size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-pink',
     accentBorder: 'hover:border-synthux-pink/60',
@@ -86,7 +86,7 @@ const DOORS: Door[] = [
     mode: 'studio',
     label: 'Studio',
     tagline: 'The full workspace',
-    body: 'Projects, tapes, the waveform editor and SD builds. Needs a work folder on your drive.',
+    body: 'Projects, tapes, the waveform editor, and building and syncing the card. Needs a work folder on your drive.',
     icon: <FolderOpen size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-yellow',
     accentBorder: 'hover:border-synthux-yellow/60',
@@ -95,23 +95,10 @@ const DOORS: Door[] = [
     desktopOnly: true,
   },
   {
-    mode: 'submit',
-    label: 'Submit a Pack',
-    tagline: 'Share your work',
-    body: 'Turn a folder of your own sounds into a sample pack for this app — or a preset from a project. Guided, and nothing is uploaded.',
-    icon: <Send size={26} strokeWidth={1.75} />,
-    accentText: 'text-synthux-turquoise',
-    accentBorder: 'hover:border-synthux-turquoise/60',
-    accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(45,212,191,0.45)]',
-    ready: true,
-    // The only door here that is a form. It reads folders on a desktop, but every
-    // field in it works on a phone, so this one is not fenced off.
-  },
-  {
     mode: 'mangle',
     label: 'Sample Mangler',
-    tagline: 'Experimental',
-    body: 'Cut random snippets from the packs or your own files and join them into one 42 s file for the Spotykach. Every batch is a surprise.',
+    tagline: 'Just for fun',
+    body: 'Random snippets from the packs or your own files, joined into one 42 s file. Every batch is a surprise.',
     icon: <Dices size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-red',
     accentBorder: 'hover:border-synthux-red/60',
@@ -122,12 +109,23 @@ const DOORS: Door[] = [
   },
 ];
 
+/**
+ * The doors by what the visitor came to do: the two quickest routes to sounds on the
+ * device, then making your own set, then the optional tools, drawn smaller. Submit a
+ * Pack isn't a door: the few who need it come looking, so it's a line under the grid.
+ */
+const SECTIONS: Array<{ title: string; modes: AppMode[]; compact?: boolean }> = [
+  { title: 'Get sounds onto your Spotykach', modes: ['browse', 'presets'] },
+  { title: 'Make your own set', modes: ['studio', 'editor'] },
+  { title: 'Tools & extras', modes: ['config', 'mangle'], compact: true },
+];
+
 interface HubScreenProps {
   onEnter: (mode: AppMode) => void;
 }
 
 /**
- * The landing screen: seven doors, no project, no permission prompts.
+ * The landing screen: six doors in three groups, no project, no permission prompts.
  * Doors whose mode isn't built yet still route to their own hash — the router
  * falls back to Studio until the matching phase lands.
  */
@@ -187,48 +185,67 @@ export const HubScreen: React.FC<HubScreenProps> = ({ onEnter }) => {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          {DOORS.map(door => (
-            <button
-              key={door.mode}
-              onClick={() => onEnter(door.mode)}
-              className={`group text-left rounded-xl border border-white/10 bg-synthux-panel/80 p-5 sm:p-6
-                transition-all duration-200 hover:bg-white/[0.04] ${door.accentBorder} ${door.accentGlow}
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40`}
-            >
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <span className={`${door.accentText} shrink-0`}>{door.icon}</span>
-                <span className="flex items-center gap-2 mt-1">
-                  {door.desktopOnly && (
-                    <span className="sm:hidden flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
-                      text-gray-500 border border-white/10 rounded px-1.5 py-0.5">
-                      <Monitor size={10} /> Desktop
-                    </span>
-                  )}
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                    {door.tagline}
-                  </span>
-                </span>
+        <div className="space-y-8">
+          {SECTIONS.map(section => (
+            <section key={section.title}>
+              <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">{section.title}</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {section.modes.map(mode => DOORS.find(d => d.mode === mode)!).map(door => (
+                  <button
+                    key={door.mode}
+                    onClick={() => onEnter(door.mode)}
+                    className={`group text-left rounded-xl border border-white/10 bg-synthux-panel/80
+                      ${section.compact ? 'p-4' : 'p-5 sm:p-6'}
+                      transition-all duration-200 hover:bg-white/[0.04] ${door.accentBorder} ${door.accentGlow}
+                      focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40`}
+                  >
+                    <div className={`flex items-start justify-between gap-3 ${section.compact ? 'mb-2' : 'mb-3'}`}>
+                      <span className={`${door.accentText} shrink-0`}>{door.icon}</span>
+                      <span className="flex items-center gap-2 mt-1">
+                        {door.desktopOnly && (
+                          <span className="sm:hidden flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
+                            text-gray-500 border border-white/10 rounded px-1.5 py-0.5">
+                            <Monitor size={10} /> Desktop
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                          {door.tagline}
+                        </span>
+                      </span>
+                    </div>
+
+                    <h3 className={`${section.compact ? 'text-base' : 'text-lg'} font-bold tracking-tight mb-1.5 flex items-center gap-2`}>
+                      {door.label}
+                      <ArrowRight
+                        size={16}
+                        className="opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-70 group-hover:translate-x-0"
+                      />
+                    </h3>
+
+                    <p className={`${section.compact ? 'text-xs' : 'text-sm'} text-gray-400 leading-relaxed`}>{door.body}</p>
+
+                    {!door.ready && (
+                      <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-gray-600">
+                        In progress, opens Studio for now
+                      </p>
+                    )}
+                  </button>
+                ))}
               </div>
-
-              <h2 className="text-lg font-bold tracking-tight mb-1.5 flex items-center gap-2">
-                {door.label}
-                <ArrowRight
-                  size={16}
-                  className="opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-70 group-hover:translate-x-0"
-                />
-              </h2>
-
-              <p className="text-sm text-gray-400 leading-relaxed">{door.body}</p>
-
-              {!door.ready && (
-                <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-gray-600">
-                  In progress, opens Studio for now
-                </p>
-              )}
-            </button>
+            </section>
           ))}
         </div>
+
+        <p className="mt-8 text-sm text-gray-400">
+          Made your own sounds?{' '}
+          <button
+            onClick={() => onEnter('submit')}
+            className="inline-flex items-center gap-1 font-bold text-synthux-turquoise hover:underline underline-offset-2
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
+          >
+            Submit a pack <ArrowRight size={14} />
+          </button>
+        </p>
 
         <p className="mt-10 text-xs text-gray-600">
           Nothing here touches your drive. Studio asks for a folder when you enter it; the other modes
