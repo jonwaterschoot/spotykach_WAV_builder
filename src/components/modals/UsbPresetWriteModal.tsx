@@ -190,7 +190,8 @@ export const UsbPresetWriteModal: React.FC<UsbPresetWriteModalProps> = ({ entry,
             console.info(report(timings));
             setStep({ kind: 'failed', timings, message: cancelled
                 ? 'Stopped. The slots written so far hold the preset; the slot that was being written keeps its old file.'
-                : `${e instanceof Error ? e.message : String(e)} The slot that was being written keeps its old file.` });
+                // The package's "(upload at byte …, attempt …)" detail is in the console already.
+                : `${(e instanceof Error ? e.message : String(e)).replace(/ \((upload|read) at byte .*\)$/, '')} The slot that was being written keeps its old file.` });
         } finally {
             void usbSession.refreshInfo();
         }
@@ -247,6 +248,7 @@ export const UsbPresetWriteModal: React.FC<UsbPresetWriteModalProps> = ({ entry,
         },
         {
             label: step.kind === 'done' ? `Wrote ${total} slots`
+                : step.kind === 'failed' ? `Stopped${live?.current ? ` at ${live.current.slot.replace(/(\d)$/, ' $1')}` : ''} · ${writtenCount} of ${total} written`
                 : live?.current ? <>Writing <span className="font-mono">{live.current.slot.replace(/(\d)$/, ' $1')}</span> · {writtenCount + 1} of {total}</>
                 : `Write ${total} slots`,
             state: step.kind === 'done' ? 'done' : live?.downloaded && !finished ? 'active' : 'todo',
