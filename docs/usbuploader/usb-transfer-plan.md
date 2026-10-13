@@ -388,22 +388,7 @@ Where it lives:
 - **One app at a time.** If Vlad's page or a DAW holds the serial or MIDI port, WAV Builder can't connect. Show a clear message rather than a generic error.
 - **Windows driver binding.** The device uses the same VID/PID in MIDI and CDC mode, which Windows may cache badly (spec §9.2). Test there early.
 - **No card serial in the browser.** Neither USB v1 nor the File System Access API exposes a card ID, so the card snapshot is a fingerprint, not a guarantee.
-- **Timing.** About 20–40 s per full slot means a 36-slot push can take 15–25 minutes over USB. Keep the card reader as the recommended path for full rebuilds, and show the estimate before a long batch.
+- **Timing.** About 20–40 s per full slot means a 36-slot push can take 15–25 minutes over USB. Keep the card reader as the recommended path for full rebuilds, and show the estimate before a long batch. Where the time goes and what firmware changes could bring: [transfer-speed.md](transfer-speed.md).
 
 
 +++
-
-- "so our own alignment fix still matters for people on 1.3.1." 
-  → what does this entail? what is that fix, will it become obsolete?
-
-- One shared rule for cutting long names	Same rule, but his function isn't shared, so we keep our copy  
-  → how so his function is not shared, what's the consequence, should this be part of the package he built?
-
-- During sync with an SD card: ...  A fix on our side: hash only the audio data, not the header.
-  → sounds like a good idea any reason to not do it this way?
-
-- "Project files keep their ids. What changes is where the link "slot Blue 1 holds project file X, version Y" is stored"
-  → ok for proposal fingerprint, to check that the slot still holds what we wrote there.
-
-- The one capability we give up is recognising slot files on an SD card from a project the app doesn't know.
-  → does this have any consequence for the sharing of project bundles and presets?  
