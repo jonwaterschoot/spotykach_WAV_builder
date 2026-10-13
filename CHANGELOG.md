@@ -36,21 +36,52 @@ default) and length, preview, add one or many. Each sound keeps its author and l
 - Per-archive limits are shown and counted in the browser. Maintenance notes:
   `docs/sample_mangler/online-sources.md`.
 
+**USB transfer, in beta.** With the 1.4.0 beta firmware, WAV Builder reaches the card while
+it stays in Spotykach, through the rear USB port. Turn it on in Settings ▸ System ▸
+Experimental (Chrome or Edge on a computer); the window that asks first links to the firmware.
+
+- **Sync:** an SD | USB switch in the build and import window. List, push, pull and delete
+  slots, with a transfer window that shows each slot's progress and speed. `config.txt` and
+  the project copy on the card still need the card reader.
+- **Presets:** Starter Presets ▸ Write to SD card ▸ Over USB. It shows which slots the preset
+  fills and which files on the device it replaces, can save those to a ZIP first, and writes
+  with steps, time left and a per-slot report. After a dropped connection, Continue writes
+  only the slots that are left.
+- **Speed:** about 470 KB/s. A full 42 s slot takes about 35 s, a 36-slot preset about 10
+  minutes. For a full rebuild the card reader is still much faster.
+- **Connect directly:** a good cable into a USB-A port on the computer. Through a hub,
+  transfers stalled and dropped out in tests; a front USB-C port ran at half speed.
+- A pulled cable never leaves a broken slot: the slot keeps its old file.
+
 ### Also
 
+- **Import a whole card into an empty project** in one step, without the review. "Choose
+  slots…" next to it still opens the sync window.
+- **Renames reach the card.** The slot file was named after the file's name at import, so a
+  file renamed in the app kept its old name on the card.
+- **A slot imported from the card stays in sync.** The next build offered to overwrite it and
+  pool the same file again.
+- Build preview, Advanced view: a slot in sync can be copied to the pool, to check what the
+  card holds.
+- Editor: a 42 s trim is exactly the device's 2,016,000 frames; it came out a frame long.
+- Studio: loading a 36-slot preset no longer silences playback until a reload (one audio
+  context per mini waveform ran past the browser's limit), and play/stop fades no longer
+  throw a volume error.
 - Editor: one tool menu instead of a row that overflowed; drag-to-scrub number fields; the
   waveform's height can be dragged.
 - Browse: the sort menu opens to the left, inside the window.
 
-**Card files say what they are in their first few hundred bytes.** Every WAV written to
-the card now carries the original file name, and our id and content hash sit *before* the
-audio instead of after it. A header read is enough to identify a slot, which is what the
-upcoming USB transfer needs, and what the firmware's own USB file list reads.
+**Card files are written the way the firmware's own uploader writes them.** Every slot file
+now comes from the Spotykach transfer package's encoder: 48 kHz stereo float, the original
+name in `INAM`, slice points as cues, the audio 4-byte aligned, cut at the device's 42 s.
+Nothing of WAV Builder's own goes into the file any more. The project's card snapshot
+remembers which project file each slot holds, and recognises it by name, size, length and
+slice count, which the device lists over USB without reading the file.
 
-> **The first build after updating rewrites every slot once.** The header layout changed,
-> so every file on the card differs from what the app would write now, even when the audio
-> is the same. The build preview marks these slots **Sync · old header** and pushes them;
-> after that one rewrite, unchanged slots are skipped again as before.
+> **The first build after updating rewrites every slot once.** Files written by 4.1.3 and
+> earlier carry the old layout. The build preview matches them by their audio, marks them
+> **Sync · header update** and pushes them; after that one rewrite, unchanged slots are
+> skipped again as before.
 
 - **Clean Mirror rewrites everything WAV Builder owns and nothing else.** Every project
   slot, `config.txt`, `project.json` and the README are written without comparing first,
@@ -63,18 +94,21 @@ upcoming USB transfer needs, and what the firmware's own USB file list reads.
   name, cut to 64 bytes at a character boundary, the same rule as the firmware's uploader page.
 - **Non-ASCII names and metadata survive.** Headers are written and read as UTF-8; the old
   code wrote one byte per UTF-16 unit and garbled anything outside ASCII.
-- **Sync matches by content hash.** Export now fills `ICMT.h` with the source version's
-  SHA-256, so the sync preview can tell a current card file from a stale one without
-  hashing either file. Files written by 4.1.3 and earlier still match by id and length.
+- **Sync matches by the card snapshot, then by the audio.** A slot the project wrote is
+  recognised from the snapshot. A card file from an older version or another tool is matched
+  by a hash of its audio alone, so a different header doesn't make it a conflict; when only
+  the name or slices differ it shows **Sync · header update** and is rewritten in place.
+  Files written by 4.1.3 and earlier still match by their id.
 - **The sync preview shows card files by their original name** instead of `1.WAV` when
   they have one. A card file tied to a project file only by name and length (written by
   another tool) shows **Same name?** instead of **Conflict**.
 - **The project remembers what it last wrote to the card** (`cardSnapshot` in
-  `project.json`). Groundwork for USB, which can't read `SK/project.json`.
+  `project.json`). USB relies on it, since it can't read `SK/project.json`.
 - **ZIP and preset exports carry the same metadata** as a direct write. They wrote no
   `LIST` chunk before.
-- Both encoders build their headers in one place (`src/lib/audio/wavHeader.ts`).
-  `npm run check:wav` runs every layout through a port of both firmwares' WAV parsers.
+- `npm run check:wav` runs every header layout through a port of both firmwares' WAV
+  parsers; `check:slots` and `check:card` test the slot files, and export and sync end to end
+  over the card reader and USB.
 
 - **The audio always starts on a multiple of 4 bytes.** The SD card's DMA can't read audio
   that starts anywhere else into the firmware's buffer; such a file plays as a burst of noise
@@ -85,8 +119,8 @@ upcoming USB transfer needs, and what the firmware's own USB file list reads.
   tempo from the file's record, which the slice tool never updates; it saves them in the new
   version's WAV instead. So a sliced file built to the card had no cue points, while the same
   file exported from the editor had them. The build now reads them from the version itself,
-  and a card file whose slice count differs from its version is marked **Sync · old header**
-  and rewritten by the next Standard Build.
+  and a card file whose slice count differs from its version is marked **Sync · header
+  update** and rewritten by the next Standard Build.
   Slice points of files that aren't 48 kHz are also read back at the right position (they
   were about 8% early at 44.1 kHz), and up to 255 of them instead of 100.
 - **Slice points survive importing a WAV.** Dropping or picking a local file (and the
