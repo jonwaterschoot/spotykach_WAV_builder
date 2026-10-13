@@ -678,6 +678,14 @@ function App({ onExitToHub }: AppProps) {
     root.style.setProperty('--master-texture-position', visualFilters.texturePosition || 'center');
   }, [visualFilters]);
 
+  // The Look settings are Studio's. Leaving Studio hands the other screens back their
+  // defaults from index.css; left in place, the hub's grain took Studio's texture size.
+  useEffect(() => () => {
+    const root = document.documentElement;
+    ['--master-filter', '--master-texture-opacity', '--master-font-size', '--master-texture-image',
+      '--master-texture-size', '--master-texture-position'].forEach(name => root.style.removeProperty(name));
+  }, []);
+
   const handleSaveVisualSettings = async () => {
     if (!projectRootHandleRef.current) {
       showToast("No active project folder found", "error");
