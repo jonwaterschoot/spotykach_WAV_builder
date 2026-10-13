@@ -16,6 +16,7 @@ import { UsbBackend } from '../src/lib/usb/usbBackend';
 import { FolderBackend } from '../src/lib/card/folderBackend';
 import { exportSDStructure } from '../src/utils/exportUtils';
 import { calculateSyncDiff } from '../src/utils/importUtils';
+import { importedSnapshotSlot } from '../src/lib/card/cardSnapshot';
 import { getInitialState } from '../src/utils/initialState';
 import { assembleWav } from '../src/lib/audio/wavHeader';
 import type { AppState, FileRecord } from '../src/types';
@@ -41,7 +42,7 @@ let n = 0;
 const record = (id: string, name: string, seconds: number, hz: number, slicePoints?: number[]): FileRecord => {
     const v = `${id}-v${++n}`;
     return {
-        id, name, originalName: `${name.toLowerCase()}.wav`, isParked: false, currentVersionId: v,
+        id, name: `${name.toLowerCase()}.wav`, originalName: `${name.toLowerCase()}.wav`, isParked: false, currentVersionId: v,
         versions: [{ id: v, timestamp: n, description: 'Original', blob: assembleWav(pcm(seconds, hz), { id, slicePoints }), duration: seconds }],
     } as FileRecord;
 };
@@ -171,9 +172,10 @@ const run = async () => {
     check(usb.calls.upload === 0, 'a second build skips all three (nothing sent)', String(usb.calls.upload));
 
     console.log('\nUSB: rename and edit');
-    const renamed: AppState = { ...state, files: { ...state.files, pad: { ...state.files.pad, originalName: 'pad two.wav' } } };
+    const renamed: AppState = { ...state, files: { ...state.files, pad: { ...state.files.pad, name: 'pad two.wav' } } };
     diff = await calculateSyncDiff(renamed, usb.backend);
-    check(diff.slots.Blue2.status === 'CONFLICT' && diff.slots.Blue2.ownOlderVersion === true, 'renamed PAD: Changed (own older version), not pooled', `${diff.slots.Blue2.status} own=${diff.slots.Blue2.ownOlderVersion}`);
+    check(diff.slots.Blue2.status === 'MATCH' && diff.slots.Blue2.staleHeader === true && diff.slots.Blue2.match === 'snapshot',
+        'renamed PAD: in sync, header update (not a conflict, nothing pooled)', `${diff.slots.Blue2.status} stale=${diff.slots.Blue2.staleHeader}`);
     const edited = record('kick', 'KICK', 1, 80, [0, 0.5]);
     const changed: AppState = { ...state, files: { ...state.files, kick: edited } };
     diff = await calculateSyncDiff(changed, usb.backend);
@@ -181,6 +183,39 @@ const run = async () => {
     usb.calls.upload = 0;
     const snap2 = (await build(changed, usb.backend))!;
     check(usb.calls.upload === 1 && snap2.slots.Blue1.audioHash !== snapshot.slots.Blue1.audioHash, 'the build re-uploads only KICK, and the snapshot follows', String(usb.calls.upload));
+    const renamedNow: AppState = { ...changed, files: { ...changed.files, pad: renamed.files.pad }, cardSnapshot: snap2 };
+    usb.calls.upload = 0;
+    const renamedSnap = (await build(renamedNow, usb.backend))!;
+    check(usb.calls.upload === 1 && inspectWav(usb.files.get('0:1')!)?.name === 'pad two.wav', 'the build rewrites PAD under its new name', String(usb.calls.upload));
+    diff = await calculateSyncDiff({ ...renamedNow, cardSnapshot: renamedSnap }, usb.backend);
+    check(diff.slots.Blue2.status === 'MATCH' && !diff.slots.Blue2.staleHeader, 'and then it is in sync');
+
+    console.log('\nUSB: a slot recorded on the device, imported into its slot');
+    {
+        const dev = device();
+        dev.files.set('1:0', new Uint8Array(await assembleWav(pcm(1.5, 330)).arrayBuffer()));
+        const empty: AppState = { ...project(), cardSnapshot: undefined };
+        diff = await calculateSyncDiff(empty, dev.backend);
+        const listed = diff.slots.Green1.remote;
+        const file = await dev.backend.readFile('Green', 1);
+        const recorded: FileRecord = { id: 'rec', name: '1.wav', originalName: '1.wav', isParked: false, currentVersionId: 'rec-v',
+            versions: [{ id: 'rec-v', timestamp: 0, description: 'Imported', blob: file, duration: 1.5 }] } as FileRecord;
+        const withRec: AppState = {
+            ...empty,
+            files: { ...empty.files, rec: recorded },
+            cardSnapshot: { updatedAt: '', slots: { Green1: (await importedSnapshotSlot('rec', file, listed, 'usb'))! } },
+        };
+        withRec.tapes.Green.slots[0].fileId = 'rec';
+        dev.calls.readSlot = 0;
+        diff = await calculateSyncDiff(withRec, dev.backend);
+        check(diff.slots.Green1.status === 'MATCH' && diff.slots.Green1.match === 'snapshot',
+            'the import is recorded: the next diff ties it by the snapshot (no conflict, nothing pooled)', `${diff.slots.Green1.status}/${diff.slots.Green1.match}`);
+        check(dev.calls.readSlot === 0, 'without a header read', String(dev.calls.readSlot));
+        check(!diff.slots.Green1.staleHeader, 'no header update just to add the name "1.wav"');
+        const named: AppState = { ...withRec, files: { ...withRec.files, rec: { ...recorded, name: 'field recording' } } };
+        diff = await calculateSyncDiff(named, dev.backend);
+        check(diff.slots.Green1.status === 'MATCH' && diff.slots.Green1.staleHeader === true, 'renamed in the app: a header update writes the name');
+    }
 
     console.log('\nUSB: a slot file from before 4.2');
     const legacy: AppState = { ...state, cardSnapshot: undefined };

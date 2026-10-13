@@ -358,8 +358,9 @@ export interface SyncSlotDiff {
     /**
      * MATCH, but the card file's header is out of date: written by 4.1.3 or earlier
      * (no `ICMT.h`, `LIST` after the audio), or with its audio off a multiple of 4,
-     * which the device can't play, or missing the version's slice points. Same
-     * audio, so not a conflict; a build should still rewrite it once.
+     * which the device can't play, or missing the version's slice points; or the
+     * file the snapshot records, with the project's name or slices changed since.
+     * Same audio, so not a conflict; a build should still rewrite it once.
      */
     staleHeader?: boolean;
     /**
@@ -405,7 +406,7 @@ const slotFileMeta = async (file: FileRecord, version: AudioVersion, frames: num
     const { versionSlices } = await import('./exportUtils');
     const slices = (await versionSlices(file, version)).slicePoints ?? [];
     const cues = new Set(slices.map(s => Math.round(s * 48000)).filter(f => f >= 0 && f < frames)).size;
-    const name = new TextDecoder().decode(utf8Truncate(file.originalName || file.name, MAX_INAM_BYTES));
+    const name = new TextDecoder().decode(utf8Truncate(file.name || file.originalName, MAX_INAM_BYTES));
     return { name, cues: Math.min(cues, DEVICE_MAX_CUES) };
 };
 
@@ -621,6 +622,7 @@ export const calculateSyncDiff = async (
             const remoteMeta = remote?.meta ?? null;
             let match: SlotMatch | undefined;
             let ownOlderVersion = false;
+            let headerDiffers = false;
 
             if (localFile && remote) {
                 // Both exist - Compare
@@ -636,10 +638,15 @@ export const calculateSyncDiff = async (
                     // 0. What the project last wrote here. Unchanged when the version's audio is.
                     match = 'snapshot';
                     const localAudio = currentVer?.blob ? await audioHashOf(currentVer.blob) : null;
-                    // Same audio, and the slot file would get the same name and slices.
+                    // Same audio: a match. A new name or other slices only change the header,
+                    // so the slot file is rewritten in place and nothing is pooled.
                     const would = currentVer ? await slotFileMeta(localFile, currentVer, remote.frames ?? snap.frames ?? 0) : null;
-                    isMatch = !!localAudio && localAudio === snap.audioHash
-                        && !!would && would.name === (snap.name ?? '') && would.cues === (snap.cues ?? 0);
+                    isMatch = !!localAudio && localAudio === snap.audioHash;
+                    // A device recording has no name; the project calls it by its file name
+                    // ("1.wav") until renamed. Not worth rewriting the whole file for that.
+                    const unnamedRecording = !snap.name && localFile.name === localFile.originalName;
+                    const nameDiffers = !!would && would.name !== (snap.name ?? '') && !unnamedRecording;
+                    headerDiffers = isMatch && (!would || nameDiffers || would.cues !== (snap.cues ?? 0));
                 } else if (remoteMeta?.id && localFile.id === remoteMeta.id) {
                     // 1. Same file record. It changed if processing, audio or length differ.
                     match = 'id';
@@ -749,8 +756,9 @@ export const calculateSyncDiff = async (
                 match,
                 // Anything matched by its content rather than the snapshot is a slot file
                 // from before 4.2 (our ICMT, or another layout): rewrite it once as a 4.2
-                // slot file, so the snapshot recognises it from then on.
-                staleHeader: status === 'MATCH' && match !== 'name' && match !== 'snapshot',
+                // slot file, so the snapshot recognises it from then on. By the snapshot:
+                // rewrite when the name or slices changed.
+                staleHeader: status === 'MATCH' && match !== 'name' && (match !== 'snapshot' || headerDiffers),
                 ownOlderVersion,
             };
         }

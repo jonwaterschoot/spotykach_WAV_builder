@@ -766,7 +766,8 @@ const hardwareSlotFile = async (
 
 const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
     id: file.id,
-    name: file.originalName || file.name,
+    // The name the project shows, renames included.
+    name: file.name || file.originalName,
     hash: version.hash ?? (version.blob ? await hashBlob(version.blob) : undefined),
     processing: version.processing,
     ...await versionSlices(file, version),

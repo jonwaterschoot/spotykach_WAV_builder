@@ -807,7 +807,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         setIsCustomOverride(false);
         try {
             const { slotKey } = JSON.parse(e.dataTransfer.getData('text/plain'));
-            setRows(prev => prev.map(r => `${r.tapeColor}${r.slotNum}` === slotKey ? { ...r, toPool: true } : r));
+            setRows(prev => prev.map(r => `${r.tapeColor}${r.slotNum}` === slotKey && r.onCard ? { ...r, toPool: true } : r));
         } catch { /* ignore */ }
         setDragSource(null);
     };
@@ -1468,7 +1468,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 const canPushRight = row.status === 'LOCAL_ONLY' || row.status === 'CONFLICT' || row.status === 'MATCH';
                                 const canPullSlot = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
                                 const canDeleteSK = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
-                                const canToPool = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT';
+                                // A slot in sync can still be copied to the pool, to check what the card holds.
+                                const canToPool = row.status === 'REMOTE_ONLY' || row.status === 'CONFLICT' || row.status === 'MATCH';
                                 const fate = cardFate(row, cardMoves);
                                 const cardFileDestroyed = fate === 'destroyed';
                                 const cardFileMoved = fate === 'moved';
@@ -1543,7 +1544,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
                                         <div className="flex items-center justify-center p-2 border-r border-white/5">
                                             {row.status === 'MATCH' && (row.staleHeader
-                                                ? <span title="Same audio, but the card file was written before 4.2 (or by another tool). Rewriting it once makes it a 4.2 slot file, which later builds recognise without reading it." className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync · old header</span>
+                                                ? <span title="Same audio. Only the header differs: a new name or slices in the project, or a file written before 4.2 or by another tool. A build rewrites the file in place; nothing is lost or pooled." className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync · header update</span>
                                                 : <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync</span>)}
                                             {row.status === 'EMPTY' && <span className="text-[8px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded-full font-bold">Empty</span>}
                                             {row.status === 'CONFLICT' && (row.ownOlderVersion

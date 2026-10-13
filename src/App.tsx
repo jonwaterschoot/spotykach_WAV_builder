@@ -75,7 +75,7 @@ import { CardSourceBar, type CardSource } from './components/CardSourceBar';
 import { TransferProgressModal } from './components/TransferProgressModal';
 import { CardRouteDialog, type ReaderCheck } from './components/CardRouteDialog';
 import { useTransferJob } from './session/transferJob';
-import { describeSnapshotCheck } from './lib/card/cardSnapshot';
+import { describeSnapshotCheck, importedSnapshotSlot } from './lib/card/cardSnapshot';
 import type { CardBackend } from './lib/card/cardBackend';
 
 const sanitizeFilename = (name: string) => {
@@ -4719,6 +4719,16 @@ function App({ onExitToHub }: AppProps) {
               if (newState.tapes[color]?.slots[slotIdx] != null) {
                 newState.tapes[color].slots[slotIdx].fileId = fileId;
                 fileRecord.isParked = false;
+                // The slot now holds what the project has: record it like a write, so the
+                // next diff recognises it instead of offering to overwrite and pool it.
+                const imported = await importedSnapshotSlot(fileId, blob, syncDiff?.slots[slotId]?.remote, source === 'usb' ? 'usb' : 'reader');
+                if (imported) {
+                  newState.cardSnapshot = {
+                    updatedAt: imported.writtenAt,
+                    totalKiB: newState.cardSnapshot?.totalKiB,
+                    slots: { ...(newState.cardSnapshot?.slots ?? {}), [slotId]: imported },
+                  };
+                }
               }
             }
           }

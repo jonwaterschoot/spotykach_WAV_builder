@@ -6,7 +6,8 @@
  */
 import type { CardSnapshot, CardSnapshotSlot } from '../../types';
 import type { SlotDescriptor } from './cardBackend';
-import { sameFingerprint, type SlotFingerprint } from '../audio/slotFile';
+import { audioHashOf, sameFingerprint, type SlotFingerprint } from '../audio/slotFile';
+import { readWavHeaderInfo } from '../audio/wavHeader';
 
 /**
  * What a slot reports about itself without its audio: name, size, frames, cue count.
@@ -26,6 +27,26 @@ export const snapshotFingerprint = (snap: CardSnapshotSlot | undefined): SlotFin
     snap && snap.size !== undefined && snap.frames !== undefined
         ? { name: snap.name ?? '', size: snap.size, frames: snap.frames, cues: snap.cues ?? 0 }
         : undefined;
+
+/**
+ * The snapshot entry for a card file imported into its own slot: the project now
+ * holds what the card does, as if it had written it. Without it, the next diff can't
+ * tie the two over USB and offers to overwrite the slot and pool the same file.
+ * `listed` is the slot as the diff saw it; the file's header stands in without it.
+ */
+export const importedSnapshotSlot = async (
+    fileId: string, file: Blob, listed: SlotDescriptor | undefined, via: CardSnapshotSlot['via'],
+): Promise<CardSnapshotSlot | undefined> => {
+    let fingerprint = listed && listedFingerprint(listed);
+    if (!fingerprint) {
+        const header = await readWavHeaderInfo(file).catch(() => null);
+        if (header?.frames === undefined) return undefined;
+        fingerprint = { name: header.metadata?.name ?? '', size: file.size, frames: header.frames, cues: header.metadata?.slicePoints?.length ?? 0 };
+    }
+    const audioHash = await audioHashOf(file);
+    if (!audioHash) return undefined;
+    return { fileId, audioHash, ...fingerprint, writtenAt: new Date().toISOString(), via };
+};
 
 /** The slot still holds the file the project last wrote there. */
 export const slotMatchesSnapshot = (desc: SlotDescriptor, snap: CardSnapshotSlot | undefined): boolean =>
