@@ -365,6 +365,7 @@ The aim: no changes needed in Spotykach's code.
 - **Gains:** no header read per slot over USB (the list is enough), no PR to Spotykach, and one card format shared with Synthux's own page.
 - **Costs:** a card can no longer tell a project it has never seen which file a slot was (no id inside), and tempo and processing flags aren't stored in card files. Cards written before the change are matched once by name and frame count, or by the tail read for 4.1.3 files.
 - **Hashes cover the audio only** (the `data` chunk), not the header, so the same audio has the same hash whichever tool wrote the file. Existing whole-file hashes are recomputed in the background; older slot files keep matching by their `ICMT` id meanwhile.
+- **Same audio, different header → match, not conflict.** Seen in the device test (Oct 13): a project from an older version against an SD card it wrote showed every slot as Conflict and pooled them, because ids or whole-file hashes differed while the audio was the same. With audio-only hashes: compare automatically over the card reader; over USB offer "compare audio" for the conflicting slots only (it downloads them), and turn the identical ones into a plain overwrite.
 - **Unaffected:** project bundles (`project.json` holds the ids), presets (sample-pack paths), and loose-file imports (always a new project file, as before).
 - **Checked:** 72 `encodeWav` files (names 0–70 bytes, non-ASCII, cues) load on ports of release firmware 1.3.1 (WAV code identical to `main` `7da8061`) and of the uploader firmware.
 
