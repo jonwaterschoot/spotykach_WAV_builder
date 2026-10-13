@@ -1,8 +1,8 @@
-import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film, Maximize2, Dices } from 'lucide-react';
+import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film, Maximize2, Dices, Usb, Link2, Check } from 'lucide-react';
 import { version } from '../../package.json';
 import { useEffect, useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
-import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL, submissionEmail, submissionMailto } from '../data/links';
+import { DISCORD_HANDLE, submissionEmail, submissionGuideLink, submissionMailto } from '../data/links';
 import { hashForMode, modeFromHash } from '../shell/useAppMode';
 
 interface AboutHelpModalProps {
@@ -153,6 +153,13 @@ const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
 export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: AboutHelpModalProps) => {
     const [activeTab, setActiveTab] = useState<'about' | 'help' | 'contribute'>(initialTab);
     const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
+    const [linkCopied, setLinkCopied] = useState(false);
+    const copyGuideLink = () => {
+        void navigator.clipboard?.writeText(submissionGuideLink()).then(() => {
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+        });
+    };
 
     /*
      * The submission tool opens this modal itself now, which makes the "open the
@@ -218,7 +225,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 onClick={() => setActiveTab('contribute')}
                                 className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${activeTab === 'contribute' ? 'bg-synthux-blue text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}
                             >
-                                Sample & Preset Guide
+                                Submission Guide
                             </button>
                         </div>
                     </div>
@@ -287,7 +294,9 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                 <div className="bg-black/20 p-4 rounded-lg border border-gray-800 text-sm text-gray-300">
                                     Built with <span className="text-white font-bold">React</span>, <span className="text-white font-bold">Vite</span>, and <span className="text-white font-bold">TailwindCSS</span>.
                                     <br />
-                                    Written with LLM assistance — set up in <span className="text-synthux-pink font-bold">Google Antigravity</span>, continued with <span className="text-synthux-blue font-bold">Claude Code</span> in <span className="text-white font-bold">VS Code</span>.
+                                    Slot files are written by Synthux's own <code className="bg-gray-800 px-1 rounded text-synthux-blue">@synthuxacademy/spotykach-transfer</code> package, the encoder the firmware's uploader uses, which also runs USB transfer.
+                                    <br />
+                                    Written with LLM assistance: set up in <span className="text-synthux-pink font-bold">Google Antigravity</span>, continued with <span className="text-synthux-blue font-bold">Claude Code</span> in <span className="text-white font-bold">VS Code</span>.
                                     <br />
                                     <span className="text-gray-400">Fonts are self-hosted under the SIL Open Font License; nothing is fetched from a third party to render this page.</span>
                                 </div>
@@ -417,26 +426,36 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> writes your project into the hardware folder structure on the card — the <code className="bg-gray-800 px-1 rounded text-synthux-orange">SK/</code> folder, and by default <strong className="text-white">nothing else</strong>. The card is a build target, not a backup: it holds what the device plays, and you can rebuild it at any time.
+                                                    <span className="text-synthux-yellow font-semibold">Build for SD</span> writes your project into the hardware folder structure on the card: the <code className="bg-gray-800 px-1 rounded text-synthux-orange">SK/</code> folder, and by default <strong className="text-white">nothing else</strong>. The card is a build target, not a backup: it holds what the device plays, and you can rebuild it at any time.
                                                     <span className="block mt-2">
-                                                        <span className="text-synthux-orange font-semibold">Backup</span> is a separate, deliberate act — <em>Settings ▸ Files ▸ Workspace backup</em>. It shows what it contains and what it weighs, then copies it to a folder you pick <strong className="text-white">at that moment</strong>; there is no remembered location and nothing is ever written behind your back.
+                                                        <span className="text-synthux-orange font-semibold">Backup</span> is a separate step, in <em>Settings ▸ Files ▸ Workspace backup</em>. It shows what it contains and what it weighs, then copies it to a folder you pick <strong className="text-white">at that moment</strong>; there is no remembered location and nothing is ever written behind your back.
                                                     </span>
                                                 </td>
                                             </tr>
                                             <tr className="bg-white/5">
+                                                <td className="px-3 py-3 align-top">
+                                                    <span className="flex items-center gap-2 text-orange-300 font-semibold">
+                                                        <Usb size={14} /> USB Transfer
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-gray-300">
+                                                    <span className="text-orange-300 font-semibold">Beta.</span> With the 1.4.0 beta firmware, Studio and Preset to SD Card can reach the card while it stays in the Spotykach. Slower than a card reader; see <em>USB Transfer (beta)</em> below.
+                                                </td>
+                                            </tr>
+                                            <tr>
                                                 <td className="px-3 py-3 align-top">
                                                     <span className="flex items-center gap-2 text-sky-400 font-semibold">
                                                         <Save size={14} /> Saving
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    <strong className="text-white">Save</strong> writes the project to its folder on your drive — that is the copy that counts. <strong className="text-white">Auto-save</strong> is something else: a crash-recovery snapshot in the browser's own storage, on by default, so a closed tab or a crash doesn't cost you the session. It never writes to your drive.
+                                                    <strong className="text-white">Save</strong> writes the project to its folder on your drive. That is the copy that counts. <strong className="text-white">Auto-save</strong> is something else: a crash-recovery snapshot in the browser's own storage, on by default, so a closed tab or a crash doesn't cost you the session. It never writes to your drive.
                                                     <span className="block mt-2 text-gray-400">
                                                         Two extra copies are available in <em>Settings ▸ Files</em> and are <strong className="text-white">off by default</strong>: mirroring the project source onto the card, and snapshotting the card's <code className="bg-gray-800 px-1 rounded">SK/</code> folder back into the project folder after a build.
                                                     </span>
                                                 </td>
                                             </tr>
-                                            <tr>
+                                            <tr className="bg-white/5">
                                                 <td className="px-3 py-3 align-top">
                                                     <span className="flex items-center gap-2 text-teal-400 font-semibold">
                                                         <Library size={14} /> Library
@@ -457,27 +476,21 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                             <SectionHeader id="mangler" title="Sample Mangler" icon={Dices} />
 
                             {expandedSection === 'mangler' && (
-                                <div className="p-6 bg-black/20 text-gray-300 space-y-4 font-body text-sm leading-relaxed">
+                                <div className="p-6 bg-black/20 text-gray-300 space-y-3 font-body text-sm leading-relaxed">
                                     <p>
-                                        The <strong className="text-white">Sample Mangler</strong> door cuts random snippets out of a pool of sounds and
-                                        joins them into one file of up to 42&nbsp;s, with a cue point at every snippet start, so the slice mode jumps
-                                        between them. Desktop only; nothing touches your drive until you save.
+                                        The <strong className="text-white">Sample Mangler</strong> cuts random snippets out of a pool of sounds
+                                        and joins them into one file of up to 42&nbsp;s. Set the ranges, generate a batch, keep what you like.
+                                        Every snippet starts on a cue point, so the Spotykach&apos;s slice mode jumps from one to the next. Other
+                                        samplers that read WAV cue points should pick them up too, though that&apos;s untested.
                                     </p>
-                                    <ol className="list-decimal list-inside space-y-2">
-                                        <li><strong className="text-white">Fill the source pool</strong> with <em>Packs</em> (the sample browser), <em>Files</em>, or by dropping audio anywhere on the screen. The checkbox next to a source leaves it out of the next batch; the one by the heading switches them all. A source you preview gets a playhead bar you can drag. The scissors open it up close, to mark the parts the mangler may take snippets from.</li>
-                                        <li><strong className="text-white">Set the ranges.</strong> Two-handled sliders set a range, and the dice pick a value inside it for every snippet: length, crossfade, loudness spread, detune. Presets give a starting point. <em>Fill</em> decides when a file is done: <em>By length</em> fills a set length with as many snippets as fit; <em>By count</em> makes a set number of snippets, so every variation comes out a different length (42&nbsp;s at most).</li>
-                                        <li><strong className="text-white">Generate.</strong> Every variation uses the same settings with its own seed. Star the ones you like: unstarred results are cleared when the next batch starts. Typing a seed in gives that exact result again as the first variation.</li>
-                                        <li><strong className="text-white">Refine.</strong> Open <em>Snippets</em> on a result to play each one, set its pitch, lock it, delete it, or drag it (⋮⋮) to another place. Click, Shift-click and Ctrl-click select several: drag them and they land together where you drop them, or press Delete. <em>Crop</em> keeps only the stretch between two handles, and later edits keep the same stretch. <em>Editor</em> opens a copy in the audio editor; saving there adds an edited copy next to the original. <em>Same seed, current settings</em> renders it again after you move a slider, so you hear only what that slider does. Lock a few snippets and <em>Reroll the rest</em> for new variations around them. <em>Undo</em> goes one step back. <em>Zoom</em> opens a taller waveform with the cue points in red and the crossfades in orange.</li>
-                                        <li><strong className="text-white">Listen.</strong> <em>Click plays</em> sets what a click on a snippet or the waveform plays: <em>Full</em> from there to the end, <em>Fades</em> the snippet with its crossfades, <em>Cue</em> only what lies between two cue points, as the slice mode plays it. The list follows along.</li>
-                                        <li><strong className="text-white">Save.</strong> Download the WAV, add it to the Browse pool, save it to the Studio user library, or start a new Studio project with it.</li>
-                                    </ol>
-                                    <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-2">
-                                        <p><strong className="text-white">Pitch.</strong> Each snippet's pitch is detected (YIN). <em>Suggest</em> lists it, <em>Apply</em> moves every snippet above the confidence threshold to the nearest note of the scale (at most half an octave). Pick a root and a scale, or click the keys for your own; <em>Root only</em> on C is the plain "everything to C". In the snippet list each snippet can go to the scale, to one note, or up or down by a set interval. Noise, drums and chords show <em>no pitch</em> and are left alone.</p>
-                                        <p><strong className="text-white">Drum loops.</strong> <em>One hit per snippet</em> ends each snippet before the next hit in its source. After rendering, <em>Cues: at hits</em> moves the cue points onto the hits in the finished file (gentle, normal, aggressive, or auto to fit the 255 cue points) without changing the sound.</p>
-                                        <p><strong className="text-white">Snippet start.</strong> <em>Zero</em> starts each snippet on a zero crossing, so hard cuts don&apos;t click. <em>Transient</em> starts it on the strongest attack in its first half second.</p>
-                                        <p><strong className="text-white">Licenses.</strong> A result follows the sources it actually uses. Personal-use samples can be saved, and the note travels with the file: fine in your own music, not to be shared as a sample. A result using a no-derivatives source can&apos;t be saved at all.</p>
-                                        <p><strong className="text-white">Saving to the library</strong> goes through the browser&apos;s storage. Close Studio in other tabs first; Studio copies the file into <code className="bg-gray-800 px-1 rounded text-synthux-yellow">User_Library/</code> the next time it opens.</p>
-                                    </div>
+                                    <p className="text-gray-400">
+                                        It started when I played a friend some ambient textures and he asked: wouldn&apos;t samples with a lot of
+                                        variance be more fun? This is that idea, taken literally.
+                                    </p>
+                                    <p className="text-gray-400">
+                                        A result keeps the licences of the sounds it uses: personal-use sources mark it, and a source that allows
+                                        no changes can&apos;t be saved. Desktop only.
+                                    </p>
                                 </div>
                             )}
                         </div>
@@ -553,6 +566,58 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         >
                                             <Save size={16} /> Download Metadata Test File
                                         </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* USB Transfer (beta) */}
+                        <div className="border border-gray-700 rounded-lg overflow-hidden">
+                            <SectionHeader id="usb" title="USB Transfer (beta)" icon={Usb} />
+
+                            {expandedSection === 'usb' && (
+                                <div className="p-6 bg-black/20 text-gray-300 space-y-4 font-body text-sm leading-relaxed">
+                                    <p>
+                                        With beta firmware, WAV Builder reaches the SD card while it stays in the Spotykach, through the
+                                        rear USB port. It suits the smaller jobs: a few slots, a preset, a recording pulled off the device.
+                                    </p>
+                                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+                                        <strong className="flex items-center gap-2 text-amber-300">
+                                            <AlertTriangle size={16} /> Slow, and picky about cables
+                                        </strong>
+                                        <table className="w-full text-xs">
+                                            <tbody className="divide-y divide-amber-500/15">
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">A full 42&nbsp;s slot</td><td className="py-1.5 text-white font-semibold">about 35&nbsp;s</td></tr>
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">A whole card, 36 slots</td><td className="py-1.5 text-white font-semibold">about 10 minutes</td></tr>
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">The same with a card reader</td><td className="py-1.5 text-white font-semibold">much faster</td></tr>
+                                            </tbody>
+                                        </table>
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr className="text-[10px] uppercase tracking-wider text-amber-300/80"><th className="pb-1 pr-3 text-left font-bold">Connection</th><th className="pb-1 text-left font-bold">In our tests</th></tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-amber-500/15">
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">Straight into a USB-A port, good cable</td><td className="py-1.5 text-green-300 font-semibold">best, about 470&nbsp;KB/s</td></tr>
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">Front USB-C port</td><td className="py-1.5 text-amber-300 font-semibold">half speed</td></tr>
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">USB hub, even a powered USB&nbsp;3 one</td><td className="py-1.5 text-red-300 font-semibold">stalls, dropped connections</td></tr>
+                                                <tr><td className="py-1.5 pr-3 text-gray-300">A poor or charge-only cable</td><td className="py-1.5 text-red-300 font-semibold">flickering device, or no connection</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <ol className="list-decimal list-inside space-y-2">
+                                        <li>
+                                            <strong className="text-white">Flash firmware 1.4.0 beta 1</strong> from Synthux's GitHub:{' '}
+                                            <a href="https://github.com/Synthux-Academy/Spotykach/releases/tag/v.1.4.0.b1" target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">Spotykach v.1.4.0.b1</a>.
+                                        </li>
+                                        <li><strong className="text-white">Switch it on</strong> in Studio's <em>Settings ▸ System ▸ USB transfer</em>. It needs Chrome or Edge on a computer.</li>
+                                        <li><strong className="text-white">Connect directly:</strong> a good data cable into a USB-A port on the computer, as in the table above.</li>
+                                    </ol>
+                                    <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-2">
+                                        <p><strong className="text-white">Studio:</strong> switch the card to USB in the header, then build to the card, import into the project, or start a new project from the card. You review every slot first.</p>
+                                        <p><strong className="text-white">Preset to SD Card:</strong> <em>Write to SD card ▸ Over USB</em> shows which slots the preset fills and which files it replaces, and can save those to a ZIP first.</p>
+                                        <p><strong className="text-white">Only the slots.</strong> USB reaches the 36 slot files; <code className="bg-gray-800 px-1 rounded">config.txt</code> and the project copy on the card need the card reader.</p>
+                                        <p><strong className="text-white">Transfer mode.</strong> While connected the Spotykach is silent; it plays again when you disconnect. If the cable comes out, the slot being written keeps its old file, and <em>Continue</em> picks up where it stopped.</p>
+                                        <p><strong className="text-white">Windows:</strong> close apps that hold the Spotykach's MIDI port (your DAW) before connecting.</p>
                                     </div>
                                 </div>
                             )}
@@ -690,22 +755,18 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
 
                     {activeTab === 'contribute' && (
                         <div className="p-6 md:p-8 space-y-8 font-body max-w-3xl mx-auto text-gray-300">
-                            {/* Concepts Header */}
                             <div className="space-y-3">
                                 <h3 className="text-xl font-bold text-white flex items-center gap-2 font-header">
                                     <BookOpen size={20} className="text-synthux-blue" />
-                                    Preset & Sample Pack Submission Guide
+                                    Submission Guide
                                 </h3>
                                 <p className="leading-relaxed text-sm">
-                                    Before preparing your contribution, it's important to understand how Spotykach distinguishes between a <strong>Sample Pack</strong> and a <strong>Project Preset</strong>:
+                                    Made sounds of your own, or a card worth sharing? Send it in as a <strong className="text-white">sample pack</strong> or
+                                    a <strong className="text-white">preset</strong>, and it becomes part of the app for everyone.
                                 </p>
                             </div>
 
-                            {/*
-                              * The tool, above the explanation of it. Everything below this box is
-                              * background — worth reading, and not worth reading first. The tool asks
-                              * for each of these things at the moment it needs them.
-                              */}
+                            {/* The tool first; everything below is background. */}
                             {inSubmitTool ? (
                                 <button
                                     onClick={onClose}
@@ -715,13 +776,8 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     <span className="flex items-start gap-3">
                                         <Send size={20} className="shrink-0 mt-0.5 text-synthux-turquoise" />
                                         <span className="min-w-0">
-                                            <strong className="block text-synthux-turquoise text-sm mb-1">
-                                                You’re already in the tool — back to the form
-                                            </strong>
-                                            <span className="block text-xs text-gray-400 leading-relaxed">
-                                                Nothing here is lost by reading: your draft is saved as you go, and this
-                                                closes back onto the step you were on.
-                                            </span>
+                                            <strong className="block text-synthux-turquoise text-sm mb-1">Back to the form</strong>
+                                            <span className="block text-xs text-gray-400 leading-relaxed">Your draft is saved as you go.</span>
                                         </span>
                                     </span>
                                 </button>
@@ -735,73 +791,51 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     <span className="flex items-start gap-3">
                                         <Send size={20} className="shrink-0 mt-0.5 text-synthux-turquoise" />
                                         <span className="min-w-0">
-                                            <strong className="block text-synthux-turquoise text-sm mb-1">
-                                                Open the submission tool
-                                            </strong>
+                                            <strong className="block text-synthux-turquoise text-sm mb-1">Open the submission tool</strong>
                                             <span className="block text-xs text-gray-400 leading-relaxed">
-                                                Drop in your folder and the tool collects everything a submission needs —
-                                                titles, categories, artist details, links, licence, and the preset if you
-                                                are making one — then hands you a small ZIP to send. Nothing is uploaded,
-                                                and it remembers where you got to.
+                                                Drop in your folder. The tool asks for what it needs and gives you one ZIP to send.
+                                                Nothing is uploaded, and it remembers where you got to.
                                             </span>
                                         </span>
                                     </span>
                                 </a>
                             )}
 
-                            {/* Concepts Table */}
                             <div className="overflow-x-auto border border-gray-800 rounded-xl bg-black/20">
                                 <table className="w-full text-xs text-left border-collapse">
                                     <thead>
                                         <tr className="border-b border-gray-800 bg-white/5 uppercase font-header tracking-wider text-gray-400 text-[10px]">
-                                            <th className="px-4 py-3">Feature</th>
-                                            <th className="px-4 py-3">📦 Sample Packs</th>
-                                            <th className="px-4 py-3">🎛️ Project Presets (Layouts)</th>
+                                            <th className="px-4 py-3"></th>
+                                            <th className="px-4 py-3">📦 Sample pack</th>
+                                            <th className="px-4 py-3">🎛️ Preset</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-800 font-body">
                                         <tr>
                                             <td className="px-4 py-3 font-semibold text-white">What it is</td>
-                                            <td className="px-4 py-3">A library of curated audio files available in the <strong>Sample Browser</strong>.</td>
-                                            <td className="px-4 py-3">A saved project configuration where all slots have been mapped to specific samples.</td>
+                                            <td className="px-4 py-3">A set of sounds with its own page in the Sample Browser.</td>
+                                            <td className="px-4 py-3">A full card: which sound sits in which slot, with notes per tape.</td>
                                         </tr>
                                         <tr className="bg-white/5">
-                                            <td className="px-4 py-3 font-semibold text-white">Slot Limit</td>
-                                            <td className="px-4 py-3"><strong className="text-synthux-blue">No ceiling</strong> — 50, 100, 300; users choose what to load. Ten files at minimum, and above a hundred the tool asks for a word about categories.</td>
-                                            <td className="px-4 py-3"><strong className="text-synthux-orange">Maximum of 36 slots</strong> (6 tapes × 6 slots) corresponding to the hardware.</td>
+                                            <td className="px-4 py-3 font-semibold text-white">Size</td>
+                                            <td className="px-4 py-3">10 sounds or more.</td>
+                                            <td className="px-4 py-3">Up to 36 slots.</td>
                                         </tr>
                                         <tr>
-                                            <td className="px-4 py-3 font-semibold text-white">How it loads</td>
-                                            <td className="px-4 py-3">Users browse individual samples and manually assign them to any tape slot.</td>
-                                            <td className="px-4 py-3">Loads samples into pre-assigned slots automatically, along with custom tape notes.</td>
-                                        </tr>
-                                        <tr className="bg-white/5">
-                                            <td className="px-4 py-3 font-semibold text-white">Sharing Method</td>
-                                            <td className="px-4 py-3">Built in the <strong>submission tool</strong> and sent as one archive; a maintainer normalizes the audio and adds the entry to the catalogue.</td>
-                                            <td className="px-4 py-3">The same tool. Also shareable privately, straight out of Studio’s Export, as a settings-only JSON or a full backup ZIP.</td>
+                                            <td className="px-4 py-3 font-semibold text-white">How it's used</td>
+                                            <td className="px-4 py-3">People pick sounds and place them themselves.</td>
+                                            <td className="px-4 py-3">Loaded in one go, or written straight to a card.</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
 
-                            {/*
-                              * The captures. Each is a <Shot>: a slot that draws the media when it
-                              * has a path and says what belongs there when it does not. Filling a
-                              * pending slot is deleting the word `pending`, once the file is in
-                              * `public/img/docs/` or `public/vid/docs/` under the path already named.
-                              *
-                              * The four submission stills are in; the two walkthrough videos are not
-                              * yet. Steps 1, 3 and 4, and the two handoff screens, are on the shot
-                              * list and deliberately not slotted here: this is a help tab, not a
-                              * gallery.
-                              */}
                             <div className="space-y-6 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
                                     <span className="text-lg">📷</span> What It Looks Like
                                 </h4>
 
                                 <div className="flex flex-col gap-6">
-                                    {/* 1. The submission tool */}
                                     <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
                                         <div className="space-y-1">
                                             <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
@@ -809,290 +843,166 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                                 The Submission Tool
                                             </h5>
                                             <p className="text-xs text-gray-400 leading-relaxed">
-                                                Six steps, each one leaveable and returnable: what you are sending, the audio,
-                                                your details, your links, the licence and preset, then review. Nothing leaves
-                                                your machine until you send the archive yourself.
+                                                Six steps, from your files to a ZIP. On the hub it&apos;s <em>Submit a pack</em>, under the doors.
                                             </p>
                                         </div>
                                         <div className="flex flex-col gap-4">
                                             <Shot
-                                                src="/img/docs/submit-hub-door.webp"
-                                                alt="The hub, with the Submit a Pack door"
-                                                note="The hub with all six doors, Submit a Pack among them."
-                                            />
-                                            <Shot
                                                 src="/img/docs/submit-step2-audio.webp"
                                                 alt="Step 2, the audio"
-                                                note="Step 2: the file list with editable titles, categories read from subfolders, a 42-second flag, a borrowed row carrying its link mark, and the player bar docked below."
+                                                note="Step 2: your files, with titles and categories you can edit."
                                             />
                                             <Shot
                                                 src="/img/docs/submit-step5-preset.webp"
                                                 alt="Step 5, the preset grid"
-                                                note="Step 5: the 6×6 grid with borrowed slots marked and a tape's notes open."
+                                                note="Step 5: the 6×6 grid for a preset, with a tape's notes open."
                                             />
                                             <Shot
                                                 src="/img/docs/submit-step6-review.webp"
                                                 alt="Step 6, review and send"
-                                                note="Step 6: the review checklist with one item still failing, and the download panel."
+                                                note="Step 6: what's still missing, and the download."
                                             />
                                             <Shot
                                                 pending
                                                 kind="video"
                                                 src="/vid/docs/submit-pack-walkthrough.mp4"
                                                 alt="A pack, end to end"
-                                                note="A pack end to end (60–90s): drop a folder, fix two titles, fill in details and links, pick a licence, download the archive."
+                                                note="A pack from start to finish."
                                             />
                                             <Shot
                                                 pending
                                                 kind="video"
                                                 src="/vid/docs/submit-preset-from-packs.mp4"
                                                 alt="A preset built from published packs"
-                                                note="A preset from published packs (60–90s): pool in Browse, send across, drag slots on the grid, write notes, download."
+                                                note="A preset made from packs already in the app."
                                             />
                                         </div>
                                     </div>
 
-                                    {/* 2. Sample Browser */}
                                     <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
                                         <div className="space-y-1">
                                             <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full bg-synthux-blue"></span>
-                                                Sample Pack Browser
+                                                Sample Browser
                                             </h5>
                                             <p className="text-xs text-gray-400 leading-relaxed">
-                                                Where a published pack ends up. Browse and preview cataloged packs or your own
-                                                local folders, pool what you like, and send the pool straight to the tool.
+                                                Where a pack ends up, next to people&apos;s own folders and the open archives.
                                             </p>
                                         </div>
                                         <div className="flex flex-col gap-4">
                                             <Shot
                                                 src="/img/docs/samplebrowser_sidebar.jpg"
                                                 alt="Sample Browser Sidebar"
-                                                note="Browse mode's sidebar, with the pool visible."
+                                                note="The Sample Browser, with the pool."
                                             />
                                             <Shot
                                                 kind="video"
                                                 src="/vid/docs/samplepackbrowser.mp4"
                                                 alt="Browsing a sample pack"
-                                                note="A pack page, Copy link to this pack, and pooling a sample."
+                                                note="A pack page, and pooling a sample."
                                             />
                                         </div>
                                     </div>
 
-                                    {/* 3. Preset Manager */}
                                     <div className="bg-black/20 rounded-xl border border-gray-800 p-5 space-y-4">
                                         <div className="space-y-1">
                                             <h5 className="font-bold text-white text-sm font-header uppercase tracking-wider flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full bg-synthux-orange"></span>
-                                                Preset Manager
+                                                Presets
                                             </h5>
                                             <p className="text-xs text-gray-400 leading-relaxed">
-                                                Where a published preset ends up: load a community layout to fill all 36 slots
-                                                at once, with its names and its tape notes.
+                                                Where a preset ends up: loaded into Studio, or written straight to a card.
                                             </p>
                                         </div>
                                         <div className="flex flex-col gap-4">
                                             <Shot
                                                 src="/img/docs/presets_menu.png"
                                                 alt="Presets Menu"
-                                                note="The Preset door, with its id-keyed gradients and the contribute panel."
+                                                note="Preset to SD Card."
                                             />
                                             <Shot
                                                 kind="video"
                                                 src="/vid/docs/presetsbrowser_1.mp4"
                                                 alt="Loading a preset"
-                                                note="The Preset door: load a preset, then write it to a card."
+                                                note="Loading a preset, then writing it to a card."
                                             />
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Share Box */}
-                            <div className="bg-synthux-blue/10 border border-synthux-blue/30 p-4 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div>
-                                    <strong className="text-synthux-blue block mb-1 text-sm">Need to share this guide?</strong>
-                                    <p className="text-xs text-gray-400">
-                                        Send a direct link to the GitHub page for anyone wishing to contribute their custom samples or presets. It points back at the tool above.
-                                    </p>
-                                </div>
-                                <a
-                                    href={SUBMISSION_GUIDE_URL}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-synthux-blue text-white rounded-lg hover:bg-synthux-blue/80 transition-colors text-xs font-bold uppercase tracking-wider no-underline"
-                                >
-                                    GitHub Submission Guide <ExternalLink size={12} />
-                                </a>
-                            </div>
-
-                            {/* Developer Resources Box */}
-                            <div className="bg-synthux-pink/10 border border-synthux-pink/30 p-5 rounded-lg space-y-4">
-                                <div className="flex items-start gap-3">
-                                    <div className="text-synthux-pink mt-0.5">🛠️</div>
-                                    <div className="space-y-1">
-                                        <strong className="text-synthux-pink block text-sm">App Maintainer & Developer Resources</strong>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            Looking to deploy custom presets directly into the web application, execute normalization scripts, or inspect the metadata schemas? The full technical backend guides are stored on GitHub:
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 font-mono text-[10px] uppercase tracking-wider font-bold">
-                                    <a 
-                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" 
-                                        target="_blank" 
-                                        rel="noreferrer"
-                                        className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
-                                    >
-                                        Preset Dev Guide <ExternalLink size={10} />
-                                    </a>
-                                    <a 
-                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/scripts/normalize-audio.md" 
-                                        target="_blank" 
-                                        rel="noreferrer"
-                                        className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
-                                    >
-                                        Audio Scripts <ExternalLink size={10} />
-                                    </a>
-                                    <a 
-                                        href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md#4-the-descriptor-schema-spotykach-project10" 
-                                        target="_blank" 
-                                        rel="noreferrer"
-                                        className="flex items-center justify-between p-2.5 rounded bg-black/40 hover:bg-black/60 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-all duration-200 no-underline"
-                                    >
-                                        JSON Schema Spec <ExternalLink size={10} />
-                                    </a>
-                                </div>
-                            </div>
-
-                            {/* Artists Guidelines */}
                             <div className="space-y-4 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">🎨</span> 1. Contributing a Sample Pack — what to have ready
+                                    <span className="text-lg">🎨</span> A sample pack
+                                </h4>
+                                <ul className="list-disc list-inside space-y-1.5 text-sm text-gray-300 bg-black/20 p-5 rounded-lg border border-gray-800">
+                                    <li>Good-quality WAV or FLAC. We normalize and convert them later; the tool leaves your files as they are.</li>
+                                    <li>At least 10 sounds. Subfolders become categories.</li>
+                                    <li>The device plays the first 42 seconds. Longer files are fine.</li>
+                                    <li>A landscape cover image, at least 1200×800.</li>
+                                    <li>Your links (usernames are enough) and a licence.</li>
+                                </ul>
+                                <p className="text-xs text-gray-400">You don&apos;t need a Spotykach for this, or to know the app.</p>
+                            </div>
+
+                            <div className="space-y-4 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">🎛️</span> A preset
+                                </h4>
+                                <ul className="list-disc list-inside space-y-1.5 text-sm text-gray-300 bg-black/20 p-5 rounded-lg border border-gray-800">
+                                    <li>From a Studio project: <strong className="text-white">Export ▸ Prepare a submission</strong>.</li>
+                                    <li>From packs in the app: pool sounds in the Sample Browser, press <strong className="text-white">Send to the submission tool</strong>, and arrange the grid there.</li>
+                                    <li>Using sounds of your own? Send them as a pack with it, so the preset can find them.</li>
+                                </ul>
+                                <p className="text-xs text-gray-400">
+                                    Only sharing with a friend? Studio&apos;s <strong className="text-gray-200">Export ▸ Project Preset</strong> is enough;
+                                    they open it with <strong className="text-gray-200">Import</strong>.
+                                </p>
+                            </div>
+
+                            <div className="space-y-4 border-t border-gray-800 pt-6">
+                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
+                                    <span className="text-lg">📦</span> What you get
                                 </h4>
                                 <p className="text-sm leading-relaxed">
-                                    Guest artists contributing their first sample pack <strong className="text-white">do not
-                                    need to own a device, and do not need to know this app.</strong> The tool asks for each of
-                                    these at the moment it needs them and saves your draft as you go, so this is a packing
-                                    list rather than homework.
+                                    One ZIP with everything we need: your details, the licence, your preset and your audio, untouched.
+                                    Keep it. Drop it back into the tool to pick up where you left off. The last step can also build an
+                                    <code className="mx-1">SK/</code>folder, so you can try it on your own card first.
                                 </p>
-                                <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
-                                    <h5 className="font-bold text-white flex items-center gap-2">
-                                        <AlertTriangle size={14} className="text-synthux-orange" />
-                                        Audio & Hardware Guidelines:
-                                    </h5>
-                                    <ul className="list-disc list-inside space-y-2 text-gray-300">
-                                        <li><strong>Your audio:</strong> high-quality 24-bit <code>.wav</code> or <code>.flac</code>. Maintainers normalize to −1 dB, convert to FLAC for streaming and sanitize filenames — the tool itself never re-encodes what you give it.</li>
-                                        <li><strong>How many:</strong> ten at the least, and a hundred before the tool says anything. A pack gets its own page with cover art, a bio and a licence, which three sounds cannot fill; a hundred is a conversation about categories, not a refusal.</li>
-                                        <li><strong>Duration:</strong> the hardware plays the first <strong>42 seconds</strong> of a sample. Longer files are welcome and simply flagged — the editor shows all of a file, so users can pick a different part of it.</li>
-                                        <li><strong>Organization:</strong> subfolder names become the category chips in the browser (Drums, FX, Melodies). No subfolders means everything lands under <em>General</em>.</li>
-                                        <li><strong>Cover image:</strong> landscape (approx. 3:2, 4:3 or 16:9, min 1200×800px). It runs as a wide hero banner across the pack's page.</li>
-                                        <li><strong>Your links:</strong> usernames, not URLs. Eleven platforms are built in and the tool assembles the addresses; paste a whole URL in and it unwraps it.</li>
-                                        <li><strong>A licence:</strong> CC0, CC-BY, CC-BY-SA, CC-BY-NC, the usual "free for music, no resale as samples" terms, or your own wording.</li>
-                                    </ul>
-                                </div>
                             </div>
 
-                            {/* Users Guidelines */}
                             <div className="space-y-4 border-t border-gray-800 pt-6">
                                 <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">🎛️</span> 2. Contributing a Preset — a layout, not a library
-                                </h4>
-                                <p className="text-sm leading-relaxed">
-                                    A preset is which sample sits in which slot, plus what you have to say about each tape.
-                                    Same tool, two ways in:
-                                </p>
-                                <div className="space-y-2 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
-                                    <ol className="list-decimal list-inside space-y-2 text-gray-300">
-                                        <li><strong>From a project you already built:</strong> open it in Studio and choose <strong>Export ▸ Prepare a submission</strong>. Slots, config and notes all come across.</li>
-                                        <li><strong>From packs already in the app:</strong> pool the samples in the Sample Browser and press <strong>Send to the submission tool</strong>. Build the 6×6 grid there — slots drag the way Studio's do, and Ctrl or Alt copies instead of moving.</li>
-                                    </ol>
-                                </div>
-                                <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
-                                    <ul className="list-disc list-inside space-y-2 text-gray-300">
-                                        <li><strong>You never type a dependency list.</strong> The tool works out which packs a preset needs from whatever ends up in the slots, so one mixing your own sounds with Hainbach's declares both.</li>
-                                        <li><strong>A preset holds paths, not audio.</strong> A slot pointing at a recording of your own only resolves once that recording is published — so using your own sounds means the pack half comes with it. The tool requires that, rather than letting the preset arrive with holes in exactly the slots you cared about.</li>
-                                        <li><strong>The pack half is optional.</strong> Thirty-six slots arranged out of packs already in the app is a complete submission with no audio to send at all.</li>
-                                        <li><strong>Several layouts, one pack.</strong> A submission can carry more than one preset over the same audio, rather than sending the files twice.</li>
-                                    </ul>
-                                </div>
-                                <div className="bg-synthux-green/10 border border-synthux-green/30 p-4 rounded-lg text-xs text-gray-300 leading-relaxed">
-                                    <strong className="text-synthux-green block mb-1 text-sm">Just sending it to one person?</strong>
-                                    Then you need none of this — no licence, no bio, nobody's permission. Use Studio's{' '}
-                                    <strong className="text-gray-200">Export ▸ Project Preset</strong> (the settings-only{' '}
-                                    <code>.json</code> if you both have the same packs, the full backup <code>.zip</code> if it
-                                    uses audio of your own) and they open it with <strong className="text-gray-200">Import</strong>.
-                                </div>
-                                <div className="bg-black/20 border border-gray-800 p-4 rounded-lg text-xs text-gray-400 leading-relaxed">
-                                    <strong className="text-gray-200 block mb-1 text-sm">Hear it on the hardware first</strong>
-                                    The last step also builds a ready-to-copy <code>SK/</code> folder for your card, from the
-                                    same draft — the best check there is on a pack before you send it. That folder is yours; it
-                                    is not part of the submission.
-                                </div>
-                            </div>
-
-                            {/*
-                              * What comes back out. This replaced a copy-paste template that asked
-                              * for the artist name, the licence, the categories and the cover — every
-                              * one of which the form now asks for at the moment it needs it. A second
-                              * copy of the same fields was a second copy to keep true.
-                              */}
-                            <div className="space-y-4 border-t border-gray-800 pt-6">
-                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">📦</span> 3. What the Tool Hands You
-                                </h4>
-                                <p className="text-sm leading-relaxed">
-                                    <strong className="text-white">One archive</strong>, named after your pack. There is no
-                                    template to fill in and no checklist to keep track of: the review step says what is still
-                                    missing while you are there to fix it.
-                                </p>
-                                <div className="space-y-3 bg-black/20 p-5 rounded-lg border border-gray-800 text-sm">
-                                    <ul className="list-disc list-inside space-y-2 text-gray-300">
-                                        <li>A covering letter, your details, and the licence written out in full.</li>
-                                        <li>The finished catalogue entries — the JSON a maintainer would otherwise have had to write by hand from your message.</li>
-                                        <li>Your preset descriptors and their artwork, if you made any.</li>
-                                        <li>Your audio under <code>audio/</code>, categories as folders, <strong className="text-gray-200">untouched</strong> — so normalization happens from your masters. Filenames can be your originals or the titles you typed in the tool.</li>
-                                    </ul>
-                                </div>
-                                <div className="bg-synthux-blue/10 border border-synthux-blue/30 p-4 rounded-lg text-xs text-gray-300 leading-relaxed">
-                                    <strong className="text-synthux-blue block mb-1 text-sm">Keep the archive.</strong>
-                                    Drop it back into the tool on any machine and the whole form comes back — files, titles,
-                                    categories, details, links, licence, preset, notes, and the step you were on. That is how
-                                    you pick a submission up after clearing your browser, or change one title six months later.
-                                </div>
-                            </div>
-
-                            {/* Where to send it — the one thing both guides never said */}
-                            <div className="space-y-4 border-t border-gray-800 pt-6">
-                                <h4 className="text-base font-bold text-white flex items-center gap-2 font-header">
-                                    <span className="text-lg">📮</span> 4. Where to Send It
+                                    <span className="text-lg">📮</span> Where to send it
                                 </h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-1">
                                         <strong className="text-white text-sm block">Discord</strong>
                                         <p className="text-xs text-gray-400">
-                                            <code className="text-synthux-blue">{DISCORD_HANDLE}</code> is the easiest
-                                            route, and the best one for questions before you start.
+                                            <code className="text-synthux-blue">{DISCORD_HANDLE}</code>, also for questions before you start.
                                         </p>
                                     </div>
                                     <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-1">
                                         <strong className="text-white text-sm block">Email</strong>
                                         <p className="text-xs text-gray-400">
-                                            <a
-                                                href={submissionMailto()}
-                                                className="text-synthux-blue hover:underline break-all"
-                                            >
-                                                {submissionEmail()}
-                                            </a>
+                                            <a href={submissionMailto()} className="text-synthux-blue hover:underline break-all">{submissionEmail()}</a>
                                         </p>
                                     </div>
                                 </div>
                                 <p className="text-xs text-gray-400 leading-relaxed">
-                                    <strong className="text-gray-200">One link, not a pile of attachments.</strong> Put the
-                                    archive on WeTransfer, Drive or Dropbox and send the link. Nothing is uploaded from this
-                                    app, so the link has to come from you — a preset-only submission carries no audio and is
-                                    usually small enough to attach to the message directly. Expect a reply rather than silence.
+                                    Share the ZIP as a link (WeTransfer, Drive, Dropbox). A preset without audio is small enough to attach.
                                 </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-gray-800 pt-6 text-xs">
+                                <button onClick={copyGuideLink} title={submissionGuideLink()}
+                                    className="flex items-center justify-between p-3 rounded-lg bg-black/20 hover:bg-black/40 border border-gray-800 hover:border-synthux-blue/40 text-gray-300 hover:text-white transition-colors text-left">
+                                    {linkCopied ? 'Link copied' : 'Copy a link to this guide'} {linkCopied ? <Check size={12} className="text-synthux-green" /> : <Link2 size={12} />}
+                                </button>
+                                <a href="https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/public/presets/README.md" target="_blank" rel="noreferrer"
+                                    className="flex items-center justify-between p-3 rounded-lg bg-black/20 hover:bg-black/40 border border-gray-800 hover:border-synthux-pink/40 text-gray-300 hover:text-white transition-colors no-underline">
+                                    For maintainers: presets, scripts, schema <ExternalLink size={12} />
+                                </a>
                             </div>
                         </div>
                     )}

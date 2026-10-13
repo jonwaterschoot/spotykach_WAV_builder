@@ -2,9 +2,9 @@
 
 [![Live Application](https://img.shields.io/badge/Live_App-Open-23E073?style=for-the-badge)](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
 
-> **⚠️ Desktop Only:** This application is optimized for **Desktop Chrome/Edge** browsers. It is **not supported on mobile devices** due to the complex audio processing and file system interactions.
+> **Desktop Chrome or Edge recommended.** Browse Samples works on a phone; the other parts open folders on your drive or lay out grids and waveforms a phone screen can't hold.
 
-A specialized tool for preparing audio files for the **Synthux Spotykach Looper playground**. It streamlines the process of converting, trimming, and organizing samples and projects to meet the strict firmware requirements (48kHz Stereo WAV).
+A specialized tool for preparing audio files for the **Synthux Spotykach Looper playground**. It streamlines the process of converting, trimming, and organizing samples and projects to meet the strict firmware requirements (48 kHz stereo, 32-bit float WAV).
 
 ![WAVbuilder_screenshot-tape-notes](public/img/screenshots/WAVbuilder_screenshot-tape-notes.png)
 
@@ -12,18 +12,28 @@ Core concept: allow to either import audio files recorded with Spotykach or make
 
 Spotykach has 6 tapes, each tape has 6 slots. Each slot can hold a mono or stereo sample. (only the first 42 seconds of each sample are used)
 
-This app allows you to save these sets of tapes as a project, and load them later. You can also sync them with your Spotykach SD card.
+## Where to start
 
-The app has options to write notes that live inside the project. Make notes on your tapes or a general project note. These notes are saved in the project.json file.
+The app opens on a hub, grouped by what you came to do:
 
-A config.txt file is also created and saved in the project. This file contains the configuration for the Spotykach hardware. You can edit this file in the app, and sync it with your Spotykach SD card. For now it is limited to just a few midi settings - testing the waters.
+-   **Get sounds onto your Spotykach**
+    -   **Browse Samples**: listen through the sample packs, collect what you like, and download it as a ready card (6×6) or as loose files. No setup; works on a phone.
+    -   **Preset to SD Card**: a ready-made card from a curated set, written straight to your SD card.
+-   **Make your own set**
+    -   **Studio**: the full workspace. Projects of 6 tapes × 6 slots with notes, the waveform editor, and building and syncing the card. Needs a work folder on your drive.
+    -   **Edit One File**: Studio's editor for a single file, no project needed.
+-   **Tools & extras**
+    -   **Device Config**: edit the Spotykach's `config.txt` (MIDI channels, preloading, transport, slice mode).
+    -   **Sample Mangler**: random snippets from the packs or your own files, joined into one 42 s file.
+-   **Submit a pack**: turn your own sounds into a sample pack or preset for this app.
 
 ## Features
 
--   **SD Card build**: Build SK/ folders directly to the SD card containing config.txt and WAV files.
--   **SD Card project backup**: Sync projects directly with the Spotykach hardware SD card using the File System Access API (Chrome/Edge).
--   **Audio Processing**: Drag and drop any audio format with automatic conversion to the required 48kHz 16-bit Stereo WAV format.
--   **Tape-Based Organization**: Manage samples across 6 color-coded "Tapes" with 6 slots each that mirror the physical hardware interface.
+-   **SD card build and sync**: build the `SK/` folder straight onto the card (File System Access API, Chrome/Edge), or import a card into a project. The preview shows every slot's fate before anything is written, and recognises what the project wrote before.
+-   **USB transfer (beta)**: with the [1.4.0 beta firmware](https://github.com/Synthux-Academy/Spotykach/releases/tag/v.1.4.0.b1), reach the card while it stays in the Spotykach, through its rear USB port. Turn it on in Settings ▸ System. The card reader is faster (about 35 s per full slot over USB); connect directly to a USB-A port, not through a hub.
+-   **Audio Processing**: drag and drop any audio format, with automatic conversion to 48 kHz stereo 32-bit float WAV.
+-   **Tape-Based Organization**: 6 color-coded tapes with 6 slots each, mirroring the hardware, with notes per tape and per project in `project.json`.
+-   **Device settings**: `config.txt` is kept in the project and written to the card with it.
 
 
 ![WAVbuilder_screenshot-editorEQ](public/img/screenshots/WAVbuilder_screenshot-editorEQ.png)
@@ -40,11 +50,14 @@ A config.txt file is also created and saved in the project. This file contains t
     -   **Limiter**: Ceiling limiter to prevent clipping and control peak output level.
     -   **Normalize**: Boost or lower the file's peak or RMS level to a target value.
     -   **Cutter**: Cut out unwanted sections and merge remaining pieces with a crossfade.
-    -   **Slicer**: Divide audio into up to 32 slices with keyboard/MIDI auditioning. (not yet implemented on hardware)
+    -   **Slicer**: Up to 255 slices with keyboard/MIDI auditioning. They reach the card as cue points, which the Spotykach's slice mode plays.
     -   **Stereo**: split stereo files into two mono files with visual feedback of the two channels.
+    -   **Mangler**: a new take from random snippets of the open file, with a cue point at each snippet.
 -   **Sample Browser**:
     -   **Curated Packs**: Browse and import community-contributed sample packs.
+    -   **Open archives**: search Openverse, Wikimedia Commons, the Internet Archive, NASA and Freesound, filtered by licence; each sound keeps its author and licence.
     -   **Library Management**: Build a persistent user library and pull samples from other local projects.
+-   **Sample Mangler**: random snippets from a pool of sources joined into one file of up to 42 s, with seeds, pitch detection and licences that follow the snippets used.
 -   **Project Portability**: Save and restore work states via Project JSON or create full backups to local storage and SD cards.
 
 ![WAVbuilder_screenshot-editorCutter](public/img/screenshots/WAVbuilder_screenshot-editorCutter.png)
@@ -57,7 +70,9 @@ This project is built using:
 -   **[Vite](https://vitejs.dev/)**: Build tool and dev server.
 -   **[Tailwind CSS](https://tailwindcss.com/)**: Styling.
 -   **[WaveSurfer.js](https://wavesurfer.xyz/)**: Audio visualization and manipulation.
--   **Google Deepmind Antigravity**: Experimental agentic AI used for development.
+-   **[@synthuxacademy/spotykach-transfer](https://github.com/Synthux-Academy/Spotykach/tree/uploader/web/spotykach-transfer)**: Synthux's own package. It writes every slot file (the same encoder as the firmware's uploader page) and runs USB transfer.
+-   **[ffmpeg.wasm](https://ffmpegwasm.netlify.app/)**: Converting audio formats the browser can't decode, served from this origin.
+-   Written with LLM assistance: set up in Google Antigravity, continued with Claude Code.
 
 ## Getting Started
 
@@ -82,6 +97,15 @@ This project is built using:
     npm run build
     ```
 
+5.  **Checks** (no browser needed)
+    ```bash
+    npm run check:wav      # WAV headers against ports of both firmwares' parsers
+    npm run check:slots    # slot files from the transfer package
+    npm run check:card     # export and sync end to end, card reader and USB
+    npm run check:mangler
+    npm run check:online
+    ```
+
 ## Live Demo
 
 Check out the live version here: [https://jonwaterschoot.github.io/spotykach_WAV_builder/](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
@@ -94,9 +118,15 @@ uploaded, and there is no analytics or telemetry of any kind.
 
 Rendering the page contacts no third party: **fonts are self-hosted** from
 [`public/fonts/`](public/fonts/) under the SIL Open Font License 1.1, and the ffmpeg core is
-served from this origin rather than a CDN. The only outbound requests the app makes on your
-behalf are downloading sample and preset packs from Cloudflare R2, and those happen only when
-you choose to add one.
+served from this origin rather than a CDN. The app makes outbound requests on your behalf only
+when you ask for something:
+
+-   downloading sample and preset packs, from Cloudflare R2;
+-   searching open archives: Openverse, Wikimedia Commons, the Internet Archive and NASA directly,
+    and Freesound through a small Cloudflare Worker that holds a shared key (or directly, with
+    your own key).
+
+USB transfer talks only to the Spotykach on your desk, through the browser's serial port access.
 
 ## Publishing (maintainers)
 
@@ -120,11 +150,9 @@ Full detail in [docs/deployment_guidelines.md](docs/deployment_guidelines.md).
 
 - **Onboarding**: Improved first-run flow explaining projects and tapes before entering the app.
 - **Editor UX**: Clearer destructive-workflow messaging, "Done" close button, improved history panel.
-- **Project Cleanup**: Remove unused/history files from a project; keep only originals and active samples.
 - **History & Trashcan** *(under consideration)*: Temporary trashcan for deleted files; Undo/Redo for editor actions.
 - **Right-Click Context Menu**: Quick actions (Edit, Move, Delete, Show in browser) on sample cards.
 - **SD Card: Prepare empty project**: Erase/format SD card with warnings and content comparison.
-- **config.txt download**: Download and send config.txt directly to SD card without a full sync.
 - **Sync User Library**: Sync personal sample library to SD card *(almost done — needs final testing)*.
 - **Offline Sample Packs**: Download GitHub sample packs for offline use.
 
@@ -132,7 +160,6 @@ Full detail in [docs/deployment_guidelines.md](docs/deployment_guidelines.md).
 
 - **Desktop App**: Electron/PWA wrapper for native dialogs and offline use.
 - **Cloud Sync**: Google Drive/Dropbox integration?
-- **Simplified export-only tool**: Stripped-down version — open a file, convert, download. No project management.
 - **Mobile Optimization**: Improved layout for tablets/phones *(not a priority)*.
 
 ## Documentation & Guides
