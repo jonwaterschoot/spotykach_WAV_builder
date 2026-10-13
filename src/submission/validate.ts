@@ -63,9 +63,8 @@ export const issuesForFile = (
             level: 'warn',
             label: 'over 42s',
             detail:
-                `${file.duration.toFixed(1)}s. The hardware plays the first ${HARDWARE_MAX_SECONDS} ` +
-                'seconds; the rest is ignored. Users can still pick a different part of it in the editor, ' +
-                'so long files are welcome — this is only so you know what the device does with them.',
+                `${file.duration.toFixed(1)}s. The device plays the first ${HARDWARE_MAX_SECONDS} s. ` +
+                'That\'s fine; people can pick another part in the editor.',
         });
     }
 
@@ -74,7 +73,6 @@ export const issuesForFile = (
             level: 'error',
             label: 'no usable name',
             detail:
-                'Nothing survives once this title is reduced to the characters the firmware allows. ' +
                 'Give it a name with letters or numbers in it.',
         });
     }
@@ -84,8 +82,7 @@ export const issuesForFile = (
             level: 'warn',
             label: 'duplicate title',
             detail:
-                'Another file in this pack has the same title. They will be told apart by their ' +
-                'category, but two identical names in the browser are hard to choose between.',
+                'Another file in this pack has the same title.',
         });
     }
 
@@ -142,7 +139,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
             required: true,
             step: 2,
             hint: own.length === 0 && files.length > 0
-                ? 'Every file here comes from a pack that is already in the app. Add your own audio, or turn the sample pack off on step 1 and submit this as a preset.'
+                ? 'Every file here comes from a pack already in the app. Add your own audio, or untick the sample pack on step 1.'
                 : undefined,
         });
         requirements.push({
@@ -152,7 +149,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
             required: true,
             step: 2,
             hint: own.length > 0 && own.length < PACK_MINIMUM_SAMPLES
-                ? `${own.length} of ${PACK_MINIMUM_SAMPLES}. A pack gets its own page — cover, bio, links — and that many sounds cannot fill one. Add more, or see the note on step 1 about sharing a preset directly instead of publishing a pack.`
+                ? `${own.length} of ${PACK_MINIMUM_SAMPLES}. Add more, or see step 1 for sharing privately.`
                 : undefined,
         });
         requirements.push({
@@ -162,7 +159,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
             required: false,
             step: 2,
             hint: own.length > PACK_MAXIMUM_SAMPLES
-                ? `${own.length} is a lot to browse, to normalize and to categorise. Nothing stops you sending it — worth a word in the notes about how you would like it split, or trimming to the strongest ${PACK_MAXIMUM_SAMPLES}.`
+                ? `${own.length} is a lot. A note on how to split it helps, or keep the strongest ${PACK_MAXIMUM_SAMPLES}.`
                 : undefined,
         });
         requirements.push({
@@ -194,7 +191,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
         ok: filled(details.shortDescription),
         required: true,
         step: 3,
-        hint: 'One or two sentences — this is the line on the catalogue card.',
+        hint: 'One or two sentences for the pack\'s card.',
     });
     requirements.push({
         id: 'full',
@@ -202,7 +199,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
         ok: filled(details.fullDescription),
         required: false,
         step: 3,
-        hint: 'Shown in the pack’s info panel. Worth writing, not required.',
+        hint: 'Shown when someone opens the pack.',
     });
 
     if (wants.pack) {
@@ -212,7 +209,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
             ok: !!details.cover,
             required: false,
             step: 3,
-            hint: 'Without one the pack shows as a plain card until artwork is supplied.',
+            hint: 'Without one, the pack shows as a plain card.',
         });
     }
 
@@ -249,7 +246,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
                 ok: false,
                 required: true,
                 step: 5,
-                hint: 'You asked to send a preset on step 1. Name one and put a sample in a slot, or untick it there.',
+                hint: 'Name a preset and fill a slot, or untick the preset on step 1.',
             });
         }
 
@@ -275,7 +272,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
                 step: 1,
                 hint: wants.pack
                     ? undefined
-                    : `${ownInSlots.length} slot${ownInSlots.length === 1 ? '' : 's'} use audio of your own. A preset can only point at sounds that are published, so those have to travel as a sample pack — tick it on step 1. If you would rather not publish them, share the preset directly instead: Studio’s Export makes a backup ZIP that carries the audio with it.`,
+                    : `${ownInSlots.length} slot${ownInSlots.length === 1 ? '' : 's'} use audio of your own, so tick the sample pack on step 1. Or share the preset privately from Studio's Export.`,
             });
         }
 
@@ -287,23 +284,23 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
 
             requirements.push({
                 id: `preset-name-${p.id}`,
-                label: presets.length > 1 ? `${shown} — name` : 'Preset name',
+                label: presets.length > 1 ? `${shown}: name` : 'Preset name',
                 ok: filled(p.name),
                 required: true,
                 step: 5,
-                hint: filled(p.name) ? undefined : 'An unnamed preset has no id to be filed under.',
+                hint: undefined,
             });
             requirements.push({
                 id: `preset-slots-${p.id}`,
                 label: presets.length > 1
-                    ? `${shown} — slots (${usedSlots}/${GRID_CAPACITY})`
+                    ? `${shown}: slots (${usedSlots}/${GRID_CAPACITY})`
                     : `Slots filled (${usedSlots}/${GRID_CAPACITY})`,
                 ok: usedSlots > 0,
                 required: true,
                 step: 5,
                 hint:
                     usedSlots > 0 && usedSlots < GRID_CAPACITY
-                        ? 'Empty slots are allowed — they arrive on the card as empty slots.'
+                        ? 'Empty slots are fine.'
                         : undefined,
             });
         });
@@ -320,7 +317,7 @@ export const requirementsFor = (draft: SubmissionDraft): Requirement[] => {
             step: 5,
             hint: new Set(names).size === names.length
                 ? undefined
-                : 'Two presets share a name. They will be filed under different ids anyway, but nobody browsing them will be able to tell which is which.',
+                : 'Two presets share a name, so people can\'t tell them apart.',
         });
     }
 

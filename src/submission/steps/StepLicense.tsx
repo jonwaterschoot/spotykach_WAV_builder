@@ -58,7 +58,7 @@ export const StepLicense: React.FC<StepProps> = ({ draft, update, showToast }) =
         <StepPanel>
             <StepHeading title={wants.preset ? 'Licence and presets' : 'Licence'}>
                 {wants.pack
-                    ? 'How people may use your samples, said once and clearly, so nobody has to guess.'
+                    ? 'How people may use your samples.'
                     : 'The terms under which this preset is shared.'}
             </StepHeading>
 
@@ -95,9 +95,8 @@ export const StepLicense: React.FC<StepProps> = ({ draft, update, showToast }) =
             {wants.preset && (
                 <div className="mt-10 pt-8 border-t border-white/10">
                     <StepHeading title={presets.length > 1 ? 'The presets' : 'The preset'}>
-                        Which sample sits in which slot, and what to say about it. Empty slots are allowed — they
-                        arrive on the card empty. One pack can carry several layouts, and they all travel in the
-                        same submission.
+                        Which sample sits in which slot, and what to say about it. Empty slots are fine. One pack
+                        can have several presets.
                     </StepHeading>
 
                     <div className="space-y-3">
@@ -197,9 +196,8 @@ export const StepLicense: React.FC<StepProps> = ({ draft, update, showToast }) =
                     {presets.length > 1 && (
                         <div className="mt-5">
                             <Note>
-                                All {presets.length} travel in one submission, over the same pack, so the audio is
-                                sent once. Give them names people can tell apart: each is published separately and
-                                works out for itself which packs it needs.
+                                All {presets.length} go in one submission with the same audio. Give them names
+                                people can tell apart.
                             </Note>
                         </div>
                     )}

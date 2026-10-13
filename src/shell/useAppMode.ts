@@ -11,9 +11,9 @@ const MODES: readonly AppMode[] = ['hub', 'browse', 'presets', 'config', 'editor
 
 const isAppMode = (value: string): value is AppMode => (MODES as readonly string[]).includes(value);
 
-/** `#/browse?foo` → `browse`. Anything unrecognised (including empty) → `hub`. */
+/** `#/browse?foo` → `browse`, `#/submit#guide` → `submit`. Anything unrecognised (including empty) → `hub`. */
 export const modeFromHash = (hash: string): AppMode => {
-  const segment = hash.replace(/^#\/?/, '').split(/[/?]/)[0].toLowerCase();
+  const segment = hash.replace(/^#\/?/, '').split(/[/?#]/)[0].toLowerCase();
   if (!segment) return 'hub';
   return isAppMode(segment) ? segment : 'hub';
 };

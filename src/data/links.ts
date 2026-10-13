@@ -1,15 +1,6 @@
 /**
  * Outward-facing URLs and contact details, in one place.
- *
- * The submission guide is linked from the Presets door and from the help modal's
- * contribute tab, both of which now lead with the in-app tool at `#/submit` and keep
- * this as the read-before-you-start page
- * ([docs/presets-samples/submission-tool-plan.md](../../docs/presets-samples/submission-tool-plan.md)).
- * It is a GitHub URL rather than a route because the guide lives in the repo, not in
- * the app.
  */
-export const SUBMISSION_GUIDE_URL =
-    'https://github.com/jonwaterschoot/spotykach_WAV_builder/blob/main/docs/presets-samples/README.md';
 
 /**
  * The submission walkthrough, as a YouTube video id — `null` until one is shot.
@@ -24,6 +15,17 @@ export const SUBMISSION_GUIDE_URL =
  * third-party script runs in this app unless someone asks for it.
  */
 export const SUBMISSION_VIDEO_ID: string | null = null;
+
+/**
+ * The submission tool with its guide open on top: `#/submit#guide` (or `#/submit?guide`).
+ * Built from the current page, so it points at whichever copy of the app is open.
+ */
+export const submissionGuideLink = (): string =>
+    `${window.location.origin}${window.location.pathname}#/submit#guide`;
+
+/** True when the hash asks for the guide: `#/submit#guide` or `#/submit?guide`. */
+export const hashWantsGuide = (hash: string): boolean =>
+    /^#\/?submit(?:[?#&].*)?$/i.test(hash) && /[?#&]guide(?:[=&#]|$)/i.test(hash.replace(/^#/, ''));
 
 /** Public, and carries no spam cost — Discord won't take a DM from a stranger unasked. */
 export const DISCORD_HANDLE = 'jonwtr';

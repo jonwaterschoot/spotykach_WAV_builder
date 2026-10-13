@@ -318,7 +318,7 @@ export const PresetEditor: React.FC<PresetEditorProps> = ({ draft, preset, onCha
                         ? 'Taken from your pack. Give this preset its own image if it should look different in the list.'
                         : coverSource === 'none' && !packCover && draft.wants.pack
                             ? 'Add a cover on step 3 and it will be used here too, or drop an image for this preset alone.'
-                            : 'Landscape, 1200×800 or larger. Presets built on packs already in the app never borrow their artwork — that image belongs to whoever made it.'}
+                            : 'Landscape, 1200×800 or larger. A preset never uses another pack\'s artwork.'}
                 </span>
 
                 {coverIssues.length > 0 && (
@@ -419,8 +419,8 @@ export const PresetEditor: React.FC<PresetEditorProps> = ({ draft, preset, onCha
                                                             ? 'border-white/15 bg-synthux-panel hover:border-white/35 cursor-grab active:cursor-grabbing'
                                                             : 'border-white/5 bg-black/20 hover:border-white/20'}`}
                                             title={file
-                                                ? `${file.title} — drag to move, or drop on another slot to swap`
-                                                : `${slotLabel(index)} — empty`}
+                                                ? `${file.title}: drag to move, or onto another slot to swap`
+                                                : `${slotLabel(index)}: empty`}
                                         >
                                             <span className="flex items-center gap-1">
                                                 <span className={`w-1.5 h-1.5 rounded-full ${COLOR_MAP[color]}`} />
@@ -519,14 +519,13 @@ export const PresetEditor: React.FC<PresetEditorProps> = ({ draft, preset, onCha
                     <p className="mt-3 text-[11px] text-gray-600 leading-relaxed">
                         Drag a slot to move it. Dropping on a filled slot swaps the two; hold{' '}
                         <kbd className="px-1 py-0.5 rounded bg-white/10 text-gray-400 font-mono text-[10px]">Ctrl</kbd>{' '}
-                        to copy instead, so one sound can sit under two fingers.
+                        to copy instead.
                     </p>
 
                     {borrowedInSlots && (
                         <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-500">
                             <Link2 size={11} className="text-synthux-blue" />
-                            Slots marked like this use samples already published in the app. They are referenced
-                            where they live, not re-submitted.
+                            Marked slots use samples already in the app.
                         </p>
                     )}
 
@@ -545,8 +544,7 @@ export const PresetEditor: React.FC<PresetEditorProps> = ({ draft, preset, onCha
                             <StickyNote size={13} /> Notes
                         </p>
                         <p className="text-xs text-gray-500 leading-relaxed mb-4">
-                            Optional, and the part people remember. These travel with the preset and show up in
-                            the project when someone loads it.
+                            Optional. They show in the project when someone loads the preset.
                         </p>
 
                         <div className="mb-4">
@@ -613,7 +611,7 @@ export const PresetEditor: React.FC<PresetEditorProps> = ({ draft, preset, onCha
                             {requiredPacks.map(pack => (
                                 <code key={pack} className="text-gray-300 mx-0.5">{pack}</code>
                             ))}
-                            — worked out from the samples you placed, and written into the submission for you.
+                            , from the samples you placed.
                         </p>
                     )}
                 </>

@@ -56,7 +56,7 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
     const presetIds = useMemo(() => presetIdsFor(draft), [draft]);
     const sdPreset = sdPresetFor(draft);
 
-    const subject = `Spotykach submission — ${draft.details.name.trim() || presets[0]?.name.trim() || 'new pack'}`;
+    const subject = `Spotykach submission: ${draft.details.name.trim() || presets[0]?.name.trim() || 'new pack'}`;
 
     const downloadSubmission = async () => {
         setBusy('Preparing…');
@@ -66,7 +66,7 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
             setHasDownloaded(true);
             showToast(
                 count > 0
-                    ? `${fileName} — ${count} audio file${count === 1 ? '' : 's'} and the details.`
+                    ? `${fileName}: ${count} audio file${count === 1 ? '' : 's'} and the details.`
                     : `${fileName} downloaded.`,
                 'success',
             );
@@ -106,7 +106,7 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
             showToast(
                 missing.length
                     ? `SK folder downloaded, but ${missing.length} sample${missing.length === 1 ? '' : 's'} could not be fetched: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}. Those slots are empty.`
-                    : 'SK folder downloaded — unzip it onto your card.',
+                    : 'SK folder downloaded. Unzip it onto your card.',
                 missing.length ? 'warning' : 'success',
             );
         } catch (e) {
@@ -122,14 +122,14 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
             await navigator.clipboard.writeText(submissionEmail());
             showToast('Address copied.', 'success');
         } catch {
-            showToast('Copying failed — the address is on screen.', 'warning');
+            showToast('Couldn\'t copy. The address is on screen.', 'warning');
         }
     };
 
     return (
         <StepPanel>
             <StepHeading title="Review and send">
-                Everything below is built here in your browser. Nothing has been uploaded, and nothing will be.
+                Built here in your browser. Nothing is uploaded.
             </StepHeading>
 
             {/* The checklist */}
@@ -169,7 +169,7 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
 
             <Field
                 label="Anything to tell the maintainer"
-                hint="Goes into the submission as-is. Where the sounds came from, what you would like the pack called if the name is taken, anything unusual about the files."
+                hint="Where the sounds came from, a second name if yours is taken, anything unusual."
             >
                 <TextArea
                     value={draft.notes}
@@ -188,19 +188,18 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold">Your submission</p>
                                 <p className="mt-1 text-xs text-gray-400 leading-relaxed">
-                                    One archive with everything in it: the details, the file list, the licence
+                                    One ZIP with the details, the file list, the licence
                                     {presets.length === 1 && `, the preset (${presetIds.get(presets[0].id)}.json)`}
                                     {presets.length > 1 && `, ${presets.length} presets under presets/`}
                                     {draft.details.cover && ', your cover image'}
                                     {own.length > 0 && `, and all ${own.length} audio file${own.length === 1 ? '' : 's'} under audio/ with your categories as folders`}.
-                                    {own.length > 0 && ' The audio goes in exactly as you gave it, so the maintainer normalizes from your masters.'}
+                                    {own.length > 0 && ' Your audio goes in as you gave it.'}
                                 </p>
 
                                 {borrowed.length > 0 && (
                                     <p className="mt-2 text-xs text-gray-500 leading-relaxed">
-                                        The {borrowed.length} sample{borrowed.length === 1 ? '' : 's'} you reused from
-                                        packs already in the app {borrowed.length === 1 ? 'is' : 'are'} listed but not
-                                        included — your preset points at where they already live.
+                                        The {borrowed.length} sample{borrowed.length === 1 ? '' : 's'} from packs already
+                                        in the app {borrowed.length === 1 ? 'is' : 'are'} listed, not included.
                                     </p>
                                 )}
 
@@ -254,7 +253,7 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
                                 )}
                                 {warnings.length > 0 && missing.length === 0 && (
                                     <p className="mt-2 text-xs text-gray-500">
-                                        {warnings.length} optional thing{warnings.length === 1 ? '' : 's'} left out — that’s allowed.
+                                        {warnings.length} optional thing{warnings.length === 1 ? '' : 's'} left out. That's fine.
                                     </p>
                                 )}
                             </div>
@@ -269,11 +268,9 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold">SK folder for your card</p>
                                 <p className="mt-1 text-xs text-gray-400 leading-relaxed">
-                                    {sdSlotCount(draft)} slot{sdSlotCount(draft) === 1 ? '' : 's'}, converted to the
-                                    48 kHz WAV the hardware reads and laid out as it expects. Unzip it onto the card
-                                    and listen before you send anything. This is yours — it is not part of the
-                                    submission.
-                                    {borrowed.length > 0 && ' Samples borrowed from published packs are downloaded as the card is built, so this one needs a connection.'}
+                                    {sdSlotCount(draft)} slot{sdSlotCount(draft) === 1 ? '' : 's'}, ready for the
+                                    Spotykach. Unzip it onto your card to listen first. Not part of the submission.
+                                    {borrowed.length > 0 && ' Needs a connection, for the samples from published packs.'}
                                 </p>
                                 {presets.length > 1 && (
                                     <div className="mt-3">
@@ -317,9 +314,8 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
                 <div className="rounded-xl border border-white/10 bg-synthux-panel/60 p-4 mb-5">
                     <p className="text-sm font-bold mb-1">Where to send it</p>
                     <p className="text-xs text-gray-400 leading-relaxed mb-3">
-                        There is no upload here and no form. Put the archive on WeTransfer, Drive or Dropbox
-                        and send the link — Discord is the easiest, and the best place to ask something before
-                        you start. A small submission with no audio in it will attach to a message directly.
+                        Put the ZIP on WeTransfer, Drive or Dropbox and send the link. A submission without
+                        audio is small enough to attach.
                     </p>
 
                     <div className="flex flex-wrap gap-2">
@@ -349,33 +345,11 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
                 </div>
             )}
 
-            {own.length > 0 && (
-                <Note tone="warn">
-                    <strong>Nothing is uploaded from this app.</strong> The {formatBytes(totalBytes)} archive is
-                    built here, in your browser, and downloaded to your machine — putting it somewhere shareable
-                    and sending the link is the one part only you can do.
-                </Note>
-            )}
-
-            {draft.wants.pack && (
-                <div className="mt-5">
-                    <Note>
-                        <strong className="text-gray-200">What happens to it.</strong> Once accepted, your pack
-                        appears in the app's Sample Browser under your name, with its own link you can share, and
-                        as a full-pack download on its page. The audio is converted to FLAC there, which is
-                        lossless and about half the size; anything built for a card stays{' '}
-                        <code className="text-gray-400">.wav</code>, because that is all the hardware reads.
-                    </Note>
-                </div>
-            )}
-
             {hasDownloaded && (
                 <div className="mt-5">
                     <Note>
-                        <strong className="text-gray-200">Keep that archive.</strong> Your draft stays in this
-                        browser until you clear it — but the archive is the real copy: drop it back into step 2
-                        on any machine and the whole form comes back, files, licence, preset and all. That is how
-                        you pick this up again after clearing your browser, or fix one title six months from now.
+                        <strong className="text-gray-200">Keep the ZIP.</strong> Drop it back in on step 2, on any
+                        computer, to pick up where you left off.
                     </Note>
                 </div>
             )}

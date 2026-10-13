@@ -1,5 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, BookOpen, Check, ChevronLeft, ChevronRight, Loader, Trash2 } from 'lucide-react';
+import { hashWantsGuide } from '../data/links';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
@@ -69,7 +70,14 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
      * what is being asked of me before I start. That answer was only ever in Studio's
      * help modal, behind the one door this tool exists so you don't have to open.
      */
-    const [showGuide, setShowGuide] = useState(false);
+    const [showGuide, setShowGuide] = useState(() => hashWantsGuide(window.location.hash));
+    const closeGuide = () => {
+        setShowGuide(false);
+        // Arrived through a guide link: drop the #guide so a reload opens the form.
+        if (hashWantsGuide(window.location.hash)) {
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/submit`);
+        }
+    };
     const { toasts, showToast, removeToast } = useToasts();
     const { activeFileId, lastActiveFileId, pause } = useAudioPlayer();
 
@@ -284,7 +292,7 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
                 <div className="min-w-0 text-center">
                     <span className="text-xs font-bold uppercase tracking-[0.2em] text-synthux-blue">Submit</span>
                     <span className="hidden md:inline text-[11px] text-gray-500 ml-3">
-                        Nothing is uploaded — this builds files for you to send.
+                        Nothing is uploaded. You get files to send yourself.
                     </span>
                 </div>
 
@@ -293,7 +301,7 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
                         onClick={() => setShowGuide(true)}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
                             text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
-                        title="The written guide — what to have ready, and what happens after you send"
+                        title="What to have ready, and where to send it"
                     >
                         <BookOpen size={14} />
                         <span className="hidden sm:inline">Guide</span>
@@ -417,7 +425,7 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
                 <ConfirmModal
                     isOpen
                     title="Clear this draft?"
-                    message="Everything typed here, and every file brought in, is deleted from this browser. There is no undo — and nothing was ever sent anywhere, so there is nothing to withdraw."
+                    message="Everything typed and every file added is removed from this browser. This can't be undone."
                     confirmLabel="Clear it"
                     onConfirm={handleDiscard}
                     onClose={() => setShowDiscard(false)}
@@ -427,7 +435,7 @@ export const SubmitMode: React.FC<SubmitModeProps> = ({ onExitToHub }) => {
 
             {showGuide && (
                 <Suspense fallback={null}>
-                    <AboutHelpModal initialTab="contribute" onClose={() => setShowGuide(false)} />
+                    <AboutHelpModal initialTab="contribute" onClose={closeGuide} />
                 </Suspense>
             )}
 

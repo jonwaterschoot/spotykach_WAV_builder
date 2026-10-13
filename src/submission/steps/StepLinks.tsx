@@ -45,8 +45,7 @@ export const StepLinks: React.FC<StepProps> = ({ draft, update }) => {
     return (
         <StepPanel>
             <StepHeading title="Links">
-                Just your username — the address is built for you. Everything filled in here shows on your pack’s
-                page in the app. All optional, and skipping the lot is fine.
+                Just your username; the address is built for you. These show on your pack's page. All optional.
             </StepHeading>
 
             <Field label="Website" hint="Anything that isn’t on the list below.">
@@ -97,7 +96,7 @@ export const StepLinks: React.FC<StepProps> = ({ draft, update }) => {
 
                 {links.custom.length === 0 ? (
                     <p className="text-xs text-gray-600">
-                        A label and an address — a Linktree, a label page, a full-pack download.
+                        A label and an address, like a Linktree or a label page.
                     </p>
                 ) : (
                     <div className="space-y-2">
@@ -152,9 +151,8 @@ export const StepLinks: React.FC<StepProps> = ({ draft, update }) => {
 
             <div className="mt-5">
                 <Note>
-                    <strong className="text-gray-200">Discord is for reaching you, not for linking.</strong> It
-                    goes in the submission notes so the maintainer can ask you something, and never on a public
-                    page.
+                    <strong className="text-gray-200">Discord is only for reaching you.</strong> It goes in the
+                    submission, never on a public page.
                 </Note>
             </div>
         </StepPanel>

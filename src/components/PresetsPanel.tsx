@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Play, Download, Loader, ChevronRight, Package, Check, HardDrive, AlertTriangle, ExternalLink, Send } from 'lucide-react';
+import { X, Play, Download, Loader, ChevronRight, Package, Check, HardDrive, AlertTriangle, BookOpen, Send } from 'lucide-react';
 import type { PresetManifestEntry } from '../data/samplePacks';
-import { DISCORD_HANDLE, SUBMISSION_GUIDE_URL } from '../data/links';
+import { DISCORD_HANDLE } from '../data/links';
 import { hashForMode } from '../shell/useAppMode';
 import { presetGradient } from '../utils/presetGradients';
 import { canWriteToSDDirectly, type PresetProgress } from '../utils/presetLoader';
@@ -541,8 +541,8 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                         <div className="min-w-0">
                             <p className="text-sm font-bold text-gray-200">Want yours here?</p>
                             <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                                Presets are projects built in Studio; sample packs come from artists. Either way the
-                                submission tool collects what is needed and hands you the files to send over Discord
+                                Presets are projects built in Studio; sample packs come from artists. The submission
+                                tool gathers what's needed into one ZIP to send over Discord
                                 (<span className="text-gray-400">{DISCORD_HANDLE}</span>) or email.
                             </p>
                         </div>
@@ -556,13 +556,11 @@ export const PresetsPanel: React.FC<PresetsPanelProps> = ({
                                 <Send size={12} /> Submit
                             </a>
                             <a
-                                href={SUBMISSION_GUIDE_URL}
-                                target="_blank"
-                                rel="noreferrer"
+                                href="#/submit#guide"
                                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold uppercase
                                     tracking-wide text-gray-500 hover:text-white transition-colors no-underline"
                             >
-                                Read first <ExternalLink size={12} />
+                                Read first <BookOpen size={12} />
                             </a>
                         </div>
                     </div>

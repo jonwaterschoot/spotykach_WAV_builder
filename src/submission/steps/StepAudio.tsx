@@ -96,7 +96,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
         setBusy(`Reading ${entries.length} file${entries.length === 1 ? '' : 's'}…`);
         try {
             const { files, rejected } = await intakeAudio(entries, (done, total, name) => {
-                setBusy(`Reading ${done + 1} of ${total}${name ? ` — ${name}` : ''}`);
+                setBusy(`Reading ${done + 1} of ${total}${name ? `: ${name}` : ''}`);
             });
 
             // Same name and same size is the same file, most often a folder dropped
@@ -154,7 +154,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
         update(restored.draft);
         showToast(
             restored.missing.length
-                ? `Draft restored. ${restored.missing.length} audio file${restored.missing.length === 1 ? '' : 's'} were not in the archive — add them again.`
+                ? `Draft restored. ${restored.missing.length} audio file${restored.missing.length === 1 ? '' : 's'} weren't in the archive. Add them again.`
                 : 'Draft restored from the archive.',
             restored.missing.length ? 'warning' : 'success',
         );
@@ -309,8 +309,8 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
         <StepPanel>
             <StepHeading title={draft.wants.pack ? 'The audio' : 'The samples your preset uses'}>
                 {draft.wants.pack
-                    ? 'Drop a folder in to take all of it, or browse one and pick. Subfolder names become the categories people filter by, and the titles below are what they will see — play anything, edit anything, rename anything that came out wrong.'
-                    : 'A preset points at samples that are already in the app. Drop in an exported project to read its layout, or add audio if some of it is your own.'}
+                    ? 'Add a whole folder, or browse one and pick. Subfolders become categories, and the titles below are what people see. Play, edit or rename anything.'
+                    : 'A preset uses samples already in the app. Drop in a project export to read its layout, or add audio of your own.'}
             </StepHeading>
 
             <div
@@ -329,14 +329,13 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                         <Upload size={22} className="mx-auto mb-3 text-gray-500" />
                         <p className="text-sm text-gray-300 font-bold">
                             {draft.files.length > 0
-                                ? 'Add more — dropping again tops up the list'
+                                ? 'Add more'
                                 : <>Drop a folder, an <code className="text-gray-400">SK/</code> folder, some files, or a WAV.builder export</>}
                         </p>
                         <p className="mt-1 text-xs text-gray-500">
                             {draft.files.length > 0
-                                ? 'Nothing here is replaced. Files already in the list are recognised and skipped, so a folder dropped twice does not double up — and you can keep filling slots on step 5 as you go.'
-                                : <>Audio stays on your machine. A <code className="text-gray-400">.json</code> or{' '}
-                                    <code className="text-gray-400">.zip</code> preset export is read for its layout.</>}
+                                ? 'Files already in the list are skipped.'
+                                : 'Audio stays on your machine.'}
                         </p>
                         {/*
                           * The archive route, spelled out rather than implied.
@@ -347,7 +346,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                           */}
                         <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-synthux-turquoise">
                             <RotateCcw size={12} className="shrink-0" />
-                            Dropping a <code>-submission.zip</code> from this tool restores the whole form
+                            A <code>-submission.zip</code> from this tool brings back the whole form
                         </p>
                         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                             <button
@@ -460,8 +459,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                         </Suspense>
                     </div>
                     <p className="px-4 py-2 border-t border-white/10 text-[11px] text-gray-600 leading-relaxed">
-                        Folders here become categories exactly as they do on a whole-folder drop. Nothing is copied
-                        anywhere until you add it.
+                        Folders become categories here too.
                     </p>
                 </div>
             )}
@@ -485,9 +483,8 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                 <div className="mt-5 rounded-xl border border-synthux-blue/25 bg-synthux-blue/5 p-4
                     flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs text-gray-400 leading-relaxed min-w-0">
-                        <strong className="text-gray-200">Using samples that are already in the app?</strong>{' '}
-                        Collect them in Browse and press <em>Send to the submission tool</em>. They come back as
-                        references — your preset points at where they already live, and they are never re-uploaded.
+                        <strong className="text-gray-200">Using samples already in the app?</strong>{' '}
+                        Collect them in Browse and press <em>Send to the submission tool</em>.
                     </p>
                     <a
                         href={hashForMode('browse')}
@@ -516,13 +513,12 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                     <ul className="space-y-1.5 text-xs text-gray-400">
                         {draft.rejected.map((entry, i) => (
                             <li key={`${entry.fileName}-${i}`}>
-                                <span className="font-mono text-gray-300">{entry.fileName}</span> — {entry.reason}
+                                <span className="font-mono text-gray-300">{entry.fileName}</span>: {entry.reason}
                             </li>
                         ))}
                     </ul>
                     <p className="mt-3 pt-3 border-t border-synthux-red/15 text-[11px] text-gray-500 leading-relaxed">
-                        Left out of the pack, and listed in the submission so the maintainer knows they were meant
-                        to be there. Project sidecars and stray non-audio files are safe to ignore.
+                        Left out, and listed in the submission. Non-audio files can be ignored.
                     </p>
                 </div>
             )}
@@ -602,7 +598,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                                                 ${isThisPlaying
                                                     ? 'bg-synthux-green text-black'
                                                     : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}
-                                            title={playable ? (isThisPlaying ? 'Pause' : 'Play') : 'Nothing to play — this row points at a published sample'}
+                                            title={playable ? (isThisPlaying ? 'Pause' : 'Play') : 'A published sample, nothing to play here'}
                                         >
                                             {isThisPlaying
                                                 ? <Pause size={13} fill="currentColor" />
@@ -623,7 +619,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                                                 <span className="mt-1 inline-flex items-center gap-1.5 text-[10px] font-bold
                                                     uppercase tracking-widest text-synthux-blue">
                                                     <Link2 size={11} />
-                                                    From {file.origin || 'an existing pack'} — referenced, not submitted
+                                                    From {file.origin || 'an existing pack'}, not sent again
                                                 </span>
                                             )}
                                             {worst && (
@@ -660,7 +656,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                                                 disabled={!playable || !isOwnFile(file)}
                                                 className="p-1.5 rounded text-gray-600 hover:text-synthux-pink hover:bg-white/5
                                                     transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
-                                                title={isOwnFile(file) ? 'Trim, fade, EQ or pitch this file' : 'This sample belongs to a published pack, so it is used as it is'}
+                                                title={isOwnFile(file) ? 'Trim, fade, EQ or pitch this file' : 'From a published pack, used as it is'}
                                             >
                                                 <Pencil size={14} />
                                             </button>
@@ -688,18 +684,16 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
             {draft.wants.pack && own.length > 0 && own.length < PACK_MINIMUM_SAMPLES && (
                 <div className="mt-5">
                     <Note tone="warn">
-                        <strong>{own.length} sample{own.length === 1 ? '' : 's'} is short for a pack.</strong>{' '}
-                        A pack gets its own page in the browser — cover image, bio, links, a licence — and
-                        {' '}{PACK_MINIMUM_SAMPLES} is about where that stops looking like a mistake. Add more, or,
-                        if these few exist to serve one preset rather than to be browsed,{' '}
+                        <strong>{own.length} sample{own.length === 1 ? '' : 's'} is too few for a pack</strong> ({PACK_MINIMUM_SAMPLES} or more).
+                        Add more, or{' '}
                         <button
                             type="button"
                             onClick={() => goToStep(1)}
                             className="underline underline-offset-2 hover:text-white transition-colors"
                         >
-                            see the note on step 1
+                            share it privately
                         </button>{' '}
-                        about sharing a preset directly instead of publishing a pack.
+                        instead.
                     </Note>
                 </div>
             )}
@@ -707,10 +701,8 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
             {draft.wants.pack && own.length > PACK_MAXIMUM_SAMPLES && (
                 <div className="mt-5">
                     <Note tone="warn">
-                        <strong>{own.length} samples is a large pack.</strong> Nothing stops you sending it, and
-                        generous packs are welcome — but past about {PACK_MAXIMUM_SAMPLES} it becomes a page
-                        nobody scrolls and a normalization run measured in hours. Worth a word in the notes on
-                        the last step about how you would like it categorised, or trimming to the strongest ones.
+                        <strong>{own.length} samples is a big pack.</strong> That's fine; a note on the last step
+                        about how to split it helps, or keep the strongest {PACK_MAXIMUM_SAMPLES}.
                     </Note>
                 </div>
             )}
@@ -718,11 +710,9 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
             {draft.files.length > 0 && draft.wants.pack && (
                 <div className="mt-5">
                     <Note>
-                        <strong className="text-gray-200">About formats and length.</strong> Send WAV or FLAC at the
-                        best quality you have — 24-bit is ideal, and everything is normalized and converted to FLAC
-                        when it is deployed, which is lossless and about half the size. Files longer than{' '}
-                        {HARDWARE_MAX_SECONDS} seconds are welcome: the hardware plays the first{' '}
-                        {HARDWARE_MAX_SECONDS} of them, and users can choose a different part in the editor.
+                        <strong className="text-gray-200">Formats.</strong> WAV or FLAC at the best quality you have.
+                        Longer than {HARDWARE_MAX_SECONDS} s is fine: the device plays the first {HARDWARE_MAX_SECONDS} s,
+                        and people can pick another part in the editor.
                     </Note>
                 </div>
             )}
@@ -731,7 +721,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                 <ConfirmModal
                     isOpen
                     title="Replace what you have with this archive?"
-                    message="Everything in the current draft — the files, the details, the licence, the preset — is replaced by what is in this archive. Nothing was ever sent anywhere, so there is nothing to withdraw, but this cannot be undone."
+                    message="The files, details, licence and preset you have now are replaced by the archive. This can't be undone."
                     confirmLabel="Restore it"
                     isDestructive
                     onConfirm={() => { applyRestore(pendingRestore); setPendingRestore(null); }}
@@ -756,7 +746,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                             license: editingItem.license,
                             sourceSamplePath: editingItem.sourceSamplePath,
                         }}
-                        subtitle={`Editing ${editingItem.title}. Every applied edit replaces this file in your pack — it is what will be submitted, and what the SK folder is built from.`}
+                        subtitle={`Editing ${editingItem.title}. Applied edits replace this file in your pack.`}
                         onEdited={({ blob, duration, name }) => {
                             // The edit *is* the submission now, so the row takes the new blob
                             // and its new size. The file keeps its name: renaming it here would

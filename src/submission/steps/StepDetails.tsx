@@ -107,7 +107,7 @@ export const StepDetails: React.FC<StepProps> = ({ draft, update, showToast }) =
                     <Field
                         label="Pack id"
                         required
-                        hint="Used for the folder, the file paths and the entry in the app’s catalogue. Letters, numbers and hyphens only. It follows the name until you change it."
+                        hint="Used in folder and file names. Letters, numbers and hyphens. Follows the name until you change it."
                     >
                         <TextInput
                             value={details.id}
@@ -135,7 +135,7 @@ export const StepDetails: React.FC<StepProps> = ({ draft, update, showToast }) =
 
             <Field
                 label="Full description"
-                hint="Shown in the info panel when someone opens the pack. The gear you used, the vibe, how to get the most out of these sounds — as long as you like."
+                hint="Shown when someone opens the pack: the gear, the mood, how to use the sounds. As long as you like."
             >
                 <TextArea
                     value={details.fullDescription}
