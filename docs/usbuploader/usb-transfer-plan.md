@@ -356,19 +356,30 @@ Decided Oct 13, 2026: WAV Builder asks no changes of the Spotykach firmware or o
 
 If something on the protocol side ever does need changing: fork the Spotykach repo, change `web/spotykach-transfer` with its tests, and open a PR there (`src/lib/usb/PROTOCOL.md`).
 
-## Card identity without `ICMT` (decided Oct 13, not built yet)
+## Card identity without `ICMT` (built Oct 13, `feat/usb-transfer`)
 
 The aim: no changes needed in Spotykach's code.
 
-- **Card files are written by the package's `encodeWav`** (name and cues, audio aligned), over USB and through the card reader alike. No `ICMT`, `ITMP` or `IART` on the card.
-- **The project's card snapshot holds the identity.** Per slot: file id, version hash, and what the slot list reports (name, frames, cue count, file size). A slot whose list entry equals the snapshot is the file the project wrote; anything else is changed or new.
-- **Gains:** no header read per slot over USB (the list is enough), no PR to Spotykach, and one card format shared with Synthux's own page.
-- **Costs:** a card can no longer tell a project it has never seen which file a slot was (no id inside), and tempo and processing flags aren't stored in card files. Cards written before the change are matched once by name and frame count, or by the tail read for 4.1.3 files.
-- **Hashes cover the audio only** (the `data` chunk), not the header, so the same audio has the same hash whichever tool wrote the file. Existing whole-file hashes are recomputed in the background; older slot files keep matching by their `ICMT` id meanwhile.
-- **Same audio, different header → match, not conflict.** Seen in the device test (Oct 13): a project from an older version against an SD card it wrote showed every slot as Conflict and pooled them, because ids or whole-file hashes differed while the audio was the same. With audio-only hashes: compare automatically over the card reader; over USB offer "compare audio" for the conflicting slots only (it downloads them), and turn the identical ones into a plain overwrite.
-- **Slot files are cut at the device's limit.** The package refuses files over `maxFrames` (2,016,000 = 42 s) with "encode it truncated", and its own `convertAudio` cuts them. So slot files on both routes stop at `maxFrames` (cues past the cut dropped), the build preview and log say which slots were cut, and the project file keeps its full length. The device never played past 42 s, so nothing audible changes. Also: the editor's 42 s trim and loop fit work in seconds and can land a few frames over; snap them to whole frames. (Seen in the device test, Oct 13: a file trimmed to "42 s" was refused.)
-- **Unaffected:** project bundles (`project.json` holds the ids), presets (sample-pack paths), and loose-file imports (always a new project file, as before).
-- **Checked:** 72 `encodeWav` files (names 0–70 bytes, non-ASCII, cues) load on ports of release firmware 1.3.1 (WAV code identical to `main` `7da8061`) and of the uploader firmware.
+- **Slot files are the package's `encodeWav` output** (name, cues, audio aligned), on every route that writes slots: card reader, USB, the SD ZIP, presets. No `ICMT`, `ITMP` or `IART` on the card. Encoding is deterministic, so the card reader's byte compare still skips identical files.
+- **The project's card snapshot holds the identity.** Per slot: file id, the version's audio hash, and the slot file's fingerprint (name, size, frames, cue count), which the device's slot list reports. A slot whose fingerprint equals the snapshot is the file the project wrote; over USB that needs no header read.
+- **Audio hash** (`audioHashOf`): SHA-256 of the `data` chunk up to the device's limit, so the same sound hashes the same under any header. Computed when needed and stored in the snapshot; the old whole-file `version.hash` is left as it was.
+- **Sync diff ladder:** `snapshot` (unchanged when audio, name and slices are), then the pre-4.2 steps (`id`, `hash`), then `audio` (card reader: same audio, other header), `bytes`, `name`. Anything matched by content is a pre-4.2 slot file and is rewritten once. A conflict where the card holds an older version the project wrote shows as **Changed** and isn't pooled.
+- **Cut at the device's limit:** slot files stop at `maxFrames` (HELLO over USB, 2,016,000 = 42 s otherwise), slices past the cut dropped; the transfer log names cut slots; the project file keeps its length. The editor's `trim()` now rounds to the nearest frame and snaps a region within 0.5 ms of 42 s to exactly 2,016,000.
+- **Costs:** a card can't tell a project it has never seen which file a slot was, and tempo and processing flags aren't stored in slot files.
+- **Unaffected:** project bundles (`project.json` holds the ids), presets (sample-pack paths), loose-file imports (always a new project file).
+- **Not built:** "compare audio" over USB for pre-4.2 slot files with a foreign id (they show as Conflict or "Same name?"; with the project's own id they show as Changed).
+
+Where it lives:
+
+| What | Where |
+| --- | --- |
+| Slot file, audio hash, fingerprint | `src/lib/audio/slotFile.ts` |
+| Writing slots (all routes) | `exportSDStructure` / `hardwareSlotFile` in `src/utils/exportUtils.ts` |
+| Snapshot fields | `CardSnapshotSlot` in `src/types.ts` |
+| Fingerprint vs snapshot | `src/lib/card/cardSnapshot.ts` |
+| Ladder | `calculateSyncDiff` in `src/utils/importUtils.ts` |
+| USB identical check | `UsbBackend.holds` in `src/lib/usb/usbBackend.ts` |
+| Checks | `npm run check:slots` (slot files, firmware ports), `npm run check:card` (export and diff end to end, both routes) |
 
 ## Open questions and risks
 
