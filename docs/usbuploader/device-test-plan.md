@@ -149,6 +149,16 @@ USB transfer on in Settings ▸ System. Hub ▸ Starter Presets ▸ Write to SD 
 - **18 and Continue, another SD card, 19:54–20:02: passed.** Cable pulled during Blue 3: "Connection to Spotykach lost". Reconnect and continue wrote on from Blue 3. During Green 4 the connection dropped by itself; Reconnect and continue again finished the last 3. All 12 slots written once, 94.8 MB in 3 min 25 s of writing (474 KB/s), 9 min 04 s with the pauses.
 - **How the device drops by itself**, now in the console: `upload at byte 2686976, attempt 1: Spotykach received a corrupted request (the request stopped arriving)`, then on the resend `attempt 2: The device has been lost.` A short frame arrives, and during the resend Spotykach leaves USB (and plays again). Seen on two cards, so not the card. The main finding for Synthux.
 - **Polish after this run:** a failed write's step reads "Stopped at Green 4 · 9 of 12 written", and the error no longer repeats the package's "(upload at byte …)" detail, which stays in the console.
+- **Cables and ports, Free the Rhythm (94.8 MB), stalls counted in the console:**
+
+  | Connection | Stalls | Session lost | Speed |
+  |---|---|---|---|
+  | Hub, C-to-A | 24, 25 | 2 of ~5 runs | 466–477 KB/s |
+  | Front USB-C, two C-to-C cables | 9, 3 | no | 229–231 KB/s |
+  | Front USB-A, three C-to-A cables | 4, 1, 22 | no | 440–469 KB/s |
+
+  The count varies run to run with nothing changed (1, then 22, same cable and port), so cable and port don't explain the stalls; they come in bursts, sometimes twice at the same offset. Session losses only seen through the hub (few runs). The front USB-C port runs at half speed with either cable. One C-to-A cable that passes a data tester made Spotykach's LEDs flicker. Advice for now: a direct USB-A port, a known-good cable.
+- **Reported upstream (Oct 13):** issue Synthux-Academy/Spotykach#15 (stalls; the 10 s idle timeout ends the session when a resend stalls too), PR #13 (spotykach-transfer hides serial errors; tested in WAV Builder), PR #14 (HELLO firmware version).
 
 ## Results, round 1 (Oct 13)
 
