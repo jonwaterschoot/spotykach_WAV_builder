@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stereo } from '../dsp';
 import {
-    STEPS, sequenceFrames, sequenceSounds, stepAt, stepControls, stepHits, stepFrames,
+    STEPS, masterGain, sequenceFrames, sequenceSounds, stepAt, stepControls, stepHits, stepFrames,
     type SeqControl, type SeqHit, type Sequence,
 } from '../sequence';
 
@@ -69,7 +69,17 @@ export function useSequencePlayer(
     const hooksRef = useRef(hooks);
     useEffect(() => { keyRef.current = keyFor; renderRef.current = render; hooksRef.current = hooks; }, [keyFor, render, hooks]);
 
+    const masterRef = useRef<GainNode | null>(null);
     const context = () => (contextRef.current ??= new AudioContext({ sampleRate: 48000 }));
+    /** Every voice goes through it, so the main volume moves at once, not on the next step. */
+    const master = (ctx: AudioContext) => {
+        if (!masterRef.current) {
+            masterRef.current = ctx.createGain();
+            masterRef.current.connect(ctx.destination);
+            masterRef.current.gain.value = seqRef.current ? masterGain(seqRef.current) : 1;
+        }
+        return masterRef.current;
+    };
     const toPerf = (ctx: AudioContext, t: number) => performance.now() + (t - ctx.currentTime) * 1000;
 
     /** Starts rendering a sound if it isn't there yet. */
@@ -99,6 +109,8 @@ export function useSequencePlayer(
 
     const update = useCallback((seq: Sequence) => {
         seqRef.current = seq;
+        const node = masterRef.current;
+        if (node && contextRef.current) node.gain.setTargetAtTime(masterGain(seq), contextRef.current.currentTime, 0.02);
         prepare(seq);
     }, [prepare]);
 
@@ -113,7 +125,7 @@ export function useSequencePlayer(
             const gain = ctx.createGain();
             source.buffer = buffer;
             gain.gain.value = hit.gain;
-            source.connect(gain).connect(ctx.destination);
+            source.connect(gain).connect(master(ctx));
             source.onended = () => voices.current.delete(source);
             voices.current.add(source);
             source.start(Math.max(ctx.currentTime, at));

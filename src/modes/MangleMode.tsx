@@ -73,7 +73,7 @@ import { GENERATORS, defaultRanges, synthesize, type SynthKind, type SynthRanges
 import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
 import { useMidiFollow, useMidiLink } from '../mangler/ui/useMidiLink';
 import {
-  MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, parseCueSoundId, pruneSequence, sequenceCues, sequenceFrames, sequenceHits,
+  MASTER_MAX_DB, MASTER_MIN_DB, MAX_TRACKS, PATTERNS, STEPS, masterGain, maxChain, mixSequence, newSequence, parseCueSoundId, pruneSequence, sequenceCues, sequenceFrames, sequenceHits,
   type CueSound, type SeqCues, type SeqHit, type Sequence,
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
@@ -143,6 +143,7 @@ const validSequence = (input: unknown): Sequence | null => {
       ...s,
       bpm: Math.min(240, Math.max(40, Number(s.bpm) || 120)),
       swing: Math.min(0.5, Math.max(0, Number(s.swing) || 0)),
+      masterDb: Math.min(MASTER_MAX_DB, Math.max(MASTER_MIN_DB, Number(s.masterDb) || 0)),
       chain: s.chain.slice(0, maxChain(s.bpm)),
       tracks: s.tracks.slice(0, MAX_TRACKS),
     };
@@ -1186,6 +1187,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       }
       const total = sequenceFrames(seq, SR);
       const mix = mixSequence(hits, h => (h.sliceId ? audio.get(sequenceKey(h.sliceId, h.shift) ?? '') ?? null : null), total, fold);
+      // The main volume, then the limiter.
+      if (seq.masterDb) { const g = masterGain(seq); for (const ch of mix) for (let i = 0; i < ch.length; i++) ch[i] *= g; }
       const reduction = limit(mix, dbToGain(-1), Math.round(0.005 * SR));
       const allCues = sequenceCues(seq, hits, cueMode, SR);
       const cuePoints = allCues.slice(0, MAX_CUE_POINTS);

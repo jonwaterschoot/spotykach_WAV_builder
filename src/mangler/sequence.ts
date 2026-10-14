@@ -99,6 +99,8 @@ export interface Sequence {
     tracks: SeqTrack[];
     /** The scale tracks with `scaleLock` snap to: root (0 = C) and a 12-bit mask (settings.ts). */
     scale?: { root: number; mask: number };
+    /** Main volume, dB, on top of every track's: the live output and the render. Absent: 0. */
+    masterDb?: number;
 }
 
 /** The Spotykach's two decks, each on its own MIDI channel. */
@@ -207,6 +209,11 @@ export const newSequence = (ids: () => string): Sequence => ({
     chain: ['A'],
     tracks: [1, 2, 3, 4].map(n => newTrack(ids(), `Track ${n}`)),
 });
+
+export const MASTER_MIN_DB = -36;
+export const MASTER_MAX_DB = 12;
+/** The main volume as a gain. */
+export const masterGain = (seq: Pick<Sequence, 'masterDb'>) => Math.pow(10, (seq.masterDb ?? 0) / 20);
 
 /** Frames per sixteenth. */
 export const stepFrames = (bpm: number, sampleRate: number) => (60 / bpm / 4) * sampleRate;

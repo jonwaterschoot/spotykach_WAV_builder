@@ -9,7 +9,7 @@ import type { HitClass } from '../hits';
 import { NOTE_NAMES } from '../pitch';
 import { SCALES, maskFromIntervals, scaleName } from '../settings';
 import {
-    CUE_BASE_NOTE, LFO_PER_STEP, MAX_TRACKS, PATTERNS, ROOT_NOTE, SK_CCS, STEPS, VELOCITIES,
+    CUE_BASE_NOTE, LFO_PER_STEP, MASTER_MAX_DB, MASTER_MIN_DB, MAX_TRACKS, PATTERNS, ROOT_NOTE, SK_CCS, STEPS, VELOCITIES,
     ccInfo, cueSoundId, defaultCc, emptySteps, lfoAt, maxChain, newTrack, noteName, snapToScale,
     type CueSound, type LfoShape, type PatternId, type SeqCues, type SeqStep, type SeqTrack, type Sequence, type TrackKind,
 } from '../sequence';
@@ -193,6 +193,15 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     Tempo
                     <ScrubNumber value={seq.bpm} min={40} max={240} step={0.5} unit="bpm" width="w-[5.5rem]" ariaLabel="Tempo"
                         onChange={v => onChange(seq => ({ ...seq, bpm: v, chain: seq.chain.slice(0, maxChain(v)) }))} />
+                </label>
+                <label className="flex items-center gap-2" title="Main volume: every track, live and in the render (the limiter keeps the render under −1 dBFS)">
+                    Volume
+                    <input type="range" min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} value={seq.masterDb ?? 0}
+                        onChange={e => onChange(seq => ({ ...seq, masterDb: Number(e.target.value) || undefined }))}
+                        onDoubleClick={() => onChange(seq => ({ ...seq, masterDb: undefined }))}
+                        className="w-24 accent-synthux-red" aria-label="Main volume" />
+                    <ScrubNumber value={seq.masterDb ?? 0} min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} unit="dB" width="w-[5rem]" ariaLabel="Main volume in dB"
+                        onChange={v => onChange(seq => ({ ...seq, masterDb: v || undefined }))} />
                 </label>
                 <label className="flex items-center gap-2" title="How late every second sixteenth comes">
                     Swing
