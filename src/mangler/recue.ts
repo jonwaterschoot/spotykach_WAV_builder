@@ -1,4 +1,5 @@
-import { detectOnsets, type Stereo } from './dsp.ts';
+import type { Stereo } from './dsp.ts';
+import { detectHits } from './hits.ts';
 import type { SnippetInfo } from './render.ts';
 import { MAX_CUE_POINTS } from './settings.ts';
 
@@ -30,7 +31,7 @@ export const snippetCues = (snippets: readonly SnippetInfo[], totalFrames: numbe
 export function transientCues(signal: Stereo, sampleRate: number, level: CueLevel, maxCues = MAX_CUE_POINTS): number[] {
     const limit = Math.max(1, Math.min(MAX_CUE_POINTS, Math.round(maxCues)));
     const pick = (sensitivity: number, minGapMs: number) => {
-        const onsets = detectOnsets(signal, sampleRate, { sensitivity, minGapMs });
+        const onsets = detectHits(signal, sampleRate, { sensitivity, minGapMs }).map(h => ({ frame: h.start, strength: h.strength }));
         const strongest = onsets.length > limit - 1
             ? [...onsets].sort((a, b) => b.strength - a.strength).slice(0, limit - 1)
             : onsets;

@@ -5,6 +5,7 @@ import {
 } from './dsp.ts';
 import { Planner } from './plan.ts';
 import { createRng, deriveSeed } from './rng.ts';
+import { detectHits } from './hits.ts';
 import { MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, scalePitchClasses, type MangleSettings } from './settings.ts';
 
 /** Everything renders at the hardware's rate. */
@@ -284,9 +285,19 @@ export function render(
                 const readLength = Math.min(span, Math.ceil(length * ratio) + 1);
                 let start = lo + Math.floor(local * (span - readLength));
                 start = snapStart(src, start, readLength, Math.ceil(length * ratio), plan.reverse, lo, hi);
-                // One hit per snippet: stop before the next attack in the region.
+                // One hit per snippet: stop before the next attack in the region, and
+                // (flux) where this hit has died away, so no silent tail comes along.
                 let outLength = length;
-                if (settings.oneHit) {
+                if (settings.oneHit && settings.detector === 'flux') {
+                    const minGap = Math.round(0.03 * sr * ratio);
+                    const found = detectHits(src, sr, {
+                        from: Math.max(lo, start - 2048), to: start + readLength, sensitivity: 0.5, minGapMs: 30,
+                    });
+                    const own = found.find(h => h.start <= start + minGap && h.end > start);
+                    const next = found.find(h => h.start >= start + minGap);
+                    const stop = Math.min(next?.start ?? Infinity, own?.end ?? Infinity);
+                    if (Number.isFinite(stop)) outLength = Math.max(Math.round(0.02 * sr), Math.min(length, Math.floor((stop - start) / ratio)));
+                } else if (settings.oneHit) {
                     const minGap = Math.round(0.03 * sr * ratio);
                     const next = detectOnsets(src, sr, {
                         from: start + minGap, to: start + readLength, sensitivity: 0.5, minGapMs: 30,

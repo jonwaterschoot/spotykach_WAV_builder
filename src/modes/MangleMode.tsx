@@ -56,7 +56,7 @@ import { useResultAudio } from '../mangler/ui/useResultAudio';
 import { recipeFromResult, resultName, usedSources, waveformPeaks, type RecipeSource } from '../mangler/recipe';
 import { deriveSeed, randomSeed } from '../mangler/rng';
 import {
-  DEFAULT_SETTINGS, PRESETS, sanitizeSettings, type MangleSettings,
+  DEFAULT_SETTINGS, MAX_CUE_POINTS, PRESETS, sanitizeSettings, type MangleSettings,
 } from '../mangler/settings';
 import { Segmented, Slider } from '../mangler/ui/Sliders';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
@@ -659,9 +659,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       return { id: rs.id, blob: entry?.blob ?? null, enabled: entry?.enabled ?? false, regions: entry?.regions };
     }), [sources]);
 
-  /** Settings of an old recipe. Results from before sinc was the default keep the linear resampler. */
-  const recipeSettings = (r: MangleResultEntry) =>
-    sanitizeSettings({ ...r.recipe.settings, resampler: r.recipe.settings.resampler ?? 'linear' });
+  /**
+   * Settings of an old recipe. Results from before sinc was the default keep the
+   * linear resampler, and those from before the flux detector keep the old one.
+   */
+  const recipeSettings = (r: MangleResultEntry) => sanitizeSettings({
+    ...r.recipe.settings,
+    resampler: r.recipe.settings.resampler ?? 'linear',
+    detector: r.recipe.settings.detector ?? 'energy',
+  });
 
   const missingFor = useCallback((r: MangleResultEntry, fixed: (SnippetInfo | null)[]) => {
     const needed = new Set(fixed.filter((f): f is SnippetInfo => !!f).map(f => f.source));
@@ -718,6 +724,49 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       },
     });
   }, [missingFor, player, region, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+
+  /**
+   * A kit from a source's hits: each hit once, in order, as it is, with a cue
+   * point at each, so the slice mode plays one sound per slice. Made like any
+   * result (all snippets fixed), so the snippet list can reorder, drop or repitch
+   * the hits afterwards.
+   */
+  const makeKit = useCallback((source: MangleSourceEntry, hits: Part[]) => {
+    if (batchRef.current || hits.length === 0) return;
+    const list = hits.slice(0, MAX_CUE_POINTS);
+    if (hits.length > list.length) showToast(`Only the first ${MAX_CUE_POINTS} hits fit`, 'warning');
+    const fixed: SnippetInfo[] = list.map(([a, b]) => {
+      const start = Math.round(a * SR), length = Math.max(2, Math.round((b - a) * SR));
+      return {
+        source: 0, sourceStart: start, sourceLength: length, outStart: 0, length, xfade: 0, reverse: false,
+        measuredDb: 0, gainDb: 0, pitch: null, shift: 0, rerolls: 0,
+      };
+    });
+    const kitSettings = sanitizeSettings({
+      ...DEFAULT_SETTINGS, fillMode: 'count', snippetCount: fixed.length,
+      xfadeMinMs: 0, xfadeMaxMs: 0, hardCuts: false, loop: false, repitch: 'off', detuneSt: 0,
+      restProbability: 0, softProbability: 0, cuePoints: true, variations: 1,
+    });
+    const recipeSources: RecipeSource[] = [{ id: source.id, name: source.name, origin: source.origin, license: source.license }];
+    const base = `kit_${source.name.replace(/[^\w-]+/g, '_').slice(0, 40)}`;
+    const taken = new Set(results.map(r => r.name));
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+    setPane('results');
+    startJob({
+      label: `Making a kit of ${fixed.length} hit${fixed.length === 1 ? '' : 's'}`,
+      sources: sourcesFor(recipeSources),
+      settings: kitSettings,
+      seeds: [randomSeed()],
+      fixed,
+      onResult: async (result) => {
+        // Kept: made on purpose, so the next batch doesn't clear it.
+        const entry = makeEntry(result, kitSettings, recipeSources, { name, kept: true, batchId: Date.now() });
+        await storeEntry(entry);
+        setResults(prev => sortResults([...prev, entry]));
+      },
+    });
+  }, [results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
 
   const lockedFixed = (r: MangleResultEntry) =>
     r.recipe.snippets.map((s, i) => (r.locked?.includes(i) ? s : null));
@@ -1860,6 +1909,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             playing={region.playing}
             position={region.position}
             onClose={() => setPartsFor(null)}
+            onKit={hits => { setPartsFor(null); makeKit(source, hits); }}
             onSave={(parts: Part[]) => {
               const next = { ...source, regions: parts.length ? parts : undefined };
               setSources(prev => prev.map(x => (x.id === source.id ? next : x)));

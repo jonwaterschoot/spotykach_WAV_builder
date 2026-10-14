@@ -254,7 +254,7 @@ export function detectOnsets(signal: Stereo, sampleRate: number, options: OnsetO
  * over a fifth of the peak just after it, less half a millisecond, on a zero
  * crossing at or before that point.
  */
-function attackStart(signal: Stereo, lo: number, hi: number, sampleRate: number): number {
+export function attackStart(signal: Stereo, lo: number, hi: number, sampleRate: number): number {
     const [l, r] = signal;
     const end = Math.min(l.length, hi + 256);
     let peakValue = 0;

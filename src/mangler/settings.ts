@@ -9,6 +9,8 @@ export type SourceMix = 'even' | 'length';
 export type FillMode = 'length' | 'count';
 export type SnapStart = 'off' | 'zero' | 'onset';
 export type Resampler = 'linear' | 'sinc';
+/** Which hit detector "one hit per snippet" uses. Recipes from before 'flux' existed read as 'energy'. */
+export type Detector = 'energy' | 'flux';
 
 export interface MangleSettings {
     fillMode: FillMode;
@@ -30,6 +32,8 @@ export interface MangleSettings {
     snapStart: SnapStart;
     /** End a snippet before the next hit, so each cue point holds one sound (drum loops). */
     oneHit: boolean;
+    /** `flux`: hits.ts, which also ends a snippet where its hit has died away. */
+    detector: Detector;
     /** Gated RMS every snippet is matched to. */
     loudnessTargetDb: number;
     /** Random ± deviation from the target, for dynamics on purpose. */
@@ -93,6 +97,7 @@ export const DEFAULT_SETTINGS: MangleSettings = {
     reverseProbability: 0.25,
     snapStart: 'off',
     oneHit: false,
+    detector: 'flux',
     loudnessTargetDb: -18,
     loudnessSpreadDb: 0,
     maxBoostDb: 24,
@@ -175,6 +180,7 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     if (!['even', 'length'].includes(s.sourceMix)) s.sourceMix = d.sourceMix;
     if (!['off', 'zero', 'onset'].includes(s.snapStart)) s.snapStart = d.snapStart;
     if (!['linear', 'sinc'].includes(s.resampler)) s.resampler = d.resampler;
+    if (!['energy', 'flux'].includes(s.detector)) s.detector = d.detector;
     for (const key of ['hardCuts', 'oneHit', 'skipSilence', 'cuePoints', 'loop', 'limiter'] as const) {
         s[key] = typeof s[key] === 'boolean' ? s[key] : d[key];
     }

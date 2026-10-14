@@ -288,7 +288,14 @@ section('Scales, pitch choices, transients');
 
     const { transientCues, snippetCues } = await import('../src/mangler/recue.ts');
     const cues = transientCues([drums.left, drums.right], SR, 'normal');
-    check(cues[0] === 0 && cues.length >= drums.snippets.length * 0.7, 'transient cues on a mangled drum loop', `${cues.length} cues, ${drums.snippets.length} snippets`);
+    // One hit per snippet strips each hit's tail, so the snippets are as short as
+    // the hits; "normal" keeps cues 60 ms apart, so it can't give one to each.
+    const starts = drums.snippets.map(s => s.outStart + (s.xfade >> 1));
+    // Snapped starts sit a few ms before the attack; the cues sit on it.
+    const onStarts = cues.filter(c => starts.some(st => Math.abs(st - c) <= 0.005 * SR));
+    const room = Math.min(drums.snippets.length, Math.floor(drums.left.length / (0.06 * SR)));
+    check(cues[0] === 0 && onStarts.length >= cues.length * 0.9 && cues.length >= room * 0.5,
+        'transient cues on a mangled drum loop: on the hits', `${cues.length} cues, ${onStarts.length} on snippet starts; room for ${room}`);
     const clicks = new Float32Array(42 * SR);
     for (let t = 1000; t < clicks.length - 200; t += 1440) for (let i = 0; i < 100; i++) clicks[t + i] = 0.8 * Math.exp(-i / 20) * (i % 2 ? 1 : -1);
     const dense = transientCues([clicks, clicks], SR, 'aggressive');
@@ -386,6 +393,88 @@ section('Presets and edges');
     const clamped = sanitizeSettings({ outputSeconds: 99, snippetMinMs: 5000, snippetMaxMs: 100, variations: 50, repitch: 'nope' });
     check(clamped.outputSeconds === 42 && clamped.snippetMinMs === 100 && clamped.snippetMaxMs === 5000
         && clamped.variations === 12 && clamped.repitch === DEFAULT_SETTINGS.repitch, 'settings sanitised');
+}
+
+// ---------------------------------------------------------------------------
+// Hits (spectral flux, bands, ends, classes)
+// ---------------------------------------------------------------------------
+
+section('Hits');
+{
+    const { detectHits } = await import('../src/mangler/hits.ts');
+    const { fft } = await import('../src/mangler/fft.ts');
+
+    // FFT against a plain DFT.
+    const n = 64, re = new Float64Array(n), im = new Float64Array(n);
+    const x = Array.from({ length: n }, (_, i) => Math.sin(i * 0.7) + 0.3 * Math.cos(i * 2.1));
+    x.forEach((v, i) => { re[i] = v; });
+    fft(re, im);
+    let worst = 0;
+    for (let k = 0; k < n; k++) {
+        let r = 0, m = 0;
+        for (let t = 0; t < n; t++) { r += x[t] * Math.cos(-2 * Math.PI * k * t / n); m += x[t] * Math.sin(-2 * Math.PI * k * t / n); }
+        worst = Math.max(worst, Math.abs(r - re[k]), Math.abs(m - im[k]));
+    }
+    check(worst < 1e-9, 'FFT matches a plain DFT', worst.toExponential(1));
+
+    const rng = createRng(99);
+    const kick = (amp = 0.8) => Float32Array.from({ length: Math.round(0.35 * SR) }, (_, i) => {
+        const t = i / SR, hz = 50 + 100 * Math.exp(-t * 30);
+        return amp * Math.exp(-t * 9) * Math.sin(2 * Math.PI * (50 * t + (100 / 30) * (1 - Math.exp(-t * 30))) ) * (hz > 0 ? 1 : 0);
+    });
+    const hat = (amp = 0.5) => {
+        let prev = 0;
+        return Float32Array.from({ length: Math.round(0.05 * SR) }, (_, i) => {
+            const w = rng.next() * 2 - 1, v = w - prev; prev = w; // first difference: bright
+            return amp * Math.exp(-(i / SR) * 90) * v;
+        });
+    };
+    const snare = (amp = 0.6) => Float32Array.from({ length: Math.round(0.2 * SR) }, (_, i) => {
+        const t = i / SR;
+        return amp * Math.exp(-t * 18) * (0.5 * Math.sin(2 * Math.PI * 190 * t) + 0.6 * (rng.next() * 2 - 1));
+    });
+    const place = (length, events) => {
+        const out = new Float32Array(Math.round(length * SR));
+        for (const [at, sound] of events) {
+            const o = Math.round(at * SR);
+            for (let i = 0; i < sound.length && o + i < out.length; i++) out[o + i] += sound[i];
+        }
+        return out;
+    };
+
+    // Kick, snare, hat, with silence between: four of each, half a second apart.
+    const pattern = [];
+    for (let bar = 0; bar < 4; bar++) {
+        pattern.push([bar * 1.5 + 0.1, kick()], [bar * 1.5 + 0.6, snare()], [bar * 1.5 + 1.1, hat()]);
+    }
+    const drums = place(6.2, pattern);
+    const found = detectHits([drums, drums], SR);
+    const expected = pattern.map(([at]) => Math.round(at * SR)).sort((p, q) => p - q);
+    const matched = expected.map(e => found.find(h => Math.abs(h.start - e) < 0.004 * SR));
+    check(found.length === expected.length && matched.every(Boolean), 'every hit found, on time (±4 ms)',
+        `${found.length} found of ${expected.length}`);
+    const classOf = at => matched[expected.indexOf(Math.round(at * SR))]?.cls;
+    const classes = pattern.map(([at, s]) => `${s.length === Math.round(0.35 * SR) ? 'k' : s.length === Math.round(0.2 * SR) ? 's' : 'h'}:${classOf(at)}`);
+    check(classes.filter(c => c.startsWith('k')).every(c => c === 'k:low') && classes.filter(c => c.startsWith('h')).every(c => c === 'h:high'),
+        'kicks are low, hats are high', [...new Set(classes)].join(' '));
+    check(found.every(h => h.end - h.start < 0.45 * SR), 'each hit ends in its own decay, not at the next one',
+        found.map(h => Math.round((h.end - h.start) / SR * 1000)).join(' ') + ' ms');
+
+    // Loud hats every 125 ms with quiet kicks on the beat, slightly after.
+    const busy = [];
+    for (let i = 0; i < 16; i++) busy.push([0.05 + i * 0.125, hat(0.6)]);
+    for (let i = 0; i < 4; i++) busy.push([0.115 + i * 0.5, kick(0.25)]);
+    const mixed = place(2.2, busy);
+    const busyHits = detectHits([mixed, mixed], SR, { minGapMs: 30 });
+    const kicksFound = [0, 1, 2, 3].filter(i => busyHits.some(h => Math.abs(h.start - Math.round((0.115 + i * 0.5) * SR)) < 0.005 * SR)).length;
+    check(kicksFound === 4, 'quiet kicks under loud hats: found', `${kicksFound}/4, ${busyHits.length} hits in all`);
+
+    const steady = noise(3, 0.2, 5);
+    check(detectHits([steady, steady], SR).length <= 1, 'steady noise: no hits');
+    const quietPad = tone(220, 3, 'sine', 0.3);
+    check(detectHits([quietPad, quietPad], SR).length <= 1, 'a held tone: at most its start');
+    const silent = new Float32Array(SR);
+    check(detectHits([silent, silent], SR).length === 0, 'silence: no hits');
 }
 
 // ---------------------------------------------------------------------------

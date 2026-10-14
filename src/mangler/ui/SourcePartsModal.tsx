@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader, Maximize2, Minus, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import { Combine, Loader, Maximize2, Minus, Play, Plus, Scissors, Square, Trash2, X } from 'lucide-react';
 import { useEscapeLayer } from '../../shell/escapeStack';
 import type { MangleSourceEntry } from '../../utils/persistence';
 import type { RegionPlayback } from './useResultAudio';
 import { formatSeconds } from './format';
 import { MIN_PART, normaliseParts, type Part } from '../parts';
+import type { Hit, HitClass } from '../hits';
+import { findHits } from '../hitsClient';
 
 
 interface SourcePartsModalProps {
@@ -15,8 +17,23 @@ interface SourcePartsModalProps {
     playing: RegionPlayback | null;
     position: number | null;
     onSave: (parts: Part[]) => void;
+    /** The hits (seconds), one after another with a cue at each, as a new result. */
+    onKit: (hits: Part[]) => void;
     onClose: () => void;
 }
+
+/** The strip under the wave where hits are drawn and clicked. */
+const LANE = 18;
+
+type HitLevel = 'gentle' | 'normal' | 'aggressive';
+const HIT_SENSITIVITY: Record<HitLevel, number> = { gentle: 0.25, normal: 0.55, aggressive: 0.85 };
+
+const CLASS_COLOR: Record<HitClass, string> = { low: '#f58b44', mid: '#f5d544', high: '#4771f9' };
+const CLASS_HINT: Record<HitClass, string> = {
+    low: 'Low: kicks, toms, bass hits',
+    mid: 'Mid: snares, claps, plucks',
+    high: 'High: hats, shakers, clicks',
+};
 
 const EDGE_PX = 6;
 const MAX_ZOOM = 128;
@@ -33,12 +50,19 @@ type Drag =
  * to move it; click it to select. No parts means the whole file.
  */
 export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
-    source, load, playRegion, stop, playing, position, onSave, onClose,
+    source, load, playRegion, stop, playing, position, onSave, onKit, onClose,
 }) => {
     const [audio, setAudio] = useState<AudioBuffer | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [parts, setParts] = useState<Part[]>(() => source.regions ?? []);
     const [selected, setSelected] = useState<number | null>(null);
+    // Hits, in frames of the decoded audio. Null until "Find hits".
+    const [hits, setHits] = useState<Hit[] | null>(null);
+    const [finding, setFinding] = useState(false);
+    const [hitLevel, setHitLevel] = useState<HitLevel>('normal');
+    const [tailDb, setTailDb] = useState(30);
+    const [selectedHit, setSelectedHit] = useState<number | null>(null);
+    const [list, setList] = useState<'parts' | 'hits'>('parts');
     const [zoom, setZoom] = useState(1);
     const [view, setView] = useState({ width: 0, scroll: 0 });
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -139,11 +163,27 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
             ctx.fillText(String(i + 1), x0 + 5, 12);
         });
 
+        if (hits && audio) {
+            const sr = audio.sampleRate;
+            hits.forEach((h, i) => {
+                const x0 = xOf(h.start / sr), x1 = Math.max(x0 + 1, xOf(h.end / sr));
+                if (x1 < 0 || x0 > width) return;
+                const isSelected = i === selectedHit;
+                ctx.fillStyle = CLASS_COLOR[h.cls];
+                ctx.globalAlpha = isSelected ? 0.35 : 0.12;
+                ctx.fillRect(x0, 0, x1 - x0, HEIGHT - LANE);
+                ctx.globalAlpha = isSelected ? 1 : 0.75;
+                ctx.fillRect(x0, HEIGHT - LANE + 3, x1 - x0, LANE - 6);
+                ctx.fillRect(Math.round(x0), 0, 1, HEIGHT - LANE);
+                ctx.globalAlpha = 1;
+            });
+        }
+
         if (playingHere && position !== null) {
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(Math.round(xOf(position)), 0, 1, HEIGHT);
         }
-    }, [audio, view, totalPx, parts, selected, duration, xOf, playingHere, position]);
+    }, [audio, view, totalPx, parts, selected, duration, xOf, playingHere, position, hits, selectedHit]);
 
     const hit = (clientX: number): { index: number; side: 0 | 1 | null } | null => {
         const rect = canvasRef.current?.getBoundingClientRect();
@@ -158,8 +198,21 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
         return null;
     };
 
+    const hitAt = (clientX: number): number => {
+        if (!hits || !audio) return -1;
+        const t = timeAt(clientX) * audio.sampleRate;
+        const slack = (EDGE_PX / Math.max(1, totalPx)) * audio.length;
+        return hits.findIndex(h => t >= h.start - slack && t <= h.end + slack);
+    };
+
     const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!audio) return;
+        // The hit lane: select and play, never a drag.
+        if (hits && e.nativeEvent.offsetY >= HEIGHT - LANE) {
+            const i = hitAt(e.clientX);
+            if (i >= 0) { setSelectedHit(i); setList('hits'); playHit(i); }
+            return;
+        }
         e.currentTarget.setPointerCapture(e.pointerId);
         const t = timeAt(e.clientX);
         const h = hit(e.clientX);
@@ -228,19 +281,69 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
         const [a, b] = parts[i];
         playRegion({ resultId: source.id, index: i, start: a, end: b }, source.blob);
     };
+    const hitSpan = (h: Hit): Part => [h.start / (audio?.sampleRate ?? 48000), h.end / (audio?.sampleRate ?? 48000)];
+    const playHit = (i: number) => {
+        if (!hits?.[i]) return;
+        const [a, b] = hitSpan(hits[i]);
+        playRegion({ resultId: source.id, index: 1000 + i, start: a, end: b }, source.blob);
+    };
+    const dropHit = (i: number) => {
+        setHits(prev => prev && prev.filter((_, k) => k !== i));
+        setSelectedHit(null);
+    };
+    /** One hit with the next: a flam, or an attack the detector split. */
+    const mergeHit = (i: number) => {
+        setHits(prev => {
+            if (!prev || i + 1 >= prev.length) return prev;
+            const merged = { ...prev[i], end: prev[i + 1].end, peakDb: Math.max(prev[i].peakDb, prev[i + 1].peakDb) };
+            return [...prev.slice(0, i), merged, ...prev.slice(i + 2)];
+        });
+    };
+    const detect = async () => {
+        if (!audio || finding) return;
+        setFinding(true);
+        try {
+            const l = audio.getChannelData(0);
+            const r = audio.numberOfChannels > 1 ? audio.getChannelData(1) : l;
+            const found = await findHits(l, r, audio.sampleRate, { sensitivity: HIT_SENSITIVITY[hitLevel], endDb: tailDb });
+            setHits(found);
+            setSelectedHit(null);
+            setList('hits');
+        } catch (e) {
+            console.error(e);
+            setError('The hit detector failed on this file.');
+        } finally {
+            setFinding(false);
+        }
+    };
+    /** The hits as parts: snippets then come only from the sounds, never the silence. */
+    const hitsAsParts = () => {
+        if (!hits?.length) return;
+        const spans = hits.map(hitSpan);
+        // Parts are at least 50 ms: a short hit borrows from the silence after it.
+        const widened = spans.map(([a, b], i) => [a, Math.min(spans[i + 1]?.[0] ?? duration, Math.max(b, a + MIN_PART))] as Part);
+        setParts(normaliseParts(widened, duration));
+        setSelected(null);
+        setList('parts');
+    };
+
     const removePart = (i: number) => {
         setParts(prev => prev.filter((_, k) => k !== i));
         setSelected(null);
     };
 
     const onKeyDown = (e: React.KeyboardEvent) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && list === 'hits' && selectedHit !== null) {
+            e.preventDefault();
+            dropHit(selectedHit);
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) {
             e.preventDefault();
             removePart(selected);
         }
         if (e.key === ' ') {
             e.preventDefault();
             if (playingHere) stop();
+            else if (list === 'hits' && selectedHit !== null) playHit(selectedHit);
             else if (selected !== null) playPart(selected);
             else playRegion({ resultId: source.id, index: -1, start: 0, end: duration, full: true }, source.blob);
         }
@@ -254,7 +357,7 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                 tabIndex={-1} ref={dialogRef}>
                 <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-white/10">
                     <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-synthux-red">Choose parts</div>
+                        <div className="text-[11px] font-bold uppercase tracking-widest text-synthux-red">Parts and hits</div>
                         <div className="text-sm font-bold truncate">{source.name}</div>
                     </div>
                     <button onClick={() => { stop(); onClose(); }} className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/10" aria-label="Close">
@@ -284,6 +387,53 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                     )}
                 </div>
 
+                <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 pb-2 text-[11px] text-gray-400">
+                    <button onClick={detect} disabled={!audio || finding}
+                        title="Find the hits: where each sound starts and where it has died away"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-synthux-red/50 text-white hover:bg-synthux-red/20 disabled:opacity-40">
+                        {finding ? <Loader size={12} className="animate-spin" /> : <Scissors size={12} />} {hits ? 'Find again' : 'Find hits'}
+                    </button>
+                    <select value={hitLevel} onChange={e => setHitLevel(e.target.value as HitLevel)} aria-label="Sensitivity"
+                        title="Gentle: only the clearest hits. Aggressive: every small attack"
+                        className="bg-black/40 border border-white/10 rounded px-1 py-1 text-gray-200">
+                        <option value="gentle">Gentle</option>
+                        <option value="normal">Normal</option>
+                        <option value="aggressive">Aggressive</option>
+                    </select>
+                    <select value={tailDb} onChange={e => setTailDb(Number(e.target.value))} aria-label="Tail"
+                        title="Where a hit ends: this far below its peak. What comes after, up to the next hit, is silence and is left out"
+                        className="bg-black/40 border border-white/10 rounded px-1 py-1 text-gray-200">
+                        <option value={20}>Short tails (−20 dB)</option>
+                        <option value={30}>Tails to −30 dB</option>
+                        <option value={45}>Long tails (−45 dB)</option>
+                    </select>
+                    {hits && (
+                        <>
+                            <span className="flex items-center gap-2 ml-1">
+                                {hits.length} hit{hits.length === 1 ? '' : 's'}
+                                {(['low', 'mid', 'high'] as const).map(c => (
+                                    <span key={c} className="flex items-center gap-1" title={CLASS_HINT[c]}>
+                                        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: CLASS_COLOR[c] }} />
+                                        {hits.filter(h => h.cls === c).length}
+                                    </span>
+                                ))}
+                            </span>
+                            <span className="ml-auto flex gap-2">
+                                <button onClick={hitsAsParts} disabled={!hits.length}
+                                    title="Make the hits the parts: snippets then come only from the sounds, never the silence between them"
+                                    className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-40">
+                                    Use as parts
+                                </button>
+                                <button onClick={() => { stop(); onKit(hits.map(hitSpan)); }} disabled={!hits.length}
+                                    title="A new result: every hit once, in order, with a cue point at each, so the slice mode plays one sound per slice"
+                                    className="px-2 py-1 rounded border border-synthux-red/50 text-white hover:bg-synthux-red/20 disabled:opacity-40">
+                                    Make a kit
+                                </button>
+                            </span>
+                        </>
+                    )}
+                </div>
+
                 <div className="px-4">
                     <div
                         ref={scrollRef}
@@ -310,12 +460,60 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                     </div>
                     <p className="mt-1 text-[10px] text-gray-500">
                         Drag on the wave to add a part · drag an edge to resize, the middle to move · click the wave to listen from there ·
-                        Delete removes the selected part · Space plays it
+                        Delete removes the selected part · Space plays it{hits ? ' · click a hit in the strip under the wave to hear it' : ''}
                     </p>
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2">
-                    {parts.length > 0 && (
+                    {hits && (
+                        <div className="flex gap-1 mb-2 text-[10px] font-bold uppercase tracking-widest">
+                            {([['hits', `Hits (${hits.length})`], ['parts', `Parts (${parts.length})`]] as const).map(([id, label]) => (
+                                <button key={id} onClick={() => setList(id)}
+                                    className={`px-2 py-1 rounded ${list === id ? 'bg-synthux-red/80 text-white' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {hits && list === 'hits' && (
+                        <table className="w-full text-[11px] font-mono">
+                            <tbody>
+                                {hits.map((h, i) => {
+                                    const [a, b] = hitSpan(h);
+                                    const isPlaying = playingHere?.index === 1000 + i;
+                                    return (
+                                        <tr key={`${h.start}-${i}`} onClick={() => setSelectedHit(i)}
+                                            className={`border-t border-white/5 cursor-pointer ${i === selectedHit ? 'bg-synthux-red/15' : 'hover:bg-white/[0.03]'}`}>
+                                            <td className="px-2 py-1 text-gray-500 w-8">{i + 1}</td>
+                                            <td className="px-2 py-1">{formatSeconds(a)}</td>
+                                            <td className="px-2 py-1 text-gray-400">{Math.round((b - a) * 1000)} ms</td>
+                                            <td className="px-2 py-1" title={`${CLASS_HINT[h.cls]} · centroid ${Math.round(h.centroid)} Hz`}>
+                                                <span className="inline-flex items-center gap-1">
+                                                    <span className="inline-block h-2 w-2 rounded-sm" style={{ background: CLASS_COLOR[h.cls] }} />{h.cls}
+                                                </span>
+                                            </td>
+                                            <td className="px-2 py-1 text-gray-400 text-right">{Math.round(h.peakDb)} dB</td>
+                                            <td className="px-2 py-1 w-24">
+                                                <span className="flex justify-end gap-1">
+                                                    <ToolButton title={isPlaying ? 'Stop' : 'Play this hit'}
+                                                        onClick={() => (isPlaying ? stop() : playHit(i))}>
+                                                        {isPlaying ? <Square size={10} fill="currentColor" /> : <Play size={11} />}
+                                                    </ToolButton>
+                                                    <ToolButton title="Merge with the next hit" onClick={() => mergeHit(i)} disabled={i + 1 >= hits.length}>
+                                                        <Combine size={11} />
+                                                    </ToolButton>
+                                                    <ToolButton title="Drop this hit" onClick={() => dropHit(i)}>
+                                                        <Trash2 size={11} />
+                                                    </ToolButton>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                    {(!hits || list === 'parts') && parts.length > 0 && (
                         <table className="w-full text-[11px] font-mono">
                             <tbody>
                                 {parts.map(([a, b], i) => {

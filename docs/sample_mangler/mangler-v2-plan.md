@@ -211,9 +211,13 @@ Each phase is usable on its own.
 
 **Phase 3 — Chop**
 
-- [ ] Spectral-flux onsets with bands and backtracking, hit ends, silence stripping
-- [ ] Hits layer on the source waveform; keep, merge, drop
-- [ ] "One hit per snippet" and re-cue switch to the new detector
+- [x] `hits.ts` (with a small radix-2 FFT in `fft.ts`): spectral flux in three bands, each scaled to its own loud end; a moving-median threshold; and a real rise (some band ≥ 8 dB over the 15 ms before, within 20 dB of the loudest band), so noise jitter and the click of a sound being cut off are not hits. Each hit is checked in the samples (louder after than before), moved back to its attack on a zero crossing, ends where it has fallen 30 dB (or at the next hit), and is classed low / mid / high by its centroid. Runs in its own worker (`hits.worker.ts`, `hitsClient.ts`): about 0.6 s per two minutes of audio
+- [x] Checks in `check:mangler`: 12 of 12 hits on time (±4 ms), kicks low and hats high, quiet kicks under loud hats found, none in steady noise, a held tone or silence, the FFT against a plain DFT
+- [x] The parts modal is now *Parts and hits*: *Find hits* (gentle / normal / aggressive, tails to −20 / −30 / −45 dB), a coloured lane under the wave (click to hear a hit), a list to play, merge or drop hits, then *Use as parts* (snippets only from the hits, never the silence) or *Make a kit*
+- [x] *Make a kit*: a new result (kept) with every hit once, in order, a cue at each, made with all snippets fixed, so the snippet list can reorder, drop or repitch them. Named `kit_<source>`
+- [x] *One hit per snippet* uses the new detector and also ends a snippet where its hit has died away, so no silent tail comes along. Re-cue at hits uses it too. A `detector` setting keeps the old one for results made before (`recipeSettings` reads a missing one as `energy`)
+- [ ] Later: hits stored on the source, so dropping and merging survive closing the modal (comes naturally with the slice pool)
+- [ ] Later: Chop in the editor's Mangle tool
 
 **Phase 4 — Slices and AD**
 

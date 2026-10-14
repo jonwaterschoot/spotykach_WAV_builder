@@ -496,6 +496,12 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         file: a rest is a snippet of silence that keeps its cue point, a soft part is a snippet turned down.
                                     </p>
                                     <p className="text-gray-400">
+                                        <strong className="text-gray-300">Chop a drum loop:</strong> the scissors on a source open it up close.
+                                        <em> Find hits</em> marks each sound (low, mid or high) and where it has died away; play, merge or drop
+                                        them, then <em>Use as parts</em> (snippets come only from the hits, never the silence) or
+                                        <em> Make a kit</em> (every hit once, a cue at each: one sound per slice on the Spotykach).
+                                    </p>
+                                    <p className="text-gray-400">
                                         <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
                                         button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
                                         makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.
