@@ -507,11 +507,35 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       if (!alive) return;
       setSources([...s].sort((a, b) => a.addedAt - b.addedAt));
       setResults(sortResults(r));
-      setSlices([...sl].sort((a, b) => a.addedAt - b.addedAt));
+      // Slices whose source has left the pool can never play again (older versions
+      // left them behind when a source was removed): they go, and so does what the
+      // sequencer still holds of them or of results and files that are gone.
+      const sourceIds = new Set(s.map(x => x.id));
+      const orphans = sl.filter(x => !sourceIds.has(x.sourceId)).map(x => x.id);
+      const kept = sl.filter(x => sourceIds.has(x.sourceId));
+      if (orphans.length) {
+        deleteMangleSlicesFromDB(orphans);
+        showToast(`${orphans.length} slice${orphans.length === 1 ? '' : 's'} whose source had left the pool ${orphans.length === 1 ? 'was' : 'were'} removed`, 'info');
+      }
+      setSlices([...kept].sort((a, b) => a.addedAt - b.addedAt));
+      const sliceIds = new Set(kept.map(x => x.id));
+      const owners = new Set([...sourceIds, ...r.map(x => x.id)]);
+      setSequence(seq => {
+        const goneSlices = new Set<string>();
+        const goneOwners = new Set<string>();
+        for (const track of seq.tracks) {
+          if (track.sliceId && !sliceIds.has(track.sliceId)) goneSlices.add(track.sliceId);
+          if (track.cue && !owners.has(track.cue.id)) goneOwners.add(track.cue.id);
+          for (const steps of Object.values(track.patterns)) {
+            for (const st of steps) if (st.sliceId && !sliceIds.has(st.sliceId)) goneSlices.add(st.sliceId);
+          }
+        }
+        return goneSlices.size || goneOwners.size ? pruneSequence(seq, goneSlices, goneOwners) : seq;
+      });
       setLoaded(true);
     });
     return () => { alive = false; };
-  }, []);
+  }, [showToast]);
 
   // The app's player and the snippet player never play at once.
   const stopRegion = region.stop;
