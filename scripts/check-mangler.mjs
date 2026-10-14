@@ -502,6 +502,34 @@ section('Hits');
 }
 
 // ---------------------------------------------------------------------------
+// Polyphony: long snippets ring under the next ones, never past the layer cap
+// ---------------------------------------------------------------------------
+
+section('Polyphony');
+{
+    const polySettings = sanitizeSettings({
+        ...settings, skipSilence: false, polyphony: true, overlapMinPct: 60, overlapMaxPct: 90, maxLayers: 3,
+        snippetMinMs: 100, snippetMaxMs: 3000,
+    });
+    const p = render(sources, polySettings, 4242);
+    check(p.left.length === 42 * SR, 'still exactly 42 s');
+    const spans = p.snippets.map(s => [s.outStart, s.outStart + s.length]);
+    const under = spans.map(([a, b]) => spans.filter(([c]) => c > a && c < b).length);
+    check(Math.max(...under) >= 2, 'a long snippet rings under several later ones', `up to ${Math.max(...under)} start inside one`);
+    const layersAt = t => spans.filter(([a, b]) => a <= t && t < b).length;
+    check(spans.every(([a]) => layersAt(a) <= 3), 'never more than 3 at once', `max ${Math.max(...spans.map(([a]) => layersAt(a)))}`);
+    check(p.cuePoints.every((c, i) => i === 0 || c >= p.cuePoints[i - 1]), 'cue points still in order');
+    const plain = render(sources, { ...polySettings, polyphony: false }, 4242);
+    const m = Math.min(p.snippets.length, plain.snippets.length);
+    check(p.snippets.slice(0, m).every((s, i) => s.source === plain.snippets[i].source && s.sourceStart === plain.snippets[i].sourceStart),
+        'polyphony moves the snippets, not the picks');
+    const again = render(sources, polySettings, 4242, { fixed: p.snippets });
+    check(sameArray(again.left, p.left), 'an edit (all fixed) renders it again exactly');
+    const grid = render(sources, { ...polySettings, grid: true }, 4242);
+    check(grid.snippets.every(s => s.advance === undefined && s.xfade === 0), 'on the tempo grid polyphony stays off');
+}
+
+// ---------------------------------------------------------------------------
 // Tempo grid: exact length, cues on the lines, whole steps
 // ---------------------------------------------------------------------------
 

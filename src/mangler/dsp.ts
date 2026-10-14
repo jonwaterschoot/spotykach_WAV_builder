@@ -354,6 +354,28 @@ export function joinInto(out: Stereo, snippet: Stereo, at: number, xfade: number
 }
 
 /**
+ * Adds `snippet` into `out` at `at` (layered, not replacing), faded in over
+ * `fadeIn` and out over `fadeOut` with equal-power curves, cut at the end of
+ * `out`. Returns where it ends.
+ */
+export function mixInto(out: Stereo, snippet: Stereo, at: number, fadeIn: number, fadeOut: number): number {
+    const capacity = out[0].length;
+    const n = Math.max(0, Math.min(snippet[0].length, capacity - at));
+    const len = snippet[0].length;
+    for (let ch = 0; ch < 2; ch++) {
+        const dst = out[ch], src = snippet[ch];
+        for (let i = 0; i < n; i++) {
+            let g = 1;
+            if (i < fadeIn) g = Math.sin(((i + 0.5) / fadeIn) * (Math.PI / 2));
+            const fromEnd = len - 1 - i;
+            if (fromEnd < fadeOut) g *= Math.sin(((fromEnd + 0.5) / fadeOut) * (Math.PI / 2));
+            dst[at + i] += src[i] * g;
+        }
+    }
+    return at + n;
+}
+
+/**
  * Makes `[0, length)` loop: the `fade` samples rendered past `length` are
  * crossfaded into the start, so the end runs straight into sample 0. Same idea as
  * `audioProcessor.applyCrossfadeLoop`, with equal-power curves. Returns the

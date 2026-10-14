@@ -5,7 +5,7 @@ import { ScrubNumber } from '../../components/ScrubNumber';
 import { NOTE_NAMES } from '../pitch';
 import { appStorage } from '../../utils/storageNamespace';
 import {
-    ATTACK_MAX_MS, BPM_MAX, BPM_MIN, DECAY_MAX_MS, DECAY_MIN_MS, STEPS_MAX, barSeconds, maxBars, OUTPUT_MAX_SECONDS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, SOFT_MAX_DB, XFADE_MAX_MS,
+    ATTACK_MAX_MS, BPM_MAX, BPM_MIN, MAX_LAYERS, OVERLAP_MAX_PCT, DECAY_MAX_MS, DECAY_MIN_MS, STEPS_MAX, barSeconds, maxBars, OUTPUT_MAX_SECONDS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, SOFT_MAX_DB, XFADE_MAX_MS,
     maskFromIntervals, scaleName, type MangleSettings,
 } from '../settings';
 import { DensityContext, type Density } from './density';
@@ -59,7 +59,8 @@ const summaries: Record<SettingsGroup, (s: MangleSettings) => string> = {
     shape: s => (s.grid ? ['on the grid'] : [
         s.fillMode === 'length' ? `${s.outputSeconds} s` : `${s.snippetCount} snippets`,
         range(s.snippetMinMs, s.snippetMaxMs),
-    ]).concat(`rev ${Math.round(s.reverseProbability * 100)}%`).join(' · '),
+        s.polyphony ? `poly ×${s.maxLayers}` : '',
+    ]).concat(`rev ${Math.round(s.reverseProbability * 100)}%`).filter(Boolean).join(' · '),
     tempo: s => (s.grid
         ? `${s.bpm} bpm · ${s.division} · ${s.bars} bar${s.bars === 1 ? '' : 's'} · ${s.stepsMin === s.stepsMax ? s.stepsMin : `${s.stepsMin}–${s.stepsMax}`} steps`
         : 'off'),
@@ -196,6 +197,20 @@ export function SettingsPanel({
                             readout={<RangeReadout label="Crossfade" low={s.xfadeMinMs} high={s.xfadeMaxMs} min={0} max={XFADE_MAX_MS}
                                 onChange={(lo, hi) => onChange({ xfadeMinMs: lo, xfadeMaxMs: hi })} />} />
                     </div>}
+                    {!s.grid && <>
+                        <div {...tip("Polyphony: a snippet keeps sounding while the next ones start, so a long one rings under several short ones. The crossfade is then each snippet's fade in and out")}>
+                            <Toggle label="Polyphony (let snippets ring)" checked={s.polyphony} onChange={set('polyphony')} />
+                        </div>
+                        {s.polyphony && <>
+                            <div {...tip("How far into a snippet the next one starts: 75% means after its first quarter. Each snippet picks between the two")}>
+                                <RangeSlider label="Overlap" min={0} max={OVERLAP_MAX_PCT} step={1} low={s.overlapMinPct} high={s.overlapMaxPct}
+                                    format={v => `${Math.round(v)}%`} onChange={(lo, hi) => onChange({ overlapMinPct: lo, overlapMaxPct: hi })} />
+                            </div>
+                            <div {...tip("At most this many snippets at once; a new one waits for the first to end")}>
+                                <Slider label="Max layers" min={2} max={MAX_LAYERS} value={s.maxLayers} onChange={set('maxLayers')} format={String} />
+                            </div>
+                        </>}
+                    </>}
                     <div {...tip("Off adds a 2 ms fade at each snippet edge")}>
                         <Toggle label="Hard cuts (leave clicks in)" checked={s.hardCuts} onChange={set('hardCuts')} />
                     </div>

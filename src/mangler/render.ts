@@ -1,6 +1,6 @@
 import { detectPitchYin, semitonesToNearestC, semitonesToPitchClasses } from './pitch.ts';
 import {
-    applyGain, cut, dbToGain, declick, detectOnsets, fadeOutTail, findOnset, gatedRmsDb, joinInto, limit, loopCrossfade,
+    applyGain, cut, dbToGain, declick, mixInto, detectOnsets, fadeOutTail, findOnset, gatedRmsDb, joinInto, limit, loopCrossfade,
     monoMix, nearestZeroCrossing, peak, resample, resampleSinc, reverseInPlace, rmsDb, type Stereo,
 } from './dsp.ts';
 import { Planner } from './plan.ts';
@@ -95,6 +95,8 @@ export interface SnippetInfo {
     softDb?: number;
     /** Attack–decay envelope, ms. Absent: none. */
     envelope?: SnippetEnvelope;
+    /** Polyphony: frames from this snippet's start to the next one's (it may ring past it). */
+    advance?: number;
 }
 
 export interface SnippetEnvelope {
@@ -254,8 +256,13 @@ export function render(
     let end = 0;
     let previousLength = 0;
     let lastProgress = 0;
+    // Polyphony: where the next snippet starts (`end` is then where the sound ends),
+    // and when the snippets still sounding stop.
+    const poly = settings.polyphony && !grid;
+    let cursor = 0;
+    let voices: number[] = [];
 
-    for (let index = 0; end < capacity && index < MAX_SNIPPETS; index++) {
+    for (let index = 0; (poly ? cursor : end) < capacity && index < MAX_SNIPPETS; index++) {
         if (byCount && snippets.length >= settings.snippetCount) break;
         // Always drawn, fixed or not, so the snippets after a fixed one keep their dice.
         const plan = planner.next();
@@ -447,14 +454,34 @@ export function render(
 
         const length = signal[0].length;
         if (length < 2) continue;
-        const xfade = index === 0 || snippets.length === 0
-            ? 0
-            : Math.min(wantedXfade, Math.floor(Math.min(length, previousLength) / 2));
-        const at = end - xfade;
-        end = joinInto(out, signal, at, xfade);
-        planner.commit(info.source);
-        previousLength = length;
-        snippets.push({ ...info, outStart: at, xfade, gainDb });
+        if (poly) {
+            // Layered: it starts at the cursor (or when a layer frees up) and rings to its end;
+            // the next one starts `advance` later, which its overlap dice decide.
+            const fade = snippets.length === 0 ? 0 : Math.min(wantedXfade, Math.floor(length / 2));
+            voices = voices.filter(v => v > cursor);
+            let at = cursor;
+            while (voices.length >= settings.maxLayers) {
+                at = Math.min(...voices);
+                voices = voices.filter(v => v > at);
+            }
+            const overlap = createRng(deriveSeed(seed, 0x7019, index)).uniform(settings.overlapMinPct, settings.overlapMaxPct) / 100;
+            const advance = spec?.advance ?? Math.max(Math.round(0.02 * sr), Math.round(length * (1 - overlap)));
+            end = Math.max(end, mixInto(out, signal, at, fade, Math.min(fade, Math.floor(length / 2))));
+            voices.push(at + length);
+            cursor = at + advance;
+            planner.commit(info.source);
+            previousLength = length;
+            snippets.push({ ...info, outStart: at, xfade: fade, gainDb, advance });
+        } else {
+            const xfade = index === 0 || snippets.length === 0
+                ? 0
+                : Math.min(wantedXfade, Math.floor(Math.min(length, previousLength) / 2));
+            const at = end - xfade;
+            end = joinInto(out, signal, at, xfade);
+            planner.commit(info.source);
+            previousLength = length;
+            snippets.push({ ...info, outStart: at, xfade, gainDb });
+        }
 
         const progress = end / capacity;
         if (onProgress && progress - lastProgress >= 0.05) {

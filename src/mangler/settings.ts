@@ -31,6 +31,17 @@ export interface MangleSettings {
     xfadeMaxMs: number;
     /** Leave clicks in where the crossfade is 0. Off adds a 2 ms declick fade. */
     hardCuts: boolean;
+    /**
+     * Polyphony: a snippet keeps sounding while the next ones start, so a long
+     * one rings under several short ones (summed; the crossfade is then each
+     * snippet's fade in and out). Off the tempo grid only.
+     */
+    polyphony: boolean;
+    /** How far into a snippet the next one may start, % of its length: each snippet picks between. */
+    overlapMinPct: number;
+    overlapMaxPct: number;
+    /** At most this many snippets sound at once; a new one waits for the first to end. */
+    maxLayers: number;
     /** 0–1, per snippet. */
     reverseProbability: number;
     /** Where a snippet may start: anywhere, on a zero crossing, or on a transient. */
@@ -109,6 +120,8 @@ export const MAX_CUE_POINTS = 255;
 /** How far a soft part may be turned down. */
 export const SOFT_MAX_DB = 40;
 export const ATTACK_MAX_MS = 500;
+export const OVERLAP_MAX_PCT = 95;
+export const MAX_LAYERS = 6;
 export const BPM_MIN = 40;
 export const BPM_MAX = 240;
 export const STEPS_MAX = 32;
@@ -130,6 +143,10 @@ export const DEFAULT_SETTINGS: MangleSettings = {
     xfadeMinMs: 5,
     xfadeMaxMs: 40,
     hardCuts: false,
+    polyphony: false,
+    overlapMinPct: 25,
+    overlapMaxPct: 75,
+    maxLayers: 3,
     reverseProbability: 0.25,
     snapStart: 'off',
     oneHit: false,
@@ -210,6 +227,10 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     s.xfadeMaxMs = clamp(s.xfadeMaxMs, 0, XFADE_MAX_MS, d.xfadeMaxMs);
     if (s.xfadeMaxMs < s.xfadeMinMs) [s.xfadeMinMs, s.xfadeMaxMs] = [s.xfadeMaxMs, s.xfadeMinMs];
     s.reverseProbability = clamp(s.reverseProbability, 0, 1, d.reverseProbability);
+    s.overlapMinPct = clamp(s.overlapMinPct, 0, OVERLAP_MAX_PCT, d.overlapMinPct);
+    s.overlapMaxPct = clamp(s.overlapMaxPct, 0, OVERLAP_MAX_PCT, d.overlapMaxPct);
+    if (s.overlapMaxPct < s.overlapMinPct) [s.overlapMinPct, s.overlapMaxPct] = [s.overlapMaxPct, s.overlapMinPct];
+    s.maxLayers = Math.round(clamp(s.maxLayers, 2, MAX_LAYERS, d.maxLayers));
     s.loudnessTargetDb = clamp(s.loudnessTargetDb, -30, -6, d.loudnessTargetDb);
     s.loudnessSpreadDb = clamp(s.loudnessSpreadDb, 0, 12, d.loudnessSpreadDb);
     s.maxBoostDb = clamp(s.maxBoostDb, 0, 36, d.maxBoostDb);
@@ -244,7 +265,7 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     if (!['off', 'zero', 'onset'].includes(s.snapStart)) s.snapStart = d.snapStart;
     if (!['linear', 'sinc'].includes(s.resampler)) s.resampler = d.resampler;
     if (!['energy', 'flux'].includes(s.detector)) s.detector = d.detector;
-    for (const key of ['hardCuts', 'oneHit', 'skipSilence', 'cuePoints', 'loop', 'limiter', 'envelope', 'grid'] as const) {
+    for (const key of ['hardCuts', 'oneHit', 'skipSilence', 'cuePoints', 'loop', 'limiter', 'envelope', 'grid', 'polyphony'] as const) {
         s[key] = typeof s[key] === 'boolean' ? s[key] : d[key];
     }
     return s;

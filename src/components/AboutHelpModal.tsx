@@ -492,7 +492,9 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         no changes can&apos;t be saved.
                                     </p>
                                     <p className="text-gray-400">
-                                        <strong className="text-gray-300">Rests and soft parts</strong> (under Loudness) make room in the
+                                        <strong className="text-gray-300">Polyphony</strong> (under Shape) lets snippets ring on while the next ones
+                                        start, so a long one merges with several short ones; <em>Max layers</em> caps how many play at once.
+                                        <strong className="text-gray-300"> Rests and soft parts</strong> (under Loudness) make room in the
                                         file: a rest is a snippet of silence that keeps its cue point, a soft part is a snippet turned down.
                                     </p>
                                     <p className="text-gray-400">
