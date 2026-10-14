@@ -1363,6 +1363,20 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     editResult(r, fixed, editSettings, indices.length > 1 ? `${label} (${indices.length} snippets)` : label);
   }, [editResult]);
 
+  /** Merges snippets with the one before each (no cue point between), or splits them again. */
+  const joinSnippets = useCallback((r: MangleResultEntry, indices: number[], joined: boolean) => {
+    const targets = new Set(indices.filter(i => i > 0));
+    if (targets.size === 0) return;
+    const fixed = r.recipe.snippets.map((s, i) => {
+      if (!targets.has(i)) return s;
+      const rest = { ...s };
+      delete rest.joined;
+      return joined ? { ...rest, joined: true } : rest;
+    });
+    const n = targets.size + 1;
+    editResult(r, fixed, recipeSettings(r), joined ? `Merging ${n} snippets into one slice` : `Splitting ${n} snippets`);
+  }, [editResult]);
+
   /**
    * Moves the snippets in `indices` to the row they were dropped on, together and
    * in their own order: after that row when dragged down, before it when up.
@@ -2918,6 +2932,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       onReroll={() => rerollUnlocked(r)}
                       variations={variationCount}
                       onToSlices={indices => snippetsToSlices(r, indices)}
+                      onJoin={(indices, joined) => joinSnippets(r, indices, joined)}
                     />
                   )}
                 </article>

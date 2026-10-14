@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Dices, GripVertical, Grid2x2Plus, Lock, Play, Square, Trash2, Unlock } from 'lucide-react';
+import { Combine, Dices, GripVertical, Grid2x2Plus, Lock, Play, Square, Trash2, Unlock } from 'lucide-react';
 import { NOTE_NAMES } from '../pitch';
 import type { MangleResultEntry } from '../../utils/persistence';
 import type { PitchChoice } from '../render';
@@ -30,6 +30,8 @@ interface SnippetTableProps {
     variations: number;
     /** Keeps these snippets in the slice pool. Absent: no such pool here (the editor). */
     onToSlices?: (indices: number[]) => void;
+    /** Merges these snippets with the one before each (no cue between), or splits them again. Absent: no merging (the editor). */
+    onJoin?: (indices: number[], joined: boolean) => void;
 }
 
 const SR = 48000;
@@ -37,7 +39,7 @@ const SR = 48000;
 /** Every snippet of one result: where it came from, what was done to it, and the edits. */
 export const SnippetTable: React.FC<SnippetTableProps> = ({
     entry, busy, activeIndex, playingIndex, onPlay, onHover, onDelete, onMove, onToggleLock, onLock, onPitch, onReroll,
-    variations, crop, onToSlices,
+    variations, crop, onToSlices, onJoin,
 }) => {
     const { recipe } = entry;
     // Old recipes lack the scale fields; sanitising fills them with "root only, C".
@@ -121,6 +123,20 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                             title={allSelectedLocked ? 'Unlock the selected snippets' : 'Lock the selected snippets'}>
                             {allSelectedLocked ? <Unlock size={11} /> : <Lock size={11} />} {allSelectedLocked ? 'Unlock' : 'Lock'}
                         </TableAction>
+                        {onJoin && selected.length > 1 && (() => {
+                            // Neighbours only: each selected snippet after the first joins the one above it.
+                            const tail = selected.slice(1);
+                            const together = tail.every((i, k) => i === selected[k] + 1);
+                            const merged = tail.every(i => recipe.snippets[i]?.joined);
+                            return (
+                                <TableAction onClick={() => onJoin(tail, !merged)} disabled={busy || !together}
+                                    title={!together ? 'Select neighbouring snippets to merge them' : merged
+                                        ? 'Split the selected snippets again: a cue point at each'
+                                        : 'Merge the selected snippets into one slice: no cue points between them'}>
+                                    <Combine size={11} /> {merged ? 'Split' : 'Merge'}
+                                </TableAction>
+                            );
+                        })()}
                         {onToSlices && (
                             <TableAction onClick={() => onToSlices(selected)}
                                 title="Keep the selected snippets in the slice pool, as they sound here (shift, direction, gain, envelope)">
@@ -223,7 +239,10 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                                             {isPlaying ? <Square size={10} fill="currentColor" /> : <Play size={11} />}
                                         </button>
                                     </td>
-                                    <td className="px-2 py-0.5 text-gray-600">{i + 1}</td>
+                                    <td className="px-2 py-0.5 text-gray-600 whitespace-nowrap"
+                                        title={s.joined && i > 0 ? 'Merged with the snippet above: no cue point at its start' : undefined}>
+                                        {s.joined && i > 0 ? <span className="text-synthux-yellow">↳ </span> : null}{i + 1}
+                                    </td>
                                     <td className="px-2 py-0.5 text-gray-500">{((s.outStart - offset) / SR).toFixed(2)}</td>
                                     <td className="px-2 py-0.5 truncate max-w-[9rem]" title={recipe.sources[s.source]?.name}>
                                         {recipe.sources[s.source]?.name ?? '?'}
@@ -274,6 +293,16 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                                     </td>
                                     <td className="px-1 py-0.5">
                                         <span className="flex items-center justify-end gap-0.5">
+                                            {onJoin && (() => {
+                                                const next = recipe.snippets[i + 1];
+                                                return (
+                                                    <RowButton onClick={() => onJoin([i + 1], !next?.joined)} disabled={busy || !next}
+                                                        title={next?.joined ? 'Merged with the next snippet: click to split them (a cue point between)' : 'Merge with the next snippet: one slice, no cue point between'}
+                                                        className={next?.joined ? 'text-synthux-yellow' : 'text-gray-600 hover:text-white'}>
+                                                        <Combine size={11} />
+                                                    </RowButton>
+                                                );
+                                            })()}
                                             <RowButton onClick={() => onToggleLock(i)} title={isLocked ? 'Unlock' : 'Lock: keep this snippet in a reroll'}
                                                 className={isLocked ? 'text-synthux-yellow' : 'text-gray-600 hover:text-white'}>
                                                 {isLocked ? <Lock size={11} /> : <Unlock size={11} />}

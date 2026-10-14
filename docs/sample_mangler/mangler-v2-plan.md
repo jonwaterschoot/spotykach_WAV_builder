@@ -287,6 +287,7 @@ Each phase is usable on its own.
 - [x] Result cards: scissors open the hits dialog on the result itself (hits found on open, no parts); *To slices* and *Make a kit* put the result in the pool, switched off, as the slices' source. *Export* menu: user library, Browse pool, new Studio project, Spotykach card; the Kept menu offers the same for every starred result
 - [x] The editor opened from the mangler has no Mangler tool (and no *Edit in Mangler* in the slicer)
 - [x] Pool icon: waves (Browse pool, the phone's Sources tab)
+- [x] Merge in a result's snippet list (as in the hits list): a snippet joined to the one before it gets no cue point, so the two play as one slice; per row (with the next) or for neighbouring selected rows, and split again the same way. The audio stays bit-identical; stored on the snippet (`joined`)
 - Note: on the Spotykach a note only retriggers a deck at a pitch (firmware: `_on_midi_note_on`), so cue tracks play their segments here; over the Link they send their cue's note
 
 ## Decided Oct 14

@@ -97,6 +97,8 @@ export interface SnippetInfo {
     envelope?: SnippetEnvelope;
     /** Polyphony: frames from this snippet's start to the next one's (it may ring past it). */
     advance?: number;
+    /** Merged with the snippet before it: no cue point at its start, so the two play as one slice. */
+    joined?: boolean;
 }
 
 export interface SnippetEnvelope {
@@ -298,6 +300,7 @@ export function render(
                 ...(spec.rest ? { rest: true } : {}),
                 ...(spec.softDb ? { softDb: spec.softDb } : {}),
                 ...(spec.envelope ? { envelope: spec.envelope } : {}),
+                ...(spec.joined ? { joined: true } : {}),
             };
             gainDb = spec.gainDb;
             wantedXfade = spec.xfade;
@@ -516,7 +519,7 @@ export function render(
     }
 
     // Cue at the middle of each crossfade: where the new snippet takes over.
-    const starts = snippets.map(s => s.outStart + (s.xfade >> 1)).filter(f => f < total);
+    const starts = snippets.filter((s, i) => i === 0 || !s.joined).map(s => s.outStart + (s.xfade >> 1)).filter(f => f < total);
     const cuePoints = settings.cuePoints ? starts.slice(0, MAX_CUE_POINTS) : [];
 
     onProgress?.(1);

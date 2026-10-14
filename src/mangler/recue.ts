@@ -22,7 +22,7 @@ const SENSITIVITY: Record<Exclude<CueLevel, 'auto'>, number> = { gentle: 0.25, n
 
 /** Where a render puts its cues: the middle of each snippet's incoming crossfade. */
 export const snippetCues = (snippets: readonly SnippetInfo[], totalFrames: number): number[] =>
-    snippets.map(s => s.outStart + (s.xfade >> 1)).filter(f => f < totalFrames).slice(0, MAX_CUE_POINTS);
+    snippets.filter((s, i) => i === 0 || !s.joined).map(s => s.outStart + (s.xfade >> 1)).filter(f => f < totalFrames).slice(0, MAX_CUE_POINTS);
 
 /**
  * Cue points at the attacks in `signal`, always starting at 0, at most `maxCues`

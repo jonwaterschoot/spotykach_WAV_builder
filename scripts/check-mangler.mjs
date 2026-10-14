@@ -207,6 +207,12 @@ section('Editing (fixed snippets)');
     const again = render(sources, settings, 12345, { fixed: a.snippets });
     check(sameArray(again.left, a.left) && sameArray(again.right, a.right), 'every snippet fixed: bit-identical to the original');
 
+    // Merge snippets 2 and 3 (3 joins 2): the same audio, one cue point fewer.
+    const joined = render(sources, settings, 12345, { fixed: a.snippets.map((s, i) => (i === 3 ? { ...s, joined: true } : s)) });
+    check(sameArray(joined.left, a.left) && joined.cuePoints.length === a.cuePoints.length - 1
+        && !joined.cuePoints.includes(a.cuePoints[3]) && joined.snippets[3].joined === true,
+        'merge two snippets: same audio, no cue between them, kept on the snippet');
+
     // Delete snippet 3: the rest fixed, the end refilled.
     const without = a.snippets.filter((_, i) => i !== 3);
     const deleted = render(sources, settings, 12345, { fixed: without });
