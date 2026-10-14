@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Briefcase, ChevronDown, Drum, Grid2x2, Import, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  AudioWaveform, Briefcase, ChevronDown, Drum, Grid2x2, Import, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -64,6 +64,8 @@ import { Segmented, Slider } from '../mangler/ui/Sliders';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
 import { SlicePool } from '../mangler/ui/SlicePool';
 import { SequencerStation } from '../mangler/ui/SequencerStation';
+import { SynthStation, type SynthTake } from '../mangler/ui/SynthStation';
+import { GENERATORS, defaultRanges, synthesize, type SynthKind, type SynthRanges } from '../mangler/synth';
 import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
 import {
   MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, sequenceCues, sequenceFrames, sequenceHits,
@@ -93,8 +95,18 @@ type Pane = 'sources' | 'settings' | 'results';
  * The stations in the top bar. Mangle is the sources, settings and results;
  * Slices the slice pool. The sequencer and the synth join them later.
  */
-type Station = 'mangle' | 'slices' | 'sequence';
-const STATIONS: readonly Station[] = ['mangle', 'slices', 'sequence'];
+export type Station = 'mangle' | 'slices' | 'sequence' | 'synth';
+const STATIONS: readonly Station[] = ['mangle', 'slices', 'sequence', 'synth'];
+const SYNTH_KEY = 'mangler_synth';
+
+/** The synth's generator and its ranges per generator, as last left. */
+const loadSynth = (): { kind: SynthKind; ranges: Partial<Record<SynthKind, SynthRanges>>; count: number } => {
+  try {
+    const s = JSON.parse(appStorage.getItem(SYNTH_KEY) ?? 'null');
+    if (s && s.kind in GENERATORS) return { kind: s.kind, ranges: s.ranges ?? {}, count: Number(s.count) || 4 };
+  } catch { /* defaults */ }
+  return { kind: 'kick', ranges: {}, count: 4 };
+};
 const SEQUENCE_KEY = 'mangler_sequence';
 
 /** The stored sequence, if it still has the shape this version expects. */
@@ -247,6 +259,8 @@ interface MangleModeProps {
   onEnterStudio?: () => void;
   onEnterBrowse?: () => void;
   studio?: StudioLink;
+  /** Open on this station (Studio's empty slot: Synth), whatever was open last. */
+  initialStation?: Station;
 }
 
 /** A save waiting on the user: which results, and where to. */
@@ -257,7 +271,7 @@ type PendingSave = { route: 'library' | 'pool'; results: MangleResultEntry[] };
  * into one file of up to 42 s. No project and no folder: the pool and the results
  * live in IndexedDB until a result is saved. See docs/sample_mangler.
  */
-export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStudio, onEnterBrowse, studio }) => {
+export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStudio, onEnterBrowse, studio, initialStation }) => {
   const [sources, setSources] = useState<MangleSourceEntry[]>([]);
   const [results, setResults] = useState<MangleResultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -279,10 +293,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   /** Below lg, one column at a time: the bottom bar picks it. */
   const [pane, setPane] = useState<Pane>('sources');
   const [station, setStation] = useState<Station>(() => {
+    if (initialStation) return initialStation;
     const stored = appStorage.getItem(STATION_KEY) as Station | null;
     return stored && STATIONS.includes(stored) ? stored : 'mangle';
   });
   const [sequence, setSequence] = useState<Sequence>(() => loadSequence() ?? newSequence(newId));
+  const [synth, setSynth] = useState(loadSynth);
+  useEffect(() => { appStorage.setItem(SYNTH_KEY, JSON.stringify(synth)); }, [synth]);
+  const [takes, setTakes] = useState<SynthTake[]>([]);
+  const [synthesizing, setSynthesizing] = useState(false);
+  const takeCounter = useRef<Partial<Record<SynthKind, number>>>({});
   useEffect(() => { appStorage.setItem(SEQUENCE_KEY, JSON.stringify(sequence)); }, [sequence]);
   useEffect(() => { appStorage.setItem(STATION_KEY, station); }, [station]);
   const [slices, setSlices] = useState<MangleSliceEntry[]>([]);
@@ -928,12 +948,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   /** Audio made here back into the source pool, switched on, to mangle again. */
   const addBlobSource = useCallback(async (
     blob: Blob, name: string, origin: string, license: string | undefined, licenseLevel: LicenseLevel,
+    extra: Partial<MangleSourceEntry> = {},
   ) => {
     const entry: MangleSourceEntry = {
       id: newId(), name, origin, license, licenseLevel, blob, duration: await probeDuration(blob), enabled: true, addedAt: Date.now(),
+      ...extra,
     };
     entry.blob = await putMangleSourceDiskBacked(entry);
     setSources(prev => [...prev, entry]);
+    return entry;
   }, []);
 
   const resultToSource = useCallback(async (r: MangleResultEntry) => {
@@ -1466,6 +1489,81 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     ].filter(Boolean).join('; '), 'success');
   }, [savable, onAddToProject, studioTarget, markKept, showToast]);
 
+  // ---------------------------------------------------------------------------
+  // Synth
+  // ---------------------------------------------------------------------------
+
+  const synthRanges = synth.ranges[synth.kind] ?? defaultRanges(synth.kind);
+
+  /** Takes one at a time, with a breath between, so a phone stays responsive. */
+  const generateTakes = useCallback(async () => {
+    if (synthesizing) return;
+    setSynthesizing(true);
+    const count = Math.min(synth.count, limits.variationsMax);
+    const made: SynthTake[] = [];
+    for (let i = 0; i < count; i++) {
+      const seedValue = randomSeed();
+      const { values, audio } = synthesize(synth.kind, synthRanges, seedValue, SR);
+      const n = (takeCounter.current[synth.kind] ?? 0) + 1;
+      takeCounter.current[synth.kind] = n;
+      made.push({
+        id: newId(), name: `${GENERATORS[synth.kind].label.toLowerCase()} ${n}`, kind: synth.kind, seed: seedValue, values, audio,
+        peaks: slicePeaks(audio),
+      });
+      setTakes(prev => [...made.slice(-1), ...prev]);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    setSynthesizing(false);
+  }, [synthesizing, synth, synthRanges, limits.variationsMax]);
+
+  const takeBlob = (t: SynthTake) => wavWithCues(t.audio[0], t.audio[1], [], t.name);
+
+  /** A take as a small source of its own. Switched off when it only backs a slice. */
+  const takeSource = useCallback((t: SynthTake, enabled: boolean) =>
+    addBlobSource(takeBlob(t), t.name, 'Synth', undefined, 'open', { enabled, synth: { kind: t.kind, seed: t.seed, values: t.values } }),
+  [addBlobSource]);
+
+  const takesToSlices = useCallback(async (list: SynthTake[]) => {
+    const items: Omit<MangleSliceEntry, 'id' | 'addedAt'>[] = [];
+    for (const t of list) {
+      const source = await takeSource(t, false);
+      items.push({
+        start: 0, end: t.audio[0].length / SR, name: t.name, sourceId: source.id, sourceName: source.name, origin: 'Synth',
+        cls: GENERATORS[t.kind].cls, peaks: t.peaks,
+      });
+    }
+    await addSlices(items);
+  }, [takeSource, addSlices]);
+
+  const takesToSources = useCallback(async (list: SynthTake[]) => {
+    for (const t of list) await takeSource(t, true);
+    showToast(`${list.length} take${list.length === 1 ? '' : 's'} added to the source pool`, 'success');
+  }, [takeSource, showToast]);
+
+  /** A take as a result: the save routes, the editor and Studio slots then work as for any result. */
+  const takeResult = useCallback(async (t: SynthTake): Promise<MangleResultEntry> => {
+    const taken = new Set(resultsRef.current.map(r => r.name));
+    let name = t.name.replace(/\s+/g, '_');
+    for (let n = 2; taken.has(name); n++) name = `${t.name.replace(/\s+/g, '_')}-${n}`;
+    const entry: MangleResultEntry = {
+      id: newId(), name, blob: takeBlob(t), duration: t.audio[0].length / SR,
+      recipe: { seed: t.seed, settings: DEFAULT_SETTINGS, sources: [], snippets: [], cuePoints: [], cuesCapped: false, peakReductionDb: 0 },
+      peaks: waveformPeaks(t.audio[0], t.audio[1]), kept: true, batchId: Date.now(), createdAt: Date.now(), edited: true, kind: 'synth',
+    };
+    await storeEntry(entry);
+    setResults(prev => sortResults([...prev, entry]));
+    return entry;
+  }, [storeEntry]);
+
+  const takesToResults = useCallback(async (list: SynthTake[]) => {
+    for (const t of list) await takeResult(t);
+    showToast(`${list.length} take${list.length === 1 ? '' : 's'} in Mangle › Results`, 'success');
+  }, [takeResult, showToast]);
+
+  const takeToSlot = useCallback(async (t: SynthTake) => {
+    addToProject([await takeResult(t)]);
+  }, [takeResult, addToProject]);
+
   const downloadResult = useCallback((r: MangleResultEntry) => {
     if (savable([r]).length) downloadBlob(r.blob, `${r.name}.wav`);
   }, [savable]);
@@ -1568,6 +1666,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               ['mangle', <Dices size={13} />, 'Mangle', 'Sources, settings and results'],
               ['slices', <Grid2x2 size={13} />, 'Slices', 'The slice pool: single sounds to collect and make kits from'],
               ['sequence', <Drum size={13} />, 'Sequence', 'A step sequencer for the slices: patterns A–D, a chain, up to 8 tracks'],
+              ['synth', <AudioWaveform size={13} />, 'Synth', 'Drums, percussion and FM sounds, made from ranges like the mangler'],
             ] as const).map(([id, icon, label, hint]) => (
               <button key={id} onClick={() => setStation(id)} aria-pressed={station === id} title={hint}
                 className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest transition-colors
@@ -1600,6 +1699,33 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </button>
         </div>
       </div>
+
+      {station === 'synth' && (
+        <div className="flex-1 min-h-0">
+          <SynthStation
+            kind={synth.kind}
+            onKind={kind => setSynth(s => ({ ...s, kind }))}
+            ranges={synthRanges}
+            onRanges={ranges => setSynth(s => ({ ...s, ranges: { ...s.ranges, [s.kind]: ranges } }))}
+            onResetRanges={() => setSynth(s => ({ ...s, ranges: { ...s.ranges, [s.kind]: undefined } }))}
+            count={synth.count}
+            maxCount={Math.min(8, limits.variationsMax)}
+            onCount={count => setSynth(s => ({ ...s, count }))}
+            generating={synthesizing}
+            onGenerate={generateTakes}
+            takes={takes}
+            playingId={slicePlayer.playingId}
+            onPlay={t => { player.stop(); region.stop(); slicePlayer.playAudio(t.id, t.audio, SR); }}
+            onStop={slicePlayer.stop}
+            onToSlices={takesToSlices}
+            onToSources={takesToSources}
+            onToResults={takesToResults}
+            slotLabel={studio?.targetLabel}
+            onToSlot={studio ? takeToSlot : undefined}
+            onDiscard={ids => setTakes(prev => prev.filter(t => !ids.includes(t.id)))}
+          />
+        </div>
+      )}
 
       {station === 'sequence' && (
         <div className="flex-1 min-h-0">
@@ -1940,10 +2066,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     <div className="min-w-0 flex-1 basis-40">
                       <div className="text-xs font-bold truncate flex items-center gap-1.5">
                         {r.name}
-                        {r.kind === 'sequence' ? (
+                        {r.kind ? (
                           <span className="shrink-0 px-1 rounded border border-synthux-blue/50 text-synthux-blue text-[9px] uppercase tracking-wider font-normal"
-                            title="Rendered from the sequencer: change it there and render again">
-                            sequence
+                            title={r.kind === 'sequence' ? 'Rendered from the sequencer: change it there and render again' : 'A synth take'}>
+                            {r.kind}
                           </span>
                         ) : r.edited && (
                           <span className="shrink-0 px-1 rounded border border-synthux-pink/40 text-synthux-pink text-[9px] uppercase tracking-wider font-normal"
@@ -1972,7 +2098,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       )}
                     </div>
                     <div className="flex items-center gap-0.5 ml-auto">
-                    {r.kind !== 'sequence' && (
+                    {!r.kind && (
                     <button onClick={() => applySeed(r.recipe.seed)}
                       className="shrink-0 font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
                       title="Use this seed for the next batch">
@@ -2116,7 +2242,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
                   {r.edited ? (
                     <p className="mt-2 text-[10px] text-gray-500">
-                      {r.kind === 'sequence'
+                      {r.kind === 'synth'
+                        ? <>A synth take: make more in <button onClick={() => setStation('synth')} className="underline hover:text-white">Synth</button>.</>
+                        : r.kind === 'sequence'
                         ? <>Rendered from the sequencer: change the pattern in <button onClick={() => setStation('sequence')} className="underline hover:text-white">Sequence</button> and render again.</>
                         : <>Edited in the editor, so its snippets can't be changed here. The original result is still editable.</>}
                     </p>

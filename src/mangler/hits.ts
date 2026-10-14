@@ -153,8 +153,9 @@ export function detectHits(signal: Stereo, sampleRate: number, options: HitOptio
             const mag = Math.hypot(re[k], im[k]);
             const band = k < lowBin ? 0 : k < highBin ? 1 : 2;
             current[k] = Math.log1p(100 * mag);
-            weighted += k * binHz * mag;
-            total += mag;
+            // Power, not magnitude: quiet highs (a click) shouldn't make a kick read as mid.
+            weighted += k * binHz * mag * mag;
+            total += mag * mag;
             power[band] += mag * mag;
             const rise = current[k] - previous[k];
             if (rise > 0) flux[band][f] += rise;

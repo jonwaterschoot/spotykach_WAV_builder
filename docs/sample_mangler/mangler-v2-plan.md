@@ -248,9 +248,11 @@ Each phase is usable on its own.
 
 **Phase 7 — Synth**
 
-- [ ] Kick, snare, hat, clap first; then tom/perc, FM, noise
-- [ ] To slices / sources / tray
-- [ ] Empty slot → Synth: make a hit for that slot
+- [x] `synth.ts`: kick (pitch sweep, click, drive), snare (tone + filtered noise + snap), hat (808 square cluster or noise, band- and high-pass), clap (hands with jitter and a tail), perc (five modes from harmonic to membrane, with a strike), FM (two operators with feedback, a decaying index, a ratio that may snap to halves) and noise (a sweeping resonant low-pass). Every parameter a range; one seeded pick per parameter, in order, so a seed gives the same take. Peak to −1 dBFS, at most 4 s, mono. 1–5 ms per take; a phone renders them one at a time, at most 4 per click
+- [x] *Synth* station (fourth in the top bar): generator, its ranges (compact), number of takes, Generate; takes as tiles with play. Per take, or all: *Slice* (a switched-off source of its own plus a slice of it, classed by generator), *Source* (switched on, to mangle), *Result* (a result marked *synth*, for the save routes). Ranges per generator remembered (`mangler_synth`)
+- [x] Empty slot → Synth: the slot choice in Studio has *Synth* next to *Sample Mangler*; it opens the mangler on the Synth station, and each take gets an *into <slot>* button
+- [x] Checks: every generator deterministic per seed, at −1 dBFS, values in range; the hit detector reads a synth kick as low and a hat as high (the centroid is now power-weighted, so a click no longer makes a kick read as mid)
+- [ ] Later: tune the generators by ear; more of them (cowbell, rim, bass drop)
 
 ## Decided Oct 14
 

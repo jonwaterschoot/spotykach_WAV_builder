@@ -347,6 +347,8 @@ export interface MangleSourceEntry {
      * those sources but doesn't read as a known license.
      */
     licenseLevel?: import('../submission/licenses').LicenseLevel;
+    /** A synth take: how to make it again. */
+    synth?: { kind: import('../mangler/synth').SynthKind; seed: number; values: Record<string, number> };
 }
 
 export interface MangleResultEntry {
@@ -369,8 +371,11 @@ export interface MangleResultEntry {
      * can be played, cropped, re-cued and saved, but not re-rendered.
      */
     edited?: boolean;
-    /** Rendered from the sequencer: not re-rollable (`edited` is set too), changed there and rendered again. */
-    kind?: 'sequence';
+    /**
+     * Not made by the mangle engine, so not re-rollable (`edited` is set too):
+     * rendered from the sequencer, or a synth take.
+     */
+    kind?: 'sequence' | 'synth';
 }
 
 const loadAll = async <T>(store: string): Promise<T[]> => {

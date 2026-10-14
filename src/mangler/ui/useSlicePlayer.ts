@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Stereo } from '../dsp';
 import { renderSlice, type SliceSpec } from '../slices';
 
 /**
@@ -17,15 +18,12 @@ export function useSlicePlayer(load: (id: string, blob: Blob) => Promise<AudioBu
         setPlayingId(null);
     }, []);
 
-    const play = useCallback(async (id: string, sourceId: string, blob: Blob, spec: SliceSpec) => {
+    /** Plays audio there is already (a synth take), under `id`. */
+    const playAudio = useCallback(async (id: string, [left, right]: Stereo, sampleRate: number) => {
         stop();
-        const decoded = await load(sourceId, blob);
-        const l = decoded.getChannelData(0);
-        const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
-        const [left, right] = renderSlice([l, r], decoded.sampleRate, spec);
-        const context = (contextRef.current ??= new AudioContext({ sampleRate: decoded.sampleRate }));
+        const context = (contextRef.current ??= new AudioContext({ sampleRate }));
         if (context.state === 'suspended') await context.resume();
-        const buffer = context.createBuffer(2, left.length, decoded.sampleRate);
+        const buffer = context.createBuffer(2, left.length, sampleRate);
         buffer.copyToChannel(left as Float32Array<ArrayBuffer>, 0);
         buffer.copyToChannel(right as Float32Array<ArrayBuffer>, 1);
         const node = context.createBufferSource();
@@ -39,12 +37,19 @@ export function useSlicePlayer(load: (id: string, blob: Blob) => Promise<AudioBu
         nodeRef.current = node;
         node.start();
         setPlayingId(id);
-    }, [load, stop]);
+    }, [stop]);
+
+    const play = useCallback(async (id: string, sourceId: string, blob: Blob, spec: SliceSpec) => {
+        const decoded = await load(sourceId, blob);
+        const l = decoded.getChannelData(0);
+        const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+        await playAudio(id, renderSlice([l, r], decoded.sampleRate, spec), decoded.sampleRate);
+    }, [load, playAudio]);
 
     useEffect(() => () => {
         try { nodeRef.current?.stop(); } catch { /* fine */ }
         contextRef.current?.close().catch(() => undefined);
     }, []);
 
-    return { play, stop, playingId };
+    return { play, playAudio, stop, playingId };
 }

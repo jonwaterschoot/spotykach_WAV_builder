@@ -173,6 +173,8 @@ function App({ onExitToHub }: AppProps) {
   /** The Sample Mangler over the project, and the empty slot it was opened from (if any). */
   const [showMangler, setShowMangler] = useState(false);
   const [manglerTarget, setManglerTarget] = useState<{ color: TapeColor; slotId: number } | null>(null);
+  /** Open the mangler on its synth (an empty slot's "Synth" choice) rather than where it was left. */
+  const [manglerSynth, setManglerSynth] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
 
   const [sampleBrowserPos, setSampleBrowserPos] = useState({
@@ -4571,8 +4573,9 @@ function App({ onExitToHub }: AppProps) {
   // Runs over the project: its source pool is filled from the slots and the pool,
   // and its results come back as project files.
 
-  const openMangler = (slotId: number | null) => {
+  const openMangler = (slotId: number | null, synth = false) => {
     setManglerTarget(slotId !== null ? { color: currentTapeColor, slotId } : null);
+    setManglerSynth(synth);
     setShowSampleBrowser(false);
     setShowBrowserChoiceModal(false);
     setTargetSlotForUpload(null);
@@ -5634,6 +5637,7 @@ function App({ onExitToHub }: AppProps) {
                 }
               }}
               onMangler={() => openMangler(targetSlotForUpload)}
+              onSynth={() => openMangler(targetSlotForUpload, true)}
             />
 
             {
@@ -6021,6 +6025,7 @@ function App({ onExitToHub }: AppProps) {
                       targetLabel: manglerTarget ? `${manglerTarget.color} ${manglerTarget.slotId}` : undefined,
                       onAddToProject: handleManglerAdd,
                     }}
+                    initialStation={manglerSynth ? 'synth' : undefined}
                   />
                 </Suspense>
               </div>

@@ -618,6 +618,33 @@ section('Sequencer');
 }
 
 // ---------------------------------------------------------------------------
+// Synth: every generator, seeded, in range, the right class
+// ---------------------------------------------------------------------------
+
+section('Synth');
+{
+    const { synthesize, SYNTH_KINDS, GENERATORS, defaultRanges, MAX_SECONDS } = await import('../src/mangler/synth.ts');
+    const { detectHits } = await import('../src/mangler/hits.ts');
+    for (const kind of SYNTH_KINDS) {
+        const ranges = defaultRanges(kind);
+        const t0 = performance.now();
+        const a = synthesize(kind, ranges, 42, SR);
+        const ms = performance.now() - t0;
+        const b = synthesize(kind, ranges, 42, SR);
+        const c = synthesize(kind, ranges, 43, SR);
+        const [l] = a.audio;
+        let peak = 0, nan = false;
+        for (const v of l) { peak = Math.max(peak, Math.abs(v)); if (Number.isNaN(v)) nan = true; }
+        const inRange = GENERATORS[kind].params.every(q => a.values[q.key] >= ranges[q.key][0] - 1e-9 && a.values[q.key] <= ranges[q.key][1] + 1e-9);
+        check(sameArray(l, b.audio[0]) && !sameArray(l, c.audio[0]) && !nan && peak > 0.8 && peak < 0.9 && l.length <= MAX_SECONDS * SR && inRange,
+            `${kind}: same seed same take, another seed another, −1 dBFS, values in range`, `${(l.length / SR * 1000).toFixed(0)} ms, ${ms.toFixed(0)} ms to render`);
+    }
+    // The detector agrees with the drum classes.
+    const cls = kind => { const x = synthesize(kind, defaultRanges(kind), 7, SR).audio; return detectHits(x, SR)[0]?.cls; };
+    check(cls('kick') === 'low' && cls('hat') === 'high', 'a synth kick reads as low, a hat as high', `kick ${cls('kick')}, hat ${cls('hat')}, snare ${cls('snare')}`);
+}
+
+// ---------------------------------------------------------------------------
 // The engine stands alone: no imports from outside src/mangler, so it can
 // become a package without untangling (mangler-v2-plan.md, "Packaging").
 // ---------------------------------------------------------------------------
@@ -631,7 +658,12 @@ section('Engine boundary');
     const outside = [];
     for (const name of readdirSync(dir).filter(n => n.endsWith('.ts') && !GLUE.has(n))) {
         const text = readFileSync(new URL(name, dir), 'utf8');
-        for (const [, path] of text.matchAll(/(?:from|import)\s*\(?\s*'([^']+)'/g)) {
+        // Import and export statements, and inline type imports: import('…').
+        const paths = [
+            ...text.matchAll(/^\s*(?:import|export)\s[^;]*?\sfrom\s+'([^']+)'/gm),
+            ...text.matchAll(/\bimport\(\s*'([^']+)'\s*\)/g),
+        ].map(m => m[1]);
+        for (const path of paths) {
             if (!path.startsWith('./')) outside.push(`${name} → ${path}`);
         }
     }
