@@ -232,6 +232,18 @@ export const SampleBrowser = ({
         setLastSelectedPath(path);
     };
 
+    /**
+     * Dice: a random few of a category selected in place of what was (one when
+     * picking for a slot), ready for the add buttons.
+     */
+    const pickRandomInCategory = (samples: { path: string }[]) => {
+        const want = Math.min(samples.length, selectionMode === 'slot-selection' ? 1 : 4);
+        const picked = [...samples].sort(() => Math.random() - 0.5).slice(0, want).map(s => s.path);
+        const newSelection = new Set([...selectedSamplePaths].filter(p => !samples.some(s => s.path === p)));
+        picked.forEach(p => newSelection.add(p));
+        setSelectedSamplePaths(newSelection);
+    };
+
     const selectAllInCategory = (samples: any[], select: boolean) => {
         const newSelection = new Set(selectedSamplePaths);
         samples.forEach(s => {
@@ -1692,6 +1704,16 @@ export const SampleBrowser = ({
                                                             <span>{category}</span>
                                                             <div className="flex items-center gap-2">
                                                                 <span className="text-[9px] opacity-40 font-mono lowercase mr-2">{samples.length} files</span>
+                                                                {samples.length > 1 && (
+                                                                    <button
+                                                                        onClick={() => pickRandomInCategory(samples)}
+                                                                        title={selectionMode === 'slot-selection' ? 'Dice: select one at random' : 'Dice: select a random four'}
+                                                                        aria-label="Select at random"
+                                                                        className="p-1 rounded border bg-black/40 border-white/10 text-gray-500 hover:text-synthux-orange transition-colors"
+                                                                    >
+                                                                        <Dices size={11} />
+                                                                    </button>
+                                                                )}
                                                                 <button
                                                                     onClick={() => selectAllInCategory(samples, !isAllSelected)}
                                                                     className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all border ${isAllSelected

@@ -1,4 +1,5 @@
 import React from 'react';
+import { rollRanges } from '../randomize';
 import { Dices, FileAudio, Grid2x2Plus, Import, Loader, Play, Plus, RotateCcw, Square, Trash2 } from 'lucide-react';
 import type { Stereo } from '../dsp';
 import type { HitClass } from '../hits';
@@ -80,8 +81,12 @@ export const SynthStation: React.FC<SynthStationProps> = ({
                     <div className="space-y-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
                         <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{gen.label} ranges</span>
-                            <button onClick={onResetRanges} title="Back to the starting ranges"
-                                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-white"><RotateCcw size={10} /> Reset</button>
+                            <span className="flex items-center gap-2">
+                                <button onClick={() => onRanges(rollRanges(kind))} title="Dice: roll every range of this generator"
+                                    className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-synthux-red"><Dices size={11} /> Roll</button>
+                                <button onClick={onResetRanges} title="Back to the starting ranges"
+                                    className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-white"><RotateCcw size={10} /> Reset</button>
+                            </span>
                         </div>
                         {gen.params.map(q => {
                             const [lo, hi] = ranges[q.key] ?? q.range;

@@ -73,6 +73,7 @@ import {
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
+import { rollAll } from '../mangler/randomize';
 import { renderSlice, sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
@@ -2057,6 +2058,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               {Object.keys(PRESETS).map(name => <option key={name} value={name}>{name}</option>)}
               <option value="__default">Defaults</option>
             </select>
+            <button onClick={() => setSettings(prev => rollAll(prev))}
+              title="Surprise: roll every group of settings at once (the fill and the length stay)"
+              className="ml-1 p-1.5 rounded-md border border-white/10 text-gray-400 hover:text-synthux-red hover:bg-white/5 transition-colors">
+              <Dices size={13} />
+            </button>
           </div>
 
           <SettingsPanel settings={settings} onChange={updateMany} storageKey="mangler_groups" className="space-y-3" />

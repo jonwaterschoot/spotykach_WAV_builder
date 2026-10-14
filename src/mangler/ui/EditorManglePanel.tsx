@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS, MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, PRESETS, sanitize
 import { MANGLE_SAMPLE_RATE as SR, type MangleResult, type PitchChoice, type SnippetInfo } from '../render';
 import { SnippetTable } from './SnippetTable';
 import { SettingsPanel } from './SettingsPanel';
+import { rollAll } from '../randomize';
 
 /**
  * The mangler as one of the editor's tools: random snippets of the open file only,
@@ -387,6 +388,10 @@ export function EditorManglePanel({
                             className="px-2 py-1 rounded-md text-[11px] font-bold border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                         >{p}</button>
                     ))}
+                    <button onClick={() => setSettings(prev => rollAll(prev))} {...hint('Surprise: roll every group of settings at once')}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border border-white/10 text-gray-400 hover:text-synthux-red hover:bg-white/5 transition-colors">
+                        <Dices size={12} /> Surprise
+                    </button>
                 </div>
                 {rendering !== null ? (
                     <button onClick={cancel} {...hint('Stop rendering')}

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Dices } from 'lucide-react';
+import { rollGroup } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import { NOTE_NAMES } from '../pitch';
 import { appStorage } from '../../utils/storageNamespace';
@@ -124,15 +125,22 @@ export function SettingsPanel({
 
     const group = (id: SettingsGroup, children: React.ReactNode, title = TITLES[id]) => (
         <section className="rounded-lg border border-white/5 bg-white/[0.02] min-w-0 break-inside-avoid">
-            <button
-                onClick={() => setOpen(o => ({ ...o, [id]: !o[id] }))}
-                aria-expanded={open[id]}
-                className="w-full flex items-center gap-1.5 px-3 py-2 text-left"
-            >
-                {open[id] ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</span>
-                {!open[id] && <span className="ml-auto truncate text-[10px] font-mono text-gray-600">{summaries[id](s)}</span>}
-            </button>
+            <div className="flex items-center">
+                <button
+                    onClick={() => setOpen(o => ({ ...o, [id]: !o[id] }))}
+                    aria-expanded={open[id]}
+                    className="min-w-0 flex-1 flex items-center gap-1.5 pl-3 pr-1 py-2 text-left"
+                >
+                    {open[id] ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</span>
+                    {!open[id] && <span className="ml-auto truncate text-[10px] font-mono text-gray-600">{summaries[id](s)}</span>}
+                </button>
+                <button onClick={() => onChange(rollGroup(id))}
+                    title={`Dice: roll the ${title.toLowerCase()} settings`} aria-label={`Roll the ${title.toLowerCase()} settings`}
+                    className="shrink-0 mr-2 p-1 rounded text-gray-600 hover:text-synthux-red hover:bg-white/5 transition-colors">
+                    <Dices size={12} />
+                </button>
+            </div>
             {open[id] && <div className={`${density === 'compact' ? 'space-y-2' : 'space-y-3'} px-3 pb-3`}>{children}</div>}
         </section>
     );

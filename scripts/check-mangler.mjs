@@ -649,6 +649,42 @@ section('Synth');
 }
 
 // ---------------------------------------------------------------------------
+// Dice: rolls stay valid and in their bounds
+// ---------------------------------------------------------------------------
+
+section('Dice');
+{
+    const { rollGroup, rollAll, rollSteps, rollChain, rollSelection, rollRanges } = await import('../src/mangler/randomize.ts');
+    const { GENERATORS, SYNTH_KINDS } = await import('../src/mangler/synth.ts');
+    const r = createRng(2024);
+    const rnd = () => r.next();
+    let ok = true;
+    for (let i = 0; i < 200; i++) {
+        const s = rollAll(DEFAULT_SETTINGS, rnd);
+        const again = sanitizeSettings(s);
+        if (JSON.stringify(again) !== JSON.stringify(s)) ok = false;
+        if (s.xfadeMaxMs > s.snippetMinMs / 2 + 1e-9 || s.snippetMaxMs < s.snippetMinMs) ok = false;
+        if (s.outputSeconds !== DEFAULT_SETTINGS.outputSeconds || s.fillMode !== DEFAULT_SETTINGS.fillMode) ok = false;
+    }
+    check(ok, 'Surprise: 200 rolls, all valid, crossfades under half the shortest snippet, length kept');
+    const shape = rollGroup('shape', rnd);
+    check(!('outputSeconds' in shape) && !('loudnessTargetDb' in shape), 'a group roll touches only its group');
+    const lows = Array.from({ length: 300 }, () => rollSteps('low', rnd));
+    const onBeat = lows.filter(p => p[0].on).length, offBeat = lows.filter(p => p[1].on).length;
+    check(onBeat === 300 && offBeat < 45, 'low patterns: always on the one, rarely off the beat', `${offBeat}/300 on step 2`);
+    const chain = rollChain(6, ['A', 'C'], rnd);
+    check(chain.length === 6 && chain.every(p => p === 'A' || p === 'C') && chain[0] === 'A', 'chain from the used patterns');
+    const pool = [...Array(5)].map((_, i) => ({ id: `l${i}`, cls: 'low' })).concat([...Array(5)].map((_, i) => ({ id: `h${i}`, cls: 'high' })));
+    const pickIds = rollSelection(pool, rnd);
+    check(pickIds.length >= 4 && new Set(pickIds).size === pickIds.length && pickIds.some(id => id[0] === 'l') && pickIds.some(id => id[0] === 'h'),
+        'slice selection: no repeats, both classes', pickIds.join(','));
+    check(SYNTH_KINDS.every(k => {
+        const rr = rollRanges(k, rnd);
+        return GENERATORS[k].params.every(q => rr[q.key][0] >= q.min - 1e-9 && rr[q.key][1] <= q.max + 1e-9 && rr[q.key][0] <= rr[q.key][1]);
+    }), 'synth ranges rolled inside every parameter\'s bounds');
+}
+
+// ---------------------------------------------------------------------------
 // The engine stands alone: no imports from outside src/mangler, so it can
 // become a package without untangling (mangler-v2-plan.md, "Packaging").
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Import, Package, Play, Search, Square, Trash2 } from 'lucide-react';
+import { Dices, Import, Package, Play, Search, Square, Trash2 } from 'lucide-react';
+import { rollSelection } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import type { MangleSliceEntry } from '../../utils/persistence';
 import type { HitClass } from '../hits';
@@ -107,6 +108,11 @@ export const SlicePool: React.FC<SlicePoolProps> = ({
                         </button>
                     ))}
                 </div>
+                <button onClick={() => setSelection(new Set(rollSelection(shown)))} disabled={shown.length === 0}
+                    title="Dice: pick a random handful of the slices shown (4–12, taking turns across low, mid and high), ready for a kit"
+                    className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 hover:text-synthux-red hover:bg-white/5 disabled:opacity-30">
+                    <Dices size={12} /> Pick
+                </button>
                 <label className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 bg-black/30">
                     <Search size={11} />
                     <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Name or source"

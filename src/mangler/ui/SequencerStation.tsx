@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, Eraser, Minus, Music, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import { Copy, Dices, Eraser, Minus, Music, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import { pickAny, rollChain, rollSteps } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import type { MangleSliceEntry } from '../../utils/persistence';
 import type { HitClass } from '../hits';
@@ -76,6 +77,29 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
         })),
     }));
     const used = (p: PatternId) => seq.tracks.some(t => t.patterns[p].some(s => s.on));
+
+    /** A slice for a track: the class it already has, or any. */
+    const rollSlice = (current: string | null) => {
+        const cls = current ? sliceById.get(current)?.cls : undefined;
+        const pool = slices.filter(s => available.has(s.sourceId) && (!cls || s.cls === cls));
+        return pickAny(pool)?.id ?? current;
+    };
+    /** Dice for one track: a slice if it has none, then a pattern that suits the slice. */
+    const rollTrack = (t: number) => onChange(seq => ({
+        ...seq,
+        tracks: seq.tracks.map((tr, i) => {
+            if (i !== t) return tr;
+            const sliceId = tr.sliceId ?? rollSlice(null);
+            const cls = sliceId ? sliceById.get(sliceId)?.cls : undefined;
+            return { ...tr, sliceId, patterns: { ...tr.patterns, [edit]: rollSteps(cls) } };
+        }),
+    }));
+    /** Dice for the pattern: every track with a slice gets a new one. */
+    const rollPattern = () => onChange(seq => ({
+        ...seq,
+        tracks: seq.tracks.map(tr => (!tr.sliceId ? tr
+            : { ...tr, patterns: { ...tr.patterns, [edit]: rollSteps(sliceById.get(tr.sliceId)?.cls) } })),
+    }));
 
     const sliceOptions = (
         <>
@@ -169,6 +193,10 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     <button onClick={() => onChange(seq => ({ ...seq, chain: [...seq.chain, seq.chain[seq.chain.length - 1]] }))}
                         disabled={seq.chain.length >= limit} title={`Add a pattern to the chain (at most ${limit} at this tempo: 42 s)`}
                         className="p-1 rounded border border-white/10 hover:bg-white/5 disabled:opacity-30"><Plus size={11} /></button>
+                    <button onClick={() => onChange(seq => ({ ...seq, chain: rollChain(seq.chain.length, PATTERNS.filter(p => seq.tracks.some(t => t.patterns[p].some(s => s.on)))) }))}
+                        disabled={seq.chain.length <= 1}
+                        title="Dice: rearrange the chain from the patterns that have steps"
+                        className="p-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5 disabled:opacity-30"><Dices size={11} /></button>
                     <button onClick={() => onChange(seq => ({ ...seq, chain: seq.chain.slice(0, -1) }))} disabled={seq.chain.length <= 1}
                         title="Drop the last pattern from the chain"
                         className="p-1 rounded border border-white/10 hover:bg-white/5 disabled:opacity-30"><Minus size={11} /></button>
@@ -202,7 +230,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     const color = own?.cls ? CLASS_COLOR[own.cls] : '#d1d5db';
                     return (
                         <div key={track.id} className="flex flex-wrap lg:flex-nowrap items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2">
-                            <div className="flex items-center gap-1.5 min-w-0 w-full lg:w-[19rem] shrink-0">
+                            <div className="flex items-center gap-1 min-w-0 w-full lg:w-[22rem] shrink-0">
                                 <button onClick={() => track.sliceId && onAudition(track.sliceId, track.shift)} disabled={!playable(track.sliceId)}
                                     title="Hear the track's slice" className="h-7 w-7 shrink-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30">
                                     <Play size={11} className="ml-px" />
@@ -214,6 +242,12 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                     <option value="">— slice —</option>
                                     {sliceOptions}
                                 </select>
+                                <button onClick={() => setTrack(t, { sliceId: rollSlice(track.sliceId) })}
+                                    title="Dice: another slice of the same class" aria-label="Roll the slice"
+                                    className="p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5"><Dices size={12} /></button>
+                                <button onClick={() => rollTrack(t)}
+                                    title={`Dice: a new pattern ${edit} for this track, after its slice (kicks on the beat, hats busier)`} aria-label="Roll the track's steps"
+                                    className="p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5"><Dices size={12} className="rotate-45" /></button>
                                 <button onClick={() => setTrack(t, { mute: !track.mute })} title="Mute"
                                     className={`w-6 py-0.5 rounded text-[10px] font-bold border ${track.mute ? 'bg-synthux-yellow/80 text-black border-transparent' : 'border-white/10 text-gray-400 hover:text-white'}`}>M</button>
                                 <button onClick={() => setTrack(t, { solo: !track.solo })} title="Solo"
@@ -307,6 +341,11 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                         disabled={seq.tracks.length >= MAX_TRACKS}
                         className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30">
                         <Plus size={11} /> Track
+                    </button>
+                    <button onClick={rollPattern}
+                        title={`Dice: a new pattern ${edit} on every track that has a slice`}
+                        className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5">
+                        <Dices size={11} /> Roll {edit}
                     </button>
                     <button onClick={() => onChange(seq => ({ ...seq, tracks: seq.tracks.map(tr => ({ ...tr, patterns: { ...tr.patterns, [edit]: emptySteps() } })) }))}
                         className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
