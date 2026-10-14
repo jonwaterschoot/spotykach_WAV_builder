@@ -531,8 +531,13 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     <p className="text-gray-400">
                                         <strong className="text-gray-300">Spotykach link:</strong> in Sequence, <em>Link</em> connects over MIDI.
                                         Lead sends clock and Start / Stop; Follow takes the Spotykach&apos;s clock; a track set to <em>SK A</em> or
-                                        <em> SK B</em> plays that deck, note 60 plus the step&apos;s pitch. With the USB setting on, results can go
-                                        straight to a slot.
+                                        <em> SK B</em> plays that deck, note 60 plus the step&apos;s pitch.
+                                    </p>
+                                    <p className="text-gray-400">
+                                        <strong className="text-gray-300">The Spotykach&apos;s card:</strong> results go into its slots, and slots come back as
+                                        sources (<em>Card</em> in the source pool), over USB (with the USB setting on) or on the SD card in a card reader,
+                                        the folder Studio uses as its SD card. The <em>Kept</em> menu above the results sends, saves or reuses every
+                                        kept result at once.
                                     </p>
                                     <p className="text-gray-400">
                                         <strong className="text-gray-300">Track kinds:</strong> a <em>Cue</em> track plays a result or a file with cue

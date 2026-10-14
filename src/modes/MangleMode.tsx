@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Maximize, Minimize, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
+  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, HardDrive, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -12,11 +12,11 @@ import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle, saveDirectoryHandle } from '../utils/storageUtils';
 import { listFolderProjects, openFromFolder, openFromZip, saveToFolder, saveToZip, type ManglerSnapshot, type ProjectInfo } from '../mangler/project';
 import { ProjectDialog } from '../mangler/ui/ProjectDialog';
-import { SendToSpotykach } from '../mangler/ui/SendToSpotykach';
+import { CardDialog, type CardItem } from '../mangler/ui/CardDialog';
 import { usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
 import { runningStandalone, useFullscreen } from '../utils/useFullscreen';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
-import { LEVEL_LABEL, LOCAL_ORIGINS, resultLicense, sourceLicense } from '../mangler/license';
+import { LEVEL_LABEL, isLocalOrigin, resultLicense, sourceLicense } from '../mangler/license';
 import type { LicenseLevel } from '../submission/licenses';
 import { addResultsToBrowsePool, resultsAsDetached, resultsAsProjectFiles, saveResultsToLibrary } from '../mangler/save';
 import { useEscapeLayer } from '../shell/escapeStack';
@@ -111,7 +111,7 @@ const sourceKind = (s: MangleSourceEntry): SourceKind =>
   s.sourceSamplePath?.startsWith('project:') ? 'project'
     : s.origin === 'Synth' ? 'synth'
       : s.origin === 'Sample Mangler' || s.origin.startsWith('Slice of') ? 'made'
-        : LOCAL_ORIGINS.includes(s.origin) ? 'files'
+        : isLocalOrigin(s.origin) ? 'files'
           : 'packs';
 
 /**
@@ -1778,9 +1778,29 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (projectName) appStorage.setItem(PROJECT_KEY, projectName); else appStorage.removeItem(PROJECT_KEY);
   }, [projectName]);
   const [projectDialog, setProjectDialog] = useState<'save' | 'open' | null>(null);
-  /** The result going to a Spotykach slot over USB (standalone only, with the USB setting on). */
-  const [sendTarget, setSendTarget] = useState<MangleResultEntry | null>(null);
+  /**
+   * The Spotykach's card, over USB or in a card reader (standalone only: Studio has its own):
+   * results sent into slots, or slots imported as sources.
+   */
+  const [card, setCard] = useState<{ mode: 'send'; items: CardItem[] } | { mode: 'import' } | null>(null);
   const usbEnabled = useUsbTransferEnabled() && usbTransferSupported() && !studio;
+  const cardEnabled = !studio && (usbEnabled || canPickFolder());
+  const sendToCard = (list: MangleResultEntry[]) => {
+    const items = list.filter(r => resultLicense(r.recipe).level !== 'no-derivatives')
+      .map(r => ({ name: r.name, blob: r.blob, cues: r.recipe.cuePoints.map(f => f / SR) }));
+    if (!items.length) return;
+    player.stop(); region.stop(); sequencer.stop();
+    setCard({ mode: 'send', items });
+  };
+  /** Slot files from the card, into the source pool: the user's own, cue points in the file. */
+  const importFromCard = async (files: { file: File; tape: string; slot: number }[]) => {
+    for (const { file, tape, slot } of files) {
+      // Slot files are named by number; the sample's own name is in its INAM.
+      const header = await readWavHeaderInfo(file).catch(() => null);
+      await addBlobSource(file, header?.metadata?.name?.trim() || `${tape} ${slot}`, `Spotykach card · ${tape} ${slot}`, undefined, 'open');
+    }
+    showToast(`${files.length} slot file${files.length === 1 ? '' : 's'} in the source pool`, 'success');
+  };
   const [projectBusy, setProjectBusy] = useState<string | null>(null);
   const [folderProjects, setFolderProjects] = useState<ProjectInfo[] | null>(null);
 
@@ -2221,6 +2241,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               >
                 <Plus size={12} /> Files
               </button>
+              {cardEnabled && (
+                <button
+                  onClick={() => { player.stop(); region.stop(); sequencer.stop(); setCard({ mode: 'import' }); }}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-synthux-orange
+                    border border-synthux-orange/40 hover:bg-synthux-orange/10 transition-colors"
+                  title="Import slot files from the Spotykach: over USB or from its SD card"
+                >
+                  <HardDrive size={12} /> Card
+                </button>
+              )}
             </div>
             <input
               ref={inputRef}
@@ -2441,6 +2471,45 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             </div>
           )}
 
+          {/*
+            * The results as a whole, on top where the eye is: what is kept and where it
+            * can go (one menu), clearing the rest, and the storage they take.
+            */}
+          {results.length > 0 && (
+            <div data-tour="save" className="shrink-0 px-4 py-1.5 border-b border-white/10 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+              <span>
+                {results.length} result{results.length === 1 ? '' : 's'} ·{' '}
+                <span className={keptResults.length ? 'text-synthux-yellow' : ''}>{keptResults.length} kept</span>
+              </span>
+              <ActionMenu
+                label={`Kept (${keptResults.length})`}
+                icon={<Star size={12} />}
+                disabled={keptResults.length === 0}
+                title={keptResults.length ? 'Where the kept results go' : 'Keep results (the star on a card) to save, send or reuse them together'}
+                items={[
+                  ...(studio
+                    ? [{ label: 'Add to project', icon: <Plus size={13} />, onClick: () => addToProject(keptResults) }]
+                    : [
+                      { label: 'Save to the user library', icon: <Library size={13} />, onClick: () => requestSave('library', keptResults) },
+                      { label: 'Add to the Browse pool', icon: <Layers size={13} />, onClick: () => requestSave('pool', keptResults) },
+                      { label: 'New Studio project', icon: <FolderPlus size={13} />, onClick: () => startProject(keptResults) },
+                    ]),
+                  ...(cardEnabled ? [{ label: 'Send to Spotykach (USB or SD card)', icon: <Usb size={13} />, onClick: () => sendToCard(keptResults) }] : []),
+                  { label: 'Into the source pool', icon: <Import size={13} />, onClick: () => { for (const r of keptResults) void resultToSource(r); } },
+                ]}
+              />
+              {results.some(r => !r.kept) && !busy && (
+                <button onClick={clearUnkept} title="Discard every result without a star"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
+                  <Trash2 size={12} /> Clear unkept
+                </button>
+              )}
+              <span className="ml-auto" title="Results are kept in this browser until cleared">
+                {(resultsBytes / 1024 / 1024).toFixed(0)} MB stored
+              </span>
+            </div>
+          )}
+
           {/* Cards stop at a readable width on wide screens and shrink with the window. */}
           <div data-tour="results" className="flex-1 min-h-0 min-w-0 overflow-y-auto p-4 space-y-3 [&>article]:max-w-[1400px]">
             {loaded && results.length === 0 && !batch && (
@@ -2564,9 +2633,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         </IconButton>
                       </>
                     )}
-                    {usbEnabled && (
-                      <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Send to a slot on the Spotykach, over USB'}
-                        onClick={() => { player.stop(); region.stop(); sequencer.stop(); setSendTarget(r); }} disabled={blocked}
+                    {cardEnabled && (
+                      <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Send to a slot on the Spotykach: over USB or on its SD card'}
+                        onClick={() => sendToCard([r])} disabled={blocked}
                         className="text-gray-400 hover:text-synthux-orange">
                         <Usb size={15} />
                       </IconButton>
@@ -2713,39 +2782,6 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             })}
           </div>
 
-          <div data-tour="save" className="shrink-0 px-4 py-2 border-t border-white/10 flex items-center gap-3 text-[10px] text-gray-500">
-            <span>
-              {results.length} result{results.length === 1 ? '' : 's'} · {results.filter(r => r.kept).length} kept ·{' '}
-              {(resultsBytes / 1024 / 1024).toFixed(0)} MB in browser storage
-            </span>
-            {keptResults.length > 0 && (
-              <span className="flex items-center gap-1 ml-2">
-                <span className="text-gray-400">Kept:</span>
-                {studio ? (
-                  <FooterButton onClick={() => addToProject(keptResults)} icon={<Plus size={12} />}>
-                    Add to project
-                  </FooterButton>
-                ) : (
-                  <>
-                    <FooterButton onClick={() => requestSave('library', keptResults)} icon={<Library size={12} />}>
-                      Save to library
-                    </FooterButton>
-                    <FooterButton onClick={() => requestSave('pool', keptResults)} icon={<Layers size={12} />}>
-                      Browse pool
-                    </FooterButton>
-                    <FooterButton onClick={() => startProject(keptResults)} icon={<FolderPlus size={12} />}>
-                      New project
-                    </FooterButton>
-                  </>
-                )}
-              </span>
-            )}
-            {results.some(r => !r.kept) && !busy && (
-              <button onClick={clearUnkept} className="ml-auto text-gray-400 hover:text-white underline-offset-2 hover:underline">
-                Clear unkept
-              </button>
-            )}
-          </div>
         </section>
       </div>
 
@@ -2907,13 +2943,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         confirmLabel={pendingSave?.route === 'library' ? 'Save' : 'Add'}
       />
 
-      {sendTarget && (
-        <SendToSpotykach
-          name={sendTarget.name}
-          blob={sendTarget.blob}
-          cues={sendTarget.recipe.cuePoints.map(f => f / SR)}
-          onClose={() => setSendTarget(null)}
-          onSent={where => showToast(`${sendTarget.name} is in ${where} on the Spotykach`, 'success')}
+      {card && (
+        <CardDialog
+          mode={card.mode}
+          items={card.mode === 'send' ? card.items : undefined}
+          onClose={() => setCard(null)}
+          onSent={where => showToast(`Sent to ${where.join(', ')} on the Spotykach`, 'success')}
+          onImport={importFromCard}
         />
       )}
 
@@ -3020,14 +3056,40 @@ const LicenseBadge: React.FC<{ level: keyof typeof LEVEL_LABEL; terms?: string }
   );
 };
 
-const FooterButton: React.FC<{ onClick: () => void; icon: React.ReactNode; children: React.ReactNode }> = ({
-  onClick, icon, children,
-}) => (
-  <button onClick={onClick}
-    className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
-    {icon} {children}
-  </button>
-);
+/** A button with a short menu under it; a click elsewhere or Escape closes it. */
+const ActionMenu: React.FC<{
+  label: string; icon: React.ReactNode; title: string; disabled?: boolean;
+  items: { label: string; icon: React.ReactNode; onClick: () => void }[];
+}> = ({ label, icon, title, disabled, items }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEscapeLayer(open, () => { setOpen(false); return true; });
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)} disabled={disabled} title={title} aria-expanded={open}
+        className="flex items-center gap-1 px-2 py-0.5 rounded border border-synthux-yellow/40 text-synthux-yellow hover:bg-synthux-yellow/10
+          disabled:border-white/10 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-default">
+        {icon} {label} <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-40 min-w-[220px] py-1 rounded-lg border border-white/10 bg-synthux-panel shadow-2xl">
+          {items.map(it => (
+            <button key={it.label} onClick={() => { setOpen(false); it.onClick(); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-white/10">
+              <span className="text-gray-400">{it.icon}</span> {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const IconButton: React.FC<{
   title: string; onClick: () => void; className: string; children: React.ReactNode; disabled?: boolean;

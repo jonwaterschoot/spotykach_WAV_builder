@@ -9,10 +9,12 @@ import { usedSources, type MangleRecipe, type RecipeSource } from './recipe.ts';
 
 /** Files from the user's own disk: theirs, so no limits. */
 export const LOCAL_ORIGINS = ['Local file', 'Local Folder'];
+/** The user's own: their disk, or their Spotykach's card (origin 'Spotykach card · Pink 3'). */
+export const isLocalOrigin = (origin: string): boolean => LOCAL_ORIGINS.includes(origin) || origin.startsWith('Spotykach card');
 
 export const sourceLicense = (source: { origin: string; license?: string; licenseLevel?: LicenseLevel }): LicenseClass => {
     if (source.licenseLevel) return { ...classifyLicense(source.license), level: source.licenseLevel };
-    return LOCAL_ORIGINS.includes(source.origin) && !source.license?.trim()
+    return isLocalOrigin(source.origin) && !source.license?.trim()
         ? { level: 'open', shareAlike: false, attribution: false }
         : classifyLicense(source.license);
 };
@@ -60,7 +62,7 @@ export function resultLicense(recipe: MangleRecipe): ResultLicense {
     if (shareAlike) lines.push('Share-alike: anything made from this carries the same terms as those sources.');
     lines.push('Sources:');
     for (const s of used) {
-        const terms = shortTerms(s.license) || (LOCAL_ORIGINS.includes(s.origin) ? 'own file' : 'no license given');
+        const terms = shortTerms(s.license) || (isLocalOrigin(s.origin) ? 'own file' : 'no license given');
         lines.push(`- ${s.name} (${s.origin}): ${terms}`);
         // Online sounds name their author and page; that is the attribution BY asks for.
         const credit = (s.license ?? '').split('\n').find(line => /^\s*credit:/i.test(line));
