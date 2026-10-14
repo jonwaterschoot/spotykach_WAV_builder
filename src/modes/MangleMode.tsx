@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Maximize, Minimize, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -14,6 +14,7 @@ import { listFolderProjects, openFromFolder, openFromZip, saveToFolder, saveToZi
 import { ProjectDialog } from '../mangler/ui/ProjectDialog';
 import { SendToSpotykach } from '../mangler/ui/SendToSpotykach';
 import { usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
+import { runningStandalone, useFullscreen } from '../utils/useFullscreen';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
 import { LEVEL_LABEL, LOCAL_ORIGINS, resultLicense, sourceLicense } from '../mangler/license';
 import type { LicenseLevel } from '../submission/licenses';
@@ -1736,6 +1737,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   // ---------------------------------------------------------------------------
 
   const [projectMenu, setProjectMenu] = useState(false);
+  const fullscreen = useFullscreen();
   const [confirmFresh, setConfirmFresh] = useState(false);
   useEscapeLayer(projectMenu, () => { setProjectMenu(false); return true; });
 
@@ -1976,10 +1978,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       <div className="shrink-0 flex items-center justify-between gap-4 px-4 py-2 border-b border-white/10 bg-synthux-panel">
         <button
           onClick={onExitToHub}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+          className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
             text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
         >
-          <ChevronLeft size={14} /> {studio ? 'Studio' : 'Hub'}
+          <ChevronLeft size={14} /> <span className="hidden sm:inline">{studio ? 'Studio' : 'Hub'}</span>
         </button>
         <div className="min-w-0 flex items-center gap-3">
           <span className="hidden md:inline text-xs font-bold uppercase tracking-[0.2em] text-synthux-red">Sample Mangler</span>
@@ -1991,7 +1993,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               ['synth', <AudioWaveform size={13} />, 'Synth', 'Drums, percussion and FM sounds, made from ranges like the mangler'],
             ] as const).map(([id, icon, label, hint]) => (
               <button key={id} onClick={() => setStation(id)} aria-pressed={station === id} title={hint}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest transition-colors
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest transition-colors
                   ${station === id ? 'bg-synthux-red/80 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                 {icon} <span className="hidden sm:inline">{label}</span>
                 {id === 'slices' && slices.length > 0 && <span className="font-mono text-[10px] opacity-80">{slices.length}</span>}
@@ -2004,7 +2006,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           <button
             onClick={() => setProjectMenu(o => !o)}
             aria-expanded={projectMenu}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+            className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
               text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
             title="The whole mangler: start fresh, save it, open a saved one"
           >
@@ -2038,10 +2040,24 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             </div>
           )}
         </div>
+        {!runningStandalone() && (
+          <button
+            onClick={() => (fullscreen.supported
+              ? void fullscreen.toggle()
+              : showToast('This browser has no full screen for pages (iPhone Safari). Share › Add to Home Screen opens WAV Builder without the browser bars.', 'info'))}
+            aria-pressed={fullscreen.active}
+            className={`flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest transition-colors
+              ${fullscreen.active ? 'text-white bg-white/10' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+            title={fullscreen.active ? 'Leave full screen (Esc)' : 'Full screen: no address bar or tabs, every pixel for the mangler'}
+          >
+            {fullscreen.active ? <Minimize size={14} /> : <Maximize size={14} />}
+            <span className="hidden md:inline">{fullscreen.active ? 'Exit' : 'Full'}</span>
+          </button>
+        )}
         <button
           onClick={togglePhoneMode}
           aria-pressed={phoneMode}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest transition-colors
+          className={`flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest transition-colors
             ${phoneMode ? 'text-white bg-synthux-red/30' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
           title={phoneMode
             ? 'Phone mode: mono sources, a smaller pool and fewer variations per click. Click for the full limits'
@@ -2051,7 +2067,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </button>
         <button
           onClick={() => setTourOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+          className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
             text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           title="A short guide to the order of operations"
         >
