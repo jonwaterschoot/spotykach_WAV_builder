@@ -12,6 +12,10 @@ export type Resampler = 'linear' | 'sinc';
 /** Which hit detector "one hit per snippet" uses. Recipes from before 'flux' existed read as 'energy'. */
 export type Detector = 'energy' | 'flux';
 export type EnvelopeCurve = 'exp' | 'linear';
+/** Grid steps per bar of 4/4: quarters, eighths, sixteenths, and their triplets. */
+export type GridDivision = '1/4' | '1/8' | '1/16' | '1/8T' | '1/16T';
+/** Cut: exactly the frames the steps need. Tape: the snippet sped up or slowed to fit, pitch and all. */
+export type GridFit = 'cut' | 'tape';
 
 export interface MangleSettings {
     fillMode: FillMode;
@@ -57,6 +61,18 @@ export interface MangleSettings {
     decayMinMs: number;
     decayMaxMs: number;
     envelopeCurve: EnvelopeCurve;
+    /**
+     * Tempo grid: the file is exactly `bars` bars of 4/4 at `bpm`, every snippet
+     * starts on a grid line and lasts whole steps. Replaces the fill, the output
+     * length, the snippet length in ms and the crossfade (none: cuts on the line).
+     */
+    grid: boolean;
+    bpm: number;
+    division: GridDivision;
+    bars: number;
+    stepsMin: number;
+    stepsMax: number;
+    gridFit: GridFit;
     repitch: RepitchMode;
     /** Below this, a snippet keeps its own pitch. 0–1. */
     pitchConfidence: number;
@@ -93,6 +109,14 @@ export const MAX_CUE_POINTS = 255;
 /** How far a soft part may be turned down. */
 export const SOFT_MAX_DB = 40;
 export const ATTACK_MAX_MS = 500;
+export const BPM_MIN = 40;
+export const BPM_MAX = 240;
+export const STEPS_MAX = 32;
+export const STEPS_PER_BAR: Record<GridDivision, number> = { '1/4': 4, '1/8': 8, '1/16': 16, '1/8T': 12, '1/16T': 24 };
+/** Seconds per bar of 4/4. */
+export const barSeconds = (bpm: number) => 240 / bpm;
+/** As many bars as fit the 42 s the hardware plays. */
+export const maxBars = (bpm: number) => Math.max(1, Math.floor(OUTPUT_MAX_SECONDS / barSeconds(bpm) + 1e-9));
 export const DECAY_MIN_MS = 10;
 export const DECAY_MAX_MS = 10000;
 
@@ -125,6 +149,13 @@ export const DEFAULT_SETTINGS: MangleSettings = {
     decayMinMs: 150,
     decayMaxMs: 1500,
     envelopeCurve: 'exp',
+    grid: false,
+    bpm: 120,
+    division: '1/16',
+    bars: 4,
+    stepsMin: 1,
+    stepsMax: 4,
+    gridFit: 'cut',
     repitch: 'suggest',
     pitchConfidence: 0.8,
     scaleRoot: 0,
@@ -195,6 +226,13 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     s.decayMaxMs = clamp(s.decayMaxMs, DECAY_MIN_MS, DECAY_MAX_MS, d.decayMaxMs);
     if (s.decayMaxMs < s.decayMinMs) [s.decayMinMs, s.decayMaxMs] = [s.decayMaxMs, s.decayMinMs];
     if (!['exp', 'linear'].includes(s.envelopeCurve)) s.envelopeCurve = d.envelopeCurve;
+    s.bpm = clamp(s.bpm, BPM_MIN, BPM_MAX, d.bpm);
+    if (!(s.division in STEPS_PER_BAR)) s.division = d.division;
+    s.bars = Math.round(clamp(s.bars, 1, maxBars(s.bpm), Math.min(d.bars, maxBars(s.bpm))));
+    s.stepsMin = Math.round(clamp(s.stepsMin, 1, STEPS_MAX, d.stepsMin));
+    s.stepsMax = Math.round(clamp(s.stepsMax, 1, STEPS_MAX, d.stepsMax));
+    if (s.stepsMax < s.stepsMin) [s.stepsMin, s.stepsMax] = [s.stepsMax, s.stepsMin];
+    if (!['cut', 'tape'].includes(s.gridFit)) s.gridFit = d.gridFit;
     s.pitchConfidence = clamp(s.pitchConfidence, 0, 1, d.pitchConfidence);
     s.detuneSt = clamp(s.detuneSt, 0, 12, d.detuneSt);
     s.scaleRoot = Math.round(clamp(s.scaleRoot, 0, 11, d.scaleRoot));
@@ -206,7 +244,7 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     if (!['off', 'zero', 'onset'].includes(s.snapStart)) s.snapStart = d.snapStart;
     if (!['linear', 'sinc'].includes(s.resampler)) s.resampler = d.resampler;
     if (!['energy', 'flux'].includes(s.detector)) s.detector = d.detector;
-    for (const key of ['hardCuts', 'oneHit', 'skipSilence', 'cuePoints', 'loop', 'limiter', 'envelope'] as const) {
+    for (const key of ['hardCuts', 'oneHit', 'skipSilence', 'cuePoints', 'loop', 'limiter', 'envelope', 'grid'] as const) {
         s[key] = typeof s[key] === 'boolean' ? s[key] : d[key];
     }
     return s;

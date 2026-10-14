@@ -51,9 +51,11 @@ export const usedSources = (recipe: MangleRecipe): RecipeSource[] => {
 };
 
 /** `mangle_20261012_123456789`. */
-export const resultName = (seed: number, date = new Date()): string => {
+/** On the tempo grid, the name says the tempo and the bars: mangle_120bpm_4bars_…. */
+export const resultName = (seed: number, date = new Date(), tempo?: { bpm: number; bars: number }): string => {
     const pad = (n: number) => String(n).padStart(2, '0');
-    return `mangle_${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${seed}`;
+    const grid = tempo ? `${Math.round(tempo.bpm * 10) / 10}bpm_${tempo.bars}bars_` : '';
+    return `mangle_${grid}${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${seed}`;
 };
 
 /** Peak per bucket over both channels, for drawing without decoding. */

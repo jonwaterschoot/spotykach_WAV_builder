@@ -502,6 +502,43 @@ section('Hits');
 }
 
 // ---------------------------------------------------------------------------
+// Tempo grid: exact length, cues on the lines, whole steps
+// ---------------------------------------------------------------------------
+
+section('Tempo grid');
+{
+    const gridded = sanitizeSettings({
+        ...settings, skipSilence: false, grid: true, bpm: 123, division: '1/16', bars: 4, stepsMin: 1, stepsMax: 4,
+    });
+    const g = render(sources, gridded, 77);
+    const barFrames = (240 / 123) * SR;
+    const line = k => Math.round((k * barFrames) / 16);
+    check(g.left.length === Math.round(4 * barFrames), 'exactly 4 bars at 123 bpm, to the frame', `${g.left.length} frames`);
+    check(g.cuePoints.every(c => { const k = Math.round(c / (barFrames / 16)); return line(k) === c; }), 'every cue on a grid line', `${g.cuePoints.length} cues`);
+    check(g.snippets.every(s => { const k0 = Math.round(s.outStart / (barFrames / 16)); const k1 = Math.round((s.outStart + s.length) / (barFrames / 16));
+        return line(k0) === s.outStart && line(k1) === s.outStart + s.length && k1 - k0 >= 1 && k1 - k0 <= 4; }),
+        'every snippet whole steps (1–4), line to line');
+    check(g.snippets.every(s => s.xfade === 0), 'no crossfades on the grid');
+    const off = render(sources, { ...gridded, grid: false }, 77);
+    const plain = render(sources, { ...settings, skipSilence: false }, 77);
+    check(sameArray(off.left, plain.left), 'grid off: the settings for it change nothing');
+
+    const tape = render(sources, { ...gridded, gridFit: 'tape' }, 77);
+    const cut = g;
+    const n = Math.min(tape.snippets.length, cut.snippets.length);
+    check(tape.snippets.slice(0, n).every((s, i) => s.length === cut.snippets[i].length && s.source === cut.snippets[i].source),
+        'tape: same steps and sources as cut');
+    check(tape.snippets.some(s => Math.abs(s.sourceLength - s.length) > 0.05 * s.length) && tape.snippets.every(s => s.sourceLength <= s.length * 1.6 + 2),
+        'tape: snippets read longer or shorter, within half a step either way');
+
+    const looped = render(sources, { ...gridded, loop: true, xfadeMaxMs: 40 }, 77);
+    check(looped.left.length === g.left.length, 'loop on the grid: still exactly 4 bars');
+    const edited = render(sources, gridded, 77, { fixed: g.snippets.slice().reverse() });
+    check(edited.left.length === g.left.length && edited.cuePoints.every(c => line(Math.round(c / (barFrames / 16))) === c),
+        'edited (reversed order): same length, cues still on the lines');
+}
+
+// ---------------------------------------------------------------------------
 // Slices: a kit of slices sounds like the slices played one by one
 // ---------------------------------------------------------------------------
 

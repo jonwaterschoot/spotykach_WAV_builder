@@ -613,9 +613,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   }, [showToast]);
 
   /** A new name for a seed, not taken by any result in the list. */
-  const freshName = (seedValue: number, taken: Set<string>) => {
-    let name = resultName(seedValue);
-    for (let n = 2; taken.has(name); n++) name = `${resultName(seedValue)}-${n}`;
+  const freshName = (seedValue: number, taken: Set<string>, s?: MangleSettings) => {
+    const base = resultName(seedValue, new Date(), s?.grid ? s : undefined);
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
     taken.add(name);
     return name;
   };
@@ -653,7 +654,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       seeds,
       onResult: async (result) => {
         const entry = makeEntry(result, batchSettings, recipeSources, {
-          name: freshName(result.seed, taken), kept: false, batchId,
+          name: freshName(result.seed, taken, batchSettings), kept: false, batchId,
         });
         await storeEntry(entry);
         setResults(prev => sortResults([...prev, entry]));
@@ -1083,7 +1084,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       fixed,
       onResult: async (result) => {
         const entry = makeEntry(result, batchSettings, r.recipe.sources, {
-          name: freshName(result.seed, taken), kept: false, batchId, locked: r.locked,
+          name: freshName(result.seed, taken, batchSettings), kept: false, batchId, locked: r.locked,
         });
         await storeEntry(entry);
         setResults(prev => sortResults([...prev, entry]));

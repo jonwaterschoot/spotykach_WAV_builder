@@ -231,7 +231,11 @@ Each phase is usable on its own.
 
 **Phase 5 — Tempo grid**
 
-- [ ] Tempo, grid, bars; snippet lengths in steps; exact loop length; Cut / Tape
+- [x] *Tempo grid* group (both hosts): tempo 40–240 bpm, step 1/4 · 1/8 · 1/16 · 1/8T · 1/16T, bars (as many as fit 42 s), snippet length in steps (1–32), Cut / Tape. On the grid the Shape group's fill, length, snippet length and crossfade make way for a note
+- [x] Exact length: `round(bars × 240 / bpm × 48000)` frames; grid line k at `round(k × bar / steps per bar)`, each rounded on its own so nothing drifts. Every snippet runs line to line in whole steps; a short one (one hit, a short source) is padded with silence, a long one cut on the line. No crossfades: cuts on the line with the 2 ms declick, so every cue is exactly on a line. *Loop the file* keeps the length
+- [x] The planner still draws seven numbers per snippet: the length draw is over the step range (± half a step), its nearest whole step count is the snippet's, and the leftover is how far *Tape* speeds it up or slows it down (about ±7 st). Grid off: renders unchanged
+- [x] Names on the grid: `mangle_120bpm_4bars_<date>_<seed>`. Nothing about the tempo is written into the WAV
+- [x] Checks: exact length at 123 bpm, cues on lines, whole steps, Tape against Cut, loop, a reordered edit
 
 **Phase 6 — Sequencer**
 

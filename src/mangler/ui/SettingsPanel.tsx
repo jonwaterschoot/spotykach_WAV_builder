@@ -4,7 +4,7 @@ import { ScrubNumber } from '../../components/ScrubNumber';
 import { NOTE_NAMES } from '../pitch';
 import { appStorage } from '../../utils/storageNamespace';
 import {
-    ATTACK_MAX_MS, DECAY_MAX_MS, DECAY_MIN_MS, OUTPUT_MAX_SECONDS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, SOFT_MAX_DB, XFADE_MAX_MS,
+    ATTACK_MAX_MS, BPM_MAX, BPM_MIN, DECAY_MAX_MS, DECAY_MIN_MS, STEPS_MAX, barSeconds, maxBars, OUTPUT_MAX_SECONDS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, SOFT_MAX_DB, XFADE_MAX_MS,
     maskFromIntervals, scaleName, type MangleSettings,
 } from '../settings';
 import { DensityContext, type Density } from './density';
@@ -20,7 +20,7 @@ import { RangeSlider, Segmented, Slider, Toggle } from './Sliders';
  * source mix when there is only one source.
  */
 
-export type SettingsGroup = 'shape' | 'loudness' | 'envelope' | 'pitch' | 'file';
+export type SettingsGroup = 'shape' | 'tempo' | 'loudness' | 'envelope' | 'pitch' | 'file';
 
 interface SettingsPanelProps {
     settings: MangleSettings;
@@ -55,11 +55,13 @@ const countEstimate = (s: MangleSettings, count: number) => {
 const range = (lo: number, hi: number) => (lo === hi ? formatMs(lo) : `${formatMs(lo)}–${formatMs(hi)}`);
 
 const summaries: Record<SettingsGroup, (s: MangleSettings) => string> = {
-    shape: s => [
+    shape: s => (s.grid ? ['on the grid'] : [
         s.fillMode === 'length' ? `${s.outputSeconds} s` : `${s.snippetCount} snippets`,
         range(s.snippetMinMs, s.snippetMaxMs),
-        `rev ${Math.round(s.reverseProbability * 100)}%`,
-    ].join(' · '),
+    ]).concat(`rev ${Math.round(s.reverseProbability * 100)}%`).join(' · '),
+    tempo: s => (s.grid
+        ? `${s.bpm} bpm · ${s.division} · ${s.bars} bar${s.bars === 1 ? '' : 's'} · ${s.stepsMin === s.stepsMax ? s.stepsMin : `${s.stepsMin}–${s.stepsMax}`} steps`
+        : 'off'),
     loudness: s => [
         `${s.loudnessTargetDb} dBFS`, s.loudnessSpreadDb ? `± ${s.loudnessSpreadDb} dB` : '',
         s.restProbability ? `rests ${Math.round(s.restProbability * 100)}%` : '',
@@ -78,7 +80,7 @@ const summaries: Record<SettingsGroup, (s: MangleSettings) => string> = {
     file: s => [s.cuePoints ? 'cues' : 'no cues', s.loop ? 'loop' : ''].filter(Boolean).join(' · '),
 };
 
-const TITLES: Record<SettingsGroup, string> = { shape: 'Shape', loudness: 'Loudness', envelope: 'Envelope', pitch: 'Pitch', file: 'File' };
+const TITLES: Record<SettingsGroup, string> = { shape: 'Shape', tempo: 'Tempo grid', loudness: 'Loudness', envelope: 'Envelope', pitch: 'Pitch', file: 'File' };
 
 /** A range's two ends as drag-to-change fields; each keeps to its side of the other. */
 const RangeReadout = ({ low, high, min, max, label, onChange }: {
@@ -95,7 +97,7 @@ const RangeReadout = ({ low, high, min, max, label, onChange }: {
 );
 
 const loadOpen = (key: string, closed: readonly SettingsGroup[]): Record<SettingsGroup, boolean> => {
-    const fallback = { shape: true, loudness: true, envelope: true, pitch: true, file: true };
+    const fallback = { shape: true, tempo: true, loudness: true, envelope: true, pitch: true, file: true };
     for (const g of closed) fallback[g] = false;
     try {
         return { ...fallback, ...JSON.parse(appStorage.getItem(key) ?? 'null') };
@@ -141,6 +143,12 @@ export function SettingsPanel({
         <DensityContext.Provider value={density}>
             <div className={className}>
                 {group('shape', <>
+                    {s.grid && (
+                        <p className="text-[10px] leading-snug text-gray-500">
+                            The tempo grid sets the length, the snippet lengths (in steps) and the cuts (on the lines, no crossfade).
+                        </p>
+                    )}
+                    {!s.grid && <>
                     {shown('fillMode') && (
                         <div {...tip("By length: as many snippets as fit the length. By count: that many snippets, and the file is as long as they turn out (42 s at most)")}>
                             <Segmented label="Fill" value={s.fillMode} onChange={set('fillMode')}
@@ -168,17 +176,18 @@ export function SettingsPanel({
                                 min={SNIPPET_MIN_MS} max={SNIPPET_MAX_MS}
                                 onChange={(lo, hi) => onChange({ snippetMinMs: lo, snippetMaxMs: hi })} />} />
                     </div>
+                    </>}
                     <div {...tip("Skews the pick inside the snippet length range")}>
                         <Slider label="Bias" min={-1} max={1} step={0.05} value={s.bias} onChange={set('bias')}
                             format={v => (Math.abs(v) < 0.025 ? 'even' : v < 0 ? `short ${Math.round(-v * 100)}%` : `long ${Math.round(v * 100)}%`)} />
                     </div>
-                    <div {...tip("Equal-power crossfade between snippets, at most half the shorter of the two")}>
+                    {!s.grid && <div {...tip("Equal-power crossfade between snippets, at most half the shorter of the two")}>
                         <RangeSlider label="Crossfade" min={0} max={XFADE_MAX_MS} scale="cubic"
                             low={s.xfadeMinMs} high={s.xfadeMaxMs} format={formatMs}
                             onChange={(lo, hi) => onChange({ xfadeMinMs: lo, xfadeMaxMs: hi })}
                             readout={<RangeReadout label="Crossfade" low={s.xfadeMinMs} high={s.xfadeMaxMs} min={0} max={XFADE_MAX_MS}
                                 onChange={(lo, hi) => onChange({ xfadeMinMs: lo, xfadeMaxMs: hi })} />} />
-                    </div>
+                    </div>}
                     <div {...tip("Off adds a 2 ms fade at each snippet edge")}>
                         <Toggle label="Hard cuts (leave clicks in)" checked={s.hardCuts} onChange={set('hardCuts')} />
                     </div>
@@ -195,6 +204,37 @@ export function SettingsPanel({
                             readout={<ScrubNumber value={reverse} min={0} max={100} unit="%" width="w-[5rem]" ariaLabel="Reverse chance"
                                 onChange={v => onChange({ reverseProbability: v / 100 })} />} />
                     </div>
+                </>)}
+
+                {group('tempo', <>
+                    <div {...tip("Lay the snippets on a tempo grid: an exact number of bars, every snippet whole steps long and starting on a line, so the file loops in time. The Spotykach doesn't read a tempo: this is for playing it as a loop")}>
+                        <Toggle label="Tempo grid" checked={s.grid} onChange={set('grid')} />
+                    </div>
+                    {s.grid && <>
+                        <div {...tip(`Beats per minute, ${BPM_MIN}–${BPM_MAX}`)}>
+                            <Slider label="Tempo" min={BPM_MIN} max={BPM_MAX} value={s.bpm} onChange={set('bpm')} format={v => `${v} bpm`}
+                                readout={<ScrubNumber value={s.bpm} onChange={set('bpm')} min={BPM_MIN} max={BPM_MAX} step={0.5}
+                                    unit="bpm" width="w-[5.5rem]" ariaLabel="Tempo in bpm" />} />
+                        </div>
+                        <div {...tip("The size of one step. T: triplets")}>
+                            <Segmented label="Step" value={s.division} onChange={set('division')}
+                                options={[{ value: '1/4', label: '1/4' }, { value: '1/8', label: '1/8' }, { value: '1/16', label: '1/16' },
+                                    { value: '1/8T', label: '1/8T' }, { value: '1/16T', label: '1/16T' }]} />
+                        </div>
+                        <div {...tip(`The file is exactly this many bars of 4/4: at most ${maxBars(s.bpm)} at this tempo (42 s)`)}>
+                            <Slider label="Bars" min={1} max={maxBars(s.bpm)} value={Math.min(s.bars, maxBars(s.bpm))} onChange={set('bars')}
+                                format={v => `${v} · ${(v * barSeconds(s.bpm)).toFixed(1)} s`} />
+                        </div>
+                        <div {...tip("Snippet length in steps: each one is picked between these two")}>
+                            <RangeSlider label="Snippet steps" min={1} max={STEPS_MAX} step={1}
+                                low={s.stepsMin} high={s.stepsMax} format={v => String(v)}
+                                onChange={(lo, hi) => onChange({ stepsMin: lo, stepsMax: hi })} />
+                        </div>
+                        <div {...tip("Cut: exactly the frames the steps need. Tape: the snippet at its own length, sped up or slowed down to fit (pitch moves with it, up to about 7 semitones)")}>
+                            <Segmented label="Fit" value={s.gridFit} onChange={set('gridFit')}
+                                options={[{ value: 'cut', label: 'Cut' }, { value: 'tape', label: 'Tape' }]} />
+                        </div>
+                    </>}
                 </>)}
 
                 {group('loudness', <>

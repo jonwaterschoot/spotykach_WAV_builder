@@ -507,6 +507,11 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         <strong className="text-gray-300"> Envelope</strong> group gives every snippet an attack and a decay.
                                     </p>
                                     <p className="text-gray-400">
+                                        <strong className="text-gray-300">Tempo grid</strong> makes loops in time: an exact number of bars, every
+                                        snippet whole steps long and starting on a beat line. The Spotykach reads no tempo; this is for playing the
+                                        file as a loop.
+                                    </p>
+                                    <p className="text-gray-400">
                                         <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
                                         button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
                                         makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.

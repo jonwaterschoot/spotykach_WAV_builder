@@ -6,7 +6,7 @@ import {
 import { Planner } from './plan.ts';
 import { createRng, deriveSeed } from './rng.ts';
 import { detectHits } from './hits.ts';
-import { MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, scalePitchClasses, type MangleSettings } from './settings.ts';
+import { MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, STEPS_PER_BAR, barSeconds, scalePitchClasses, type MangleSettings } from './settings.ts';
 
 /** Everything renders at the hardware's rate. */
 export const MANGLE_SAMPLE_RATE = 48000;
@@ -136,6 +136,18 @@ export interface RenderOptions {
     fixed?: readonly (SnippetInfo | null | undefined)[];
 }
 
+/** Exactly `length` frames: cut, or padded with silence. */
+function fitLength(signal: Stereo, length: number): Stereo {
+    if (signal[0].length === length) return signal;
+    const fit = (ch: Float32Array) => {
+        const out = new Float32Array(length);
+        out.set(ch.subarray(0, Math.min(length, ch.length)));
+        return out;
+    };
+    const l = fit(signal[0]);
+    return [l, signal[1] === signal[0] ? l : fit(signal[1])];
+}
+
 /**
  * Attack, then decay: a rise from silence over the attack (a quick curve for
  * exp, a straight line for linear), then a fall to −60 dB (exp) or to silence
@@ -181,9 +193,21 @@ export function render(
     const { onProgress, fixed } = options;
     const sr = MANGLE_SAMPLE_RATE;
     const ms = sr / 1000;
-    const byCount = settings.fillMode === 'count';
+    // The tempo grid: line k at frame round(k · bar / steps per bar), each rounded on
+    // its own so nothing drifts, and the file exactly `bars` bars long.
+    const grid = settings.grid ? (() => {
+        const perBar = STEPS_PER_BAR[settings.division];
+        const barFrames = barSeconds(settings.bpm) * sr;
+        return {
+            line: (k: number) => Math.round((k * barFrames) / perBar),
+            stepFrames: barFrames / perBar,
+            total: Math.round(settings.bars * barFrames),
+        };
+    })() : null;
+    let gridLine = 0;
+    const byCount = !grid && settings.fillMode === 'count';
     // Count mode renders into the most there may be, and ends where the last snippet does.
-    const maxTotal = Math.round((byCount ? OUTPUT_MAX_SECONDS : settings.outputSeconds) * sr);
+    const maxTotal = grid ? grid.total : Math.round((byCount ? OUTPUT_MAX_SECONDS : settings.outputSeconds) * sr);
     const loopLength = settings.loop
         ? Math.min(Math.round(Math.min(1000, Math.max(10, settings.xfadeMaxMs)) * ms), maxTotal >> 2)
         : 0;
@@ -240,6 +264,11 @@ export function render(
         let info: Omit<SnippetInfo, 'outStart' | 'xfade' | 'gainDb'>;
         let gainDb = 0;
         let wantedXfade = plan.xfade;
+        // On the grid: this snippet's frames, from its line to the line `steps` on.
+        const steps = grid ? Math.max(1, spec ? Math.round(spec.length / grid.stepFrames) : plan.steps ?? 1) : 0;
+        const target = grid ? grid.line(gridLine + steps) - grid.line(gridLine) : 0;
+        // Tape: the snippet's natural length squeezed or stretched into the steps.
+        const tape = grid && settings.gridFit === 'tape' ? Math.min(4, Math.max(0.25, plan.length / target)) : 1;
 
         if (spec) {
             const src = sources[spec.source]?.channels;
@@ -293,7 +322,7 @@ export function render(
                     }
                 }
                 const span = hi - lo;
-                const length = Math.max(2, Math.min(plan.length, span));
+                const length = Math.max(2, Math.min(grid ? target : plan.length, span));
 
                 // Pitch: detect on the planned region, then widen the read so the
                 // snippet keeps its planned length after the shift.
@@ -319,7 +348,7 @@ export function render(
                         }
                     }
                 }
-                const ratio = ratioFor(shift);
+                const ratio = ratioFor(shift) * tape;
                 const readLength = Math.min(span, Math.ceil(length * ratio) + 1);
                 let start = lo + Math.floor(local * (span - readLength));
                 start = snapStart(src, start, readLength, Math.ceil(length * ratio), plan.reverse, lo, hi);
@@ -404,6 +433,15 @@ export function render(
             if (signal[1] !== signal[0]) signal[1].fill(0);
         } else if (info.softDb) applyGain(signal, dbToGain(info.softDb));
         if (info.envelope && !info.rest) applyEnvelope(signal, info.envelope, sr);
+
+        // On the grid every snippet is exactly its steps long: a short one (one hit,
+        // a short source) is padded with silence, a long one cut on the line.
+        if (grid) {
+            signal = fitLength(signal, target);
+            info = { ...info, length: target };
+            wantedXfade = 0;
+            gridLine += steps;
+        }
 
         if (declickLength) declick(signal, declickLength);
 

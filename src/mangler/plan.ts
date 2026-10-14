@@ -1,5 +1,5 @@
 import type { Rng } from './rng.ts';
-import { OUTPUT_MAX_SECONDS, type MangleSettings } from './settings.ts';
+import { OUTPUT_MAX_SECONDS, STEPS_PER_BAR, barSeconds, type MangleSettings } from './settings.ts';
 
 /**
  * One snippet's dice, picked before any audio is touched. The renderer turns it
@@ -20,6 +20,8 @@ export interface SnippetPlan {
     spread: number;
     /** −1…1, scaled by the detune amount. */
     detune: number;
+    /** Tempo grid: whole steps. `length` is then the snippet's natural length, which Tape fits to them. */
+    steps?: number;
 }
 
 export interface PlanSource {
@@ -75,12 +77,27 @@ export class Planner {
         const s = this.settings;
         const ms = this.sampleRate / 1000;
         const source = this.pickSource();
-        const lengthMs = this.rng.logUniform(s.snippetMinMs, s.snippetMaxMs, s.bias);
+        // The grid draws the length the same way (one number), over the step range:
+        // the nearest whole step count is the snippet's, and what is left over is
+        // how much Tape speeds it up or slows it down to fit (within half a step).
+        const stepMs = s.grid ? (barSeconds(s.bpm) * 1000) / STEPS_PER_BAR[s.division] : 0;
+        const lengthMs = s.grid
+            ? this.rng.logUniform((s.stepsMin - 0.5) * stepMs, (s.stepsMax + 0.5) * stepMs, s.bias)
+            : this.rng.logUniform(s.snippetMinMs, s.snippetMaxMs, s.bias);
         const xfadeMs = this.rng.uniform(s.xfadeMinMs, s.xfadeMaxMs);
         const reverse = this.rng.next() < s.reverseProbability;
         const startFraction = this.rng.next();
         const spread = this.rng.uniform(-1, 1);
         const detune = this.rng.uniform(-1, 1);
+        if (s.grid) {
+            return {
+                source,
+                length: Math.max(1, Math.round(lengthMs * ms)),
+                steps: Math.min(s.stepsMax, Math.max(s.stepsMin, Math.round(lengthMs / stepMs))),
+                xfade: 0,
+                reverse, startFraction, spread, detune,
+            };
+        }
         return {
             source,
             length: Math.max(1, Math.round(Math.min(lengthMs, (s.fillMode === 'count' ? OUTPUT_MAX_SECONDS : s.outputSeconds) * 1000) * ms)),
