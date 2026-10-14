@@ -1,5 +1,5 @@
 import React from 'react';
-import { NOTE_NAMES } from '../../lib/audio/pitch';
+import { NOTE_NAMES } from '../pitch';
 
 interface ScaleKeysProps {
     /** 0 = C … 11 = B. */

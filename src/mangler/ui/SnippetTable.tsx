@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dices, GripVertical, Lock, Play, Square, Trash2, Unlock } from 'lucide-react';
-import { NOTE_NAMES } from '../../lib/audio/pitch';
+import { NOTE_NAMES } from '../pitch';
 import type { MangleResultEntry } from '../../utils/persistence';
 import type { PitchChoice } from '../render';
 import { choiceFromKey, choiceKey, choiceOf, offsetFor } from '../pitchChoice';
@@ -219,7 +219,10 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                                         {recipe.sources[s.source]?.name ?? '?'}
                                     </td>
                                     <td className="px-2 py-0.5 text-right">{formatMs((s.length / SR) * 1000)}</td>
-                                    <td className="px-2 py-0.5 text-right">{Number.isFinite(s.measuredDb) ? formatDb(s.gainDb) : 'silent'}</td>
+                                    <td className="px-2 py-0.5 text-right">{s.rest ? <span className="text-synthux-blue">rest</span>
+                                        : !Number.isFinite(s.measuredDb) ? 'silent'
+                                        : s.softDb ? <span className="text-synthux-blue" title={`Soft part: ${formatDb(s.softDb)} on top of the gain`}>{formatDb(s.gainDb + s.softDb)}</span>
+                                        : formatDb(s.gainDb)}</td>
                                     <td className="px-2 py-0.5 text-gray-400" title={s.reverse ? 'Reversed' : 'Forwards'}>{s.reverse ? '←' : '→'}</td>
                                     <td className="px-2 py-0.5 whitespace-nowrap">
                                         {s.pitch

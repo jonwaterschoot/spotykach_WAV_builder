@@ -391,4 +391,23 @@ export const deleteMangleSourcesFromDB = (ids: string[]) => deleteMany(MANGLE_SO
 
 export const loadMangleResultsFromDB = () => loadAll<MangleResultEntry>(MANGLE_RESULTS_STORE);
 export const putMangleResultToDB = (entry: MangleResultEntry) => putOne(MANGLE_RESULTS_STORE, entry);
+
+/**
+ * Stores an entry and returns its audio as read back from the store. The browser
+ * keeps that blob on disk, so the copy made in memory (a render, a download) can
+ * be let go: with a dozen 16 MB results that is the difference between a phone
+ * tab surviving or not. Falls back to the blob it was given if the read fails.
+ */
+const putDiskBacked = async (store: string, entry: { id: string; blob: Blob }): Promise<Blob> => {
+    await putOne(store, entry);
+    try {
+        const db = await initDB();
+        const stored = (await db.get(store, entry.id)) as { blob?: unknown } | undefined;
+        return stored?.blob instanceof Blob ? stored.blob : entry.blob;
+    } catch {
+        return entry.blob;
+    }
+};
+export const putMangleResultDiskBacked = (entry: MangleResultEntry) => putDiskBacked(MANGLE_RESULTS_STORE, entry);
+export const putMangleSourceDiskBacked = (entry: MangleSourceEntry) => putDiskBacked(MANGLE_SOURCES_STORE, entry);
 export const deleteMangleResultsFromDB = (ids: string[]) => deleteMany(MANGLE_RESULTS_STORE, ids);

@@ -38,6 +38,12 @@ export interface MangleSettings {
     maxBoostDb: number;
     skipSilence: boolean;
     silenceThresholdDb: number;
+    /** 0–1, per snippet: the snippet is a rest (silence of its own length, cue point kept). */
+    restProbability: number;
+    /** 0–1, per snippet: the snippet is turned down by an amount between the two below. */
+    softProbability: number;
+    softMinDb: number;
+    softMaxDb: number;
     repitch: RepitchMode;
     /** Below this, a snippet keeps its own pitch. 0–1. */
     pitchConfidence: number;
@@ -71,6 +77,8 @@ export const XFADE_MAX_MS = 3000;
 export const VARIATIONS_MAX = 12;
 /** `kMaxFileCuePoints` in the firmware. */
 export const MAX_CUE_POINTS = 255;
+/** How far a soft part may be turned down. */
+export const SOFT_MAX_DB = 40;
 
 export const DEFAULT_SETTINGS: MangleSettings = {
     fillMode: 'length',
@@ -90,6 +98,10 @@ export const DEFAULT_SETTINGS: MangleSettings = {
     maxBoostDb: 24,
     skipSilence: true,
     silenceThresholdDb: -50,
+    restProbability: 0,
+    softProbability: 0,
+    softMinDb: 6,
+    softMaxDb: 18,
     repitch: 'suggest',
     pitchConfidence: 0.8,
     scaleRoot: 0,
@@ -148,6 +160,11 @@ export function sanitizeSettings(input: Partial<MangleSettings> | null | undefin
     s.loudnessSpreadDb = clamp(s.loudnessSpreadDb, 0, 12, d.loudnessSpreadDb);
     s.maxBoostDb = clamp(s.maxBoostDb, 0, 36, d.maxBoostDb);
     s.silenceThresholdDb = clamp(s.silenceThresholdDb, -70, -30, d.silenceThresholdDb);
+    s.restProbability = clamp(s.restProbability, 0, 1, d.restProbability);
+    s.softProbability = clamp(s.softProbability, 0, 1, d.softProbability);
+    s.softMinDb = clamp(s.softMinDb, 1, SOFT_MAX_DB, d.softMinDb);
+    s.softMaxDb = clamp(s.softMaxDb, 1, SOFT_MAX_DB, d.softMaxDb);
+    if (s.softMaxDb < s.softMinDb) [s.softMinDb, s.softMaxDb] = [s.softMaxDb, s.softMinDb];
     s.pitchConfidence = clamp(s.pitchConfidence, 0, 1, d.pitchConfidence);
     s.detuneSt = clamp(s.detuneSt, 0, 12, d.detuneSt);
     s.scaleRoot = Math.round(clamp(s.scaleRoot, 0, 11, d.scaleRoot));

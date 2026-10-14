@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Dices, ExternalLink, Loader, RotateCcw, Square, Undo2 } from 'lucide-react';
-import { ScrubNumber } from '../../components/ScrubNumber';
 import { encodeWAV } from '../../lib/audio/wavEncoder';
 import { appStorage } from '../../utils/storageNamespace';
 import { runBatch, type BatchHandle } from '../batch';
 import { withChoice } from '../pitchChoice';
 import { recipeFromResult, type MangleRecipe, type RecipeSource } from '../recipe';
 import { randomSeed } from '../rng';
-import {
-    DEFAULT_SETTINGS, MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, PRESETS, SNIPPET_MAX_MS, SNIPPET_MIN_MS, XFADE_MAX_MS,
-    sanitizeSettings, type MangleSettings, type SnapStart,
-} from '../settings';
+import { DEFAULT_SETTINGS, MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, PRESETS, sanitizeSettings, type MangleSettings } from '../settings';
 import { MANGLE_SAMPLE_RATE as SR, type MangleResult, type PitchChoice, type SnippetInfo } from '../render';
 import { SnippetTable } from './SnippetTable';
-import { RangeSlider, Segmented, Slider, Toggle } from './Sliders';
+import { SettingsPanel } from './SettingsPanel';
 
 /**
  * The mangler as one of the editor's tools: random snippets of the open file only,
@@ -25,9 +21,8 @@ import { RangeSlider, Segmented, Slider, Toggle } from './Sliders';
  * repitched. Each edit renders the take again and can be undone once.
  */
 
-/** The few settings this panel shows. The rest stay at the defaults below. */
-type PanelSettings = Pick<MangleSettings,
-    'snippetMinMs' | 'snippetMaxMs' | 'xfadeMinMs' | 'xfadeMaxMs' | 'hardCuts' | 'reverseProbability' | 'snapStart' | 'oneHit' | 'loop'>;
+/** Only one source here: these make no sense. */
+const HIDDEN = ['sourceMix', 'maxPerSource', 'variations'] as const;
 
 const SETTINGS_KEY = 'editor_mangle_settings';
 const LIST_OPEN_KEY = 'editor_mangle_list_open';
@@ -44,33 +39,19 @@ interface Take {
 /** Where a snippet takes over: the middle of its incoming crossfade. */
 const snippetCue = (s: SnippetInfo) => s.outStart + (s.xfade >> 1);
 
-const pick = (s: MangleSettings): PanelSettings => ({
-    snippetMinMs: s.snippetMinMs, snippetMaxMs: s.snippetMaxMs,
-    xfadeMinMs: s.xfadeMinMs, xfadeMaxMs: s.xfadeMaxMs, hardCuts: s.hardCuts,
-    reverseProbability: s.reverseProbability, snapStart: s.snapStart, oneHit: s.oneHit, loop: s.loop,
-});
-
-const loadSettings = (): PanelSettings => {
+const loadSettings = (): MangleSettings => {
     try {
-        return pick(sanitizeSettings(JSON.parse(appStorage.getItem(SETTINGS_KEY) ?? 'null')));
+        return sanitizeSettings(JSON.parse(appStorage.getItem(SETTINGS_KEY) ?? 'null'));
     } catch {
-        return pick(DEFAULT_SETTINGS);
+        return DEFAULT_SETTINGS;
     }
 };
 
-/**
- * One source, one take: no mixing, no per-source cap. Pitch is detected but not
- * applied, so the snippet list can move a snippet to a note or the scale.
- */
-const fullSettings = (panel: PanelSettings, outputSeconds: number): MangleSettings => sanitizeSettings({
-    ...DEFAULT_SETTINGS,
-    ...panel,
-    fillMode: 'length',
+/** One source, one take: no mixing, no per-source cap. The length is the take's own. */
+const fullSettings = (settings: MangleSettings, outputSeconds: number): MangleSettings => sanitizeSettings({
+    ...settings,
     outputSeconds,
-    repitch: 'suggest',
-    detuneSt: 0,
     maxPerSource: 0,
-    cuePoints: true,
     variations: 1,
 });
 
@@ -108,34 +89,7 @@ const sliceSettings = (count: number): MangleSettings => sanitizeSettings({
     variations: 1,
 });
 
-const START_OPTIONS: { value: SnapStart; label: string; hint: string }[] = [
-    { value: 'off', label: 'Anywhere', hint: 'Snippets start anywhere' },
-    { value: 'zero', label: 'Zero', hint: 'Snippets start on a zero crossing (fewer clicks)' },
-    { value: 'onset', label: 'Hits', hint: 'Snippets start on a hit (drums, plucks)' },
-];
-
-const TOGGLES = [
-    { key: 'oneHit', text: 'One hit per slice', tip: 'End each snippet before the next hit, so each slice holds one sound' },
-    { key: 'hardCuts', text: 'Hard cuts', tip: 'Leave the clicks in where the crossfade is 0' },
-    { key: 'loop', text: 'Loop the take', tip: 'Crossfade the end into the start so the take loops cleanly' },
-] as const;
-
 const heading = 'text-[10px] font-bold uppercase tracking-widest text-gray-500';
-const ms = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
-
-/** A range's two ends as drag-to-change fields; each keeps to its side of the other. */
-const RangeReadout = ({ low, high, min, max, label, onChange }: {
-    low: number; high: number; min: number; max: number; label: string;
-    onChange: (low: number, high: number) => void;
-}) => (
-    <span className="flex items-center gap-1">
-        <ScrubNumber value={low} min={min} max={high} scale="log" unit="ms" width="w-[5rem]" ariaLabel={`${label}, shortest`}
-            onChange={v => onChange(v, high)} />
-        <span className="text-gray-600 text-[10px]">–</span>
-        <ScrubNumber value={high} min={low} max={max} scale="log" unit="ms" width="w-[5rem]" ariaLabel={`${label}, longest`}
-            onChange={v => onChange(low, v)} />
-    </span>
-);
 
 interface EditorManglePanelProps {
     /** The file's current audio: the only source. */
@@ -175,7 +129,7 @@ export function EditorManglePanel({
     onTake, onApply, onDiscard, onOpenFullMangler, importSlices, onImportUsed, playhead, isPlaying, onAudition, onStopAudition, onHighlight,
     setHelpText, showToast,
 }: EditorManglePanelProps) {
-    const [panel, setPanel] = useState<PanelSettings>(loadSettings);
+    const [settings, setSettings] = useState<MangleSettings>(loadSettings);
     // The take's length is the file's own until changed: the tool reworks this sound, it doesn't stretch it.
     const [seconds, setSeconds] = useState(() => Math.min(OUTPUT_MAX_SECONDS, Math.max(1, Math.round(sourceSeconds * 10) / 10)));
     const [rendering, setRendering] = useState<number | null>(null);
@@ -197,11 +151,15 @@ export function EditorManglePanel({
     }, [listOpen]);
 
     useEffect(() => {
-        try { appStorage.setItem(SETTINGS_KEY, JSON.stringify(panel)); } catch { /* not remembered, still works */ }
-    }, [panel]);
+        try { appStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* not remembered, still works */ }
+    }, [settings]);
     useEffect(() => () => batch.current?.cancel(), []);
 
-    const update = (patch: Partial<PanelSettings>) => setPanel(prev => pick(sanitizeSettings({ ...DEFAULT_SETTINGS, ...prev, ...patch })));
+    // The length belongs to this file, not to the remembered settings.
+    const update = (patch: Partial<MangleSettings>) => {
+        if (patch.outputSeconds !== undefined) setSeconds(patch.outputSeconds);
+        setSettings(prev => sanitizeSettings({ ...prev, ...patch, outputSeconds: prev.outputSeconds }));
+    };
 
     const toWav = useCallback((result: MangleResult): Blob => {
         const buffer = new AudioBuffer({ length: result.left.length, numberOfChannels: 2, sampleRate: result.sampleRate });
@@ -254,7 +212,7 @@ export function EditorManglePanel({
         }, options.fixed);
     };
 
-    const mangle = () => renderTake(fullSettings(panel, seconds), randomSeed());
+    const mangle = () => renderTake(fullSettings(settings, seconds), randomSeed());
 
     /** The take again with its snippets in this order (old indices); locks follow their snippets. */
     const reorder = (order: number[]) => {
@@ -321,7 +279,7 @@ export function EditorManglePanel({
     const rerollRest = () => {
         const held = take?.locked;
         if (!take || !held?.length) return;
-        renderTake(fullSettings(panel, seconds), randomSeed(), {
+        renderTake(fullSettings(settings, seconds), randomSeed(), {
             fixed: take.recipe.snippets.map((sn, i) => (held.includes(i) ? sn : null)),
             locked: held,
             edit: true,
@@ -413,62 +371,19 @@ export function EditorManglePanel({
             variations={1}
         />
     ), [take, busy, activeIndex, playingIndex]);
-    const reverse = Math.round(panel.reverseProbability * 100);
 
     return (
-        <div className="grid gap-x-8 gap-y-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(14rem,0.8fr)] py-1">
-            <section className="space-y-3 min-w-0">
-                <h3 className={heading}>Shape</h3>
-                <div {...hint(`Length of the take, up to ${OUTPUT_MAX_SECONDS} s. Starts at the file's own length`)}>
-                    <Slider label="Length" min={1} max={OUTPUT_MAX_SECONDS} step={0.1} value={seconds}
-                        onChange={setSeconds} format={v => `${v.toFixed(1)} s`}
-                        readout={<ScrubNumber value={seconds} onChange={setSeconds} min={1} max={OUTPUT_MAX_SECONDS} step={0.1}
-                            unit="s" width="w-[5rem]" ariaLabel="Length in seconds" />} />
-                </div>
-                <div {...hint('Snippet length: each one is picked between these two')}>
-                    <RangeSlider label="Snippets" min={SNIPPET_MIN_MS} max={SNIPPET_MAX_MS} scale="log"
-                        low={panel.snippetMinMs} high={panel.snippetMaxMs} format={ms}
-                        onChange={(lo, hi) => update({ snippetMinMs: lo, snippetMaxMs: hi })}
-                        readout={<RangeReadout label="Snippet" low={panel.snippetMinMs} high={panel.snippetMaxMs}
-                            min={SNIPPET_MIN_MS} max={SNIPPET_MAX_MS}
-                            onChange={(lo, hi) => update({ snippetMinMs: lo, snippetMaxMs: hi })} />} />
-                </div>
-                <div {...hint('Crossfade between snippets: each one is picked between these two')}>
-                    <RangeSlider label="Crossfade" min={0} max={XFADE_MAX_MS} scale="cubic"
-                        low={panel.xfadeMinMs} high={panel.xfadeMaxMs} format={ms}
-                        onChange={(lo, hi) => update({ xfadeMinMs: lo, xfadeMaxMs: hi })}
-                        readout={<RangeReadout label="Crossfade" low={panel.xfadeMinMs} high={panel.xfadeMaxMs}
-                            min={0} max={XFADE_MAX_MS}
-                            onChange={(lo, hi) => update({ xfadeMinMs: lo, xfadeMaxMs: hi })} />} />
-                </div>
-            </section>
+        <div className="grid gap-x-8 gap-y-4 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,16rem)] py-1">
+            <SettingsPanel settings={{ ...settings, outputSeconds: seconds }} onChange={update} hide={HIDDEN}
+                storageKey="editor_mangle_groups" initiallyClosed={['loudness', 'pitch']} lengthStep={0.1}
+                onHint={setHelpText} className="min-w-0 columns-[17rem] gap-3 [&>section]:mb-3" />
 
             <section className="space-y-3 min-w-0">
-                <h3 className={heading}>Character</h3>
-                <div {...hint('Chance that a snippet plays backwards')}>
-                    <Slider label="Reverse" min={0} max={100} value={reverse} format={v => `${v}%`}
-                        onChange={v => update({ reverseProbability: v / 100 })}
-                        readout={<ScrubNumber value={reverse} min={0} max={100} unit="%" width="w-[5rem]" ariaLabel="Reverse chance"
-                            onChange={v => update({ reverseProbability: v / 100 })} />} />
-                </div>
-                <div {...hint(START_OPTIONS.find(o => o.value === panel.snapStart)?.hint ?? '')}>
-                    <Segmented label="Start on" options={START_OPTIONS} value={panel.snapStart} onChange={v => update({ snapStart: v })} />
-                </div>
-                <div className="space-y-2 pt-1">
-                    {TOGGLES.map(t => (
-                        <div key={t.key} {...hint(t.tip)}>
-                            <Toggle label={t.text} checked={panel[t.key]} onChange={v => update({ [t.key]: v })} />
-                        </div>
-                    ))}
-                </div>
-            </section>
-
-            <section className="space-y-3 min-w-0 md:col-span-2 xl:col-span-1">
                 <h3 className={heading}>Take</h3>
                 <div className="flex flex-wrap gap-1" {...hint('Starting points for the settings')}>
                     {['Default', ...Object.keys(PRESETS)].map(p => (
                         <button key={p}
-                            onClick={() => update(p === 'Default' ? DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS, ...PRESETS[p] })}
+                            onClick={() => setSettings(p === 'Default' ? DEFAULT_SETTINGS : sanitizeSettings({ ...DEFAULT_SETTINGS, ...PRESETS[p] }))}
                             className="px-2 py-1 rounded-md text-[11px] font-bold border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                         >{p}</button>
                     ))}

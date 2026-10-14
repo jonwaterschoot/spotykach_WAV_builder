@@ -19,7 +19,29 @@ const audioContext = () => (context ??= new AudioContext());
  * what it is sent.
  */
 const cache = new Map<string, AudioBuffer>();
-const CACHE_SECONDS = 300;
+
+/** Phone mode sets these (see `ui/phoneMode.ts`). */
+const limits = { mono: false, cacheSeconds: 300 };
+
+/** Mono decoding and the cache size. A change empties the cache. */
+export function setDecodeLimits(next: { mono: boolean; cacheSeconds: number }) {
+    if (next.mono !== limits.mono) cache.clear();
+    limits.mono = next.mono;
+    limits.cacheSeconds = next.cacheSeconds;
+}
+
+/** Both channels mixed into one: half the memory of a stereo source. */
+const toMono = (buffer: AudioBuffer): AudioBuffer => {
+    if (buffer.numberOfChannels === 1) return buffer;
+    const mono = new AudioBuffer({ length: buffer.length, numberOfChannels: 1, sampleRate: buffer.sampleRate });
+    const out = mono.getChannelData(0);
+    const scale = 1 / buffer.numberOfChannels;
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        const data = buffer.getChannelData(ch);
+        for (let i = 0; i < out.length; i++) out[i] += data[i] * scale;
+    }
+    return mono;
+};
 
 async function decode(id: string, blob: Blob): Promise<AudioBuffer> {
     const hit = cache.get(id);
@@ -32,10 +54,11 @@ async function decode(id: string, blob: Blob): Promise<AudioBuffer> {
     if (buffer.sampleRate !== MANGLE_SAMPLE_RATE) {
         buffer = await audioProcessor.resample(buffer, MANGLE_SAMPLE_RATE);
     }
+    if (limits.mono) buffer = toMono(buffer);
     cache.set(id, buffer);
     let held = [...cache.values()].reduce((sum, b) => sum + b.duration, 0);
     for (const [key, b] of cache) {
-        if (held <= CACHE_SECONDS || key === id) break;
+        if (held <= limits.cacheSeconds || key === id) break;
         cache.delete(key);
         held -= b.duration;
     }

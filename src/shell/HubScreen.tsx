@@ -26,10 +26,10 @@ interface Door {
   accentGlow: string;
   ready: boolean;
   /**
-   * Needs a desktop browser. Not a guess about screen size: these four either open
+   * Needs a desktop browser. Not a guess about screen size: these doors either open
    * a folder picker, or lay out a 6×6 grid and a waveform with its overlays, and
-   * neither survives a phone. Browse is the one door built for reading and
-   * listening, so it is the one door a phone is offered.
+   * neither survives a phone. Browse and the Sample Mangler (in phone mode) are the
+   * doors a phone is offered.
    */
   desktopOnly?: boolean;
 }
@@ -98,14 +98,13 @@ const DOORS: Door[] = [
     mode: 'mangle',
     label: 'Sample Mangler',
     tagline: 'Just for fun',
-    body: 'Random snippets from the packs or your own files, joined into one 42 s file. Every batch is a surprise.',
+    body: 'Random snippets from the packs or your own files, joined into one 42 s file. Every batch is a surprise. Works on a phone.',
     icon: <Dices size={26} strokeWidth={1.75} />,
     accentText: 'text-synthux-red',
     accentBorder: 'hover:border-synthux-red/60',
     accentGlow: 'group-hover:shadow-[0_0_30px_-8px_rgba(240,15,19,0.45)]',
     ready: true,
-    // Decoded sources take hundreds of MB and the screen has three columns.
-    desktopOnly: true,
+    // Works on a phone since phone mode (mono sources, smaller limits, one column at a time).
   },
 ];
 

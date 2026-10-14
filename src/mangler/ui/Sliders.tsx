@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useContext } from 'react';
+import { DensityContext } from './density';
 
 /**
  * The mangler's sliders. Native range inputs, so keyboard and screen readers get
@@ -45,17 +46,23 @@ interface FieldProps {
     children: React.ReactNode;
 }
 
-const Field: React.FC<FieldProps> = ({ label, readout, hint, children }) => (
-    <div className="space-y-1.5" title={hint}>
-        <div className="flex items-baseline justify-between gap-2 text-[11px]">
+const Field: React.FC<FieldProps> = ({ label, readout, hint, children }) => {
+    const compact = useContext(DensityContext) === 'compact';
+    return (
+    <div className={compact ? 'space-y-0.5' : 'space-y-1.5'} title={hint}>
+        {/* Wraps instead of overflowing: in a narrow column the readout goes under the label. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[11px]">
             <span className="text-gray-400">{label}</span>
-            {typeof readout === 'string'
-                ? <span className="font-mono text-gray-200 tabular-nums">{readout}</span>
-                : readout}
+            <Readout value={readout} />
         </div>
         {children}
     </div>
-);
+    );
+};
+
+const Readout = ({ value }: { value: React.ReactNode }) => (typeof value === 'string'
+    ? <span className="font-mono text-gray-200 tabular-nums text-right whitespace-nowrap justify-self-end">{value}</span>
+    : <>{value}</>);
 
 interface RangeSliderProps {
     label: string;
@@ -116,17 +123,37 @@ interface SliderProps {
     readout?: React.ReactNode;
 }
 
-export const Slider: React.FC<SliderProps> = ({ label, min, max, value, onChange, format, step = 1, hint, disabled, readout }) => (
-    <div className={disabled ? 'opacity-40' : undefined}>
-        <Field label={label} readout={readout ?? format(value)} hint={hint}>
-            <input
-                type="range" min={min} max={max} step={step} value={value} disabled={disabled} aria-label={label}
-                onChange={e => onChange(Number(e.target.value))}
-                className="w-full h-4 accent-synthux-red cursor-pointer disabled:cursor-not-allowed"
-            />
-        </Field>
-    </div>
-);
+export const Slider: React.FC<SliderProps> = ({ label, min, max, value, onChange, format, step = 1, hint, disabled, readout }) => {
+    const compact = useContext(DensityContext) === 'compact';
+    const input = (
+        <input
+            type="range" min={min} max={max} step={step} value={value} disabled={disabled} aria-label={label}
+            onChange={e => onChange(Number(e.target.value))}
+            className="w-full h-4 accent-synthux-red cursor-pointer disabled:cursor-not-allowed"
+        />
+    );
+    // Compact: label, slider and value on one row when the row is 20rem wide or more;
+    // narrower, the slider gets its own row so it stays long enough to use.
+    if (compact) return (
+        <div className={`@container text-[11px] ${disabled ? 'opacity-40' : ''}`} title={hint}>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 items-center
+                @min-[20rem]:grid-cols-[minmax(0,6.5rem)_minmax(3rem,1fr)_minmax(5rem,auto)]">
+                <span className="text-gray-400 leading-tight">{label}</span>
+                <span className="justify-self-end @min-[20rem]:col-start-3 @min-[20rem]:row-start-1">
+                    <Readout value={readout ?? format(value)} />
+                </span>
+                <span className="col-span-2 @min-[20rem]:col-span-1 @min-[20rem]:col-start-2 @min-[20rem]:row-start-1 flex">
+                    {input}
+                </span>
+            </div>
+        </div>
+    );
+    return (
+        <div className={disabled ? 'opacity-40' : undefined}>
+            <Field label={label} readout={readout ?? format(value)} hint={hint}>{input}</Field>
+        </div>
+    );
+};
 
 interface ToggleProps {
     label: string;
@@ -153,7 +180,7 @@ interface SegmentedProps<T extends string> {
 
 export function Segmented<T extends string>({ label, options, value, onChange, hint }: SegmentedProps<T>) {
     return (
-        <div className="flex items-center justify-between gap-3 text-[11px]" title={hint}>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]" title={hint}>
             <span className="text-gray-400">{label}</span>
             <div className="flex rounded-md border border-white/10 overflow-hidden">
                 {options.map(o => (

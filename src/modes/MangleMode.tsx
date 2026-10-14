@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Briefcase, ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, Plus, RefreshCw, Scissors, Star, Trash2, Undo2, Unlock, X, ZoomIn,
+  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -20,7 +20,7 @@ import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { appStorage } from '../utils/storageNamespace';
 import {
   deleteMangleResultsFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB, loadMangleSourcesFromDB,
-  loadUserLibraryFromDB, putMangleResultToDB, putMangleSourceToDB,
+  loadUserLibraryFromDB, putMangleResultDiskBacked, putMangleResultToDB, putMangleSourceDiskBacked, putMangleSourceToDB,
 } from '../utils/persistence';
 import type { MangleResultEntry, MangleSourceEntry } from '../utils/persistence';
 import type { FileRecord, UserLibrary } from '../types';
@@ -39,11 +39,11 @@ const MANGLER_COMMIT_LABELS: CommitLabels = {
   hint: 'Save these edits as a new result in the mangler (the original stays as it is)',
   cleanToast: 'Already saved to the mangler',
 };
-import { runBatch, resultToWav, wavWithCues, type BatchHandle, type BatchSource } from '../mangler/batch';
+import { runBatch, resultToWav, setDecodeLimits, wavWithCues, type BatchHandle, type BatchSource } from '../mangler/batch';
 import type { MangleResult, PitchChoice, SnippetInfo } from '../mangler/render';
 import { withChoice } from '../mangler/pitchChoice';
 import { CUE_LEVELS, snippetCues, transientCues, type CueLevel } from '../mangler/recue';
-import { NOTE_NAMES } from '../lib/audio/pitch';
+import { NOTE_NAMES } from '../mangler/pitch';
 import { SnippetTable } from '../mangler/ui/SnippetTable';
 import { SourcePartsModal } from '../mangler/ui/SourcePartsModal';
 import type { Part } from '../mangler/parts';
@@ -51,16 +51,16 @@ import { ScrubBar } from '../mangler/ui/ScrubBar';
 import { clampCrop, cropAudio, cropResult, type Crop } from '../mangler/crop';
 import { readWavHeaderInfo } from '../lib/audio/wavHeader';
 import type { CommitLabels } from '../components/WaveformEditor';
-import { ScaleKeys } from '../mangler/ui/ScaleKeys';
-import { formatDb, formatMs, formatSeconds } from '../mangler/ui/format';
+import { formatDb, formatSeconds } from '../mangler/ui/format';
 import { useResultAudio } from '../mangler/ui/useResultAudio';
 import { recipeFromResult, resultName, usedSources, waveformPeaks, type RecipeSource } from '../mangler/recipe';
 import { deriveSeed, randomSeed } from '../mangler/rng';
 import {
-  DEFAULT_SETTINGS, OUTPUT_MAX_SECONDS, PRESETS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, VARIATIONS_MAX, XFADE_MAX_MS,
-  maskFromIntervals, sanitizeSettings, scaleName, type MangleSettings,
+  DEFAULT_SETTINGS, PRESETS, sanitizeSettings, type MangleSettings,
 } from '../mangler/settings';
-import { RangeSlider, Segmented, Slider, Toggle } from '../mangler/ui/Sliders';
+import { Segmented, Slider } from '../mangler/ui/Sliders';
+import { SettingsPanel } from '../mangler/ui/SettingsPanel';
+import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
 import { ManglerTour } from '../mangler/ui/ManglerTour';
 
@@ -75,17 +75,16 @@ const SR = 48000;
  */
 type PlayMode = 'full' | 'fades' | 'cue';
 
+type Pane = 'sources' | 'settings' | 'results';
+
 /**
- * The typical length of `count` snippets: the median of the log-uniform pick
- * (skewed by the bias), less the median crossfade. A guide, not a promise.
+ * A column that is always shown on a wide screen, and only when picked below lg.
+ * Literal class names, so Tailwind sees them.
  */
-const countEstimate = (s: MangleSettings, count: number) => {
-  const u = Math.pow(0.5, Math.pow(4, -s.bias));
-  const median = Math.exp(Math.log(s.snippetMinMs) + u * (Math.log(s.snippetMaxMs) - Math.log(s.snippetMinMs)));
-  const xfade = (s.xfadeMinMs + s.xfadeMaxMs) / 2;
-  const seconds = Math.max(0, count * median - (count - 1) * Math.min(xfade, median / 2)) / 1000;
-  return seconds >= OUTPUT_MAX_SECONDS ? '42 s (full)' : `~${formatSeconds(seconds)}`;
-};
+const SHOWN = { flex: 'flex', block: 'block' } as const;
+const HIDDEN_BELOW_LG = { flex: 'hidden lg:flex', block: 'hidden lg:block' } as const;
+const paneClass = (pane: Pane, active: Pane, display: 'flex' | 'block') =>
+  (pane === active ? SHOWN : HIDDEN_BELOW_LG)[display];
 
 /** Where the file starts in the full render's frames (non-zero once cropped). */
 const offsetOf = (r: MangleResultEntry) => r.recipe.crop?.start ?? 0;
@@ -108,8 +107,6 @@ const loadPlayMode = (): PlayMode => {
 const SEED_KEY = 'mangler_seed';
 /** Set once the guide has been seen, so it opens by itself only on the first visit. */
 const TOUR_KEY = 'mangler_tour_seen';
-/** About 230 MB decoded. Above it the batch still runs, with a warning. */
-const POOL_WARN_SECONDS = 600;
 
 const newId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -225,6 +222,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [results, setResults] = useState<MangleResultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [settings, setSettings] = useState<MangleSettings>(loadSettings);
+  // Phone mode: smaller limits (see mangler/ui/phoneMode.ts). Guessed until switched.
+  const [phoneMode, setPhoneMode] = useState(loadPhoneMode);
+  const limits = phoneMode ? PHONE_LIMITS : DESKTOP_LIMITS;
+  useEffect(() => { setDecodeLimits(limits); }, [limits]);
+  const togglePhoneMode = () => setPhoneMode(on => { savePhoneMode(!on); return !on; });
+  /** What a click renders: the setting, capped in phone mode. */
+  const variationCount = Math.min(settings.variations, limits.variationsMax);
   const [{ seed, locked }, setSeedState] = useState(loadSeed);
   const [batch, setBatch] = useState<BatchState | null>(null);
   const [adding, setAdding] = useState(0);
@@ -232,6 +236,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [expanded, setExpanded] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(() => !appStorage.getItem(TOUR_KEY));
+  /** Below lg, one column at a time: the bottom bar picks it. */
+  const [pane, setPane] = useState<Pane>('sources');
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [pooledPrompt, setPooledPrompt] = useState<number | null>(null);
@@ -389,7 +395,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         enabled: true,
         addedAt: Date.now(),
       };
-      await putMangleSourceToDB(entry);
+      // A download is held in memory; the stored copy lives on disk.
+      entry.blob = await putMangleSourceDiskBacked(entry);
       setSources(prev => [...prev, entry]);
     } catch (e) {
       console.error('Mangler: could not add', name, e);
@@ -573,9 +580,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     locked: meta.locked?.length ? meta.locked : undefined,
   }), []);
 
+  /**
+   * Stores a result and swaps its audio for the stored copy, which the browser keeps
+   * on disk instead of in memory. The entry is not in the list yet when this runs,
+   * so changing it here is safe.
+   */
   const storeEntry = useCallback(async (entry: MangleResultEntry) => {
     try {
-      await putMangleResultToDB(entry);
+      entry.blob = await putMangleResultDiskBacked(entry);
     } catch (e) {
       console.error(e);
       showToast('Could not store a result (storage full?). It is shown but will not survive a reload.', 'error');
@@ -606,7 +618,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       setResults(prev => prev.filter(r => r.kept));
     }
 
-    const count = settings.variations;
+    const count = variationCount;
     // The first variation uses the seed on screen, so typing one in reproduces it.
     const seeds = Array.from({ length: count }, (_, i) => (i === 0 ? seed : deriveSeed(seed, 0x5eed, i)));
     const batchId = Date.now();
@@ -630,7 +642,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       },
       onDone: () => { if (!locked) setSeedState({ seed: randomSeed(), locked: false }); },
     });
-  }, [enabledSources, results, settings, seed, locked, player, region, showToast, startJob, makeEntry, storeEntry]);
+  }, [enabledSources, results, settings, variationCount, seed, locked, player, region, showToast, startJob, makeEntry, storeEntry]);
 
   // ---------------------------------------------------------------------------
   // Editing a result
@@ -923,7 +935,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       showToast(`Can't reroll: ${missing.map(m => m.name).join(', ')} is no longer in the source pool`, 'error');
       return;
     }
-    const count = settings.variations;
+    const count = variationCount;
     const base = randomSeed();
     const seeds = Array.from({ length: count }, (_, i) => deriveSeed(base, 0x10c6, i));
     const batchId = Date.now();
@@ -943,7 +955,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         setResults(prev => sortResults([...prev, entry]));
       },
     });
-  }, [missingFor, settings, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+  }, [missingFor, settings, variationCount, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
 
   const undoEdit = useCallback(async (r: MangleResultEntry) => {
     const previous = undo[r.id];
@@ -1210,20 +1222,33 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             Random snippets from your sources, joined into one file of up to 42 s.
           </span>
         </div>
+        <div className="flex items-center gap-1">
+        <button
+          onClick={togglePhoneMode}
+          aria-pressed={phoneMode}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest transition-colors
+            ${phoneMode ? 'text-white bg-synthux-red/30' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+          title={phoneMode
+            ? 'Phone mode: mono sources, a smaller pool and fewer variations per click. Click for the full limits'
+            : 'Full limits. Click for phone mode: mono sources, a smaller pool and fewer variations, for a tab with little memory'}
+        >
+          <Smartphone size={14} /> <span className="hidden sm:inline">Phone</span>
+        </button>
         <button
           onClick={() => setTourOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
             text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           title="A short guide to the order of operations"
         >
-          <HelpCircle size={14} /> Guide
+          <HelpCircle size={14} /> <span className="hidden sm:inline">Guide</span>
         </button>
+        </div>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-[minmax(240px,300px)_minmax(260px,320px)_1fr]">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,300px)_minmax(260px,320px)_1fr]">
 
         {/* Source pool */}
-        <section data-tour="sources" className="min-h-0 flex flex-col border-r border-white/10">
+        <section data-tour="sources" className={`min-h-0 ${paneClass('sources', pane, 'flex')} flex-col lg:border-r border-white/10`}>
           {/*
             * Wraps: in Studio a third button (Project) makes the row wider than the
             * column, and the buttons then take a line of their own.
@@ -1370,16 +1395,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
           <div className="shrink-0 px-4 py-2 border-t border-white/10 text-[10px] text-gray-500">
             {enabledSources.length} of {sources.length} in use · {formatSeconds(enabledSeconds)}
-            {enabledSeconds > POOL_WARN_SECONDS && (
+            {enabledSeconds > limits.poolWarnSeconds && (
               <span className="block text-synthux-yellow mt-0.5">
-                Over 10 minutes: decoding this much may run the tab out of memory.
+                Over {formatSeconds(limits.poolWarnSeconds)}{phoneMode ? ' (phone mode)' : ''}: decoding this much may run the tab out of memory.
               </span>
             )}
           </div>
         </section>
 
         {/* Settings */}
-        <section data-tour="settings" className="min-h-0 overflow-y-auto border-r border-white/10 px-4 py-4 space-y-4">
+        <section data-tour="settings" className={`min-h-0 ${paneClass('settings', pane, 'block')} overflow-y-auto lg:border-r border-white/10 px-4 py-4 space-y-4`}>
           <div className="flex items-center justify-between">
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Settings</h2>
             <select
@@ -1397,119 +1422,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             </select>
           </div>
 
-          <Group title="Shape">
-            <Segmented label="Fill" value={settings.fillMode} onChange={v => update('fillMode', v)}
-              options={[{ value: 'length', label: 'By length' }, { value: 'count', label: 'By count' }]}
-              hint="By length: as many snippets as fit the length. By count: that many snippets, and the file is as long as they turn out (42 s at most)" />
-            {settings.fillMode === 'length' ? (
-              <Slider label="Output length" min={1} max={OUTPUT_MAX_SECONDS} value={settings.outputSeconds}
-                onChange={v => update('outputSeconds', v)} format={v => `${v} s`}
-                hint="The hardware plays the first 42 s of a file" />
-            ) : (
-              <Slider label="Snippets" min={1} max={128} value={Math.min(128, settings.snippetCount)}
-                onChange={v => update('snippetCount', v)} format={v => `${v} → ${countEstimate(settings, v)}`}
-                hint="Each variation gets this many snippets; their lengths decide how long the file is. The estimate is the typical length" />
-            )}
-            <RangeSlider label="Snippet length" min={SNIPPET_MIN_MS} max={SNIPPET_MAX_MS} scale="log"
-              low={settings.snippetMinMs} high={settings.snippetMaxMs}
-              onChange={(lo, hi) => updateMany({ snippetMinMs: lo, snippetMaxMs: hi })} format={formatMs} />
-            <Slider label="Bias" min={-1} max={1} step={0.05} value={settings.bias}
-              onChange={v => update('bias', v)}
-              format={v => (Math.abs(v) < 0.025 ? 'even' : v < 0 ? `short ${Math.round(-v * 100)}%` : `long ${Math.round(v * 100)}%`)}
-              hint="Skews the pick inside the snippet length range" />
-            <RangeSlider label="Crossfade" min={0} max={XFADE_MAX_MS} scale="cubic"
-              low={settings.xfadeMinMs} high={settings.xfadeMaxMs}
-              onChange={(lo, hi) => updateMany({ xfadeMinMs: lo, xfadeMaxMs: hi })} format={formatMs}
-              hint="Equal-power, at most half the shorter of the two snippets" />
-            <Toggle label="Hard cuts (leave clicks in)" checked={settings.hardCuts}
-              onChange={v => update('hardCuts', v)}
-              hint="Off adds a 2 ms fade at each snippet edge" />
-            <Segmented label="Snippet start" value={settings.snapStart} onChange={v => update('snapStart', v)}
-              options={[{ value: 'off', label: 'Anywhere' }, { value: 'zero', label: 'Zero' }, { value: 'onset', label: 'Transient' }]}
-              hint="Zero: on a zero crossing, so hard cuts don't click. Transient: on the strongest attack in the first half second" />
-            <Toggle label="One hit per snippet" checked={settings.oneHit} onChange={v => update('oneHit', v)}
-              hint="For drum loops: a snippet ends before the next hit in its source, so each cue point holds one sound. Best with Transient start" />
-            <Slider label="Reverse" min={0} max={100} value={Math.round(settings.reverseProbability * 100)}
-              onChange={v => update('reverseProbability', v / 100)} format={v => `${v}%`}
-              hint="Chance that a snippet plays backwards" />
-          </Group>
-
-          <Group title="Loudness">
-            <Slider label="Target (RMS)" min={-30} max={-6} value={settings.loudnessTargetDb}
-              onChange={v => update('loudnessTargetDb', v)} format={v => `${v} dBFS`} />
-            <Slider label="Spread" min={0} max={12} step={0.5} value={settings.loudnessSpreadDb}
-              onChange={v => update('loudnessSpreadDb', v)} format={v => `± ${v} dB`}
-              hint="Random deviation from the target, for dynamics on purpose" />
-            <Slider label="Max boost" min={0} max={36} value={settings.maxBoostDb}
-              onChange={v => update('maxBoostDb', v)} format={v => `${v} dB`}
-              hint="Stops near-silent snippets being pulled up into hiss" />
-            <Toggle label="Skip silence" checked={settings.skipSilence} onChange={v => update('skipSilence', v)}
-              hint="Redraws a snippet that is quieter than the threshold (up to 5 times)" />
-            <Slider label="Silence threshold" min={-70} max={-30} value={settings.silenceThresholdDb}
-              onChange={v => update('silenceThresholdDb', v)} format={v => `${v} dBFS`}
-              disabled={!settings.skipSilence} />
-            <Toggle label="Limiter at −1 dBFS" checked={settings.limiter} onChange={v => update('limiter', v)}
-              hint="Off scales the whole file down instead when it peaks over −1 dBFS" />
-          </Group>
-
-          <Group title="Pitch">
-            <Segmented label="Repitch" value={settings.repitch} onChange={v => update('repitch', v)}
-              options={[{ value: 'off', label: 'Off' }, { value: 'suggest', label: 'Suggest' }, { value: 'apply', label: 'Apply' }]}
-              hint="Suggest only detects and lists; Apply moves every snippet with a clear pitch to the nearest note of the scale" />
-            <div className="space-y-2" title="The notes Apply (and 'scale' in the snippet list) move snippets to">
-              <div className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="text-gray-400">Scale</span>
-                <span className="flex items-center gap-1">
-                  <select value={settings.scaleRoot} onChange={e => update('scaleRoot', Number(e.target.value))}
-                    aria-label="Root note"
-                    className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[11px] text-gray-200">
-                    {NOTE_NAMES.map((n, pc) => <option key={n} value={pc}>{n}</option>)}
-                  </select>
-                  <select
-                    value={scaleName(settings.scaleMask) ?? ''}
-                    onChange={e => {
-                      const preset = SCALES.find(sc => sc.name === e.target.value);
-                      if (preset) update('scaleMask', maskFromIntervals(preset.intervals));
-                    }}
-                    aria-label="Scale"
-                    className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[11px] text-gray-200"
-                  >
-                    {scaleName(settings.scaleMask) === null && <option value="">Custom</option>}
-                    {SCALES.map(sc => <option key={sc.name} value={sc.name}>{sc.name}</option>)}
-                  </select>
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <ScaleKeys root={settings.scaleRoot} mask={settings.scaleMask} onChange={m => update('scaleMask', m)} />
-                <span className="text-[10px] text-gray-500 leading-tight text-right">Click keys<br />for a custom<br />scale</span>
-              </div>
-            </div>
-            <Slider label="Pitch confidence" min={0} max={1} step={0.05} value={settings.pitchConfidence}
-              onChange={v => update('pitchConfidence', v)} format={v => v.toFixed(2)}
-              disabled={settings.repitch !== 'apply'}
-              hint="Below this a snippet keeps its own pitch" />
-            <Slider label="Random detune" min={0} max={12} step={0.5} value={settings.detuneSt}
-              onChange={v => update('detuneSt', v)} format={v => (v ? `± ${v} st` : 'off')} />
-            <Segmented label="Resampling" value={settings.resampler} onChange={v => update('resampler', v)}
-              options={[{ value: 'sinc', label: 'Clean' }, { value: 'linear', label: 'Lo-fi' }]}
-              hint="Clean (windowed sinc) keeps the highs on big shifts; Lo-fi (linear) is duller and grittier" />
-          </Group>
-
-          <Group title="Sources and file">
-            <Segmented label="Source mix" value={settings.sourceMix} onChange={v => update('sourceMix', v)}
-              options={[{ value: 'even', label: 'Even' }, { value: 'length', label: 'By length' }]}
-              hint="Even: every source equally likely. By length: longer files are picked more" />
-            <Slider label="Max per source" min={0} max={50} value={settings.maxPerSource}
-              onChange={v => update('maxPerSource', v)} format={v => (v === 0 ? 'no limit' : String(v))} />
-            <Toggle label="Cue point at each snippet" checked={settings.cuePoints} onChange={v => update('cuePoints', v)}
-              hint="So the slice mode jumps between snippets. At most 255" />
-            <Toggle label="Loop the file" checked={settings.loop} onChange={v => update('loop', v)}
-              hint="Crossfades the end into the start" />
-          </Group>
+          <SettingsPanel settings={settings} onChange={updateMany} storageKey="mangler_groups" className="space-y-3" />
         </section>
 
         {/* Generate + results (min-w-0: a grid column otherwise never gets narrower than its content) */}
-        <section className="min-h-0 min-w-0 flex flex-col">
+        <section className={`min-h-0 min-w-0 ${paneClass('results', pane, 'flex')} flex-col`}>
           <div data-tour="generate" className="shrink-0 px-4 py-3 border-b border-white/10 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-400">Seed</span>
@@ -1534,7 +1451,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             </div>
 
             <div className="w-40">
-              <Slider label="Variations" min={1} max={VARIATIONS_MAX} value={settings.variations}
+              <Slider label="Variations" min={1} max={limits.variationsMax} value={variationCount}
                 onChange={v => update('variations', v)} format={String} />
             </div>
 
@@ -1550,11 +1467,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                   <X size={15} /> Stop
                 </button>
               ) : (
-                <button onClick={generate} disabled={enabledSources.length === 0}
+                <button onClick={() => { setPane('results'); generate(); }} disabled={enabledSources.length === 0}
                   className="flex items-center gap-2 px-5 h-10 rounded-full text-sm font-bold bg-synthux-red text-white
                     shadow-lg shadow-synthux-red/30 hover:scale-105 active:scale-95 transition-all
                     disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed">
-                  <Dices size={16} /> Generate {settings.variations}
+                  <Dices size={16} /> Generate {variationCount}
                 </button>
               )}
             </div>
@@ -1617,7 +1534,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               return (
                 <article key={r.id}
                   className={`min-w-0 rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
-                  <div className="flex items-center gap-2 mb-2">
+                  {/* On a phone the buttons go to a line of their own, together. */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
                     <button
                       onClick={() => togglePlay(r)}
                       className="h-8 w-8 shrink-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
@@ -1625,7 +1543,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     >
                       {playingFull ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
                     </button>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 basis-40">
                       <div className="text-xs font-bold truncate flex items-center gap-1.5">
                         {r.name}
                         {r.edited && (
@@ -1654,6 +1572,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         </div>
                       )}
                     </div>
+                    <div className="flex items-center gap-0.5 ml-auto">
                     <button onClick={() => applySeed(r.recipe.seed)}
                       className="shrink-0 font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
                       title="Use this seed for the next batch">
@@ -1694,9 +1613,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     <IconButton title="Discard" onClick={() => discard(r.id)} className="text-gray-500 hover:text-synthux-red">
                       <Trash2 size={15} />
                     </IconButton>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1 mb-1.5 text-[10px]">
+                  <div className="flex flex-wrap items-center gap-1 mb-1.5 text-[10px] [&>*]:whitespace-nowrap">
                     {!r.edited && (
                       <CardAction onClick={() => rerender(r)} disabled={busy} icon={<RefreshCw size={11} />}
                         title="Render this seed again with the sliders as they are now (locked snippets stay)">
@@ -1815,7 +1735,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       crop={r.recipe.crop}
                       onPitch={(indices, choice) => setPitch(r, indices, choice)}
                       onReroll={() => rerollUnlocked(r)}
-                      variations={settings.variations}
+                      variations={variationCount}
                     />
                   )}
                 </article>
@@ -1858,6 +1778,22 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </div>
         </section>
       </div>
+
+      {/* Phone and narrow windows: one column at a time. */}
+      <nav className="lg:hidden shrink-0 grid grid-cols-3 border-t border-white/10 bg-synthux-panel">
+        {([
+          ['sources', <Layers size={18} />, 'Sources', `${enabledSources.length}/${sources.length}`],
+          ['settings', <SlidersHorizontal size={18} />, 'Settings', ''],
+          ['results', <ListMusic size={18} />, 'Results', busy ? '…' : String(results.length)],
+        ] as const).map(([id, icon, label, count]) => (
+          <button key={id} onClick={() => setPane(id)} aria-pressed={pane === id}
+            className={`flex flex-col items-center gap-0.5 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors
+              ${pane === id ? 'text-synthux-red' : 'text-gray-500 hover:text-white'}`}>
+            {icon}
+            <span>{label}{count && <span className="ml-1 font-mono normal-case text-gray-500">{count}</span>}</span>
+          </button>
+        ))}
+      </nav>
 
       {tourOpen && <ManglerTour onClose={closeTour} />}
 
@@ -2075,13 +2011,6 @@ const FooterButton: React.FC<{ onClick: () => void; icon: React.ReactNode; child
     className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
     {icon} {children}
   </button>
-);
-
-const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <fieldset className="space-y-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
-    <legend className="px-1 text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</legend>
-    {children}
-  </fieldset>
 );
 
 const IconButton: React.FC<{

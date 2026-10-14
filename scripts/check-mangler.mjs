@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Checks for the Sample Mangler engine (src/mangler, src/lib/audio/pitch.ts).
+ * Checks for the Sample Mangler engine (src/mangler).
  *
  *   node scripts/check-mangler.mjs        (or: npm run check:mangler)
  *
@@ -16,7 +16,7 @@
 import { createRng } from '../src/mangler/rng.ts';
 import { DEFAULT_SETTINGS, PRESETS, sanitizeSettings, MAX_CUE_POINTS } from '../src/mangler/settings.ts';
 import { render, MANGLE_SAMPLE_RATE as SR } from '../src/mangler/render.ts';
-import { detectPitchYin, semitonesToNearestC, noteName } from '../src/lib/audio/pitch.ts';
+import { detectPitchYin, semitonesToNearestC, noteName } from '../src/mangler/pitch.ts';
 
 let failures = 0;
 const check = (ok, label, detail = '') => {
@@ -153,6 +153,31 @@ const sameDice = moved.snippets.slice(0, n).every((s, i) =>
 check(sameDice && moved.snippets.some((s, i) => i < n && s.reverse !== base.snippets[i].reverse),
     'reverse slider changes direction only', `${n} snippets compared`);
 
+// Rests and soft parts: their own dice, so the picks stay put and old results too.
+{
+    const quiet = { ...settings, skipSilence: false, restProbability: 0.25, softProbability: 0.3, softMinDb: 6, softMaxDb: 18 };
+    const r = render(sources, quiet, 12345);
+    const m = Math.min(r.snippets.length, base.snippets.length);
+    check(r.snippets.slice(0, m).every((s, i) =>
+        s.source === base.snippets[i].source && s.sourceStart === base.snippets[i].sourceStart && s.length === base.snippets[i].length),
+        'rests and soft parts: same picks as without', `${m} snippets compared`);
+    const rests = r.snippets.filter(s => s.rest);
+    const softs = r.snippets.filter(s => s.softDb);
+    check(rests.length > 0 && softs.length > 0, 'some rests, some soft parts', `${rests.length} rests, ${softs.length} soft of ${r.snippets.length}`);
+    check(softs.every(s => s.softDb <= -6 && s.softDb >= -18), 'soft parts within 6–18 dB down');
+    // A rest is silent away from its crossfades.
+    const silentInside = rests.every(s => {
+        const from = s.outStart + s.xfade, to = s.outStart + s.length - Math.round(0.05 * SR);
+        for (let i = from; i < to; i++) if (r.left[i] !== 0 || r.right[i] !== 0) return false;
+        return true;
+    });
+    check(silentInside, 'rests are silent between their crossfades');
+    const again = render(sources, quiet, 12345, { fixed: r.snippets });
+    check(sameArray(again.left, r.left) && sameArray(again.right, r.right), 'rests and soft parts survive an edit (fixed)');
+    const off = render(sources, { ...settings, skipSilence: false, softMinDb: 3, softMaxDb: 30 }, 12345);
+    check(sameArray(off.left, base.left), 'at 0 %: bit-identical to a render without them');
+}
+
 section('Editing (fixed snippets)');
 {
     const again = render(sources, settings, 12345, { fixed: a.snippets });
@@ -224,7 +249,7 @@ section('Snap and resampling');
 
 section('Scales, pitch choices, transients');
 {
-    const { semitonesToPitchClasses } = await import('../src/lib/audio/pitch.ts');
+    const { semitonesToPitchClasses } = await import('../src/mangler/pitch.ts');
     const { maskFromIntervals, SCALES, scalePitchClasses } = await import('../src/mangler/settings.ts');
     const major = maskFromIntervals(SCALES.find(sc => sc.name === 'Major').intervals);
     check(semitonesToPitchClasses(220, scalePitchClasses(2, major)) === 0, 'A is in D major: no shift');
@@ -361,6 +386,27 @@ section('Presets and edges');
     const clamped = sanitizeSettings({ outputSeconds: 99, snippetMinMs: 5000, snippetMaxMs: 100, variations: 50, repitch: 'nope' });
     check(clamped.outputSeconds === 42 && clamped.snippetMinMs === 100 && clamped.snippetMaxMs === 5000
         && clamped.variations === 12 && clamped.repitch === DEFAULT_SETTINGS.repitch, 'settings sanitised');
+}
+
+// ---------------------------------------------------------------------------
+// The engine stands alone: no imports from outside src/mangler, so it can
+// become a package without untangling (mangler-v2-plan.md, "Packaging").
+// ---------------------------------------------------------------------------
+
+section('Engine boundary');
+{
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const dir = new URL('../src/mangler/', import.meta.url);
+    // App glue: WAV encoding, saving, licences. These may reach into the app.
+    const GLUE = new Set(['batch.ts', 'save.ts', 'license.ts']);
+    const outside = [];
+    for (const name of readdirSync(dir).filter(n => n.endsWith('.ts') && !GLUE.has(n))) {
+        const text = readFileSync(new URL(name, dir), 'utf8');
+        for (const [, path] of text.matchAll(/(?:from|import)\s*\(?\s*'([^']+)'/g)) {
+            if (!path.startsWith('./')) outside.push(`${name} → ${path}`);
+        }
+    }
+    check(outside.length === 0, 'engine files import only from src/mangler', outside.join(', '));
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');

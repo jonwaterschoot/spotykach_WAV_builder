@@ -274,7 +274,7 @@ All edits go through one engine mechanism: `render(..., { fixed })` renders posi
 
 ## Open questions and risks
 
-- **Desktop only (decided Oct 11).** The door gets `desktopOnly: true`. 10 minutes of decoded sources won't fit in a phone tab's memory, and the three-column layout needs a wide screen. No phone layout is planned.
+- **Desktop only (decided Oct 11).** The door gets `desktopOnly: true`. 10 minutes of decoded sources won't fit in a phone tab's memory, and the three-column layout needs a wide screen. No phone layout is planned. (Revisited Oct 14: `mangler-v2-plan.md` adds a phone mode.)
 - **License text matching.** `classifyLicense` reads free text, so a custom license can be misread. When in doubt it picks *personal use*, never *open*. Packs submitted from now on could store the license id next to the text so no guessing is needed.
 - **Loudness measure.** Gated RMS is simple and good enough to start. K-weighted LUFS (ITU-R BS.1770) matches what people hear more closely, especially for bassy against bright snippets. Worth trying if RMS matching sounds uneven.
 - **Pitch shift changes length and timbre.** Resampling moves formants along with pitch, which suits this tool. A length-keeping shifter (phase vocoder) is out of scope.

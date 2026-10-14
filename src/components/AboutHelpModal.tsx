@@ -489,7 +489,16 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     </p>
                                     <p className="text-gray-400">
                                         A result keeps the licences of the sounds it uses: personal-use sources mark it, and a source that allows
-                                        no changes can&apos;t be saved. Desktop only.
+                                        no changes can&apos;t be saved.
+                                    </p>
+                                    <p className="text-gray-400">
+                                        <strong className="text-gray-300">Rests and soft parts</strong> (under Loudness) make room in the
+                                        file: a rest is a snippet of silence that keeps its cue point, a soft part is a snippet turned down.
+                                    </p>
+                                    <p className="text-gray-400">
+                                        <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
+                                        button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
+                                        makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.
                                     </p>
                                 </div>
                             )}

@@ -1,4 +1,4 @@
-import { detectPitchYin, semitonesToNearestC, semitonesToPitchClasses } from '../lib/audio/pitch.ts';
+import { detectPitchYin, semitonesToNearestC, semitonesToPitchClasses } from './pitch.ts';
 import {
     applyGain, cut, dbToGain, declick, detectOnsets, fadeOutTail, findOnset, gatedRmsDb, joinInto, limit, loopCrossfade,
     monoMix, nearestZeroCrossing, peak, resample, resampleSinc, reverseInPlace, rmsDb, type Stereo,
@@ -88,6 +88,10 @@ export interface SnippetInfo {
     choice?: PitchChoice;
     /** Times the snippet was redrawn for being below the silence threshold. */
     rerolls: number;
+    /** A rest: the snippet is silence (its length and cue point stay). */
+    rest?: boolean;
+    /** A soft part: turned down this many dB (negative) on top of `gainDb`. */
+    softDb?: number;
 }
 
 export interface MangleResult {
@@ -217,6 +221,8 @@ export function render(
                 detune: spec.detune,
                 choice: spec.choice,
                 rerolls: spec.rerolls,
+                ...(spec.rest ? { rest: true } : {}),
+                ...(spec.softDb ? { softDb: spec.softDb } : {}),
             };
             gainDb = spec.gainDb;
             wantedXfade = spec.xfade;
@@ -320,7 +326,24 @@ export function render(
                 );
                 applyGain(signal, dbToGain(gainDb));
             }
+
+            // Rests and soft parts: dice of their own per position, so switching them
+            // on leaves every other pick (and every older result) as it was.
+            if (settings.restProbability > 0 || settings.softProbability > 0) {
+                const dyn = createRng(deriveSeed(seed, 0x50f7, index));
+                const roll = dyn.next();
+                const depth = dyn.next();
+                if (roll < settings.restProbability) info.rest = true;
+                else if (roll < settings.restProbability + settings.softProbability) {
+                    info.softDb = -(settings.softMinDb + depth * (settings.softMaxDb - settings.softMinDb));
+                }
+            }
         }
+
+        if (info.rest) {
+            signal[0].fill(0);
+            if (signal[1] !== signal[0]) signal[1].fill(0);
+        } else if (info.softDb) applyGain(signal, dbToGain(info.softDb));
 
         if (declickLength) declick(signal, declickLength);
 

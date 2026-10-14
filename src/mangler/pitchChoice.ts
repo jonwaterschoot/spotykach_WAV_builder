@@ -1,4 +1,4 @@
-import { NOTE_NAMES, semitonesToPitchClasses } from '../lib/audio/pitch.ts';
+import { NOTE_NAMES, semitonesToPitchClasses } from './pitch.ts';
 import type { PitchChoice, SnippetInfo } from './render.ts';
 import { scalePitchClasses, type MangleSettings } from './settings.ts';
 
