@@ -522,6 +522,17 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         results. In Studio, an empty slot&apos;s choice offers <em>Synth</em> too.
                                     </p>
                                     <p className="text-gray-400">
+                                        <strong className="text-gray-300">Projects</strong> (the Project menu) save everything (pools, results,
+                                        slices, sequence, synth and settings) to <em>Mangler/</em> in your workspace folder, or as a .mangler.zip.
+                                        <em> Start fresh</em> empties it all. The dice buttons roll settings, patterns, slices and ranges.
+                                    </p>
+                                    <p className="text-gray-400">
+                                        <strong className="text-gray-300">Spotykach link:</strong> in Sequence, <em>Link</em> connects over MIDI.
+                                        Lead sends clock and Start / Stop; Follow takes the Spotykach&apos;s clock; a track set to <em>SK A</em> or
+                                        <em> SK B</em> plays that deck, note 60 plus the step&apos;s pitch. With the USB setting on, results can go
+                                        straight to a slot.
+                                    </p>
+                                    <p className="text-gray-400">
                                         <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
                                         button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
                                         makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.

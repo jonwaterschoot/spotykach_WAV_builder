@@ -37,6 +37,11 @@ export interface SeqTrack {
     mute: boolean;
     solo: boolean;
     patterns: Record<PatternId, SeqStep[]>;
+    /**
+     * Send the steps to a Spotykach deck as MIDI notes (60 + pitch), over the
+     * link. Such a track plays even without a slice: the deck makes the sound.
+     */
+    midi?: Deck;
 }
 
 export interface Sequence {
@@ -46,6 +51,9 @@ export interface Sequence {
     chain: PatternId[];
     tracks: SeqTrack[];
 }
+
+/** The Spotykach's two decks, each on its own MIDI channel. */
+export type Deck = 'A' | 'B';
 
 /** Where the cue points of a rendered sequence go. */
 export type SeqCues = 'hits' | 'beats' | 'bars';
@@ -86,11 +94,15 @@ export interface SeqHit {
     /** Global step: chain position × 16 + step. */
     step: number;
     at: number;
-    sliceId: string;
+    /** Null on a MIDI track without a slice: only the deck plays it. */
+    sliceId: string | null;
     /** Linear: velocity × track volume. */
     gain: number;
-    /** Track shift, semitones (the slice's own comes on top when it renders). */
+    /** The step's own velocity, 0–1 (for MIDI). */
+    velocity: number;
+    /** Track shift plus the step's, semitones (the slice's own comes on top when it renders). */
     shift: number;
+    deck?: Deck;
 }
 
 /**
@@ -105,12 +117,15 @@ export function stepHits(seq: Sequence, k: number): Omit<SeqHit, 'at'>[] {
     seq.tracks.forEach((track, t) => {
         if (track.mute || (soloed && !track.solo)) return;
         const step = track.patterns[pattern][k % STEPS];
-        const sliceId = step?.on ? step.sliceId ?? track.sliceId : null;
-        if (!sliceId) return;
+        if (!step?.on) return;
+        const sliceId = step.sliceId ?? track.sliceId;
+        if (!sliceId && !track.midi) return;
         out.push({
             track: t, step: k, sliceId,
             gain: step.velocity * Math.pow(10, track.volumeDb / 20),
+            velocity: step.velocity,
             shift: track.shift + (step.shift ?? 0),
+            ...(track.midi ? { deck: track.midi } : {}),
         });
     });
     return out;
@@ -154,7 +169,8 @@ export function mixSequence(
 
 /** Cue points: at each step with a hit, at each beat, or at each bar (pattern). */
 export function sequenceCues(seq: Sequence, hits: readonly SeqHit[], mode: SeqCues, sampleRate: number): number[] {
-    if (mode === 'hits') return [...new Set(hits.map(h => h.at))].sort((a, b) => a - b);
+    // Only hits with a sound in the file: a MIDI-only step is not in it.
+    if (mode === 'hits') return [...new Set(hits.filter(h => h.sliceId).map(h => h.at))].sort((a, b) => a - b);
     const every = mode === 'beats' ? 4 : STEPS;
     const out: number[] = [];
     for (let k = 0; k < seq.chain.length * STEPS; k += every) out.push(stepAt(seq, k, sampleRate));

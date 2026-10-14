@@ -254,10 +254,22 @@ Each phase is usable on its own.
 - [x] Checks: every generator deterministic per seed, at −1 dBFS, values in range; the hit detector reads a synth kick as low and a hat as high (the centroid is now power-weighted, so a click no longer makes a kick read as mid)
 - [ ] Later: tune the generators by ear; more of them (cowbell, rim, bass drop)
 
+**Added Oct 14 — Round two** (after the first look at all phases)
+
+- [x] Integration: results and slices *To sources*; a slice editor next to the pool; kits say where they land and light up there
+- [x] Sequencer steps: drag up or down for velocity (fill height) or pitch (±24 st, shown on the step), picked with *Drag: Velocity / Pitch*; pitch in the step menu too
+- [x] Pool filters: name or origin, and kind (files, packs, project, synth, made here); the pool's checkbox, bin and dice act on what is shown
+- [x] Dice (`randomize.ts`, rolls within usable bounds, checked): every settings group, *Surprise* next to the presets (both hosts), the source pool, a slice pick for kits, the sequencer (track slice, track steps after the slice's class, the pattern, the chain), the synth's ranges, and a random pick per category in the sample browser
+- [x] Mangler projects (`project.ts`): *Project* menu with Save, Save as, Open and Start fresh. The source pool, results, slices, sequence, synth ranges and settings together, in `Mangler/<name>/` on the workspace (the folder Studio uses: `mangler.json` plus `sources/` and `results/`), or one `.mangler.zip` where folders can't be written. A zip round trip is checked byte for byte
+- [x] Spotykach link (MIDI, `ui/useMidiLink.ts`), from what the firmware does (`core.midi.cpp`, `core.ui.cpp`): *Lead* sends clock (24 ppqn, on the unswung grid) and Start / Stop; *Follow* takes the tempo, Start, Stop and Continue from an incoming clock, every sixth tick a sixteenth; a track routed to *SK A* or *SK B* sends its steps as notes on that deck's channel (60 + pitch, velocity), even without a slice. Tested against a fake Web MIDI port; not yet on hardware
+- [x] *Send to Spotykach* over USB on result cards (standalone only, with the USB setting on): tape and slot (occupied ones marked), `toSlotFile` then `writeSlot`; the device goes back to MIDI when the dialog closes. Not yet tested on hardware
+- [ ] Later: sequence export as JSON or text; sending a whole kit to six slots at once
+
 ## Decided Oct 14
 
 - **Tempo:** Spotykach reads none, from `config.txt` or the file. The tempo grid is a convenience for plain loops (5.4).
-- **Sequencer:** lives only in the browser session; out to the hardware only as a rendered result. A JSON or text format may come later (5.5).
+- **Sequencer:** lives only in the browser session; out to the hardware as a rendered result, or live over the MIDI link (clock and notes). A JSON or text format may come later (5.5).
+- **Storage:** the workspace folder holds mangler projects next to Studio's projects; the browser's own storage stays the working copy.
 - **Phone:** the full tool with smaller limits and compact controls (section 3, Phone), not a separate lite tool.
 - **Synth:** fine as a start; watch its CPU and memory on a phone (5.6).
 - **Tools menu:** a station bar at the top like the editor's tool menu, main stations always shown (section 3).

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, Dices, Eraser, Minus, Music, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import { Cable, Copy, Dices, Eraser, Minus, Music, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import type { MidiPort, MidiSettings } from './useMidiLink';
 import { pickAny, rollChain, rollSteps } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import type { MangleSliceEntry } from '../../utils/persistence';
@@ -33,13 +34,28 @@ interface SequencerStationProps {
     onAudition: (sliceId: string, shift: number) => void;
     onRender: (cues: SeqCues, fold: boolean) => void;
     newId: () => string;
+    /** The MIDI link to a Spotykach (see useMidiLink.ts). */
+    link: {
+        supported: boolean;
+        enabled: boolean;
+        error: string | null;
+        ports: { inputs: MidiPort[]; outputs: MidiPort[] };
+        settings: MidiSettings;
+        setSettings: (update: (s: MidiSettings) => MidiSettings) => void;
+        enable: () => void;
+        /** Following an outside clock: its tempo, once measured. */
+        following: boolean;
+        tempo: number | null;
+    };
 }
 
 const CLASS_COLOR: Record<HitClass, string> = { low: '#f58b44', mid: '#f5d544', high: '#4771f9' };
 
 export const SequencerStation: React.FC<SequencerStationProps> = ({
-    seq, onChange, slices, available, playing, step, busy, onPlay, onStop, onAudition, onRender, newId,
+    seq, onChange, slices, available, playing, step, busy, onPlay, onStop, onAudition, onRender, newId, link,
 }) => {
+    const [linkOpen, setLinkOpen] = useState(false);
+    const linked = link.enabled && !!link.settings.outputId;
     const [edit, setEdit] = useState<PatternId>('A');
     const [cues, setCues] = useState<SeqCues>('hits');
     const [fold, setFold] = useState(true);
@@ -134,7 +150,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
             {/* Transport, patterns, chain, render */}
             <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-b border-white/10 text-[11px] text-gray-400">
                 <button onClick={() => (playing ? onStop() : onPlay())}
-                    title={playing ? 'Stop' : 'Play the chain, looping'}
+                    title={playing ? 'Stop' : link.settings.follow && link.enabled ? 'Arm: the incoming clock plays it (Start, or just ticks)' : 'Play the chain, looping'}
                     className={`h-9 w-9 flex items-center justify-center rounded-full transition-colors
                         ${playing ? 'bg-synthux-red text-white' : 'bg-white/10 hover:bg-white/20 text-white'}`}>
                     {playing ? <Square size={13} fill="currentColor" /> : <Play size={15} className="ml-0.5" />}
@@ -203,6 +219,16 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     <span className="ml-1 font-mono text-gray-500">{bars} bar{bars === 1 ? '' : 's'} · {formatSeconds(seconds)}</span>
                 </span>
 
+                <span>
+                    <button onClick={e => { e.stopPropagation(); setLinkOpen(o => !o); }}
+                        title="Link to a Spotykach over MIDI: clock, Start / Stop, and notes for its decks"
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
+                            ${linked ? 'border-synthux-green/50 text-synthux-green' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                        <Cable size={12} /> Link
+                        {link.following && <span className="font-mono text-[10px]">{link.tempo ? `${link.tempo} bpm` : 'waiting'}</span>}
+                    </button>
+                </span>
+
                 <span className="flex items-center gap-2 ml-auto">
                     <select value={cues} onChange={e => setCues(e.target.value as SeqCues)} aria-label="Cue points"
                         title="Where the rendered file gets its cue points"
@@ -222,6 +248,75 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     </button>
                 </span>
             </div>
+
+            {linkOpen && (
+                <div className="shrink-0 border-b border-white/10 bg-black/20 px-4 py-3 text-[11px] text-gray-300 grid gap-x-6 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3 items-start"
+                    onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between">
+                        <span className="font-bold text-gray-100">Spotykach link (MIDI)</span>
+                        <button onClick={() => setLinkOpen(false)} className="text-gray-500 hover:text-white" aria-label="Close"><X size={12} /></button>
+                    </div>
+                    {!link.supported ? (
+                        <p className="text-gray-500">This browser has no Web MIDI. Chrome or Edge on a computer have it.</p>
+                    ) : !link.enabled ? (
+                        <>
+                            <p className="text-gray-500">Plug the Spotykach in over USB (or a MIDI interface on its TRS jack), then connect.</p>
+                            <button onClick={link.enable} className="w-full px-3 py-1.5 rounded bg-synthux-red text-white font-bold hover:bg-synthux-red/80">Connect MIDI</button>
+                        </>
+                    ) : (
+                        <>
+                            <label className="flex items-center justify-between gap-2">
+                                Send to
+                                <select value={link.settings.outputId ?? ''} onChange={e => link.setSettings(s => ({ ...s, outputId: e.target.value || null }))}
+                                    className="min-w-0 flex-1 max-w-[12rem] bg-black/40 border border-white/10 rounded px-1 py-1 text-gray-200">
+                                    <option value="">— nothing —</option>
+                                    {link.ports.outputs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </label>
+                            <label className="flex items-center justify-between gap-2">
+                                Listen to
+                                <select value={link.settings.inputId ?? ''} onChange={e => link.setSettings(s => ({ ...s, inputId: e.target.value || null }))}
+                                    className="min-w-0 flex-1 max-w-[12rem] bg-black/40 border border-white/10 rounded px-1 py-1 text-gray-200">
+                                    <option value="">— nothing —</option>
+                                    {link.ports.inputs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </label>
+                            <div className="flex rounded-md border border-white/10 overflow-hidden" title="Who keeps time">
+                                {([
+                                    ['lead', 'Lead: send clock', 'The sequencer is the master: clock and Start / Stop go out with it'],
+                                    ['follow', 'Follow its clock', 'The Spotykach (or another master) keeps time: tempo, Start, Stop and Continue come in'],
+                                    ['none', 'No clock', 'Only notes go out'],
+                                ] as const).map(([id, label, hint]) => {
+                                    const on = id === 'lead' ? link.settings.sendClock && !link.settings.follow : id === 'follow' ? link.settings.follow : !link.settings.sendClock && !link.settings.follow;
+                                    return (
+                                        <button key={id} title={hint}
+                                            onClick={() => link.setSettings(s => ({ ...s, sendClock: id === 'lead', follow: id === 'follow' }))}
+                                            className={`flex-1 px-1.5 py-1 ${on ? 'bg-synthux-red/80 text-white' : 'hover:bg-white/5'}`}>{label}</button>
+                                    );
+                                })}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {(['A', 'B'] as const).map(d => (
+                                    <label key={d} className="flex items-center gap-1">
+                                        Deck {d} channel
+                                        <select value={d === 'A' ? link.settings.channelA : link.settings.channelB}
+                                            onChange={e => link.setSettings(s => ({ ...s, [d === 'A' ? 'channelA' : 'channelB']: Number(e.target.value) }))}
+                                            className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-gray-200">
+                                            {Array.from({ length: 16 }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+                                        </select>
+                                    </label>
+                                ))}
+                            </div>
+                            <p className="text-[10px] leading-snug text-gray-500">
+                                Route a track to a deck with its <em>SK</em> menu: each step plays that deck, note 60 plus the step&apos;s pitch.
+                                On the Spotykach, set the clock source to MIDI to follow the sequencer; Start / Stop play the decks only where
+                                config.txt allows it. Sending a sample over USB switches it out of MIDI until that is done.
+                            </p>
+                        </>
+                    )}
+                    {link.error && <p className="text-synthux-red">{link.error}</p>}
+                </div>
+            )}
 
             {/* Tracks */}
             <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
@@ -248,6 +343,13 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                 <button onClick={() => rollTrack(t)}
                                     title={`Dice: a new pattern ${edit} for this track, after its slice (kicks on the beat, hats busier)`} aria-label="Roll the track's steps"
                                     className="p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5"><Dices size={12} className="rotate-45" /></button>
+                                <select value={track.midi ?? ''} onChange={e => setTrack(t, { midi: (e.target.value || undefined) as 'A' | 'B' | undefined })}
+                                    title="Send this track's steps to a Spotykach deck as MIDI notes (over the Link)" aria-label="Spotykach deck"
+                                    className={`w-12 bg-black/40 border rounded px-0.5 py-1 text-[10px] font-bold ${track.midi ? 'border-synthux-green/50 text-synthux-green' : 'border-white/10 text-gray-500'}`}>
+                                    <option value="">SK –</option>
+                                    <option value="A">SK A</option>
+                                    <option value="B">SK B</option>
+                                </select>
                                 <button onClick={() => setTrack(t, { mute: !track.mute })} title="Mute"
                                     className={`w-6 py-0.5 rounded text-[10px] font-bold border ${track.mute ? 'bg-synthux-yellow/80 text-black border-transparent' : 'border-white/10 text-gray-400 hover:text-white'}`}>M</button>
                                 <button onClick={() => setTrack(t, { solo: !track.solo })} title="Solo"
@@ -263,7 +365,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                             onClick={e => e.stopPropagation()}
                                             onPointerDown={e => {
                                                 if (e.button !== 0) return;
-                                                e.currentTarget.setPointerCapture(e.pointerId);
+                                                try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* no live pointer: still a click */ }
                                                 drag.current = { t, i, y0: e.clientY, velocity: s.velocity, shift: s.shift ?? 0, wasOn: s.on, moved: false };
                                             }}
                                             onPointerMove={e => {

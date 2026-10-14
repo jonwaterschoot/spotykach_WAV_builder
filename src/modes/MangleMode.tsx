@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Search, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -12,6 +12,8 @@ import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle, saveDirectoryHandle } from '../utils/storageUtils';
 import { listFolderProjects, openFromFolder, openFromZip, saveToFolder, saveToZip, type ManglerSnapshot, type ProjectInfo } from '../mangler/project';
 import { ProjectDialog } from '../mangler/ui/ProjectDialog';
+import { SendToSpotykach } from '../mangler/ui/SendToSpotykach';
+import { usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
 import { LEVEL_LABEL, LOCAL_ORIGINS, resultLicense, sourceLicense } from '../mangler/license';
 import type { LicenseLevel } from '../submission/licenses';
@@ -69,9 +71,10 @@ import { SequencerStation } from '../mangler/ui/SequencerStation';
 import { SynthStation, type SynthTake } from '../mangler/ui/SynthStation';
 import { GENERATORS, defaultRanges, synthesize, type SynthKind, type SynthRanges } from '../mangler/synth';
 import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
+import { useMidiFollow, useMidiLink } from '../mangler/ui/useMidiLink';
 import {
   MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, sequenceCues, sequenceFrames, sequenceHits,
-  type SeqCues, type Sequence,
+  type SeqCues, type SeqHit, type Sequence,
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
@@ -397,7 +400,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     return renderSlice([l, r], decoded.sampleRate, { ...s, shift: (s.shift ?? 0) + shift || undefined });
   }, [slices, sources, region]);
 
-  const sequencer = useSequencePlayer(sequenceKey, sequenceAudio);
+  const midi = useMidiLink();
+  const sequencer = useSequencePlayer(sequenceKey, sequenceAudio, midi.hooks);
+  const follow = useMidiFollow(midi.input, midi.enabled && midi.settings.follow, {
+    start: fromStart => { void sequencer.startExternal(fromStart); },
+    step: sequencer.externalStep,
+    stop: sequencer.stop,
+    onTempo: bpm => setSequence(s => (Math.abs(s.bpm - bpm) >= 0.5 ? { ...s, bpm } : s)),
+  });
   const { update: updateSequencer, stop: stopSequencer } = sequencer;
   useEffect(() => { updateSequencer(sequence); }, [sequence, updateSequencer, sequenceKey]);
   useEffect(() => { if (station !== 'sequence') stopSequencer(); }, [station, stopSequencer]);
@@ -1064,7 +1074,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
   /** The whole chain as a result: mixed, limited, with cues. Listed but not re-rollable. */
   const renderSequence = useCallback(async (seq: Sequence, cueMode: SeqCues, fold: boolean) => {
-    const hits = sequenceHits(seq, SR);
+    // Steps for a Spotykach deck without a slice have no sound of their own here.
+    const hits = sequenceHits(seq, SR).filter((h): h is SeqHit & { sliceId: string } => !!h.sliceId);
     if (hits.length === 0) {
       showToast('Nothing to render: switch on some steps on tracks with a slice', 'info');
       return;
@@ -1076,7 +1087,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         if (key && !audio.has(key)) audio.set(key, await sequenceAudio(h.sliceId, h.shift));
       }
       const total = sequenceFrames(seq, SR);
-      const mix = mixSequence(hits, h => audio.get(sequenceKey(h.sliceId, h.shift) ?? '') ?? null, total, fold);
+      const mix = mixSequence(hits, h => (h.sliceId ? audio.get(sequenceKey(h.sliceId, h.shift) ?? '') ?? null : null), total, fold);
       const reduction = limit(mix, dbToGain(-1), Math.round(0.005 * SR));
       const allCues = sequenceCues(seq, hits, cueMode, SR);
       const cuePoints = allCues.slice(0, MAX_CUE_POINTS);
@@ -1652,6 +1663,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (projectName) appStorage.setItem(PROJECT_KEY, projectName); else appStorage.removeItem(PROJECT_KEY);
   }, [projectName]);
   const [projectDialog, setProjectDialog] = useState<'save' | 'open' | null>(null);
+  /** The result going to a Spotykach slot over USB (standalone only, with the USB setting on). */
+  const [sendTarget, setSendTarget] = useState<MangleResultEntry | null>(null);
+  const usbEnabled = useUsbTransferEnabled() && usbTransferSupported() && !studio;
   const [projectBusy, setProjectBusy] = useState<string | null>(null);
   const [folderProjects, setFolderProjects] = useState<ProjectInfo[] | null>(null);
 
@@ -1978,11 +1992,19 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             playing={sequencer.playing}
             step={sequencer.step}
             busy={busy}
-            onPlay={() => { player.stop(); region.stop(); slicePlayer.stop(); sequencer.start(); }}
+            onPlay={() => {
+              player.stop(); region.stop(); slicePlayer.stop();
+              if (midi.enabled && midi.settings.follow) void sequencer.startExternal(true); else void sequencer.start();
+            }}
             onStop={sequencer.stop}
             onAudition={auditionSlice}
             onRender={(cueMode, fold) => renderSequence(sequence, cueMode, fold)}
             newId={newId}
+            link={{
+              supported: midi.supported, enabled: midi.enabled, error: midi.error, ports: midi.ports,
+              settings: midi.settings, setSettings: midi.setSettings, enable: midi.enable,
+              following: sequencer.following, tempo: follow.tempo,
+            }}
           />
         </div>
       )}
@@ -2412,6 +2434,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         </IconButton>
                       </>
                     )}
+                    {usbEnabled && (
+                      <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Send to a slot on the Spotykach, over USB'}
+                        onClick={() => { player.stop(); region.stop(); sequencer.stop(); setSendTarget(r); }} disabled={blocked}
+                        className="text-gray-400 hover:text-synthux-orange">
+                        <Usb size={15} />
+                      </IconButton>
+                    )}
                     <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Into the source pool, to mangle again'}
                       onClick={() => resultToSource(r)} disabled={blocked} className="text-gray-400 hover:text-white">
                       <Import size={15} />
@@ -2747,6 +2776,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         )}
         confirmLabel={pendingSave?.route === 'library' ? 'Save' : 'Add'}
       />
+
+      {sendTarget && (
+        <SendToSpotykach
+          name={sendTarget.name}
+          blob={sendTarget.blob}
+          cues={sendTarget.recipe.cuePoints.map(f => f / SR)}
+          onClose={() => setSendTarget(null)}
+          onSent={where => showToast(`${sendTarget.name} is in ${where} on the Spotykach`, 'success')}
+        />
+      )}
 
       {projectDialog && (
         <ProjectDialog
