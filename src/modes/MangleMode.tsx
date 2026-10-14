@@ -2010,7 +2010,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         addFiles(Array.from(e.dataTransfer.files ?? []));
       }}
     >
-      <div className="shrink-0 flex items-center justify-between gap-4 px-4 py-2 border-b border-white/10 bg-synthux-panel">
+      {/* Full-width bar; its contents line up with the content frame below (1920 px). */}
+      <div className="shrink-0 flex items-center justify-between gap-4 px-[max(1rem,calc((100%-1920px)/2+1rem))] py-2 border-b border-white/10 bg-synthux-panel">
         <button
           onClick={onExitToHub}
           className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
@@ -2111,6 +2112,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </div>
       </div>
 
+      {/* Every station in one frame: on a wide screen the far side stays within reach. */}
+      <div className="flex-1 min-h-0 w-full max-w-[1920px] mx-auto flex flex-col min-[1921px]:border-x border-white/10">
       {station === 'synth' && (
         <div className="flex-1 min-h-0">
           <SynthStation
@@ -2808,6 +2811,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         ))}
       </nav>
       </>}
+      </div>
 
       {tourOpen && <ManglerTour onClose={closeTour} onStep={tourStep} />}
 
