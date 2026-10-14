@@ -685,6 +685,34 @@ section('Dice');
 }
 
 // ---------------------------------------------------------------------------
+// Projects: a zip round trip keeps every record and every byte
+// ---------------------------------------------------------------------------
+
+section('Projects');
+{
+    const { saveToZip, openFromZip } = await import('../src/mangler/project.ts');
+    const bytesOf = async b => [...new Uint8Array(await b.arrayBuffer())].join();
+    const src = { id: 's1', name: 'drums', origin: 'Local file', blob: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }), duration: 4, enabled: true, addedAt: 1, regions: [[0, 1]] };
+    const res = { id: 'r1', name: 'kit', blob: new Blob([new Uint8Array([9, 8, 7])], { type: 'audio/wav' }), duration: 1, recipe: { seed: 5, snippets: [] }, peaks: [0.5], kept: true, batchId: 1, createdAt: 2, kind: 'sequence', edited: true };
+    const snap = {
+        settings: DEFAULT_SETTINGS, sequence: { bpm: 99, swing: 0, chain: ['A'], tracks: [] },
+        synth: { kind: 'fm', ranges: {}, count: 3 }, sources: [src], results: [res],
+        slices: [{ id: 'x', name: 'hit', sourceId: 's1', sourceName: 'drums', origin: 'Local file', start: 0, end: 1, peaks: [], addedAt: 3 }],
+    };
+    const { blob, fileName } = await saveToZip('Set: one/two', snap);
+    const { name, snapshot } = await openFromZip(blob);
+    check(fileName === 'Set- one-two.mangler.zip' && name === 'Set- one-two', 'a safe name for the folder and the zip', fileName);
+    check(await bytesOf(snapshot.sources[0].blob) === '1,2,3,4' && await bytesOf(snapshot.results[0].blob) === '9,8,7',
+        'source and result audio come back byte for byte');
+    check(JSON.stringify(snapshot.sources[0].regions) === '[[0,1]]' && snapshot.results[0].kind === 'sequence'
+        && snapshot.slices[0].sourceId === 's1' && snapshot.sequence.bpm === 99 && snapshot.synth.kind === 'fm'
+        && snapshot.settings.snippetMaxMs === DEFAULT_SETTINGS.snippetMaxMs, 'every record and setting comes back');
+    let refused = false;
+    try { await openFromZip(new Blob([new Uint8Array([80, 75, 5, 6, ...new Array(18).fill(0)])])); } catch { refused = true; }
+    check(refused, 'a zip without mangler.json is refused');
+}
+
+// ---------------------------------------------------------------------------
 // The engine stands alone: no imports from outside src/mangler, so it can
 // become a package without untangling (mangler-v2-plan.md, "Packaging").
 // ---------------------------------------------------------------------------
@@ -694,7 +722,7 @@ section('Engine boundary');
     const { readdirSync, readFileSync } = await import('node:fs');
     const dir = new URL('../src/mangler/', import.meta.url);
     // App glue: WAV encoding, saving, licences. These may reach into the app.
-    const GLUE = new Set(['batch.ts', 'save.ts', 'license.ts']);
+    const GLUE = new Set(['batch.ts', 'save.ts', 'license.ts', 'project.ts']);
     const outside = [];
     for (const name of readdirSync(dir).filter(n => n.endsWith('.ts') && !GLUE.has(n))) {
         const text = readFileSync(new URL(name, dir), 'utf8');

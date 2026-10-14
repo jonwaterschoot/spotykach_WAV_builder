@@ -9,7 +9,9 @@ import { ProjectNameModal } from '../components/modals/ProjectNameModal';
 import { WorkspaceChoiceModal } from '../components/modals/WorkspaceChoiceModal';
 import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
 import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
-import { getDirectoryHandle } from '../utils/storageUtils';
+import { getDirectoryHandle, saveDirectoryHandle } from '../utils/storageUtils';
+import { listFolderProjects, openFromFolder, openFromZip, saveToFolder, saveToZip, type ManglerSnapshot, type ProjectInfo } from '../mangler/project';
+import { ProjectDialog } from '../mangler/ui/ProjectDialog';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
 import { LEVEL_LABEL, LOCAL_ORIGINS, resultLicense, sourceLicense } from '../mangler/license';
 import type { LicenseLevel } from '../submission/licenses';
@@ -20,7 +22,7 @@ import { Toast } from '../components/Toast';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { appStorage } from '../utils/storageNamespace';
 import {
-  clearMangleStores, deleteMangleResultsFromDB, deleteMangleSlicesFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB,
+  clearMangleStores, deleteMangleResultsFromDB, replaceMangleStores, deleteMangleSlicesFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB,
   loadMangleSlicesFromDB, loadMangleSourcesFromDB, putMangleSlicesToDB,
   loadUserLibraryFromDB, putMangleResultDiskBacked, putMangleResultToDB, putMangleSourceDiskBacked, putMangleSourceToDB,
 } from '../utils/persistence';
@@ -127,9 +129,10 @@ const loadSynth = (): { kind: SynthKind; ranges: Partial<Record<SynthKind, Synth
 const SEQUENCE_KEY = 'mangler_sequence';
 
 /** The stored sequence, if it still has the shape this version expects. */
-const loadSequence = (): Sequence | null => {
+/** A sequence from storage or a project, if it has the shape this version expects. */
+const validSequence = (input: unknown): Sequence | null => {
   try {
-    const s = JSON.parse(appStorage.getItem(SEQUENCE_KEY) ?? 'null') as Sequence | null;
+    const s = input as Sequence | null;
     if (!s || !Array.isArray(s.tracks) || !Array.isArray(s.chain) || !s.tracks.length) return null;
     const okTrack = (tr: Sequence['tracks'][number]) => PATTERNS.every(p => Array.isArray(tr.patterns?.[p]) && tr.patterns[p].length === STEPS);
     if (!s.tracks.every(okTrack) || !s.chain.every(p => PATTERNS.includes(p))) return null;
@@ -144,6 +147,14 @@ const loadSequence = (): Sequence | null => {
     return null;
   }
 };
+const loadSequence = (): Sequence | null => {
+  try {
+    return validSequence(JSON.parse(appStorage.getItem(SEQUENCE_KEY) ?? 'null'));
+  } catch {
+    return null;
+  }
+};
+const PROJECT_KEY = 'mangler_project_name';
 const STATION_KEY = 'mangler_station';
 
 /**
@@ -602,7 +613,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
    * and its old version is one of the "others".
    */
   const studioFiles = studio?.files;
-  const projectName = studio?.projectName;
+  const studioProjectName = studio?.projectName;
   const fillFromProject = useCallback(async () => {
     if (!studioFiles) return;
     if (studioFiles.length === 0) {
@@ -617,7 +628,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       .map((f, i) => ({
         id: newId(),
         name: f.name,
-        origin: f.origin || (projectName ? `Project ${projectName}` : 'Project'),
+        origin: f.origin || (studioProjectName ? `Project ${studioProjectName}` : 'Project'),
         license: f.license,
         sourceSamplePath: projectKey(f),
         blob: f.blob,
@@ -647,7 +658,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       switchedOff ? `${switchedOff} other source${switchedOff === 1 ? '' : 's'} switched off` : '',
     ].filter(Boolean);
     showToast(`From the project: ${parts.join(', ')}`, 'success');
-  }, [studioFiles, projectName, sources, showToast]);
+  }, [studioFiles, studioProjectName, sources, showToast]);
 
   // Opening from Studio fills the pool once, as soon as the stored pool has loaded.
   const autoFilled = useRef(false);
@@ -1631,8 +1642,130 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     setUndo({});
     setExpanded(null);
     setSequence(newSequence(newId));
+    setProjectName(null);
     showToast('Started fresh: sources, results, slices and the sequence are empty', 'success');
   }, [player, region, sequencer, showToast]);
+
+  /** The project last saved or opened: Save writes to it again. */
+  const [projectName, setProjectName] = useState<string | null>(() => appStorage.getItem(PROJECT_KEY));
+  useEffect(() => {
+    if (projectName) appStorage.setItem(PROJECT_KEY, projectName); else appStorage.removeItem(PROJECT_KEY);
+  }, [projectName]);
+  const [projectDialog, setProjectDialog] = useState<'save' | 'open' | null>(null);
+  const [projectBusy, setProjectBusy] = useState<string | null>(null);
+  const [folderProjects, setFolderProjects] = useState<ProjectInfo[] | null>(null);
+
+  const snapshot = (): ManglerSnapshot => ({ settings, sequence, synth, sources, results, slices });
+
+  /**
+   * The workspace with write permission: the stored one (asked again after a
+   * reload), or one picked now and stored, the same one Studio uses. Call first
+   * in a click handler: the permission prompt needs that click.
+   */
+  const workspaceForWriting = async (): Promise<FileSystemDirectoryHandle | null> => {
+    if (knownWorkspace) return (await ensureWorkspacePermission(knownWorkspace)) ? knownWorkspace : null;
+    try {
+      const picked = await (window as Window & { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> })
+        .showDirectoryPicker({ mode: 'readwrite', id: 'wavbuilder-work' });
+      await saveDirectoryHandle('work', picked);
+      setKnownWorkspace(picked);
+      return picked;
+    } catch {
+      return null; // dismissed
+    }
+  };
+
+  const saveProjectFolder = async (name: string) => {
+    const ws = await workspaceForWriting();
+    if (!ws) return;
+    setProjectBusy('Saving…');
+    try {
+      const saved = await saveToFolder(ws, name, snapshot(), (done, total) => setProjectBusy(`Saving… ${done} of ${total} files`));
+      setProjectName(saved);
+      setProjectDialog(null);
+      showToast(`Saved to ${ws.name}/Mangler/${saved}`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not save: ${e instanceof Error ? e.message : e}`, 'error');
+    } finally {
+      setProjectBusy(null);
+    }
+  };
+
+  const saveProjectZip = async (name: string) => {
+    setProjectBusy('Packing the zip…');
+    try {
+      const { blob, fileName } = await saveToZip(name, snapshot());
+      downloadBlob(blob, fileName);
+      setProjectName(name.trim());
+      setProjectDialog(null);
+    } catch (e) {
+      console.error(e);
+      showToast('Could not pack the project', 'error');
+    } finally {
+      setProjectBusy(null);
+    }
+  };
+
+  /** Save: to the same project on the workspace when there is one, else the dialog. */
+  const saveProject = async () => {
+    setProjectMenu(false);
+    if (!projectName || !canPickFolder() || !knownWorkspace) { setProjectDialog('save'); return; }
+    await saveProjectFolder(projectName);
+  };
+
+  const listProjects = async () => {
+    const ws = await workspaceForWriting();
+    if (!ws) return;
+    setFolderProjects(await listFolderProjects(ws));
+  };
+
+  /** An opened project replaces everything the mangler holds. */
+  const applySnapshot = async (name: string, snap: ManglerSnapshot) => {
+    player.stop();
+    region.stop();
+    sequencer.stop();
+    const stored = await replaceMangleStores(snap.sources, snap.results, snap.slices);
+    setSources([...stored.sources].sort((a, b) => a.addedAt - b.addedAt));
+    setResults(sortResults(stored.results));
+    setSlices([...snap.slices].sort((a, b) => a.addedAt - b.addedAt));
+    setSettings(sanitizeSettings(snap.settings));
+    setSequence(validSequence(snap.sequence) ?? newSequence(newId));
+    if (snap.synth?.kind) setSynth(snap.synth);
+    setTakes([]);
+    setUndo({});
+    setExpanded(null);
+    setProjectName(name);
+    setProjectDialog(null);
+    showToast(`Opened ${name}: ${stored.sources.length} sources, ${stored.results.length} results, ${snap.slices.length} slices`, 'success');
+  };
+
+  const openProjectFolder = async (name: string) => {
+    const ws = await workspaceForWriting();
+    if (!ws) return;
+    setProjectBusy('Opening…');
+    try {
+      await applySnapshot(name, await openFromFolder(ws, name));
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not open ${name}: ${e instanceof Error ? e.message : e}`, 'error');
+    } finally {
+      setProjectBusy(null);
+    }
+  };
+
+  const openProjectZip = async (file: File) => {
+    setProjectBusy('Opening…');
+    try {
+      const { name, snapshot: snap } = await openFromZip(file);
+      await applySnapshot(name, snap);
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not open the zip: ${e instanceof Error ? e.message : e}`, 'error');
+    } finally {
+      setProjectBusy(null);
+    }
+  };
 
   const downloadResult = useCallback((r: MangleResultEntry) => {
     if (savable([r]).length) downloadBlob(r.blob, `${r.name}.wav`);
@@ -1756,10 +1889,28 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
             title="The whole mangler: start fresh, save it, open a saved one"
           >
-            <FolderOpen size={14} /> <span className="hidden sm:inline">Project</span> <ChevronDown size={12} />
+            <FolderOpen size={14} /> <span className="hidden sm:inline max-w-[10rem] truncate normal-case tracking-normal">{projectName ?? (studio ? 'Mangler' : 'Project')}</span> <ChevronDown size={12} />
           </button>
           {projectMenu && (
             <div className="absolute right-0 top-full mt-1 z-[60] w-64 rounded-lg border border-white/15 bg-synthux-panel shadow-2xl p-1 text-[12px]">
+              <button onClick={saveProject} disabled={busy || !!projectBusy}
+                className="w-full text-left px-3 py-2 rounded hover:bg-white/5 disabled:opacity-40">
+                <span className="block font-bold text-gray-100">Save{projectName ? ` ${projectName}` : '…'}</span>
+                <span className="block text-[10px] text-gray-500">
+                  {projectName && knownWorkspace ? `Again, to ${knownWorkspace.name}/Mangler` : 'Pools, results, slices, sequence and settings, together'}
+                </span>
+              </button>
+              <button onClick={() => { setProjectMenu(false); setProjectDialog('save'); }} disabled={busy || !!projectBusy}
+                className="w-full text-left px-3 py-2 rounded hover:bg-white/5 disabled:opacity-40">
+                <span className="block font-bold text-gray-100">Save as…</span>
+                <span className="block text-[10px] text-gray-500">Another name, or a .mangler.zip</span>
+              </button>
+              <button onClick={() => { setProjectMenu(false); setFolderProjects(null); setProjectDialog('open'); }} disabled={busy || !!projectBusy}
+                className="w-full text-left px-3 py-2 rounded hover:bg-white/5 disabled:opacity-40">
+                <span className="block font-bold text-gray-100">Open…</span>
+                <span className="block text-[10px] text-gray-500">From the workspace or a .mangler.zip</span>
+              </button>
+              <div className="my-1 border-t border-white/10" />
               <button onClick={() => { setProjectMenu(false); setConfirmFresh(true); }} disabled={busy}
                 className="w-full text-left px-3 py-2 rounded hover:bg-white/5 disabled:opacity-40">
                 <span className="block font-bold text-gray-100">Start fresh</span>
@@ -2597,12 +2748,29 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         confirmLabel={pendingSave?.route === 'library' ? 'Save' : 'Add'}
       />
 
+      {projectDialog && (
+        <ProjectDialog
+          mode={projectDialog}
+          canFolder={canPickFolder()}
+          workspaceName={knownWorkspace?.name ?? null}
+          defaultName={projectName ?? `mangler ${new Date().toISOString().slice(0, 10)}`}
+          busy={projectBusy}
+          projects={folderProjects}
+          onListProjects={listProjects}
+          onSaveFolder={saveProjectFolder}
+          onSaveZip={saveProjectZip}
+          onOpenFolder={openProjectFolder}
+          onOpenZip={openProjectZip}
+          onClose={() => setProjectDialog(null)}
+        />
+      )}
+
       <ConfirmModal
         isOpen={confirmFresh}
         onClose={() => setConfirmFresh(false)}
         onConfirm={() => { setConfirmFresh(false); startFresh(); }}
         title="Start fresh"
-        message={`This empties the source pool (${sources.length}), the results (${results.length}, kept ones too), the slice pool (${slices.length}), the synth takes and the sequence. Settings stay. Save the mangler as a project first if you want to come back to it.`}
+        message={`This empties the source pool (${sources.length}), the results (${results.length}, kept ones too), the slice pool (${slices.length}), the synth takes and the sequence. Settings stay. Save it as a project first (Project › Save) if you want to come back to it.`}
         confirmLabel="Empty everything"
         isDestructive
       />

@@ -461,4 +461,20 @@ export const clearMangleStores = async () => {
     await Promise.all([MANGLE_SOURCES_STORE, MANGLE_RESULTS_STORE, MANGLE_SLICES_STORE].map(s => db.clear(s)));
 };
 
+/**
+ * Every mangler store replaced by an opened project: cleared, then filled. The
+ * entries come back with their audio as stored (on disk), as with any put here.
+ */
+export const replaceMangleStores = async (
+    sources: MangleSourceEntry[], results: MangleResultEntry[], slices: MangleSliceEntry[],
+): Promise<{ sources: MangleSourceEntry[]; results: MangleResultEntry[] }> => {
+    await clearMangleStores();
+    const storedSources: MangleSourceEntry[] = [];
+    for (const s of sources) storedSources.push({ ...s, blob: await putDiskBacked(MANGLE_SOURCES_STORE, s) });
+    const storedResults: MangleResultEntry[] = [];
+    for (const r of results) storedResults.push({ ...r, blob: await putDiskBacked(MANGLE_RESULTS_STORE, r) });
+    await putMangleSlicesToDB(slices);
+    return { sources: storedSources, results: storedResults };
+};
+
 export const deleteMangleResultsFromDB = (ids: string[]) => deleteMany(MANGLE_RESULTS_STORE, ids);
