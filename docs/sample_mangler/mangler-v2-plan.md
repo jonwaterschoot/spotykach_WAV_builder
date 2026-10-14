@@ -279,6 +279,7 @@ Each phase is usable on its own.
 - [x] Removing sources (one, the switched-on ones) also removes the slices cut from them and lets the sequencer go of them (track slices, step locks, cue tracks on those files); discarded results free the cue tracks that played them. Results made from removed sources stay
 - [x] The Spotykach's card, both ways: results into slots (one, or every kept one into consecutive slots), slots back into the source pool with their cue points and INAM name. Over USB or on the SD card in a reader (Studio's SD folder, asked once if Studio has none), one dialog for both. Standalone only
 - [x] The results' own bar moved from the foot to the top: count, the *Kept* menu (library, Browse pool, new project, send to the card, into the source pool; *Add to project* in Studio), *Clear unkept*, storage
+- [x] Guided tour brought up to date and kept to the basics: add sounds, roll the settings, generate, keep, the Kept menu, the other stations. Each step points at its dice (roll first, open the details for control). The tour switches to Mangle and to the right phone pane per step, and a hidden target centres the card
 - Note: on the Spotykach a note only retriggers a deck at a pitch (firmware: `_on_midi_note_on`), so cue tracks play their segments here; over the Link they send their cue's note
 
 ## Decided Oct 14

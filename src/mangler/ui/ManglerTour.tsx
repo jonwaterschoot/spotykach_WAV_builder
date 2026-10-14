@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Dices, X } from 'lucide-react';
 import { useEscapeLayer } from '../../shell/escapeStack';
 
 interface TourStep {
@@ -9,35 +9,42 @@ interface TourStep {
     body: React.ReactNode;
 }
 
-/** The order of operations, left to right across the screen. */
+/** The dice, as it looks on screen, inline in the text. */
+const Die = () => <Dices size={12} className="inline -mt-0.5 text-synthux-red" aria-label="dice" />;
+
+/**
+ * The basics, left to right across the screen, then the other stations. Each
+ * step points at its dice: roll first, open the details when you want control.
+ */
 const STEPS: TourStep[] = [
     {
-        title: 'Sample Mangler in five steps',
+        title: 'Sample Mangler, the short version',
         body: (
             <>
-                Random snippets from your sounds, joined into one file of up to 42 s with a cue point at each
-                snippet. The screen reads left to right: sources, settings, results. This guide walks through it
-                in that order.
+                Random snippets from your sounds, joined into one file with a cue point at each snippet, ready for
+                a Spotykach slot. You don&apos;t need to learn every slider: wherever you see <Die />, roll it and
+                listen. Dig into the details when you want more control.
             </>
         ),
     },
     {
         target: 'sources',
-        title: '1 · Fill the source pool',
+        title: '1 · Add sounds',
         body: (
             <>
-                Add sounds with <b>Packs</b> or <b>Files</b>, or drop files on the window. The checkbox switches a
-                source in or out of the next batch; the scissors mark the parts snippets may come from.
+                <b>Packs</b>, <b>Files</b> or drop files on the window; <b>Card</b> takes slots from your Spotykach.
+                The checkbox puts a source in or out of the next batch; <Die /> switches on a random few.
             </>
         ),
     },
     {
         target: 'settings',
-        title: '2 · Set the ranges',
+        title: '2 · Roll the settings',
         body: (
             <>
-                Each slider is a range, and the dice pick a value inside it for every snippet. Start from a{' '}
-                <b>Preset</b>, then adjust Shape (length, fill, crossfades), Loudness and Pitch.
+                <Die /> next to the Preset rolls everything; the <Die /> on a group rolls only that group. Every
+                slider is a range the dice pick from, per snippet. Like most of it but not all? Open the group and
+                drag the one that bothers you.
             </>
         ),
     },
@@ -46,30 +53,41 @@ const STEPS: TourStep[] = [
         title: '3 · Generate',
         body: (
             <>
-                <b>Variations</b> sets how many files one click makes, each with its own seed. Lock the seed to get
-                the same batch again; <b>Click plays</b> sets how much a click on a waveform plays.
+                One click makes a few <b>Variations</b>, each with its own seed. The lock keeps the seed, to make the
+                same batch again after a change.
             </>
         ),
     },
     {
         target: 'results',
-        title: '4 · Listen, keep, refine',
+        title: '4 · Listen and keep',
         body: (
             <>
-                Play a result or click its waveform to hear one snippet. <b>Star</b> the ones you like: unstarred
-                results are cleared when the next batch starts. Open <b>Snippets</b> to delete, reorder, lock or
-                repitch them, or use <b>Same seed</b>, Cues, Crop and Editor on the card.
+                Play a result, or click its waveform to hear one snippet. <b>Star</b> the keepers: the rest go when
+                the next batch starts. For more control, <b>Snippets</b> opens each snippet to repitch, reorder or
+                lock it.
             </>
         ),
     },
     {
         target: 'save',
-        title: '5 · Save',
+        title: '5 · Use what you kept',
         body: (
             <>
-                Each card can download the WAV, save to the Studio library, add to the Browse pool or start a new
-                project. Starred results can be saved together from this bar. A result made from a no-derivatives
-                source can't be saved.
+                Once you have starred results, the <b>Kept</b> menu above them takes them all at once: to the
+                library, to a new project, to your Spotykach (USB or SD card), or back into the source pool to mangle
+                again. Each card has the same buttons for one result.
+            </>
+        ),
+    },
+    {
+        target: 'stations',
+        title: 'More stations',
+        body: (
+            <>
+                <b>Slices</b> cuts hits from your sounds into kits, <b>Sequence</b> plays them in a 16-step loop (and
+                can drive the Spotykach over MIDI), <b>Synth</b> makes drum hits from scratch. Each starts the same
+                way: <Die /> first, details later. <b>Project</b> saves the lot; <b>Guide</b> brings this back.
             </>
         ),
     },
@@ -86,6 +104,8 @@ const measure = (target?: string): Rect | null => {
     const el = document.querySelector(`[data-tour="${target}"]`);
     if (!el) return null;
     const r = el.getBoundingClientRect();
+    // Hidden (another phone pane, nothing to show yet): the card goes in the middle.
+    if (r.width === 0 || r.height === 0) return null;
     // Padded, but kept inside the window so the ring stays visible on edge columns.
     const top = Math.max(2, r.top - PAD);
     const left = Math.max(2, r.left - PAD);
@@ -108,15 +128,18 @@ const cardPosition = (rect: Rect | null, cardHeight: number): React.CSSPropertie
         return { top: clampTop(rect.top), left: rect.left - GAP - CARD_WIDTH };
     }
     const below = rect.top + rect.height + GAP;
-    const top = below + cardHeight <= vh - 16 ? below : rect.top - GAP - cardHeight;
+    const above = rect.top - GAP - cardHeight;
+    // A target taller than the screen (a phone pane): the card at the foot, clear of its top.
+    const top = below + cardHeight <= vh - 16 ? below : above >= 16 ? above : vh - cardHeight - 16;
     return { top: clampTop(top), left: clampLeft(rect.left + rect.width / 2 - CARD_WIDTH / 2) };
 };
 
 /**
  * A short guided tour of the mangler: dims the screen, spotlights one column at a
  * time and explains what to do there. Arrow keys step, Escape closes.
+ * `onStep` lets the host bring the step's target into view (station, phone pane).
  */
-export const ManglerTour: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const ManglerTour: React.FC<{ onClose: () => void; onStep?: (target?: string) => void }> = ({ onClose, onStep }) => {
     const [index, setIndex] = useState(0);
     const [rect, setRect] = useState<Rect | null>(null);
     const [cardHeight, setCardHeight] = useState(200);
@@ -125,10 +148,16 @@ export const ManglerTour: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const last = index === STEPS.length - 1;
 
     useLayoutEffect(() => {
+        onStep?.(step.target);
+    }, [step.target, onStep]);
+
+    useLayoutEffect(() => {
+        // After the host has shown the target (a pane, a station): measured a frame later.
         const update = () => setRect(measure(step.target));
         update();
+        const frame = requestAnimationFrame(update);
         window.addEventListener('resize', update);
-        return () => window.removeEventListener('resize', update);
+        return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', update); };
     }, [step.target]);
 
     useLayoutEffect(() => {

@@ -491,6 +491,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     appStorage.setItem(TOUR_KEY, '1');
     setTourOpen(false);
   }, []);
+  /** The tour's target in view: the Mangle station, and on a phone its pane. */
+  const tourStep = useCallback((target?: string) => {
+    if (target === 'stations') return;
+    setStation('mangle');
+    if (target === 'sources' || target === 'settings') setPane(target);
+    else if (target) setPane('results');
+  }, []);
 
   // The picker shows the user library read-only when there is one; the project
   // flow offers the stored workspace by name. Neither asks for permission here.
@@ -2013,7 +2020,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </button>
         <div className="min-w-0 flex items-center gap-3">
           <span className="hidden md:inline text-xs font-bold uppercase tracking-[0.2em] text-synthux-red">Sample Mangler</span>
-          <nav className="flex rounded-md border border-white/10 overflow-hidden" aria-label="Stations">
+          <nav data-tour="stations" className="flex rounded-md border border-white/10 overflow-hidden" aria-label="Stations">
             {([
               ['mangle', <Dices size={13} />, 'Mangle', 'Sources, settings and results'],
               ['slices', <Grid2x2 size={13} />, 'Slices', 'The slice pool: single sounds to collect and make kits from'],
@@ -2802,7 +2809,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       </nav>
       </>}
 
-      {tourOpen && <ManglerTour onClose={closeTour} />}
+      {tourOpen && <ManglerTour onClose={closeTour} onStep={tourStep} />}
 
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-50 border-4 border-dashed border-synthux-red/60 bg-synthux-red/5
