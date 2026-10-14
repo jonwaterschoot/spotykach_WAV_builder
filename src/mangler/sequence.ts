@@ -22,6 +22,8 @@ export interface SeqStep {
     velocity: number;
     /** Slice lock: this step plays another slice than the track's. */
     sliceId?: string;
+    /** Semitones on top of the track's shift. On the Spotykach: the note (60 + shift). */
+    shift?: number;
 }
 
 export interface SeqTrack {
@@ -105,7 +107,11 @@ export function stepHits(seq: Sequence, k: number): Omit<SeqHit, 'at'>[] {
         const step = track.patterns[pattern][k % STEPS];
         const sliceId = step?.on ? step.sliceId ?? track.sliceId : null;
         if (!sliceId) return;
-        out.push({ track: t, step: k, sliceId, gain: step.velocity * Math.pow(10, track.volumeDb / 20), shift: track.shift });
+        out.push({
+            track: t, step: k, sliceId,
+            gain: step.velocity * Math.pow(10, track.volumeDb / 20),
+            shift: track.shift + (step.shift ?? 0),
+        });
     });
     return out;
 }

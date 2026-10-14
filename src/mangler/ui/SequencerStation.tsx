@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Eraser, Minus, Music, Play, Plus, Square, Trash2, X } from 'lucide-react';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import type { MangleSliceEntry } from '../../utils/persistence';
@@ -43,6 +43,11 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
     const [cues, setCues] = useState<SeqCues>('hits');
     const [fold, setFold] = useState(true);
     const [menu, setMenu] = useState<{ track: number; step: number; x: number; y: number } | null>(null);
+    /** What dragging a step up and down sets. */
+    const [dragEdits, setDragEdits] = useState<'velocity' | 'pitch'>('velocity');
+    /** A step being dragged: where it started, and whether it has moved (a click otherwise). */
+    const drag = useRef<{ t: number; i: number; y0: number; velocity: number; shift: number; wasOn: boolean; moved: boolean } | null>(null);
+    const [dragLabel, setDragLabel] = useState<{ t: number; i: number; text: string } | null>(null);
     useEffect(() => {
         if (!menu) return;
         const close = () => setMenu(null);
@@ -136,6 +141,18 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     </span>
                 </span>
 
+                <span className="flex items-center gap-2" title="What dragging a step up or down sets">
+                    Drag
+                    <span className="flex rounded-md border border-white/10 overflow-hidden">
+                        {(['velocity', 'pitch'] as const).map(m => (
+                            <button key={m} onClick={() => setDragEdits(m)}
+                                className={`px-2 py-1 transition-colors ${dragEdits === m ? 'bg-synthux-red/80 text-white' : 'hover:text-white hover:bg-white/5'}`}>
+                                {m === 'velocity' ? 'Velocity' : 'Pitch'}
+                            </button>
+                        ))}
+                    </span>
+                </span>
+
                 <span className="flex items-center gap-1 flex-wrap" title="The order the patterns play in. Click one to cycle it A → B → C → D">
                     Chain
                     {seq.chain.map((p, i) => {
@@ -209,16 +226,63 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                     const c = lockedSlice?.cls ? CLASS_COLOR[lockedSlice.cls] : color;
                                     return (
                                         <button key={i}
-                                            onClick={e => { e.stopPropagation(); setStep(t, i, { on: !s.on }); }}
-                                            onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setMenu({ track: t, step: i, x: e.clientX, y: e.clientY }); }}
-                                            title={s.on ? `Velocity ${Math.round(s.velocity * 100)}%${lockedSlice ? ` · ${lockedSlice.name}` : ''} (right-click for more)` : 'Click to switch on'}
+                                            onClick={e => e.stopPropagation()}
+                                            onPointerDown={e => {
+                                                if (e.button !== 0) return;
+                                                e.currentTarget.setPointerCapture(e.pointerId);
+                                                drag.current = { t, i, y0: e.clientY, velocity: s.velocity, shift: s.shift ?? 0, wasOn: s.on, moved: false };
+                                            }}
+                                            onPointerMove={e => {
+                                                const d = drag.current;
+                                                if (!d || d.t !== t || d.i !== i) return;
+                                                const dy = d.y0 - e.clientY;
+                                                if (!d.moved && Math.abs(dy) < 4) return;
+                                                d.moved = true;
+                                                if (dragEdits === 'velocity') {
+                                                    // 100 px is the whole range; a dragged step is on.
+                                                    const v = Math.min(1, Math.max(0.05, Math.round((d.velocity + dy / 100) * 100) / 100));
+                                                    setStep(t, i, { on: true, velocity: v });
+                                                    setDragLabel({ t, i, text: `${Math.round(v * 100)}%` });
+                                                } else {
+                                                    // 8 px a semitone, two octaves either way.
+                                                    const st = Math.min(24, Math.max(-24, d.shift + Math.round(dy / 8)));
+                                                    setStep(t, i, { on: true, shift: st || undefined });
+                                                    setDragLabel({ t, i, text: `${st > 0 ? '+' : ''}${st} st` });
+                                                }
+                                            }}
+                                            onPointerUp={() => {
+                                                const d = drag.current;
+                                                drag.current = null;
+                                                setDragLabel(null);
+                                                if (d && !d.moved) setStep(t, i, { on: !d.wasOn });
+                                            }}
+                                            onPointerCancel={() => { drag.current = null; setDragLabel(null); }}
+                                            onContextMenu={e => {
+                                                // A long press on a phone: the menu, not a toggle on release.
+                                                e.preventDefault(); e.stopPropagation(); drag.current = null; setDragLabel(null);
+                                                setMenu({ track: t, step: i, x: e.clientX, y: e.clientY });
+                                            }}
+                                            title={s.on
+                                                ? `Velocity ${Math.round(s.velocity * 100)}%${s.shift ? ` · ${s.shift > 0 ? '+' : ''}${s.shift} st` : ''}${lockedSlice ? ` · ${lockedSlice.name}` : ''}. Drag up or down for ${dragEdits}; right-click for more`
+                                                : `Click to switch on, or drag to set its ${dragEdits}`}
                                             aria-pressed={s.on}
-                                            className={`relative h-8 rounded-sm border transition-colors
+                                            className={`relative h-8 rounded-sm border overflow-hidden touch-none transition-colors
                                                 ${i % 4 === 0 ? 'border-white/20' : 'border-white/5'}
                                                 ${playingHere === i ? 'ring-1 ring-white' : ''}
-                                                ${s.on ? '' : 'bg-white/[0.04] hover:bg-white/10'}`}
-                                            style={s.on ? { background: c, opacity: 0.35 + 0.65 * s.velocity } : undefined}>
+                                                ${s.on ? 'bg-white/[0.08]' : 'bg-white/[0.04] hover:bg-white/10'}`}>
+                                            {/* Velocity as the fill height, so it reads at a glance. */}
+                                            {s.on && <span className="absolute inset-x-0 bottom-0" style={{ height: `${Math.round(s.velocity * 100)}%`, background: c }} />}
+                                            {s.on && !!s.shift && (
+                                                <span className="absolute inset-x-0 top-0 text-[8px] leading-tight font-mono font-bold text-white mix-blend-difference">
+                                                    {s.shift > 0 ? '+' : ''}{s.shift}
+                                                </span>
+                                            )}
                                             {lockedSlice && <span className="absolute inset-x-0 bottom-0.5 mx-auto h-1 w-1 rounded-full bg-black/70" />}
+                                            {dragLabel?.t === t && dragLabel.i === i && (
+                                                <span className="absolute left-1/2 -translate-x-1/2 -top-0.5 px-1 rounded bg-black text-[9px] font-mono text-white whitespace-nowrap z-10">
+                                                    {dragLabel.text}
+                                                </span>
+                                            )}
                                         </button>
                                     );
                                 })}
@@ -259,7 +323,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                 className="w-6 py-0.5 rounded border border-white/10 font-bold hover:text-white hover:bg-white/5">{p}</button>
                         ))}
                     </span>
-                    <span className="ml-auto text-gray-500">Click a step to switch it · right-click or long-press for velocity and its own slice</span>
+                    <span className="ml-auto text-gray-500">Click a step to switch it · drag it up or down for its velocity or pitch · right-click or long-press for more</span>
                 </div>
             </div>
 
@@ -282,6 +346,11 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                     {Math.round(v * 100)}
                                 </button>
                             ))}
+                        </div>
+                        <div className="flex items-center gap-1">
+                            Pitch
+                            <ScrubNumber value={s.shift ?? 0} min={-24} max={24} step={1} unit="st" width="w-[5rem]" ariaLabel="Step pitch"
+                                onChange={v => setStep(menu.track, menu.step, { on: true, shift: v || undefined })} />
                         </div>
                         <label className="flex items-center gap-1">
                             Slice
