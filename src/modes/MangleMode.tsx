@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Maximize, Minimize, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
-  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, HardDrive, Trash2, Undo2, Unlock, X, ZoomIn,
+  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Maximize, Minimize, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Library, Loader, Lock, Package,
+  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, HardDrive, Share, Tag, Trash2, Waves, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -63,7 +63,7 @@ import { useResultAudio } from '../mangler/ui/useResultAudio';
 import { recipeFromResult, resultName, usedSources, waveformPeaks, type RecipeSource } from '../mangler/recipe';
 import { deriveSeed, randomSeed } from '../mangler/rng';
 import {
-  DEFAULT_SETTINGS, MAX_CUE_POINTS, PRESETS, sanitizeSettings, type MangleSettings,
+  DEFAULT_SETTINGS, MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, PRESETS, sanitizeSettings, type MangleSettings,
 } from '../mangler/settings';
 import { Segmented, Slider } from '../mangler/ui/Sliders';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
@@ -81,6 +81,7 @@ import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
 import { rollAll } from '../mangler/randomize';
 import { renderSlice, sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
+import type { HitClass } from '../mangler/hits';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
 import { ManglerTour } from '../mangler/ui/ManglerTour';
@@ -107,6 +108,17 @@ const SOURCE_KINDS: { id: SourceKind; label: string; hint: string }[] = [
   { id: 'synth', label: 'Synth', hint: 'Synth takes' },
   { id: 'made', label: 'Made here', hint: 'Results and slices put back in the pool' },
 ];
+/** The pool's own tags: typed filters kept, each on or off. */
+interface PoolTag { text: string; on: boolean }
+const POOL_TAGS_KEY = 'mangler_pool_tags';
+const loadPoolTags = (): PoolTag[] => {
+  try {
+    const raw = JSON.parse(appStorage.getItem(POOL_TAGS_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw.filter(t => typeof t?.text === 'string').map(t => ({ text: t.text, on: !!t.on })) : [];
+  } catch {
+    return [];
+  }
+};
 const sourceKind = (s: MangleSourceEntry): SourceKind =>
   s.sourceSamplePath?.startsWith('project:') ? 'project'
     : s.origin === 'Synth' ? 'synth'
@@ -306,6 +318,9 @@ type PendingSave = { route: 'library' | 'pool'; results: MangleResultEntry[] };
  */
 export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStudio, onEnterBrowse, studio, initialStation }) => {
   const [sources, setSources] = useState<MangleSourceEntry[]>([]);
+  /** The sources now, including one added in this same click (state catches up on the next render). */
+  const sourcesRef = useRef(sources);
+  useEffect(() => { sourcesRef.current = sources; }, [sources]);
   const [results, setResults] = useState<MangleResultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [settings, setSettings] = useState<MangleSettings>(loadSettings);
@@ -371,6 +386,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [recueing, setRecueing] = useState<string | null>(null);
   /** The source whose parts are being chosen. */
   const [partsFor, setPartsFor] = useState<string | null>(null);
+  /** A result open in the hits dialog (the scissors on its card). */
+  const [hitsFor, setHitsFor] = useState<MangleResultEntry | null>(null);
   /** Crop mode on one result: the kept stretch, 0–1 of the file as it is now. */
   const [cropEdit, setCropEdit] = useState<{ id: string; range: [number, number] } | null>(null);
   /** The result open in the editor, and the copy its saves go to. */
@@ -652,14 +669,30 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     putMangleSourceToDB(next).catch(e => console.error(e));
   }, []);
 
-  // The pool's filter: what the list shows, and what its checkbox, bin and dice act on.
+  /*
+   * The pool's filter: what the list shows, and what its checkbox, bin, dice and
+   * Generate act on. Kinds and tags are toggles: a source shows when it is of a
+   * kind that is on (none on: any kind) and matches a tag that is on (none on:
+   * any), and the text being typed. Enter makes the text a tag; tags are kept.
+   */
   const [poolQuery, setPoolQuery] = useState('');
-  const [poolKind, setPoolKind] = useState<SourceKind | 'all'>('all');
+  const [poolKindsOn, setPoolKindsOn] = useState<ReadonlySet<SourceKind>>(new Set());
+  const [poolTags, setPoolTags] = useState<PoolTag[]>(loadPoolTags);
+  useEffect(() => { appStorage.setItem(POOL_TAGS_KEY, JSON.stringify(poolTags)); }, [poolTags]);
   const shownSources = useMemo(() => {
     const q = poolQuery.trim().toLowerCase();
-    return sources.filter(s => (poolKind === 'all' || sourceKind(s) === poolKind)
-      && (!q || s.name.toLowerCase().includes(q) || s.origin.toLowerCase().includes(q)));
-  }, [sources, poolQuery, poolKind]);
+    const tagsOn = poolTags.filter(t => t.on).map(t => t.text.toLowerCase());
+    const matches = (s: MangleSourceEntry, text: string) => s.name.toLowerCase().includes(text) || s.origin.toLowerCase().includes(text);
+    return sources.filter(s => (poolKindsOn.size === 0 || poolKindsOn.has(sourceKind(s)))
+      && (tagsOn.length === 0 || tagsOn.some(text => matches(s, text)))
+      && (!q || matches(s, q)));
+  }, [sources, poolQuery, poolKindsOn, poolTags]);
+  const addPoolTag = () => {
+    const text = poolQuery.trim();
+    if (!text) return;
+    setPoolTags(prev => [...prev.filter(t => t.text.toLowerCase() !== text.toLowerCase()), { text, on: true }]);
+    setPoolQuery('');
+  };
   const poolKinds = useMemo(() => SOURCE_KINDS.filter(k => sources.some(s => sourceKind(s) === k.id)), [sources]);
 
   /** Switch these sources on or off (the rest stay as they are). */
@@ -719,7 +752,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     showToast(`${ids.size} source${ids.size === 1 ? '' : 's'} removed from the pool${slicesGone ? `, and ${slicesGone} slice${slicesGone === 1 ? '' : 's'} cut from them` : ''}`, 'success');
   }, [shownSources, player, forgetSources, showToast]);
 
-  const enabledSources = useMemo(() => sources.filter(s => s.enabled), [sources]);
+  /** What the next batch uses: switched on, and shown by the pool's filter. */
+  const enabledSources = useMemo(() => shownSources.filter(s => s.enabled), [shownSources]);
+  const hiddenEnabled = useMemo(() => sources.filter(s => s.enabled).length - enabledSources.length, [sources, enabledSources]);
   const enabledSeconds = useMemo(() => enabledSources.reduce((sum, s) => sum + s.duration, 0), [enabledSources]);
 
   /**
@@ -931,9 +966,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
    */
   const sourcesFor = useCallback((recipeSources: RecipeSource[]): BatchSource[] =>
     recipeSources.map(rs => {
-      const entry = sources.find(s => s.id === rs.id);
+      const entry = sourcesRef.current.find(s => s.id === rs.id);
       return { id: rs.id, blob: entry?.blob ?? null, enabled: entry?.enabled ?? false, regions: entry?.regions };
-    }), [sources]);
+    }), [sources]); // eslint-disable-line react-hooks/exhaustive-deps -- a new function per pool change, for its users' deps
 
   /**
    * Settings of an old recipe. Results from before sinc was the default keep the
@@ -1009,7 +1044,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
    */
   const makeKit = useCallback((items: { sourceId: string; spec: SliceSpec }[], label: string) => {
     if (batchRef.current || items.length === 0) return;
-    const usable = items.filter(it => sources.some(s => s.id === it.sourceId));
+    const usable = items.filter(it => sourcesRef.current.some(s => s.id === it.sourceId));
     if (usable.length < items.length) {
       showToast(`${items.length - usable.length} left out: their source has left the pool`, 'warning');
     }
@@ -1018,7 +1053,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (list.length === 0) return;
     const ids = [...new Set(list.map(it => it.sourceId))];
     const recipeSources: RecipeSource[] = ids.map(id => {
-      const s = sources.find(x => x.id === id)!;
+      const s = sourcesRef.current.find(x => x.id === id)!;
       return { id, name: s.name, origin: s.origin, license: s.license, licenseLevel: s.licenseLevel };
     });
     const fixed: SnippetInfo[] = list.map(it => sliceAsSnippet(it.spec, ids.indexOf(it.sourceId), SR));
@@ -1048,7 +1083,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         showToast(`${name} is ready in Results: save it, edit it, or use it as a source`, 'success');
       },
     });
-  }, [sources, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+  }, [results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
 
   // ---------------------------------------------------------------------------
   // Slice pool
@@ -1123,15 +1158,36 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       ...extra,
     };
     entry.blob = await putMangleSourceDiskBacked(entry);
+    sourcesRef.current = [...sourcesRef.current, entry];
     setSources(prev => [...prev, entry]);
     return entry;
   }, []);
+
+  /**
+   * A result's place in the pool, for slices and kits cut from it: the one it has,
+   * or a new one, switched off so the next batch stays as it was.
+   */
+  const sourceOfResult = useCallback(async (r: MangleResultEntry) => {
+    const have = sourcesRef.current.find(s => s.fromResult === r.id);
+    if (have) return have;
+    const license = resultLicense(r.recipe);
+    return addBlobSource(r.blob, r.name, 'Sample Mangler', license.text, license.level, { fromResult: r.id, enabled: false });
+  }, [addBlobSource]);
+
+  /** Hits from the dialog into the slice pool, cut from `source`. */
+  const hitsToSlices = useCallback((source: MangleSourceEntry, items: { spec: SliceSpec; cls: HitClass; peaks: number[] }[]) => {
+    const have = slices.filter(s => s.sourceId === source.id).length;
+    addSlices(items.map((it, i) => ({
+      ...it.spec, name: `${source.name} ${have + i + 1}`, sourceId: source.id, sourceName: source.name,
+      origin: source.origin, license: source.license, cls: it.cls, peaks: it.peaks,
+    })));
+  }, [slices, addSlices]);
 
   const resultToSource = useCallback(async (r: MangleResultEntry) => {
     const license = resultLicense(r.recipe);
     if (license.level === 'no-derivatives') return;
     try {
-      await addBlobSource(r.blob, r.name, 'Sample Mangler', license.text, license.level);
+      await addBlobSource(r.blob, r.name, 'Sample Mangler', license.text, license.level, { fromResult: r.id });
       showToast(`${r.name} is in the source pool`, 'success');
     } catch (e) {
       console.error(e);
@@ -1730,6 +1786,52 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     return entry;
   }, [storeEntry]);
 
+  /** Pool sources that are a kept result (put in the pool, or starred there). */
+  const keptSourceIds = useMemo(() => {
+    const kept = results.filter(r => r.kept);
+    const ids = new Set(kept.map(r => r.id));
+    const out = new Set(kept.map(r => r.fromSource).filter((id): id is string => !!id));
+    for (const s of sources) if (s.fromResult && ids.has(s.fromResult)) out.add(s.id);
+    return out;
+  }, [results, sources]);
+
+  /**
+   * The pool's star: the source's result kept (or not), or, if it has none, the
+   * file taken as it is into the results, starred: 48 kHz WAV, its own cue points.
+   */
+  const starSource = useCallback(async (s: MangleSourceEntry) => {
+    const linked = resultsRef.current.find(r => r.id === s.fromResult || r.fromSource === s.id);
+    if (linked) { toggleKeep(linked); return; }
+    if (s.duration > OUTPUT_MAX_SECONDS + 0.05) {
+      showToast(`${s.name} is longer than ${OUTPUT_MAX_SECONDS} s, a slot's limit: mangle it, or cut parts and slices from it`, 'info');
+      return;
+    }
+    try {
+      const decoded = await region.load(s.id, s.blob);
+      const l = decoded.getChannelData(0);
+      const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+      const taken = new Set(resultsRef.current.map(x => x.name));
+      const base = s.name.replace(/\s+/g, '_');
+      let name = base;
+      for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+      const cuePoints = (sourceCues[s.id] ?? []).map(t => Math.round(t * SR));
+      const entry: MangleResultEntry = {
+        id: newId(), name, blob: wavWithCues(l, r, cuePoints, name), duration: l.length / SR,
+        recipe: {
+          seed: 0, settings: DEFAULT_SETTINGS, snippets: [], cuePoints, cuesCapped: false, peakReductionDb: 0,
+          sources: [{ id: s.id, name: s.name, origin: s.origin, license: s.license, licenseLevel: s.licenseLevel }],
+        },
+        peaks: waveformPeaks(l, r), kept: true, batchId: Date.now(), createdAt: Date.now(), edited: true, kind: 'file', fromSource: s.id,
+      };
+      await storeEntry(entry);
+      setResults(prev => sortResults([...prev, entry]));
+      showToast(`${s.name} is kept: in Results`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not keep ${s.name}`, 'error');
+    }
+  }, [region, sourceCues, storeEntry, toggleKeep, showToast]);
+
   const takesToResults = useCallback(async (list: SynthTake[]) => {
     for (const t of list) await takeResult(t);
     showToast(`${list.length} take${list.length === 1 ? '' : 's'} in Mangle › Results`, 'success');
@@ -1799,6 +1901,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     player.stop(); region.stop(); sequencer.stop();
     setCard({ mode: 'send', items });
   };
+  /** Where results can go from here (standalone): one card's Export menu, and the Kept menu for all starred. */
+  const exportItems = (list: MangleResultEntry[]) => [
+    { label: 'Save to the user library', icon: <Library size={13} />, onClick: () => requestSave('library', list) },
+    { label: 'Add to the Browse pool', icon: <Waves size={13} />, onClick: () => requestSave('pool', list) },
+    { label: list.length === 1 ? 'New Studio project with it' : 'New Studio project with them', icon: <FolderPlus size={13} />, onClick: () => startProject(list) },
+    ...(cardEnabled ? [{ label: 'Send to Spotykach (USB or SD card)', icon: <Usb size={13} />, onClick: () => sendToCard(list) }] : []),
+  ];
   /** Slot files from the card, into the source pool: the user's own, cue points in the file. */
   const importFromCard = async (files: { file: File; tape: string; slot: number }[]) => {
     for (const { file, tape, slot } of files) {
@@ -2276,19 +2385,43 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </div>
           {sources.length > 0 && (
             <div className="shrink-0 px-4 pb-2 space-y-1.5 text-[10px]">
-              <label className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 bg-black/30 text-gray-400">
+              <label className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 bg-black/30 text-gray-400"
+                title="Filters as you type; Enter keeps it as a tag">
                 <Search size={11} />
-                <input value={poolQuery} onChange={e => setPoolQuery(e.target.value)} placeholder="Filter by name or origin"
+                <input value={poolQuery} onChange={e => setPoolQuery(e.target.value)} placeholder="Filter by name or origin (Enter: tag)"
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPoolTag(); } }}
                   className="min-w-0 flex-1 bg-transparent text-[11px] text-gray-200 placeholder:text-gray-600 focus:outline-none" />
-                {poolQuery && <button onClick={() => setPoolQuery('')} aria-label="Clear the filter"><X size={11} /></button>}
+                {poolQuery && <>
+                  <button onClick={addPoolTag} title="Keep as a tag" aria-label="Keep as a tag" className="hover:text-white"><Tag size={11} /></button>
+                  <button onClick={() => setPoolQuery('')} aria-label="Clear the filter" className="hover:text-white"><X size={11} /></button>
+                </>}
               </label>
-              {poolKinds.length > 1 && (
+              {(poolKinds.length > 1 || poolTags.length > 0) && (
                 <div className="flex flex-wrap gap-1">
-                  {[{ id: 'all' as const, label: 'All', hint: 'Every source' }, ...poolKinds].map(k => (
-                    <button key={k.id} onClick={() => setPoolKind(k.id)} title={k.hint}
-                      className={`px-1.5 py-0.5 rounded border transition-colors ${poolKind === k.id ? 'bg-synthux-red/80 border-transparent text-white' : 'border-white/10 text-gray-400 hover:text-white'}`}>
-                      {k.label} <span className="font-mono opacity-70">{k.id === 'all' ? sources.length : sources.filter(s => sourceKind(s) === k.id).length}</span>
-                    </button>
+                  <button onClick={() => { setPoolKindsOn(new Set()); setPoolTags(prev => prev.map(t => ({ ...t, on: false }))); }}
+                    title="Every source: all filters off"
+                    className={`px-1.5 py-0.5 rounded border transition-colors ${poolKindsOn.size === 0 && !poolTags.some(t => t.on) ? 'bg-synthux-red/80 border-transparent text-white' : 'border-white/10 text-gray-400 hover:text-white'}`}>
+                    All <span className="font-mono opacity-70">{sources.length}</span>
+                  </button>
+                  {poolKinds.length > 1 && poolKinds.map(k => {
+                    const on = poolKindsOn.has(k.id);
+                    return (
+                      <button key={k.id} aria-pressed={on} title={`${k.hint}: ${on ? 'click to hide' : 'click to show (with the others on)'}`}
+                        onClick={() => setPoolKindsOn(prev => { const next = new Set(prev); if (on) next.delete(k.id); else next.add(k.id); return next; })}
+                        className={`px-1.5 py-0.5 rounded border transition-colors ${on ? 'bg-synthux-red/80 border-transparent text-white' : 'border-white/10 text-gray-400 hover:text-white'}`}>
+                        {k.label} <span className="font-mono opacity-70">{sources.filter(s => sourceKind(s) === k.id).length}</span>
+                      </button>
+                    );
+                  })}
+                  {poolTags.map(t => (
+                    <span key={t.text} className={`flex items-center rounded border transition-colors ${t.on ? 'bg-synthux-blue/30 border-synthux-blue/60 text-white' : 'border-dashed border-white/15 text-gray-400'}`}>
+                      <button aria-pressed={t.on} onClick={() => setPoolTags(prev => prev.map(x => (x.text === t.text ? { ...x, on: !x.on } : x)))}
+                        title={`Tag "${t.text}": ${t.on ? 'on' : 'off'}`} className="flex items-center gap-0.5 pl-1.5 py-0.5 hover:text-white">
+                        <Tag size={9} /> {t.text}
+                      </button>
+                      <button onClick={() => setPoolTags(prev => prev.filter(x => x.text !== t.text))} title="Remove the tag" aria-label={`Remove the tag ${t.text}`}
+                        className="px-1 py-0.5 text-gray-500 hover:text-synthux-red"><X size={9} /></button>
+                    </span>
                   ))}
                 </div>
               )}
@@ -2352,6 +2485,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       <Scissors size={11} />{partCount > 0 && partCount}
                     </button>
                     <span className="shrink-0 text-[10px] font-mono text-gray-500 tabular-nums">{formatSeconds(s.duration)}</span>
+                    {(() => {
+                      const kept = keptSourceIds.has(s.id);
+                      return (
+                        <button onClick={() => void starSource(s)} aria-pressed={kept}
+                          className={`shrink-0 ${kept ? 'text-synthux-yellow' : 'text-gray-600 hover:text-synthux-yellow opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+                          title={kept ? 'Kept: in the results\' Kept list. Click to unkeep' : 'Keep this file as it is: into the results, starred'}>
+                          <Star size={12} fill={kept ? 'currentColor' : 'none'} />
+                        </button>
+                      );
+                    })()}
                     <button
                       onClick={() => removeSource(s.id)}
                       className="shrink-0 text-gray-600 hover:text-synthux-red opacity-0 group-hover:opacity-100 focus:opacity-100"
@@ -2376,6 +2519,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
           <div className="shrink-0 px-4 py-2 border-t border-white/10 text-[10px] text-gray-500">
             {enabledSources.length} of {sources.length} in use · {formatSeconds(enabledSeconds)}
+            {hiddenEnabled > 0 && <span className="text-gray-600"> · {hiddenEnabled} switched on but filtered out</span>}
             {enabledSeconds > limits.poolWarnSeconds && (
               <span className="block text-synthux-yellow mt-0.5">
                 Over {formatSeconds(limits.poolWarnSeconds)}{phoneMode ? ' (phone mode)' : ''}: decoding this much may run the tab out of memory.
@@ -2499,12 +2643,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                 items={[
                   ...(studio
                     ? [{ label: 'Add to project', icon: <Plus size={13} />, onClick: () => addToProject(keptResults) }]
-                    : [
-                      { label: 'Save to the user library', icon: <Library size={13} />, onClick: () => requestSave('library', keptResults) },
-                      { label: 'Add to the Browse pool', icon: <Layers size={13} />, onClick: () => requestSave('pool', keptResults) },
-                      { label: 'New Studio project', icon: <FolderPlus size={13} />, onClick: () => startProject(keptResults) },
-                    ]),
-                  ...(cardEnabled ? [{ label: 'Send to Spotykach (USB or SD card)', icon: <Usb size={13} />, onClick: () => sendToCard(keptResults) }] : []),
+                    : exportItems(keptResults)),
                   { label: 'Into the source pool', icon: <Import size={13} />, onClick: () => { for (const r of keptResults) void resultToSource(r); } },
                 ]}
               />
@@ -2574,8 +2713,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         {r.name}
                         {r.kind ? (
                           <span className="shrink-0 px-1 rounded border border-synthux-blue/50 text-synthux-blue text-[9px] uppercase tracking-wider font-normal"
-                            title={r.kind === 'sequence' ? 'Rendered from the sequencer: change it there and render again' : 'A synth take'}>
-                            {r.kind}
+                            title={r.kind === 'sequence' ? 'Rendered from the sequencer: change it there and render again' : r.kind === 'file' ? 'A pool file, kept as it is' : 'A synth take'}>
+                            {r.kind === 'file' ? 'pool file' : r.kind}
                           </span>
                         ) : r.edited && (
                           <span className="shrink-0 px-1 rounded border border-synthux-pink/40 text-synthux-pink text-[9px] uppercase tracking-wider font-normal"
@@ -2615,6 +2754,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       className={r.kept ? 'text-synthux-yellow' : 'text-gray-500 hover:text-synthux-yellow'}>
                       <Star size={15} fill={r.kept ? 'currentColor' : 'none'} />
                     </IconButton>
+                    <IconButton title="Find its hits: slices and kits straight from this result" onClick={() => { player.stop(); region.stop(); setHitsFor(r); }}
+                      className="text-gray-400 hover:text-synthux-red">
+                      <Scissors size={15} />
+                    </IconButton>
                     <IconButton title="Download WAV" onClick={() => downloadResult(r)} disabled={blocked}
                       className="text-gray-400 hover:text-white">
                       <Download size={15} />
@@ -2628,27 +2771,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         <Plus size={13} /> {studio.targetLabel ?? 'Project'}
                       </button>
                     ) : (
-                      <>
-                        <IconButton title="Save to the Studio user library" onClick={() => requestSave('library', [r])}
-                          disabled={blocked} className="text-gray-400 hover:text-synthux-yellow">
-                          <Library size={15} />
-                        </IconButton>
-                        <IconButton title="Add to the Browse pool" onClick={() => requestSave('pool', [r])}
-                          disabled={blocked} className="text-gray-400 hover:text-synthux-green">
-                          <Layers size={15} />
-                        </IconButton>
-                        <IconButton title="New Studio project with this file" onClick={() => startProject([r])}
-                          disabled={blocked} className="text-gray-400 hover:text-synthux-orange">
-                          <FolderPlus size={15} />
-                        </IconButton>
-                      </>
-                    )}
-                    {cardEnabled && (
-                      <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Send to a slot on the Spotykach: over USB or on its SD card'}
-                        onClick={() => sendToCard([r])} disabled={blocked}
-                        className="text-gray-400 hover:text-synthux-orange">
-                        <Usb size={15} />
-                      </IconButton>
+                      <ActionMenu
+                        label="Export"
+                        icon={<Share size={13} />}
+                        disabled={blocked}
+                        align="right"
+                        title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Out of the mangler: Studio, Browse, the Spotykach. The Kept menu does every starred result at once'}
+                        tone="plain"
+                        items={exportItems([r])}
+                      />
                     )}
                     <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Into the source pool, to mangle again'}
                       onClick={() => resultToSource(r)} disabled={blocked} className="text-gray-400 hover:text-white">
@@ -2757,6 +2888,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     <p className="mt-2 text-[10px] text-gray-500">
                       {r.kind === 'synth'
                         ? <>A synth take: make more in <button onClick={() => setStation('synth')} className="underline hover:text-white">Synth</button>.</>
+                        : r.kind === 'file'
+                        ? <>A file from the source pool, kept as it is. Generate to mangle it.</>
                         : r.kind === 'sequence'
                         ? <>Rendered from the sequencer: change the pattern in <button onClick={() => setStation('sequence')} className="underline hover:text-white">Sequence</button> and render again.</>
                         : <>Edited in the editor, so its snippets can't be changed here. The original result is still editable.</>}
@@ -2798,7 +2931,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       {/* Phone and narrow windows: one column at a time. */}
       <nav className="lg:hidden shrink-0 grid grid-cols-3 border-t border-white/10 bg-synthux-panel">
         {([
-          ['sources', <Layers size={18} />, 'Sources', `${enabledSources.length}/${sources.length}`],
+          ['sources', <Waves size={18} />, 'Sources', `${enabledSources.length}/${sources.length}`],
           ['settings', <SlidersHorizontal size={18} />, 'Settings', ''],
           ['results', <ListMusic size={18} />, 'Results', busy ? '…' : String(results.length)],
         ] as const).map(([id, icon, label, count]) => (
@@ -2879,13 +3012,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             position={region.position}
             onClose={() => setPartsFor(null)}
             onKit={hits => { setPartsFor(null); makeKit(hits.map(([start, end]) => ({ sourceId: source.id, spec: { start, end } })), source.name); }}
-            onSlices={items => {
-              const have = slices.filter(s => s.sourceId === source.id).length;
-              addSlices(items.map((it, i) => ({
-                ...it.spec, name: `${source.name} ${have + i + 1}`, sourceId: source.id, sourceName: source.name,
-                origin: source.origin, license: source.license, cls: it.cls, peaks: it.peaks,
-              })));
-            }}
+            onSlices={items => hitsToSlices(source, items)}
             onSave={(parts: Part[]) => {
               const next = { ...source, regions: parts.length ? parts : undefined };
               setSources(prev => prev.map(x => (x.id === source.id ? next : x)));
@@ -2898,6 +3025,25 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           />
         );
       })()}
+
+      {hitsFor && (
+        <SourcePartsModal
+          source={{ id: hitsFor.id, name: hitsFor.name, origin: 'Sample Mangler', blob: hitsFor.blob, duration: hitsFor.duration, enabled: false, addedAt: hitsFor.createdAt }}
+          load={region.load}
+          playRegion={region.playRegion}
+          stop={region.stop}
+          playing={region.playing}
+          position={region.position}
+          onClose={() => setHitsFor(null)}
+          onKit={async hits => {
+            const r = hitsFor;
+            setHitsFor(null);
+            const source = await sourceOfResult(r);
+            makeKit(hits.map(([start, end]) => ({ sourceId: source.id, spec: { start, end } })), r.name);
+          }}
+          onSlices={async items => hitsToSlices(await sourceOfResult(hitsFor), items)}
+        />
+      )}
 
       {editing && (
         <Suspense fallback={
@@ -2918,6 +3064,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             subtitle={`Editing a copy of ${editing.name}. "Save as new result" puts it next to the original in the mangler.`}
             commitLabels={MANGLER_COMMIT_LABELS}
             destination="the mangler"
+            noMangler
             onEdited={({ blob, duration }) => saveEditedCopy(editing, blob, duration)}
             onClose={() => { setEditing(null); editedCopyRef.current = null; }}
           />
@@ -3071,7 +3218,11 @@ const LicenseBadge: React.FC<{ level: keyof typeof LEVEL_LABEL; terms?: string }
 const ActionMenu: React.FC<{
   label: string; icon: React.ReactNode; title: string; disabled?: boolean;
   items: { label: string; icon: React.ReactNode; onClick: () => void }[];
-}> = ({ label, icon, title, disabled, items }) => {
+  /** Which edge the menu lines up with. */
+  align?: 'left' | 'right';
+  /** yellow: the Kept menu; plain: a card's own buttons. */
+  tone?: 'yellow' | 'plain';
+}> = ({ label, icon, title, disabled, items, align = 'left', tone = 'yellow' }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEscapeLayer(open, () => { setOpen(false); return true; });
@@ -3084,12 +3235,13 @@ const ActionMenu: React.FC<{
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)} disabled={disabled} title={title} aria-expanded={open}
-        className="flex items-center gap-1 px-2 py-0.5 rounded border border-synthux-yellow/40 text-synthux-yellow hover:bg-synthux-yellow/10
-          disabled:border-white/10 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-default">
+        className={`flex items-center gap-1 rounded border disabled:border-white/10 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-default ${tone === 'yellow'
+          ? 'px-2 py-0.5 border-synthux-yellow/40 text-synthux-yellow hover:bg-synthux-yellow/10'
+          : 'h-8 px-2 text-[11px] font-bold border-white/10 text-gray-300 hover:text-white hover:bg-white/5'}`}>
         {icon} {label} <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-40 min-w-[220px] py-1 rounded-lg border border-white/10 bg-synthux-panel shadow-2xl">
+        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1 z-40 min-w-[220px] py-1 rounded-lg border border-white/10 bg-synthux-panel shadow-2xl`}>
           {items.map(it => (
             <button key={it.label} onClick={() => { setOpen(false); it.onClick(); }}
               className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-white/10">

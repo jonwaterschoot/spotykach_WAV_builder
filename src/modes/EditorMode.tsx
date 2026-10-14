@@ -128,6 +128,8 @@ interface LooseFileEditorProps {
   commitLabels?: CommitLabels;
   /** Where `onEdited` saves to, for the leave warning. Default "the temporary pool". */
   destination?: string;
+  /** Opened from the Sample Mangler: the editor's own Mangler tool is left out. */
+  noMangler?: boolean;
 }
 
 /**
@@ -144,7 +146,7 @@ interface LooseFileEditorProps {
  * every step is kept while the editor lives, `collapseFileVersions` runs at the
  * project exit, and the pool receives one blob against the original it already holds.
  */
-export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterBrowse, commitLabels, destination = 'the temporary pool' }) => {
+export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose, onEdited, subtitle, onEnterBrowse, commitLabels, destination = 'the temporary pool', noMangler = false }) => {
   const [record, setRecord] = useState<FileRecord>(() => recordFromLooseFile(file));
   const [isDirty, setIsDirty] = useState(false);
   const [hasEdited, setHasEdited] = useState(false);
@@ -363,6 +365,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
           </div>
         }>
           <WaveformEditor
+            noMangler={noMangler}
             slot={{ name: record.name, blob: active.blob!, fileId: record.id }}
             versions={record.versions}
             activeVersionId={record.currentVersionId}

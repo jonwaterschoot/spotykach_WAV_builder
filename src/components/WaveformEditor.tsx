@@ -716,9 +716,11 @@ interface WaveformEditorProps {
     onOpenFullMangler?: () => void;
     /** Something (the Mangler) is open over the editor: its keyboard shortcuts stand down. */
     isCovered?: boolean;
+    /** Opened from the Sample Mangler itself: no Mangler tool in here, it would be the mangler inside the mangler. */
+    noMangler?: boolean;
 }
 
-export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, commitCleanTone = 'primary', transportActions, onOpenFullMangler, isCovered = false }: WaveformEditorProps) => {
+export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onClose, onSave, onSaveAsCopy, onDeleteVersion, onAssignVersion, onMoveVersionToPool, isDuplicate, onSaveUnique, metadata, onRenameFile, onDirtyStateChange, showToast, commitLabels = TAPE_COMMIT_LABELS, commitCleanTone = 'primary', transportActions, onOpenFullMangler, isCovered = false, noMangler = false }: WaveformEditorProps) => {
     const isCoveredRef = useRef(isCovered);
     useEffect(() => { isCoveredRef.current = isCovered; }, [isCovered]);
 
@@ -3580,7 +3582,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     { id: 'limiter', group: 'Level', label: 'Limiter', icon: <Sliders size={13} />, description: 'Tame the peaks', textColor: 'text-red-400', activeColor: 'bg-red-500', hasContent: isLimiterDirty },
                                     { id: 'eq', group: 'Tone', label: 'EQ', icon: <BarChart2 size={13} />, description: 'Low, mid and high', textColor: 'text-purple-400', activeColor: 'bg-purple-500', hasContent: isEqDirty },
                                     { id: 'pitch', group: 'Tone', label: 'Pitch', icon: <Music size={13} />, description: 'Shift parts by semitones', textColor: 'text-synthux-blue', activeColor: 'bg-synthux-blue', hasContent: isPitchDirty },
-                                    { id: 'mangle', group: 'FX', label: 'Mangler', icon: <Dices size={13} />, description: 'A new take from random snippets of this file', textColor: 'text-synthux-red', activeColor: 'bg-synthux-red', hasContent: isMangleDirty },
+                                    ...(noMangler ? [] : [{ id: 'mangle' as const, group: 'FX', label: 'Mangler', icon: <Dices size={13} />, description: 'A new take from random snippets of this file', textColor: 'text-synthux-red', activeColor: 'bg-synthux-red', hasContent: isMangleDirty }]),
                                 ]}
                             />
 
@@ -4470,15 +4472,17 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         <Keyboard size={12} /> Map
                                                     </button>
 
-                                                    <button
-                                                        onClick={handleSlicesToMangler}
-                                                        disabled={slicePoints.length === 0}
-                                                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-synthux-red/30 text-synthux-red transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                                        onMouseEnter={() => setHelpText("Open these slices in the Mangler: one snippet per slice, to reorder, remove or repitch")}
-                                                        onMouseLeave={() => setHelpText("")}
-                                                    >
-                                                        <Dices size={12} /> Edit in Mangler
-                                                    </button>
+                                                    {!noMangler && (
+                                                        <button
+                                                            onClick={handleSlicesToMangler}
+                                                            disabled={slicePoints.length === 0}
+                                                            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold bg-gray-800 hover:bg-synthux-red/30 text-synthux-red transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                            onMouseEnter={() => setHelpText("Open these slices in the Mangler: one snippet per slice, to reorder, remove or repitch")}
+                                                            onMouseLeave={() => setHelpText("")}
+                                                        >
+                                                            <Dices size={12} /> Edit in Mangler
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

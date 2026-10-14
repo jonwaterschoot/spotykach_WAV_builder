@@ -17,7 +17,8 @@ interface SourcePartsModalProps {
     stop: () => void;
     playing: RegionPlayback | null;
     position: number | null;
-    onSave: (parts: Part[]) => void;
+    /** Absent (a result, not a pool source): hits only, no parts to keep. */
+    onSave?: (parts: Part[]) => void;
     /** The hits (seconds), one after another with a cue at each, as a new result. */
     onKit: (hits: Part[]) => void;
     /** The hits into the slice pool, with their class and an outline for the tile. */
@@ -227,6 +228,8 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
 
     const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
         const drag = dragRef.current;
+        // Hits only (a result): no parts to draw, so a drag stays a click.
+        if (!onSave && drag?.kind === 'create') return;
         const canvas = e.currentTarget;
         if (!drag) {
             const h = hit(e.clientX);
@@ -319,6 +322,13 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
             setFinding(false);
         }
     };
+    // Hits only (a result): what the dialog is for, so they are found as soon as it opens.
+    const autoFound = useRef(false);
+    useEffect(() => {
+        if (onSave || !audio || autoFound.current) return;
+        autoFound.current = true;
+        void detect();
+    }); // every render, until the audio is in; then once
     const hitsToSlices = () => {
         if (!audio || !hits?.length) return;
         const l = audio.getChannelData(0);
@@ -370,7 +380,7 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                 tabIndex={-1} ref={dialogRef}>
                 <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-white/10">
                     <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-synthux-red">Parts and hits</div>
+                        <div className="text-[11px] font-bold uppercase tracking-widest text-synthux-red">{onSave ? 'Parts and hits' : 'Hits'}</div>
                         <div className="text-sm font-bold truncate">{source.name}</div>
                     </div>
                     <button onClick={() => { stop(); onClose(); }} className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/10" aria-label="Close">
@@ -388,7 +398,7 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                         {playingHere ? <Square size={11} fill="currentColor" /> : <Play size={12} />}
                     </ToolButton>
                     <span className="ml-2">
-                        {parts.length
+                        {!onSave ? formatSeconds(duration) : parts.length
                             ? `${parts.length} part${parts.length === 1 ? '' : 's'} · ${formatSeconds(used)} of ${formatSeconds(duration)} in use`
                             : `No parts: the whole ${formatSeconds(duration)} is used`}
                     </span>
@@ -432,11 +442,11 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                                 ))}
                             </span>
                             <span className="ml-auto flex gap-2">
-                                <button onClick={hitsAsParts} disabled={!hits.length}
+                                {onSave && <button onClick={hitsAsParts} disabled={!hits.length}
                                     title="Make the hits the parts: snippets then come only from the sounds, never the silence between them"
                                     className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-40">
                                     Use as parts
-                                </button>
+                                </button>}
                                 <button onClick={hitsToSlices} disabled={!hits.length}
                                     title="Keep every hit in the slice pool, to collect, audition and make kits from"
                                     className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-40">
@@ -477,15 +487,18 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                         )}
                     </div>
                     <p className="mt-1 text-[10px] text-gray-500">
-                        Drag on the wave to add a part · drag an edge to resize, the middle to move · click the wave to listen from there ·
-                        Delete removes the selected part · Space plays it{hits ? ' · click a hit in the strip under the wave to hear it' : ''}
+                        {onSave
+                            ? <>Drag on the wave to add a part · drag an edge to resize, the middle to move · click the wave to listen from there ·
+                                Delete removes the selected part · Space plays it{hits ? ' · click a hit in the strip under the wave to hear it' : ''}</>
+                            : <>Click the wave to listen from there · click a hit in the strip under the wave to hear it · To slices and Make a kit
+                                put this result in the source pool too (switched off), as the slices&apos; source</>}
                     </p>
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2">
                     {hits && (
                         <div className="flex gap-1 mb-2 text-[10px] font-bold uppercase tracking-widest">
-                            {([['hits', `Hits (${hits.length})`], ['parts', `Parts (${parts.length})`]] as const).map(([id, label]) => (
+                            {([['hits', `Hits (${hits.length})`], ...(onSave ? [['parts', `Parts (${parts.length})`] as const] : [])] as const).map(([id, label]) => (
                                 <button key={id} onClick={() => setList(id)}
                                     className={`px-2 py-1 rounded ${list === id ? 'bg-synthux-red/80 text-white' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
                                     {label}
@@ -564,12 +577,12 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                 <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-3 border-t border-white/10">
                     <button onClick={() => { stop(); onClose(); }}
                         className="px-4 py-1.5 rounded-full text-xs font-bold text-gray-300 border border-white/15 hover:bg-white/10">
-                        Cancel
+                        {onSave ? 'Cancel' : 'Close'}
                     </button>
-                    <button onClick={() => { stop(); onSave(normaliseParts(parts, duration)); }} disabled={!audio}
+                    {onSave && <button onClick={() => { stop(); onSave(normaliseParts(parts, duration)); }} disabled={!audio}
                         className="px-4 py-1.5 rounded-full text-xs font-bold bg-synthux-red text-white hover:bg-synthux-red/80 disabled:opacity-40">
                         Save parts
-                    </button>
+                    </button>}
                 </div>
             </div>
         </div>

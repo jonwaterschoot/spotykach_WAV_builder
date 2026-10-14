@@ -48,6 +48,8 @@ export const recipeFromResult = (
 
 /** The sources a result actually uses, which is what its license follows. */
 export const usedSources = (recipe: MangleRecipe): RecipeSource[] => {
+    // No snippets: a file taken whole (a pool source starred), and its sources are all used.
+    if (recipe.snippets.length === 0) return recipe.sources;
     const used = new Set(recipe.snippets.map(s => s.source));
     return recipe.sources.filter((_, i) => used.has(i));
 };

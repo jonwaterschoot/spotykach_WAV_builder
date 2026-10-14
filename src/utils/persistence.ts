@@ -349,6 +349,8 @@ export interface MangleSourceEntry {
     licenseLevel?: import('../submission/licenses').LicenseLevel;
     /** A synth take: how to make it again. */
     synth?: { kind: import('../mangler/synth').SynthKind; seed: number; values: Record<string, number> };
+    /** A result put in the pool: which one, so the pool's star shows it kept. */
+    fromResult?: string;
 }
 
 export interface MangleResultEntry {
@@ -373,9 +375,11 @@ export interface MangleResultEntry {
     edited?: boolean;
     /**
      * Not made by the mangle engine, so not re-rollable (`edited` is set too):
-     * rendered from the sequencer, or a synth take.
+     * rendered from the sequencer, a synth take, or a pool file starred as it is.
      */
-    kind?: 'sequence' | 'synth';
+    kind?: 'sequence' | 'synth' | 'file';
+    /** kind 'file': the pool source it is. */
+    fromSource?: string;
 }
 
 const loadAll = async <T>(store: string): Promise<T[]> => {

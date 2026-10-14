@@ -280,6 +280,13 @@ Each phase is usable on its own.
 - [x] The Spotykach's card, both ways: results into slots (one, or every kept one into consecutive slots), slots back into the source pool with their cue points and INAM name. Over USB or on the SD card in a reader (Studio's SD folder, asked once if Studio has none), one dialog for both. Standalone only
 - [x] The results' own bar moved from the foot to the top: count, the *Kept* menu (library, Browse pool, new project, send to the card, into the source pool; *Add to project* in Studio), *Clear unkept*, storage
 - [x] Guided tour brought up to date and kept to the basics: add sounds, roll the settings, generate, keep, the Kept menu, the other stations. Each step points at its dice (roll first, open the details for control). The tour switches to Mangle and to the right phone pane per step, and a hidden target centres the card
+**Added Oct 15 — Pool, cards, editor**
+
+- [x] Pool filters are toggles: kinds (several at once) and tags (typed text kept with Enter, each on or off, removable). Generate, the pool's dice, its checkbox and bin act only on what the filter shows; the footer counts switched-on sources the filter hides
+- [x] A star per pool source: keeps the file as it is (48 kHz WAV, its own cue points, up to 42 s) as a starred result of kind *pool file*; a source that is a kept result (put in the pool, or starred) shows its star filled, and a click unkeeps
+- [x] Result cards: scissors open the hits dialog on the result itself (hits found on open, no parts); *To slices* and *Make a kit* put the result in the pool, switched off, as the slices' source. *Export* menu: user library, Browse pool, new Studio project, Spotykach card; the Kept menu offers the same for every starred result
+- [x] The editor opened from the mangler has no Mangler tool (and no *Edit in Mangler* in the slicer)
+- [x] Pool icon: waves (Browse pool, the phone's Sources tab)
 - Note: on the Spotykach a note only retriggers a deck at a pitch (firmware: `_on_midi_note_on`), so cue tracks play their segments here; over the Link they send their cue's note
 
 ## Decided Oct 14
