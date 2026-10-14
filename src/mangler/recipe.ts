@@ -7,6 +7,8 @@ export interface RecipeSource {
     name: string;
     origin: string;
     license?: string;
+    /** Made in the mangler (a result or slice used as a source): the level it already has. */
+    licenseLevel?: 'open' | 'personal' | 'no-derivatives';
 }
 
 /**

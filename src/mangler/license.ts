@@ -10,10 +10,12 @@ import { usedSources, type MangleRecipe, type RecipeSource } from './recipe.ts';
 /** Files from the user's own disk: theirs, so no limits. */
 export const LOCAL_ORIGINS = ['Local file', 'Local Folder'];
 
-export const sourceLicense = (source: { origin: string; license?: string }): LicenseClass =>
-    LOCAL_ORIGINS.includes(source.origin) && !source.license?.trim()
+export const sourceLicense = (source: { origin: string; license?: string; licenseLevel?: LicenseLevel }): LicenseClass => {
+    if (source.licenseLevel) return { ...classifyLicense(source.license), level: source.licenseLevel };
+    return LOCAL_ORIGINS.includes(source.origin) && !source.license?.trim()
         ? { level: 'open', shareAlike: false, attribution: false }
         : classifyLicense(source.license);
+};
 
 const RANK: Record<LicenseLevel, number> = { open: 0, personal: 1, 'no-derivatives': 2 };
 

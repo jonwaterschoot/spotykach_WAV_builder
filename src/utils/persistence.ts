@@ -341,6 +341,12 @@ export interface MangleSourceEntry {
     addedAt: number;
     /** Seconds: the parts new snippets may come from. Absent or empty: the whole file. */
     regions?: [number, number][];
+    /**
+     * Made in the mangler (a result or a slice put back in the pool): the level its
+     * own sources gave it. Its `license` is then the mangler's text, which names
+     * those sources but doesn't read as a known license.
+     */
+    licenseLevel?: import('../submission/licenses').LicenseLevel;
 }
 
 export interface MangleResultEntry {

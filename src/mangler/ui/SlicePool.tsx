@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Package, Play, Search, Square, Trash2 } from 'lucide-react';
+import { Import, Package, Play, Search, Square, Trash2 } from 'lucide-react';
+import { ScrubNumber } from '../../components/ScrubNumber';
 import type { MangleSliceEntry } from '../../utils/persistence';
 import type { HitClass } from '../hits';
-import { sliceFrames } from '../slices';
+import { sliceFrames, type SliceSpec } from '../slices';
+import { ATTACK_MAX_MS, DECAY_MAX_MS, DECAY_MIN_MS } from '../settings';
 import { formatMs } from './format';
 
 /**
@@ -21,6 +23,10 @@ interface SlicePoolProps {
     onStop: () => void;
     onDelete: (ids: string[]) => void;
     onKit: (slices: MangleSliceEntry[]) => void;
+    /** Each slice as its own file in the source pool, to mangle again. */
+    onToSources: (slices: MangleSliceEntry[]) => void;
+    /** A change to one slice: how it sounds, or its name. */
+    onUpdate: (id: string, patch: Partial<SliceSpec> & { name?: string }) => void;
 }
 
 const SR = 48000;
@@ -28,7 +34,9 @@ const SR = 48000;
 const CLASS_COLOR: Record<HitClass, string> = { low: '#f58b44', mid: '#f5d544', high: '#4771f9' };
 type Filter = 'all' | HitClass | 'other';
 
-export const SlicePool: React.FC<SlicePoolProps> = ({ slices, available, playingId, busy, onPlay, onStop, onDelete, onKit }) => {
+export const SlicePool: React.FC<SlicePoolProps> = ({
+    slices, available, playingId, busy, onPlay, onStop, onDelete, onKit, onToSources, onUpdate,
+}) => {
     const [filter, setFilter] = useState<Filter>('all');
     const [query, setQuery] = useState('');
     const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -104,6 +112,11 @@ export const SlicePool: React.FC<SlicePoolProps> = ({ slices, available, playing
                     <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Name or source"
                         className="w-32 bg-transparent text-gray-200 placeholder:text-gray-600 focus:outline-none" />
                 </label>
+                {selected.length === 0 && slices.length > 0 && (
+                    <span className="ml-auto text-gray-500">
+                        Select slices to make a kit (it lands in Mangle › Results) or to use them as sources
+                    </span>
+                )}
                 {selected.length > 0 && (
                     <span className="flex flex-wrap items-center gap-2 ml-auto">
                         <span className="text-gray-300">{selected.length} selected</span>
@@ -111,6 +124,11 @@ export const SlicePool: React.FC<SlicePoolProps> = ({ slices, available, playing
                             title="A new result: the selected slices one after another, in the order shown, with a cue at each"
                             className="flex items-center gap-1 px-2 py-1 rounded border border-synthux-red/50 text-white hover:bg-synthux-red/20 disabled:opacity-40">
                             <Package size={11} /> Make a kit
+                        </button>
+                        <button onClick={() => onToSources(selected)}
+                            title="Each selected slice as its own file in the source pool (Mangle), to mangle again"
+                            className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
+                            <Import size={11} /> To sources
                         </button>
                         <button onClick={() => { onDelete(selected.map(s => s.id)); setSelection(new Set()); }}
                             title="Remove the selected slices from the pool (Delete)"
@@ -124,6 +142,7 @@ export const SlicePool: React.FC<SlicePoolProps> = ({ slices, available, playing
                 )}
             </div>
 
+            <div className="flex-1 min-h-0 flex flex-col md:flex-row">
             <div className="flex-1 min-h-0 overflow-y-auto p-4">
                 {slices.length === 0 ? (
                     <div className="max-w-md mx-auto mt-12 text-center text-sm text-gray-500 space-y-2">
@@ -177,6 +196,93 @@ export const SlicePool: React.FC<SlicePoolProps> = ({ slices, available, playing
                     </div>
                 )}
             </div>
+            {selected.length === 1 && (
+                <SliceEditor key={selected[0].id} slice={selected[0]} missing={!available.has(selected[0].sourceId)}
+                    playing={playingId === selected[0].id} onPlay={() => onPlay(selected[0])} onStop={onStop}
+                    onUpdate={patch => onUpdate(selected[0].id, patch)} />
+            )}
+            </div>
         </div>
+    );
+};
+
+/**
+ * One slice up close: its name and how it sounds. Every change is kept at once
+ * and the tile redraws; play to hear it.
+ */
+const SliceEditor: React.FC<{
+    slice: MangleSliceEntry;
+    missing: boolean;
+    playing: boolean;
+    onPlay: () => void;
+    onStop: () => void;
+    onUpdate: (patch: Partial<SliceSpec> & { name?: string }) => void;
+}> = ({ slice, missing, playing, onPlay, onStop, onUpdate }) => {
+    const [name, setName] = useState(slice.name);
+    const env = slice.envelope;
+    const row = 'flex items-center justify-between gap-2 text-[11px]';
+    return (
+        <aside className="shrink-0 md:w-72 border-t md:border-t-0 md:border-l border-white/10 p-4 space-y-3 overflow-y-auto">
+            <div className="flex items-center gap-2">
+                <button onClick={() => (playing ? onStop() : onPlay())} disabled={missing}
+                    title={playing ? 'Stop' : 'Play (Space)'}
+                    className="h-8 w-8 shrink-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30">
+                    {playing ? <Square size={11} fill="currentColor" /> : <Play size={12} className="ml-0.5" />}
+                </button>
+                <input value={name} onChange={e => setName(e.target.value)}
+                    onBlur={() => { if (name.trim() && name !== slice.name) onUpdate({ name: name.trim() }); }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    aria-label="Slice name"
+                    className="min-w-0 flex-1 bg-black/40 border border-white/10 rounded px-2 py-1 text-xs font-bold text-gray-100" />
+            </div>
+            <p className="text-[10px] text-gray-500">
+                {slice.sourceName} · {slice.start.toFixed(3)}–{slice.end.toFixed(3)} s
+            </p>
+            <div className={row} title="Semitones; the slice gets shorter going up, as on tape">
+                <span className="text-gray-400">Shift</span>
+                <ScrubNumber value={slice.shift ?? 0} min={-24} max={24} step={0.5} unit="st" width="w-[5.5rem]" ariaLabel="Shift in semitones"
+                    onChange={v => onUpdate({ shift: v || undefined })} />
+            </div>
+            <div className={row} title="Gain on top of how it was kept">
+                <span className="text-gray-400">Gain</span>
+                <ScrubNumber value={Math.round((slice.gainDb ?? 0) * 10) / 10} min={-36} max={24} step={0.5} unit="dB" width="w-[5.5rem]" ariaLabel="Gain in dB"
+                    onChange={v => onUpdate({ gainDb: v || undefined })} />
+            </div>
+            <label className={`${row} cursor-pointer`}>
+                <span className="text-gray-400">Reversed</span>
+                <input type="checkbox" checked={!!slice.reverse} onChange={e => onUpdate({ reverse: e.target.checked || undefined })}
+                    className="accent-synthux-red h-3.5 w-3.5" />
+            </label>
+            <label className={`${row} cursor-pointer`}>
+                <span className="text-gray-400">Envelope</span>
+                <input type="checkbox" checked={!!env}
+                    onChange={e => onUpdate({ envelope: e.target.checked ? { attackMs: 2, decayMs: 300, curve: 'exp' } : undefined })}
+                    className="accent-synthux-red h-3.5 w-3.5" />
+            </label>
+            {env && <>
+                <div className={row}>
+                    <span className="text-gray-400">Attack</span>
+                    <ScrubNumber value={Math.round(env.attackMs)} min={0} max={ATTACK_MAX_MS} unit="ms" width="w-[5.5rem]" ariaLabel="Attack in ms"
+                        onChange={v => onUpdate({ envelope: { ...env, attackMs: v } })} />
+                </div>
+                <div className={row}>
+                    <span className="text-gray-400">Decay</span>
+                    <ScrubNumber value={Math.round(env.decayMs)} min={DECAY_MIN_MS} max={DECAY_MAX_MS} scale="log" unit="ms" width="w-[5.5rem]" ariaLabel="Decay in ms"
+                        onChange={v => onUpdate({ envelope: { ...env, decayMs: v } })} />
+                </div>
+                <div className={row}>
+                    <span className="text-gray-400">Curve</span>
+                    <span className="flex rounded-md border border-white/10 overflow-hidden">
+                        {(['exp', 'linear'] as const).map(c => (
+                            <button key={c} onClick={() => onUpdate({ envelope: { ...env, curve: c } })}
+                                className={`px-2 py-0.5 ${env.curve === c ? 'bg-synthux-red/80 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                                {c === 'exp' ? 'Exp' : 'Linear'}
+                            </button>
+                        ))}
+                    </span>
+                </div>
+            </>}
+            {missing && <p className="text-[10px] text-synthux-red">Its source has left the pool: it can&apos;t play or go into a kit.</p>}
+        </aside>
     );
 };

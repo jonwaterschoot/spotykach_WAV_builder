@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Briefcase, ChevronDown, Grid2x2, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  Briefcase, ChevronDown, Grid2x2, Import, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -12,6 +12,7 @@ import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle } from '../utils/storageUtils';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
 import { LEVEL_LABEL, resultLicense, sourceLicense } from '../mangler/license';
+import type { LicenseLevel } from '../submission/licenses';
 import { addResultsToBrowsePool, resultsAsDetached, resultsAsProjectFiles, saveResultsToLibrary } from '../mangler/save';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
@@ -63,7 +64,7 @@ import { Segmented, Slider } from '../mangler/ui/Sliders';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
 import { SlicePool } from '../mangler/ui/SlicePool';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
-import { sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
+import { renderSlice, sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
 import { ManglerTour } from '../mangler/ui/ManglerTour';
@@ -271,6 +272,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   /** The version before the last edit, per result. In memory only: one step back. */
   const [undo, setUndo] = useState<Record<string, MangleResultEntry>>({});
   const [hover, setHover] = useState<{ id: string; index: number } | null>(null);
+  /** A result just made elsewhere (a kit): scrolled to and lit up for a moment. */
+  const [flashId, setFlashId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!flashId) return;
+    const frame = requestAnimationFrame(() =>
+      document.getElementById(`result-${flashId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    const timer = setTimeout(() => setFlashId(null), 2500);
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+  }, [flashId]);
   const [playMode, setPlayMode] = useState<PlayMode>(loadPlayMode);
   const [recueing, setRecueing] = useState<string | null>(null);
   /** The source whose parts are being chosen. */
@@ -643,7 +653,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     const batchId = Date.now();
     const batchSettings = settings;
     const recipeSources: RecipeSource[] = enabledSources.map(s => ({
-      id: s.id, name: s.name, origin: s.origin, license: s.license,
+      id: s.id, name: s.name, origin: s.origin, license: s.license, licenseLevel: s.licenseLevel,
     }));
     const taken = new Set(results.filter(r => r.kept).map(r => r.name));
 
@@ -762,7 +772,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     const ids = [...new Set(list.map(it => it.sourceId))];
     const recipeSources: RecipeSource[] = ids.map(id => {
       const s = sources.find(x => x.id === id)!;
-      return { id, name: s.name, origin: s.origin, license: s.license };
+      return { id, name: s.name, origin: s.origin, license: s.license, licenseLevel: s.licenseLevel };
     });
     const fixed: SnippetInfo[] = list.map(it => sliceAsSnippet(it.spec, ids.indexOf(it.sourceId), SR));
     const kitSettings = sanitizeSettings({
@@ -787,6 +797,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         const entry = makeEntry(result, kitSettings, recipeSources, { name, kept: true, batchId: Date.now() });
         await storeEntry(entry);
         setResults(prev => sortResults([...prev, entry]));
+        setFlashId(entry.id);
+        showToast(`${name} is ready in Results: save it, edit it, or use it as a source`, 'success');
       },
     });
   }, [sources, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
@@ -853,6 +865,69 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   }, [region, addSlices, showToast]);
 
   const availableSources = useMemo(() => new Set(sources.map(s => s.id)), [sources]);
+
+  /** Audio made here back into the source pool, switched on, to mangle again. */
+  const addBlobSource = useCallback(async (
+    blob: Blob, name: string, origin: string, license: string | undefined, licenseLevel: LicenseLevel,
+  ) => {
+    const entry: MangleSourceEntry = {
+      id: newId(), name, origin, license, licenseLevel, blob, duration: await probeDuration(blob), enabled: true, addedAt: Date.now(),
+    };
+    entry.blob = await putMangleSourceDiskBacked(entry);
+    setSources(prev => [...prev, entry]);
+  }, []);
+
+  const resultToSource = useCallback(async (r: MangleResultEntry) => {
+    const license = resultLicense(r.recipe);
+    if (license.level === 'no-derivatives') return;
+    try {
+      await addBlobSource(r.blob, r.name, 'Sample Mangler', license.text, license.level);
+      showToast(`${r.name} is in the source pool`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not add ${r.name} as a source`, 'error');
+    }
+  }, [addBlobSource, showToast]);
+
+  /** Each slice rendered (shift, direction, gain, envelope) as its own short file. */
+  const slicesToSources = useCallback(async (list: MangleSliceEntry[]) => {
+    let added = 0;
+    for (const s of list) {
+      const source = sources.find(x => x.id === s.sourceId);
+      if (!source) continue;
+      try {
+        const decoded = await region.load(source.id, source.blob);
+        const l = decoded.getChannelData(0);
+        const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+        const [a, b] = renderSlice([l, r], decoded.sampleRate, s);
+        await addBlobSource(wavWithCues(a, b, [], s.name), s.name, `Slice of ${source.name}`, source.license, sourceLicense(source).level);
+        added++;
+      } catch (e) {
+        console.error('Mangler: could not add a slice as a source', e);
+      }
+    }
+    const missed = list.length - added;
+    showToast(`${added} slice${added === 1 ? '' : 's'} added to the source pool${missed ? ` (${missed} left out: source gone)` : ''}`,
+      added ? 'success' : 'error');
+  }, [sources, region, addBlobSource, showToast]);
+
+  /** A change to one slice; its outline is drawn again from the new sound. */
+  const updateSlice = useCallback(async (id: string, patch: Partial<SliceSpec> & { name?: string }) => {
+    const current = slices.find(s => s.id === id);
+    if (!current) return;
+    let next: MangleSliceEntry = { ...current, ...patch };
+    const source = sources.find(x => x.id === next.sourceId);
+    if (source && Object.keys(patch).some(k => k !== 'name')) {
+      try {
+        const decoded = await region.load(source.id, source.blob);
+        const l = decoded.getChannelData(0);
+        const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+        next = { ...next, peaks: slicePeaks(renderSlice([l, r], decoded.sampleRate, next)) };
+      } catch { /* keep the old outline */ }
+    }
+    setSlices(prev => prev.map(s => (s.id === id ? next : s)));
+    putMangleSlicesToDB([next]).catch(e => console.error(e));
+  }, [slices, sources, region]);
 
   const lockedFixed = (r: MangleResultEntry) =>
     r.recipe.snippets.map((s, i) => (r.locked?.includes(i) ? s : null));
@@ -1400,6 +1475,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             onPlay={playSlice}
             onStop={slicePlayer.stop}
             onDelete={deleteSlices}
+            onToSources={slicesToSources}
+            onUpdate={updateSlice}
             onKit={list => makeKit(list.map(s => ({ sourceId: s.sourceId, spec: s })), list.length === 1 ? list[0].name : 'slices')}
           />
         </div>
@@ -1693,8 +1770,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               const transient = !!r.recipe.cueSource && r.recipe.cueSource !== 'snippets';
               const cropping = cropEdit?.id === r.id ? cropEdit : null;
               return (
-                <article key={r.id}
-                  className={`min-w-0 rounded-xl border p-3 bg-synthux-panel/80 ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'}`}>
+                <article key={r.id} id={`result-${r.id}`}
+                  className={`min-w-0 rounded-xl border p-3 bg-synthux-panel/80 transition-shadow
+                    ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'} ${flashId === r.id ? 'ring-2 ring-synthux-red shadow-lg shadow-synthux-red/20' : ''}`}>
                   {/* On a phone the buttons go to a line of their own, together. */}
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
                     <button
@@ -1771,6 +1849,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         </IconButton>
                       </>
                     )}
+                    <IconButton title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Into the source pool, to mangle again'}
+                      onClick={() => resultToSource(r)} disabled={blocked} className="text-gray-400 hover:text-white">
+                      <Import size={15} />
+                    </IconButton>
                     <IconButton title="Discard" onClick={() => discard(r.id)} className="text-gray-500 hover:text-synthux-red">
                       <Trash2 size={15} />
                     </IconButton>
