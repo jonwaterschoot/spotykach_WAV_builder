@@ -1,9 +1,10 @@
 import { openDB, deleteDB } from 'idb';
 import type { AppState } from '../types';
+import type { SliceSpec } from '../mangler/slices';
 import { dbName } from './storageNamespace';
 
 const DB_NAME = dbName('spotykach-wav-builder');
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 const STORE_NAME = 'app-state';
 const USER_LIBRARY_STORE = 'user-library';
 const CUSTOM_FOLDERS_STORE = 'custom-folders';
@@ -11,6 +12,7 @@ const BROWSE_POOL_STORE = 'browse-pool';
 const SUBMISSION_STORE = 'submission-draft';
 const MANGLE_SOURCES_STORE = 'mangle-sources';
 const MANGLE_RESULTS_STORE = 'mangle-results';
+const MANGLE_SLICES_STORE = 'mangle-slices';
 
 const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -35,6 +37,9 @@ const initDB = async () => {
             }
             if (!db.objectStoreNames.contains(MANGLE_RESULTS_STORE)) {
                 db.createObjectStore(MANGLE_RESULTS_STORE, { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains(MANGLE_SLICES_STORE)) {
+                db.createObjectStore(MANGLE_SLICES_STORE, { keyPath: 'id' });
             }
         },
     });
@@ -410,4 +415,31 @@ const putDiskBacked = async (store: string, entry: { id: string; blob: Blob }): 
 };
 export const putMangleResultDiskBacked = (entry: MangleResultEntry) => putDiskBacked(MANGLE_RESULTS_STORE, entry);
 export const putMangleSourceDiskBacked = (entry: MangleSourceEntry) => putDiskBacked(MANGLE_SOURCES_STORE, entry);
+/**
+ * A slice in the mangler's slice pool: a region of a pool source and what is done
+ * to it (see src/mangler/slices.ts). No audio: it is rendered from the source.
+ */
+export interface MangleSliceEntry extends SliceSpec {
+    id: string;
+    name: string;
+    /** The pool source it is cut from. Gone from the pool: the slice can't play. */
+    sourceId: string;
+    sourceName: string;
+    origin: string;
+    license?: string;
+    /** From the hit detector, when it came from one. */
+    cls?: import('../mangler/hits').HitClass;
+    /** Outline for the tile, 0–1. */
+    peaks: number[];
+    addedAt: number;
+}
+
+export const loadMangleSlicesFromDB = () => loadAll<MangleSliceEntry>(MANGLE_SLICES_STORE);
+export const putMangleSlicesToDB = async (entries: MangleSliceEntry[]) => {
+    const db = await initDB();
+    const tx = db.transaction(MANGLE_SLICES_STORE, 'readwrite');
+    await Promise.all([...entries.map(e => tx.store.put(e)), tx.done]);
+};
+export const deleteMangleSlicesFromDB = (ids: string[]) => deleteMany(MANGLE_SLICES_STORE, ids);
+
 export const deleteMangleResultsFromDB = (ids: string[]) => deleteMany(MANGLE_RESULTS_STORE, ids);

@@ -195,7 +195,7 @@ Each phase is usable on its own.
 **Phase 2 — Workspace and phone mode**
 
 - [x] Engine folder self-contained: `pitch.ts` moved to `src/mangler/`; `check:mangler` fails on an engine import from outside the folder (glue: `batch.ts`, `save.ts`, `license.ts`)
-- [ ] Station bar with the results tray. Moved to Phase 4: a menu with one station in it is noise. It lands with the Slices station, the second one
+- [x] Station bar: moved to Phase 4 and done there (Mangle | Slices in the top bar). The results tray is still the Mangle station's results column
 - [x] ~~Results as recipe + peaks~~ Changed (Oct 14): results and pack downloads are stored, then their blob is swapped for the copy read back from IndexedDB, which the browser keeps on disk. Same memory saving, without re-decoding every source to play a result, and it keeps working when a source has left the pool
 - [x] Phone mode (`ui/phoneMode.ts`): mono decoding, a 1 min decode cache, pool warning at 2 min, at most 4 variations. On by itself at ≤ 4 GB or a narrow touch screen; the header's phone button overrides it
 - [ ] Int16 sources: later, if phones still run out. It needs the engine to read Int16, which touches every cut
@@ -221,10 +221,13 @@ Each phase is usable on its own.
 
 **Phase 4 — Slices and AD**
 
-- [ ] `mangle-slices` store and the Slices station
-- [ ] To slices: from hits, from a result's snippets
-- [ ] AD in the engine, in settings (ranges), in the snippet list and on slices
-- [ ] Kit file out of selected slices
+- [x] `mangle-slices` store (DB version 7). A slice (`slices.ts`) is a region of a pool source plus reverse, shift, gain and envelope, and a 48-point outline for its tile; no audio. `renderSlice` makes its sound, and a kit renders each slice the same way (checked: a kit equals its slices one after another, to 1e-12)
+- [x] Station bar in the header: *Mangle* (sources, settings, results) and *Slices* (with a count). Icons only below `sm`. Remembered (`mangler_station`)
+- [x] Slices station (`ui/SlicePool.tsx`): tiles with play, class colour and outline; filter by class (low, mid, high, other), search by name or source; click, Shift, Ctrl/Cmd and Ctrl+A to select, Space to play, Delete to remove. A slice whose source has left the pool shows "source gone" and can't play
+- [x] To slices: from the hits modal (every hit, with its class) and from a result's snippet list (the selected snippets, as they sound there; rests skipped)
+- [x] Kit file out of selected slices, in the order shown, from any number of sources. *Make a kit* in the hits modal goes through the same `makeKit`
+- [x] AD in the engine (`applyEnvelope`: attack from silence, exp to −60 dB or linear to 0 over the decay), its own dice (`deriveSeed(seed, 0xad, index)`), off by default. *Envelope* group in `SettingsPanel` (both hosts), an *A / D* column in the snippet list, carried onto slices
+- [ ] Later: edit AD (and shift, direction, gain) per snippet in the list and per slice on its tile
 
 **Phase 5 — Tempo grid**
 

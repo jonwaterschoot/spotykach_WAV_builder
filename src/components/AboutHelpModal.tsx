@@ -502,6 +502,11 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         <em> Make a kit</em> (every hit once, a cue at each: one sound per slice on the Spotykach).
                                     </p>
                                     <p className="text-gray-400">
+                                        <strong className="text-gray-300">Slices</strong> (top bar) keep single sounds: <em>To slices</em> from
+                                        the hits, or from snippets selected in a result. Select some and <em>Make a kit</em>. The
+                                        <strong className="text-gray-300"> Envelope</strong> group gives every snippet an attack and a decay.
+                                    </p>
+                                    <p className="text-gray-400">
                                         <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
                                         button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
                                         makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.

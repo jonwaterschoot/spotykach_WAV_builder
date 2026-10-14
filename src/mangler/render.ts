@@ -93,6 +93,14 @@ export interface SnippetInfo {
     rest?: boolean;
     /** A soft part: turned down this many dB (negative) on top of `gainDb`. */
     softDb?: number;
+    /** Attack–decay envelope, ms. Absent: none. */
+    envelope?: SnippetEnvelope;
+}
+
+export interface SnippetEnvelope {
+    attackMs: number;
+    decayMs: number;
+    curve: 'exp' | 'linear';
 }
 
 export interface MangleResult {
@@ -126,6 +134,35 @@ export interface RenderOptions {
      * the gap at the end refilled), apply C to one, or lock some and reroll.
      */
     fixed?: readonly (SnippetInfo | null | undefined)[];
+}
+
+/**
+ * Attack, then decay: a rise from silence over the attack (a quick curve for
+ * exp, a straight line for linear), then a fall to −60 dB (exp) or to silence
+ * (linear) over the decay. Past the decay a linear envelope stays at 0.
+ */
+export function applyEnvelope(signal: Stereo, env: SnippetEnvelope, sampleRate: number): void {
+    const [l, r] = signal;
+    const attack = Math.round((env.attackMs / 1000) * sampleRate);
+    const decay = Math.max(1, Math.round((env.decayMs / 1000) * sampleRate));
+    const exp = env.curve === 'exp';
+    // −60 dB over the decay: the gain per sample.
+    const fall = Math.pow(10, -3 / decay);
+    let level = 1;
+    for (let i = 0; i < l.length; i++) {
+        let g: number;
+        if (i < attack) {
+            const t = i / attack;
+            g = exp ? (1 - Math.exp(-5 * t)) / (1 - Math.exp(-5)) : t;
+        } else if (exp) {
+            g = level;
+            level *= fall;
+        } else {
+            g = Math.max(0, 1 - (i - attack) / decay);
+        }
+        l[i] *= g;
+        if (r !== l) r[i] *= g;
+    }
 }
 
 /** Shift ratio for semitones. */
@@ -224,6 +261,7 @@ export function render(
                 rerolls: spec.rerolls,
                 ...(spec.rest ? { rest: true } : {}),
                 ...(spec.softDb ? { softDb: spec.softDb } : {}),
+                ...(spec.envelope ? { envelope: spec.envelope } : {}),
             };
             gainDb = spec.gainDb;
             wantedXfade = spec.xfade;
@@ -338,6 +376,16 @@ export function render(
                 applyGain(signal, dbToGain(gainDb));
             }
 
+            // The envelope: dice of its own per position too.
+            if (settings.envelope) {
+                const env = createRng(deriveSeed(seed, 0xad, index));
+                info.envelope = {
+                    attackMs: env.uniform(settings.attackMinMs, settings.attackMaxMs),
+                    decayMs: env.logUniform(settings.decayMinMs, settings.decayMaxMs),
+                    curve: settings.envelopeCurve,
+                };
+            }
+
             // Rests and soft parts: dice of their own per position, so switching them
             // on leaves every other pick (and every older result) as it was.
             if (settings.restProbability > 0 || settings.softProbability > 0) {
@@ -355,6 +403,7 @@ export function render(
             signal[0].fill(0);
             if (signal[1] !== signal[0]) signal[1].fill(0);
         } else if (info.softDb) applyGain(signal, dbToGain(info.softDb));
+        if (info.envelope && !info.rest) applyEnvelope(signal, info.envelope, sr);
 
         if (declickLength) declick(signal, declickLength);
 

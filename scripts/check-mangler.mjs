@@ -178,6 +178,30 @@ check(sameDice && moved.snippets.some((s, i) => i < n && s.reverse !== base.snip
     check(sameArray(off.left, base.left), 'at 0 %: bit-identical to a render without them');
 }
 
+// AD envelopes: dice of their own, an attack from silence, −60 dB at the decay's end.
+{
+    const { applyEnvelope } = await import('../src/mangler/render.ts');
+    const ones = () => { const x = new Float32Array(SR).fill(1); return [x, x]; };
+    const e = ones();
+    applyEnvelope(e, { attackMs: 10, decayMs: 200, curve: 'exp' }, SR);
+    const at = ms => e[0][Math.round(ms / 1000 * SR)];
+    check(e[0][0] === 0 && Math.abs(at(10) - 1) < 1e-3, 'envelope: from silence to full over the attack');
+    check(Math.abs(20 * Math.log10(at(210)) + 60) < 0.5, 'exp decay: −60 dB at the end of the decay', `${(20 * Math.log10(at(210))).toFixed(1)} dB`);
+    const lin = ones();
+    applyEnvelope(lin, { attackMs: 0, decayMs: 100, curve: 'linear' }, SR);
+    check(lin[0][0] === 1 && Math.abs(lin[0][Math.round(0.05 * SR)] - 0.5) < 1e-3 && lin[0][Math.round(0.2 * SR)] === 0, 'linear: halfway at half the decay, then silent');
+
+    const enveloped = { ...settings, skipSilence: false, envelope: true, attackMinMs: 0, attackMaxMs: 20, decayMinMs: 50, decayMaxMs: 400 };
+    const r = render(sources, enveloped, 12345);
+    const m = Math.min(r.snippets.length, base.snippets.length);
+    check(r.snippets.slice(0, m).every((s, i) => s.source === base.snippets[i].source && s.sourceStart === base.snippets[i].sourceStart),
+        'envelope: same picks as without');
+    check(r.snippets.every(s => s.envelope && s.envelope.attackMs <= 20 && s.envelope.decayMs >= 50 && s.envelope.decayMs <= 400),
+        'envelope: every snippet has one, inside the ranges');
+    const again = render(sources, enveloped, 12345, { fixed: r.snippets });
+    check(sameArray(again.left, r.left), 'envelope survives an edit (fixed)');
+}
+
 section('Editing (fixed snippets)');
 {
     const again = render(sources, settings, 12345, { fixed: a.snippets });
@@ -475,6 +499,38 @@ section('Hits');
     check(detectHits([quietPad, quietPad], SR).length <= 1, 'a held tone: at most its start');
     const silent = new Float32Array(SR);
     check(detectHits([silent, silent], SR).length === 0, 'silence: no hits');
+}
+
+// ---------------------------------------------------------------------------
+// Slices: a kit of slices sounds like the slices played one by one
+// ---------------------------------------------------------------------------
+
+section('Slices');
+{
+    const { renderSlice, sliceAsSnippet, snippetAsSlice } = await import('../src/mangler/slices.ts');
+    const src = stereo(tone(220, 3), tone(330, 3, 'saw', 0.3));
+    const specs = [
+        { start: 0.1, end: 0.4 },
+        { start: 1.0, end: 1.2, reverse: true, gainDb: -6 },
+        { start: 2.0, end: 2.5, shift: 5, envelope: { attackMs: 5, decayMs: 100, curve: 'exp' } },
+    ];
+    const kitSettings = sanitizeSettings({
+        fillMode: 'count', snippetCount: specs.length, xfadeMinMs: 0, xfadeMaxMs: 0, hardCuts: false,
+        repitch: 'off', limiter: false, loop: false,
+    });
+    const kit = render([src], kitSettings, 1, { fixed: specs.map(s => sliceAsSnippet(s, 0, SR)) });
+    let at = 0, worst = 0;
+    for (const spec of specs) {
+        const [l] = renderSlice(src.channels, SR, spec);
+        for (let i = 0; i < l.length; i++) worst = Math.max(worst, Math.abs(kit.left[at + i] - l[i]));
+        at += l.length;
+    }
+    check(kit.left.length === at && worst < 1e-6, 'a kit of slices = the slices one after another', `max diff ${worst.toExponential(1)}`);
+    check(kit.cuePoints.length === specs.length, 'one cue per slice');
+    const back = kit.snippets.map(sn => snippetAsSlice(sn, SR));
+    check(back.every((b, i) => Math.abs(b.start - specs[i].start) < 1e-4 && Math.abs(b.end - specs[i].end) < 1e-4
+        && !!b.reverse === !!specs[i].reverse && (b.shift ?? 0) === (specs[i].shift ?? 0)), 'snippet → slice keeps region, direction and shift');
+    check(snippetAsSlice({ ...kit.snippets[0], rest: true }, SR) === null, 'a rest makes no slice');
 }
 
 // ---------------------------------------------------------------------------

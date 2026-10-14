@@ -375,7 +375,7 @@ export function EditorManglePanel({
     return (
         <div className="grid gap-x-8 gap-y-4 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,16rem)] py-1">
             <SettingsPanel settings={{ ...settings, outputSeconds: seconds }} onChange={update} hide={HIDDEN}
-                storageKey="editor_mangle_groups" initiallyClosed={['loudness', 'pitch']} lengthStep={0.1}
+                storageKey="editor_mangle_groups" initiallyClosed={['loudness', 'envelope', 'pitch']} lengthStep={0.1}
                 onHint={setHelpText} className="min-w-0 columns-[17rem] gap-3 [&>section]:mb-3" />
 
             <section className="space-y-3 min-w-0">

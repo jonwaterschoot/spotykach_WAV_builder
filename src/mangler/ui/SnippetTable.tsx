@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Dices, GripVertical, Lock, Play, Square, Trash2, Unlock } from 'lucide-react';
+import { Dices, GripVertical, Grid2x2Plus, Lock, Play, Square, Trash2, Unlock } from 'lucide-react';
 import { NOTE_NAMES } from '../pitch';
 import type { MangleResultEntry } from '../../utils/persistence';
 import type { PitchChoice } from '../render';
@@ -28,6 +28,8 @@ interface SnippetTableProps {
     onPitch: (indices: number[], choice: PitchChoice | undefined) => void;
     onReroll: () => void;
     variations: number;
+    /** Keeps these snippets in the slice pool. Absent: no such pool here (the editor). */
+    onToSlices?: (indices: number[]) => void;
 }
 
 const SR = 48000;
@@ -35,7 +37,7 @@ const SR = 48000;
 /** Every snippet of one result: where it came from, what was done to it, and the edits. */
 export const SnippetTable: React.FC<SnippetTableProps> = ({
     entry, busy, activeIndex, playingIndex, onPlay, onHover, onDelete, onMove, onToggleLock, onLock, onPitch, onReroll,
-    variations, crop,
+    variations, crop, onToSlices,
 }) => {
     const { recipe } = entry;
     // Old recipes lack the scale fields; sanitising fills them with "root only, C".
@@ -43,6 +45,7 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
     const locked = new Set(entry.locked ?? []);
     const threshold = settings.pitchConfidence;
     const scaleLabel = `${NOTE_NAMES[settings.scaleRoot]} ${scaleName(settings.scaleMask) ?? 'custom'}`;
+    const hasEnvelope = recipe.snippets.some(s => s.envelope);
     const confident = recipe.snippets
         .map((s, i) => (s.pitch && choiceOf(s)?.kind !== 'scale' && s.pitch.confidence >= threshold ? i : -1))
         .filter(i => i >= 0);
@@ -118,6 +121,12 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                             title={allSelectedLocked ? 'Unlock the selected snippets' : 'Lock the selected snippets'}>
                             {allSelectedLocked ? <Unlock size={11} /> : <Lock size={11} />} {allSelectedLocked ? 'Unlock' : 'Lock'}
                         </TableAction>
+                        {onToSlices && (
+                            <TableAction onClick={() => onToSlices(selected)}
+                                title="Keep the selected snippets in the slice pool, as they sound here (shift, direction, gain, envelope)">
+                                <Grid2x2Plus size={11} /> To slices
+                            </TableAction>
+                        )}
                         <TableAction onClick={() => setSelection(new Set())} title="Clear the selection">Clear</TableAction>
                     </>
                 )}
@@ -150,6 +159,7 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                             <th className="px-2 py-1 font-normal">source</th>
                             <th className="px-2 py-1 font-normal text-right">length</th>
                             <th className="px-2 py-1 font-normal text-right">gain</th>
+                            {hasEnvelope && <th className="px-2 py-1 font-normal text-right" title="Attack / decay">A / D</th>}
                             <th className="px-2 py-1 font-normal" title="Direction: forwards or reversed">dir</th>
                             <th className="px-2 py-1 font-normal">detected</th>
                             <th className="px-2 py-1 font-normal">pitch</th>
@@ -223,6 +233,12 @@ export const SnippetTable: React.FC<SnippetTableProps> = ({
                                         : !Number.isFinite(s.measuredDb) ? 'silent'
                                         : s.softDb ? <span className="text-synthux-blue" title={`Soft part: ${formatDb(s.softDb)} on top of the gain`}>{formatDb(s.gainDb + s.softDb)}</span>
                                         : formatDb(s.gainDb)}</td>
+                                    {hasEnvelope && (
+                                        <td className="px-2 py-0.5 text-right whitespace-nowrap text-gray-400"
+                                            title={s.envelope ? `Attack ${formatMs(s.envelope.attackMs)}, decay ${formatMs(s.envelope.decayMs)} (${s.envelope.curve})` : 'No envelope'}>
+                                            {s.envelope ? `${formatMs(s.envelope.attackMs)} / ${formatMs(s.envelope.decayMs)}` : '–'}
+                                        </td>
+                                    )}
                                     <td className="px-2 py-0.5 text-gray-400" title={s.reverse ? 'Reversed' : 'Forwards'}>{s.reverse ? '←' : '→'}</td>
                                     <td className="px-2 py-0.5 whitespace-nowrap">
                                         {s.pitch

@@ -7,6 +7,7 @@ import { formatSeconds } from './format';
 import { MIN_PART, normaliseParts, type Part } from '../parts';
 import type { Hit, HitClass } from '../hits';
 import { findHits } from '../hitsClient';
+import { renderSlice, slicePeaks, type SliceSpec } from '../slices';
 
 
 interface SourcePartsModalProps {
@@ -19,6 +20,8 @@ interface SourcePartsModalProps {
     onSave: (parts: Part[]) => void;
     /** The hits (seconds), one after another with a cue at each, as a new result. */
     onKit: (hits: Part[]) => void;
+    /** The hits into the slice pool, with their class and an outline for the tile. */
+    onSlices: (items: { spec: SliceSpec; cls: HitClass; peaks: number[] }[]) => void;
     onClose: () => void;
 }
 
@@ -50,7 +53,7 @@ type Drag =
  * to move it; click it to select. No parts means the whole file.
  */
 export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
-    source, load, playRegion, stop, playing, position, onSave, onKit, onClose,
+    source, load, playRegion, stop, playing, position, onSave, onKit, onSlices, onClose,
 }) => {
     const [audio, setAudio] = useState<AudioBuffer | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -316,6 +319,16 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
             setFinding(false);
         }
     };
+    const hitsToSlices = () => {
+        if (!audio || !hits?.length) return;
+        const l = audio.getChannelData(0);
+        const r = audio.numberOfChannels > 1 ? audio.getChannelData(1) : l;
+        onSlices(hits.map(h => {
+            const [start, end] = hitSpan(h);
+            const spec: SliceSpec = { start, end };
+            return { spec, cls: h.cls, peaks: slicePeaks(renderSlice([l, r], audio.sampleRate, spec)) };
+        }));
+    };
     /** The hits as parts: snippets then come only from the sounds, never the silence. */
     const hitsAsParts = () => {
         if (!hits?.length) return;
@@ -423,6 +436,11 @@ export const SourcePartsModal: React.FC<SourcePartsModalProps> = ({
                                     title="Make the hits the parts: snippets then come only from the sounds, never the silence between them"
                                     className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-40">
                                     Use as parts
+                                </button>
+                                <button onClick={hitsToSlices} disabled={!hits.length}
+                                    title="Keep every hit in the slice pool, to collect, audition and make kits from"
+                                    className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-40">
+                                    To slices
                                 </button>
                                 <button onClick={() => { stop(); onKit(hits.map(hitSpan)); }} disabled={!hits.length}
                                     title="A new result: every hit once, in order, with a cue point at each, so the slice mode plays one sound per slice"

@@ -4,7 +4,7 @@ import { ScrubNumber } from '../../components/ScrubNumber';
 import { NOTE_NAMES } from '../pitch';
 import { appStorage } from '../../utils/storageNamespace';
 import {
-    OUTPUT_MAX_SECONDS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, SOFT_MAX_DB, XFADE_MAX_MS,
+    ATTACK_MAX_MS, DECAY_MAX_MS, DECAY_MIN_MS, OUTPUT_MAX_SECONDS, SCALES, SNIPPET_MAX_MS, SNIPPET_MIN_MS, SOFT_MAX_DB, XFADE_MAX_MS,
     maskFromIntervals, scaleName, type MangleSettings,
 } from '../settings';
 import { DensityContext, type Density } from './density';
@@ -20,7 +20,7 @@ import { RangeSlider, Segmented, Slider, Toggle } from './Sliders';
  * source mix when there is only one source.
  */
 
-export type SettingsGroup = 'shape' | 'loudness' | 'pitch' | 'file';
+export type SettingsGroup = 'shape' | 'loudness' | 'envelope' | 'pitch' | 'file';
 
 interface SettingsPanelProps {
     settings: MangleSettings;
@@ -67,6 +67,9 @@ const summaries: Record<SettingsGroup, (s: MangleSettings) => string> = {
         s.limiter ? 'limiter' : '',
     ]
         .filter(Boolean).join(' · '),
+    envelope: s => (s.envelope
+        ? `A ${range(s.attackMinMs, s.attackMaxMs)} · D ${range(s.decayMinMs, s.decayMaxMs)}`
+        : 'off'),
     pitch: s => [
         s.repitch === 'off' ? 'no repitch' : s.repitch,
         `${NOTE_NAMES[s.scaleRoot]} ${scaleName(s.scaleMask) ?? 'custom'}`,
@@ -75,7 +78,7 @@ const summaries: Record<SettingsGroup, (s: MangleSettings) => string> = {
     file: s => [s.cuePoints ? 'cues' : 'no cues', s.loop ? 'loop' : ''].filter(Boolean).join(' · '),
 };
 
-const TITLES: Record<SettingsGroup, string> = { shape: 'Shape', loudness: 'Loudness', pitch: 'Pitch', file: 'File' };
+const TITLES: Record<SettingsGroup, string> = { shape: 'Shape', loudness: 'Loudness', envelope: 'Envelope', pitch: 'Pitch', file: 'File' };
 
 /** A range's two ends as drag-to-change fields; each keeps to its side of the other. */
 const RangeReadout = ({ low, high, min, max, label, onChange }: {
@@ -92,7 +95,7 @@ const RangeReadout = ({ low, high, min, max, label, onChange }: {
 );
 
 const loadOpen = (key: string, closed: readonly SettingsGroup[]): Record<SettingsGroup, boolean> => {
-    const fallback = { shape: true, loudness: true, pitch: true, file: true };
+    const fallback = { shape: true, loudness: true, envelope: true, pitch: true, file: true };
     for (const g of closed) fallback[g] = false;
     try {
         return { ...fallback, ...JSON.parse(appStorage.getItem(key) ?? 'null') };
@@ -229,6 +232,28 @@ export function SettingsPanel({
                 <div {...tip("Off scales the whole file down instead when it peaks over −1 dBFS")}>
                         <Toggle label="Limiter at −1 dBFS" checked={s.limiter} onChange={set('limiter')} />
                     </div>
+                </>)}
+
+                {group('envelope', <>
+                    <div {...tip("An attack and a decay on every snippet: plucked, swelling or clipped. Each snippet gets its own, picked from the ranges")}>
+                        <Toggle label="Attack–decay envelope" checked={s.envelope} onChange={set('envelope')} />
+                    </div>
+                    {s.envelope && <>
+                        <div {...tip("How long a snippet takes to rise from silence: 0 is a hard start, a few hundred ms a swell")}>
+                            <RangeSlider label="Attack" min={0} max={ATTACK_MAX_MS} scale="cubic"
+                                low={s.attackMinMs} high={s.attackMaxMs} format={formatMs}
+                                onChange={(lo, hi) => onChange({ attackMinMs: lo, attackMaxMs: hi })} />
+                        </div>
+                        <div {...tip("How long it takes to die away after the attack. Longer than the snippet: only a gentle fall")}>
+                            <RangeSlider label="Decay" min={DECAY_MIN_MS} max={DECAY_MAX_MS} scale="log"
+                                low={s.decayMinMs} high={s.decayMaxMs} format={formatMs}
+                                onChange={(lo, hi) => onChange({ decayMinMs: lo, decayMaxMs: hi })} />
+                        </div>
+                        <div {...tip("Exp: falls fast, then lingers (−60 dB at the end of the decay), like a struck sound. Linear: a straight fade to silence")}>
+                            <Segmented label="Curve" value={s.envelopeCurve} onChange={set('envelopeCurve')}
+                                options={[{ value: 'exp', label: 'Exp' }, { value: 'linear', label: 'Linear' }]} />
+                        </div>
+                    </>}
                 </>)}
 
                 {group('pitch', <>

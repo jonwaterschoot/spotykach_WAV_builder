@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Briefcase, ChevronDown, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  Briefcase, ChevronDown, Grid2x2, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -19,10 +19,11 @@ import { Toast } from '../components/Toast';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { appStorage } from '../utils/storageNamespace';
 import {
-  deleteMangleResultsFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB, loadMangleSourcesFromDB,
+  deleteMangleResultsFromDB, deleteMangleSlicesFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB,
+  loadMangleSlicesFromDB, loadMangleSourcesFromDB, putMangleSlicesToDB,
   loadUserLibraryFromDB, putMangleResultDiskBacked, putMangleResultToDB, putMangleSourceDiskBacked, putMangleSourceToDB,
 } from '../utils/persistence';
-import type { MangleResultEntry, MangleSourceEntry } from '../utils/persistence';
+import type { MangleResultEntry, MangleSliceEntry, MangleSourceEntry } from '../utils/persistence';
 import type { FileRecord, UserLibrary } from '../types';
 
 const SampleBrowser = React.lazy(() =>
@@ -60,6 +61,9 @@ import {
 } from '../mangler/settings';
 import { Segmented, Slider } from '../mangler/ui/Sliders';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
+import { SlicePool } from '../mangler/ui/SlicePool';
+import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
+import { sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
 import { ManglerTour } from '../mangler/ui/ManglerTour';
@@ -76,6 +80,13 @@ const SR = 48000;
 type PlayMode = 'full' | 'fades' | 'cue';
 
 type Pane = 'sources' | 'settings' | 'results';
+
+/**
+ * The stations in the top bar. Mangle is the sources, settings and results;
+ * Slices the slice pool. The sequencer and the synth join them later.
+ */
+type Station = 'mangle' | 'slices';
+const STATION_KEY = 'mangler_station';
 
 /**
  * A column that is always shown on a wide screen, and only when picked below lg.
@@ -238,6 +249,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [tourOpen, setTourOpen] = useState(() => !appStorage.getItem(TOUR_KEY));
   /** Below lg, one column at a time: the bottom bar picks it. */
   const [pane, setPane] = useState<Pane>('sources');
+  const [station, setStation] = useState<Station>(() => (appStorage.getItem(STATION_KEY) === 'slices' ? 'slices' : 'mangle'));
+  useEffect(() => { appStorage.setItem(STATION_KEY, station); }, [station]);
+  const [slices, setSlices] = useState<MangleSliceEntry[]>([]);
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [pooledPrompt, setPooledPrompt] = useState<number | null>(null);
@@ -267,6 +281,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [editing, setEditing] = useState<MangleResultEntry | null>(null);
   const editedCopyRef = useRef<string | null>(null);
   const region = useResultAudio();
+  const slicePlayer = useSlicePlayer(region.load);
+  const stopSlice = slicePlayer.stop;
+  useEffect(() => { stopSlice(); }, [station, stopSlice]);
   /** The list as last rendered, for async work that must not act on a stale copy. */
   const resultsRef = useRef(results);
   useEffect(() => { resultsRef.current = results; }, [results]);
@@ -304,10 +321,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
   useEffect(() => {
     let alive = true;
-    Promise.all([loadMangleSourcesFromDB(), loadMangleResultsFromDB()]).then(([s, r]) => {
+    Promise.all([loadMangleSourcesFromDB(), loadMangleResultsFromDB(), loadMangleSlicesFromDB()]).then(([s, r, sl]) => {
       if (!alive) return;
       setSources([...s].sort((a, b) => a.addedAt - b.addedAt));
       setResults(sortResults(r));
+      setSlices([...sl].sort((a, b) => a.addedAt - b.addedAt));
       setLoaded(true);
     });
     return () => { alive = false; };
@@ -726,35 +744,39 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   }, [missingFor, player, region, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
 
   /**
-   * A kit from a source's hits: each hit once, in order, as it is, with a cue
-   * point at each, so the slice mode plays one sound per slice. Made like any
-   * result (all snippets fixed), so the snippet list can reorder, drop or repitch
-   * the hits afterwards.
+   * A kit: sounds one after another, each as it is, with a cue point at each, so
+   * the slice mode plays one sound per slice. From a source's hits or from
+   * slices in the pool. Made like any result (all snippets fixed), so the snippet
+   * list can reorder, drop or repitch them afterwards.
    */
-  const makeKit = useCallback((source: MangleSourceEntry, hits: Part[]) => {
-    if (batchRef.current || hits.length === 0) return;
-    const list = hits.slice(0, MAX_CUE_POINTS);
-    if (hits.length > list.length) showToast(`Only the first ${MAX_CUE_POINTS} hits fit`, 'warning');
-    const fixed: SnippetInfo[] = list.map(([a, b]) => {
-      const start = Math.round(a * SR), length = Math.max(2, Math.round((b - a) * SR));
-      return {
-        source: 0, sourceStart: start, sourceLength: length, outStart: 0, length, xfade: 0, reverse: false,
-        measuredDb: 0, gainDb: 0, pitch: null, shift: 0, rerolls: 0,
-      };
+  const makeKit = useCallback((items: { sourceId: string; spec: SliceSpec }[], label: string) => {
+    if (batchRef.current || items.length === 0) return;
+    const usable = items.filter(it => sources.some(s => s.id === it.sourceId));
+    if (usable.length < items.length) {
+      showToast(`${items.length - usable.length} left out: their source has left the pool`, 'warning');
+    }
+    const list = usable.slice(0, MAX_CUE_POINTS);
+    if (usable.length > list.length) showToast(`Only the first ${MAX_CUE_POINTS} fit`, 'warning');
+    if (list.length === 0) return;
+    const ids = [...new Set(list.map(it => it.sourceId))];
+    const recipeSources: RecipeSource[] = ids.map(id => {
+      const s = sources.find(x => x.id === id)!;
+      return { id, name: s.name, origin: s.origin, license: s.license };
     });
+    const fixed: SnippetInfo[] = list.map(it => sliceAsSnippet(it.spec, ids.indexOf(it.sourceId), SR));
     const kitSettings = sanitizeSettings({
       ...DEFAULT_SETTINGS, fillMode: 'count', snippetCount: fixed.length,
       xfadeMinMs: 0, xfadeMaxMs: 0, hardCuts: false, loop: false, repitch: 'off', detuneSt: 0,
-      restProbability: 0, softProbability: 0, cuePoints: true, variations: 1,
+      restProbability: 0, softProbability: 0, envelope: false, cuePoints: true, variations: 1,
     });
-    const recipeSources: RecipeSource[] = [{ id: source.id, name: source.name, origin: source.origin, license: source.license }];
-    const base = `kit_${source.name.replace(/[^\w-]+/g, '_').slice(0, 40)}`;
+    const base = `kit_${label.replace(/[^\w-]+/g, '_').slice(0, 40)}`;
     const taken = new Set(results.map(r => r.name));
     let name = base;
     for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
     setPane('results');
+    setStation('mangle');
     startJob({
-      label: `Making a kit of ${fixed.length} hit${fixed.length === 1 ? '' : 's'}`,
+      label: `Making a kit of ${fixed.length} sound${fixed.length === 1 ? '' : 's'}`,
       sources: sourcesFor(recipeSources),
       settings: kitSettings,
       seeds: [randomSeed()],
@@ -766,7 +788,70 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         setResults(prev => sortResults([...prev, entry]));
       },
     });
-  }, [results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+  }, [sources, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
+
+  // ---------------------------------------------------------------------------
+  // Slice pool
+  // ---------------------------------------------------------------------------
+
+  const addSlices = useCallback(async (items: Omit<MangleSliceEntry, 'id' | 'addedAt'>[]) => {
+    if (items.length === 0) return;
+    const now = Date.now();
+    const entries: MangleSliceEntry[] = items.map((item, i) => ({ ...item, id: newId(), addedAt: now + i }));
+    try {
+      await putMangleSlicesToDB(entries);
+    } catch (e) {
+      console.error(e);
+      showToast('Could not store the slices (storage full?)', 'error');
+      return;
+    }
+    setSlices(prev => [...prev, ...entries]);
+    showToast(`${entries.length} slice${entries.length === 1 ? '' : 's'} added to the slice pool`, 'success');
+  }, [showToast]);
+
+  const deleteSlices = useCallback((ids: string[]) => {
+    if (slicePlayer.playingId && ids.includes(slicePlayer.playingId)) slicePlayer.stop();
+    const gone = new Set(ids);
+    setSlices(prev => prev.filter(s => !gone.has(s.id)));
+    deleteMangleSlicesFromDB(ids);
+  }, [slicePlayer]);
+
+  const playSlice = useCallback((slice: MangleSliceEntry) => {
+    const source = sources.find(s => s.id === slice.sourceId);
+    if (!source) return;
+    player.stop();
+    region.stop();
+    slicePlayer.play(slice.id, source.id, source.blob, slice)
+      .catch(e => { console.error(e); showToast('Could not play this slice', 'error'); });
+  }, [sources, player, region, slicePlayer, showToast]);
+
+  /** Snippets of a result into the pool, as they sound there; rests are skipped. */
+  const snippetsToSlices = useCallback(async (r: MangleResultEntry, indices: number[]) => {
+    const buffer = await region.load(r.id, r.blob).catch(() => null);
+    const offset = offsetOf(r);
+    const items: Omit<MangleSliceEntry, 'id' | 'addedAt'>[] = [];
+    for (const i of [...indices].sort((a, b) => a - b)) {
+      const sn = r.recipe.snippets[i];
+      const spec = sn ? snippetAsSlice(sn, SR) : null;
+      const rs = sn ? r.recipe.sources[sn.source] : undefined;
+      if (!sn || !spec || !rs) continue;
+      let peaks: number[] = [];
+      if (buffer) {
+        const l = buffer.getChannelData(0);
+        const rr = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : l;
+        const a = Math.max(0, sn.outStart - offset), b = Math.min(l.length, a + sn.length);
+        if (b > a) peaks = slicePeaks([l.subarray(a, b), rr.subarray(a, b)]);
+      }
+      items.push({ ...spec, name: `${r.name} #${i + 1}`, sourceId: rs.id, sourceName: rs.name, origin: rs.origin, license: rs.license, peaks });
+    }
+    if (items.length === 0) {
+      showToast('Rests have no sound to keep', 'info');
+      return;
+    }
+    await addSlices(items);
+  }, [region, addSlices, showToast]);
+
+  const availableSources = useMemo(() => new Set(sources.map(s => s.id)), [sources]);
 
   const lockedFixed = (r: MangleResultEntry) =>
     r.recipe.snippets.map((s, i) => (r.locked?.includes(i) ? s : null));
@@ -1265,11 +1350,21 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         >
           <ChevronLeft size={14} /> {studio ? 'Studio' : 'Hub'}
         </button>
-        <div className="min-w-0 text-center">
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-synthux-red">Sample Mangler</span>
-          <span className="hidden md:inline text-[11px] text-gray-500 ml-3">
-            Random snippets from your sources, joined into one file of up to 42 s.
-          </span>
+        <div className="min-w-0 flex items-center gap-3">
+          <span className="hidden md:inline text-xs font-bold uppercase tracking-[0.2em] text-synthux-red">Sample Mangler</span>
+          <nav className="flex rounded-md border border-white/10 overflow-hidden" aria-label="Stations">
+            {([
+              ['mangle', <Dices size={13} />, 'Mangle', 'Sources, settings and results'],
+              ['slices', <Grid2x2 size={13} />, 'Slices', 'The slice pool: single sounds to collect and make kits from'],
+            ] as const).map(([id, icon, label, hint]) => (
+              <button key={id} onClick={() => setStation(id)} aria-pressed={station === id} title={hint}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest transition-colors
+                  ${station === id ? 'bg-synthux-red/80 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                {icon} <span className="hidden sm:inline">{label}</span>
+                {id === 'slices' && slices.length > 0 && <span className="font-mono text-[10px] opacity-80">{slices.length}</span>}
+              </button>
+            ))}
+          </nav>
         </div>
         <div className="flex items-center gap-1">
         <button
@@ -1294,6 +1389,22 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </div>
       </div>
 
+      {station === 'slices' && (
+        <div className="flex-1 min-h-0">
+          <SlicePool
+            slices={slices}
+            available={availableSources}
+            playingId={slicePlayer.playingId}
+            busy={busy}
+            onPlay={playSlice}
+            onStop={slicePlayer.stop}
+            onDelete={deleteSlices}
+            onKit={list => makeKit(list.map(s => ({ sourceId: s.sourceId, spec: s })), list.length === 1 ? list[0].name : 'slices')}
+          />
+        </div>
+      )}
+
+      {station === 'mangle' && <>
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,300px)_minmax(260px,320px)_1fr]">
 
         {/* Source pool */}
@@ -1785,6 +1896,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       onPitch={(indices, choice) => setPitch(r, indices, choice)}
                       onReroll={() => rerollUnlocked(r)}
                       variations={variationCount}
+                      onToSlices={indices => snippetsToSlices(r, indices)}
                     />
                   )}
                 </article>
@@ -1843,6 +1955,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </button>
         ))}
       </nav>
+      </>}
 
       {tourOpen && <ManglerTour onClose={closeTour} />}
 
@@ -1909,7 +2022,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             playing={region.playing}
             position={region.position}
             onClose={() => setPartsFor(null)}
-            onKit={hits => { setPartsFor(null); makeKit(source, hits); }}
+            onKit={hits => { setPartsFor(null); makeKit(hits.map(([start, end]) => ({ sourceId: source.id, spec: { start, end } })), source.name); }}
+            onSlices={items => {
+              const have = slices.filter(s => s.sourceId === source.id).length;
+              addSlices(items.map((it, i) => ({
+                ...it.spec, name: `${source.name} ${have + i + 1}`, sourceId: source.id, sourceName: source.name,
+                origin: source.origin, license: source.license, cls: it.cls, peaks: it.peaks,
+              })));
+            }}
             onSave={(parts: Part[]) => {
               const next = { ...source, regions: parts.length ? parts : undefined };
               setSources(prev => prev.map(x => (x.id === source.id ? next : x)));
