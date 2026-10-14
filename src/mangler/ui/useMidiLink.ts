@@ -100,10 +100,12 @@ export function useMidiLink() {
             if (!out) return;
             // 24 clocks a beat: six to a sixteenth, on the unswung grid so the clock stays even.
             if (s.sendClock && !s.follow) for (let i = 0; i < 6; i++) out.send([0xf8], e.gridPerfMs + (i * e.stepMs) / 6);
+            const channelOf = (deck: 'A' | 'B') => Math.min(16, Math.max(1, deck === 'A' ? s.channelA : s.channelB)) - 1;
+            for (const c of e.controls) out.send([0xb0 | channelOf(c.deck), c.cc, Math.min(127, Math.max(0, c.value))], e.perfMs + c.at * e.stepMs);
             for (const hit of e.hits) {
                 if (!hit.deck) continue;
-                const channel = Math.min(16, Math.max(1, hit.deck === 'A' ? s.channelA : s.channelB)) - 1;
-                const note = Math.min(127, Math.max(0, 60 + Math.round(hit.shift)));
+                const channel = channelOf(hit.deck);
+                const note = Math.min(127, Math.max(0, Math.round(hit.note)));
                 const velocity = Math.min(127, Math.max(1, Math.round(hit.velocity * 127)));
                 out.send([0x90 | channel, note, velocity], e.perfMs);
                 out.send([0x80 | channel, note, 0], e.perfMs + Math.min(e.stepMs * 0.9, 120));

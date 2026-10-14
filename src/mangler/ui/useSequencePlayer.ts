@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stereo } from '../dsp';
-import { STEPS, sequenceFrames, stepAt, stepHits, stepFrames, type SeqHit, type Sequence } from '../sequence';
+import {
+    STEPS, sequenceFrames, sequenceSounds, stepAt, stepControls, stepHits, stepFrames,
+    type SeqControl, type SeqHit, type Sequence,
+} from '../sequence';
 
 /**
  * Plays a sequence live, looping the chain. A look-ahead scheduler: every 25 ms
@@ -32,6 +35,8 @@ export interface StepEvent {
     /** Length of a sixteenth, ms. */
     stepMs: number;
     hits: Omit<SeqHit, 'at'>[];
+    /** CC tracks' messages in this step. */
+    controls: SeqControl[];
 }
 
 export interface SequencerHooks {
@@ -89,14 +94,7 @@ export function useSequencePlayer(
 
     /** Every sound the sequence uses, rendered ahead so the first loop isn't patchy. */
     const prepare = useCallback((seq: Sequence) => {
-        for (const track of seq.tracks) {
-            for (const steps of Object.values(track.patterns)) {
-                for (const s of steps) {
-                    const id = s.on ? s.sliceId ?? track.sliceId : null;
-                    if (id) ensure(id, track.shift + (s.shift ?? 0));
-                }
-            }
-        }
+        for (const { sliceId, shift } of sequenceSounds(seq)) ensure(sliceId, shift);
     }, [ensure]);
 
     const update = useCallback((seq: Sequence) => {
@@ -124,6 +122,7 @@ export function useSequencePlayer(
         uiTimers.current.add(ui);
         hooksRef.current.onStep?.({
             step: w, perfMs: toPerf(ctx, at), gridPerfMs: toPerf(ctx, gridAt), stepMs: stepSec * 1000, hits,
+            controls: stepControls(s, w),
         });
     }, [ensure]);
 

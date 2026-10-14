@@ -622,6 +622,73 @@ section('Sequencer');
 }
 
 // ---------------------------------------------------------------------------
+// Sequencer track kinds: cue tracks, scale lock, CC steps and LFOs
+// ---------------------------------------------------------------------------
+
+section('Sequencer: cues, scale, CC');
+{
+    const S = await import('../src/mangler/sequence.ts');
+    const { maskFromIntervals } = await import('../src/mangler/settings.ts');
+    let n = 0;
+    const seq = S.newSequence(() => `t${n++}`);
+    seq.chain = ['A'];
+
+    // Cue track: C1 the first cue, D1 the third; past the last cue, nothing.
+    const cueTrack = seq.tracks[0];
+    cueTrack.kind = 'cue';
+    cueTrack.cue = { kind: 'result', id: 'r1', name: 'kit', cues: [0, 0.5, 1.25, 2], duration: 3 };
+    cueTrack.patterns.A[0] = { on: true, velocity: 1 };
+    cueTrack.patterns.A[4] = { on: true, velocity: 1, note: S.CUE_BASE_NOTE + 2 };
+    cueTrack.patterns.A[8] = { on: true, velocity: 1, note: S.CUE_BASE_NOTE + 3 };
+    cueTrack.patterns.A[12] = { on: true, velocity: 1, note: S.CUE_BASE_NOTE + 9 };
+    const cueHits = S.sequenceHits(seq, SR).filter(h => h.track === 0);
+    const seg = h => { const p = S.parseCueSoundId(h.sliceId); return `${p.start}-${p.end}`; };
+    check(cueHits.length === 3 && seg(cueHits[0]) === '0-0.5' && seg(cueHits[1]) === '1.25-2' && seg(cueHits[2]) === '2-3',
+        'cue track: C1 the first cue, D1 the third, the last runs to the end, past the last nothing', cueHits.map(seg).join(' '));
+    check(cueHits.every(h => h.shift === 0) && S.noteName(cueHits[1].note) === 'D1', 'cue notes pick, they don\'t repitch', S.noteName(cueHits[1].note));
+
+    // Scale lock: C minor pentatonic, a step at +4 (E) snaps to Eb or F.
+    seq.scale = { root: 0, mask: maskFromIntervals([0, 3, 5, 7, 10]) };
+    const sliceTrack = seq.tracks[1];
+    sliceTrack.sliceId = 'kick';
+    sliceTrack.patterns.A[0] = { on: true, velocity: 1, shift: 4 };
+    const free = S.sequenceHits(seq, SR).find(h => h.track === 1).shift;
+    sliceTrack.scaleLock = true;
+    const locked = S.sequenceHits(seq, SR).find(h => h.track === 1).shift;
+    check(free === 4 && (locked === 3 || locked === 5), 'scale lock snaps the step to the scale, only when on', `+4 → ${locked}`);
+
+    // CC steps: a value, a toggle, a momentary one with its release.
+    const cc = seq.tracks[2];
+    cc.kind = 'cc';
+    cc.cc = { ...S.defaultCc(), cc: 22 };
+    cc.midi = 'B';
+    cc.patterns.A[0] = { on: true, velocity: 0.5 };
+    let ctl = S.stepControls(seq, 0).filter(c => c.track === 2);
+    check(ctl.length === 1 && ctl[0].cc === 22 && ctl[0].value === 64 && ctl[0].deck === 'B', 'CC step: its value on its deck', JSON.stringify(ctl[0]));
+    cc.cc.cc = 85;
+    check(S.stepControls(seq, 0).find(c => c.track === 2).value === 127, 'a toggle CC sends 127');
+    cc.cc.cc = 102;
+    ctl = S.stepControls(seq, 0).filter(c => c.track === 2);
+    check(ctl.length === 2 && ctl[1].value === 0 && ctl[1].at > 0.5, 'a momentary CC lets go before an off step');
+    check(S.sequenceHits(seq, SR).every(h => h.track !== 2), 'a CC track makes no sound');
+
+    // LFO: four messages a step, inside min–max, the shape where it should be.
+    cc.cc = { cc: 23, mode: 'lfo', lfo: { shape: 'saw', rateSteps: 16, min: 20, max: 100, phase: 0 } };
+    const lfo = Array.from({ length: 16 }, (_, k) => S.stepControls(seq, k).filter(c => c.track === 2)).flat();
+    check(lfo.length === 64 && lfo.every(c => c.value >= 20 && c.value <= 100) && lfo[0].value === 20 && lfo[63].value > 95,
+        'LFO: four a step, inside its range, a saw rising over the bar', `${lfo[0].value}…${lfo[63].value}`);
+    check(['sine', 'triangle', 'saw', 'square', 'random'].every(sh => [0, 0.25, 0.5, 0.75].every(p => { const v = S.lfoAt(sh, p); return v >= 0 && v <= 1; }))
+        && S.lfoAt('random', 3.2, 1) === S.lfoAt('random', 3.7, 1), 'every LFO shape in 0–1; random holds within a cycle');
+
+    // A deck track without a slice still plays (the deck makes the sound).
+    const deckOnly = seq.tracks[3];
+    deckOnly.midi = 'A';
+    deckOnly.patterns.A[2] = { on: true, velocity: 0.8, shift: 7 };
+    const dh = S.sequenceHits(seq, SR).find(h => h.track === 3);
+    check(dh && dh.sliceId === null && dh.note === 67 && dh.deck === 'A', 'a deck-only step: note 67 for +7 st, no sound here');
+}
+
+// ---------------------------------------------------------------------------
 // Synth: every generator, seeded, in range, the right class
 // ---------------------------------------------------------------------------
 

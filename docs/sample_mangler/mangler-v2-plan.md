@@ -265,6 +265,18 @@ Each phase is usable on its own.
 - [x] *Send to Spotykach* over USB on result cards (standalone only, with the USB setting on): tape and slot (occupied ones marked), `toSlotFile` then `writeSlot`; the device goes back to MIDI when the dialog closes. Not yet tested on hardware
 - [ ] Later: sequence export as JSON or text; sending a whole kit to six slots at once
 
+**Added Oct 14 — Track kinds, CCs, scale**
+
+- [x] Fixed: right-click on a step showed nothing. The menu was in the page but a page-wide rule makes body's children `position: relative`, so it flowed below the screen; it now renders in a portal with an inline `position: fixed`
+- [x] Track kinds: *Slice* (as before), *Cue* (a result or a pool file with cue points; each step's note picks a cue, C1 the first, and doesn't repitch), *CC* (one of the Spotykach's CCs from its manual's table, to deck A or B)
+- [x] CC tracks: *Steps* (a value per step, dragged; a toggle CC sends 127, a momentary one 127 and then 0 before an off step) or *LFO* (sine, triangle, saw, square, random; a cycle of 2 steps to 4 bars; min–max; phase; drawn as a curve), sent four times a step over the Link
+- [x] Scale: a root and scale for the sequence; a slice track's *Scale* switch snaps its step pitches to it, in playback and MIDI alike, and dragging a pitch moves through scale notes
+- [x] Step menu per kind: on/off, velocity, pitch (with the note it plays), slice lock; the cue (number, note, time, play); the CC value
+- [x] Dice per kind: random cues for cue tracks, values for CC steps, a new LFO; the pattern dice rolls every track that has something to play
+- [x] Two-line track headers; steps line up across kinds
+- [x] Checks: cue notes to segments, scale lock, CC values, toggles and momentary release, LFO range and shape, a deck-only step's note
+- Note: on the Spotykach a note only retriggers a deck at a pitch (firmware: `_on_midi_note_on`), so cue tracks play their segments here; over the Link they send their cue's note
+
 ## Decided Oct 14
 
 - **Tempo:** Spotykach reads none, from `config.txt` or the file. The tempo grid is a convenience for plain loops (5.4).

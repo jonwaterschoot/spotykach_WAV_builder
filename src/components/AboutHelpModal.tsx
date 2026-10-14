@@ -533,6 +533,12 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         straight to a slot.
                                     </p>
                                     <p className="text-gray-400">
+                                        <strong className="text-gray-300">Track kinds:</strong> a <em>Cue</em> track plays a result or a file with cue
+                                        points, each step&apos;s note picking a cue (C1 the first); a <em>CC</em> track drives a Spotykach control (position,
+                                        size, pitch, grit, flux…) with a value per step or an LFO. A sequence <em>Scale</em> keeps pitches in key on the
+                                        tracks that switch it on. Right-click a step for all its options.
+                                    </p>
+                                    <p className="text-gray-400">
                                         <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
                                         button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
                                         makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.

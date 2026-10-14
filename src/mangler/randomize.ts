@@ -1,5 +1,5 @@
 import type { HitClass } from './hits.ts';
-import { STEPS, type PatternId, type SeqStep } from './sequence.ts';
+import { CUE_BASE_NOTE, STEPS, type CcSetup, type LfoShape, type PatternId, type SeqStep } from './sequence.ts';
 import {
     BPM_MAX, BPM_MIN, SCALES, maskFromIntervals, sanitizeSettings, type GridDivision, type MangleSettings,
 } from './settings.ts';
@@ -118,6 +118,36 @@ export function rollSteps(cls: HitClass | undefined, r: R = Math.random): SeqSte
         const on = r() < odds(i);
         return { on, velocity: on ? (i % 4 === 0 ? 1 : round(between(r, 0.45, 0.95), 0.05)) : 1 };
     });
+}
+
+/**
+ * A pattern for a cue track: hits mostly on the beats and the eighths, each
+ * picking a cue at random (its note), velocities a little uneven.
+ */
+export function rollCueSteps(cueCount: number, r: R = Math.random): SeqStep[] {
+    return Array.from({ length: STEPS }, (_, i) => {
+        const on = r() < (i % 4 === 0 ? 0.75 : i % 2 === 0 ? 0.4 : 0.2);
+        return {
+            on,
+            velocity: on ? round(between(r, 0.6, 1), 0.05) : 1,
+            note: CUE_BASE_NOTE + Math.floor(r() * Math.max(1, cueCount)),
+        };
+    });
+}
+
+/** A CC track's steps: about half on, each with its own value. */
+export const rollCcSteps = (r: R = Math.random): SeqStep[] =>
+    Array.from({ length: STEPS }, () => ({ on: chance(r, 0.5), velocity: round(between(r, 0.05, 1), 0.01) }));
+
+/** An LFO for a CC track: any shape, a cycle of 2 steps to 4 bars, a range at least 30 wide. */
+export function rollLfo(r: R = Math.random): CcSetup['lfo'] {
+    const min = Math.round(between(r, 0, 70));
+    return {
+        shape: pickOne<LfoShape>(r, ['sine', 'triangle', 'saw', 'square', 'random']),
+        rateSteps: pickOne(r, [2, 4, 8, 16, 32, 64]),
+        min, max: Math.min(127, min + Math.round(between(r, 30, 127 - min))),
+        phase: round(r(), 0.25) % 1,
+    };
 }
 
 /** A chain of the same length from the patterns that have something in them (A if none). */

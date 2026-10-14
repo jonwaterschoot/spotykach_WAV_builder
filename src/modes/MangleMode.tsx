@@ -73,8 +73,8 @@ import { GENERATORS, defaultRanges, synthesize, type SynthKind, type SynthRanges
 import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
 import { useMidiFollow, useMidiLink } from '../mangler/ui/useMidiLink';
 import {
-  MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, sequenceCues, sequenceFrames, sequenceHits,
-  type SeqCues, type SeqHit, type Sequence,
+  MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, parseCueSoundId, sequenceCues, sequenceFrames, sequenceHits,
+  type CueSound, type SeqCues, type SeqHit, type Sequence,
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
@@ -383,22 +383,77 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   // Sequencer
   // ---------------------------------------------------------------------------
 
-  /** A slice's sound as it is now, plus a track's shift: what the sequencer keys its buffers on. */
-  const sequenceKey = useCallback((sliceId: string, shift: number) => {
-    const s = slices.find(x => x.id === sliceId);
-    if (!s || !sources.some(x => x.id === s.sourceId)) return null;
-    return JSON.stringify([s.id, s.start, s.end, s.reverse ?? false, (s.shift ?? 0) + shift, s.gainDb ?? 0, s.envelope ?? null]);
-  }, [slices, sources]);
+  /**
+   * What a sequencer sound id stands for: a slice of a pool source, or a cue's
+   * segment of a result or a source (cue tracks). The audio it is cut from, and
+   * where it came from, for licences.
+   */
+  const soundOf = useCallback((id: string): {
+    spec: SliceSpec; ownerId: string; blob: Blob; origin: RecipeSource;
+  } | null => {
+    const cue = parseCueSoundId(id);
+    if (cue?.kind === 'result') {
+      const r = results.find(x => x.id === cue.id);
+      if (!r) return null;
+      const license = resultLicense(r.recipe);
+      return {
+        spec: { start: cue.start, end: cue.end }, ownerId: r.id, blob: r.blob,
+        origin: { id: r.id, name: r.name, origin: 'Sample Mangler', license: license.text, licenseLevel: license.level },
+      };
+    }
+    if (cue?.kind === 'source') {
+      const s = sources.find(x => x.id === cue.id);
+      return s ? {
+        spec: { start: cue.start, end: cue.end }, ownerId: s.id, blob: s.blob,
+        origin: { id: s.id, name: s.name, origin: s.origin, license: s.license, licenseLevel: s.licenseLevel },
+      } : null;
+    }
+    const sl = slices.find(x => x.id === id);
+    const s = sl && sources.find(x => x.id === sl.sourceId);
+    return sl && s ? {
+      spec: sl, ownerId: s.id, blob: s.blob,
+      origin: { id: s.id, name: s.name, origin: s.origin, license: s.license, licenseLevel: s.licenseLevel },
+    } : null;
+  }, [results, sources, slices]);
 
-  const sequenceAudio = useCallback(async (sliceId: string, shift: number): Promise<Stereo | null> => {
-    const s = slices.find(x => x.id === sliceId);
-    const source = s && sources.find(x => x.id === s.sourceId);
-    if (!s || !source) return null;
-    const decoded = await region.load(source.id, source.blob);
+  /** A sound as it is now, plus a track's shift: what the sequencer keys its buffers on. */
+  const sequenceKey = useCallback((id: string, shift: number) => {
+    const snd = soundOf(id);
+    if (!snd) return null;
+    const { spec } = snd;
+    return JSON.stringify([id, snd.blob.size, spec.start, spec.end, spec.reverse ?? false, (spec.shift ?? 0) + shift, spec.gainDb ?? 0, spec.envelope ?? null]);
+  }, [soundOf]);
+
+  const sequenceAudio = useCallback(async (id: string, shift: number): Promise<Stereo | null> => {
+    const snd = soundOf(id);
+    if (!snd) return null;
+    const decoded = await region.load(snd.ownerId, snd.blob);
     const l = decoded.getChannelData(0);
     const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
-    return renderSlice([l, r], decoded.sampleRate, { ...s, shift: (s.shift ?? 0) + shift || undefined });
-  }, [slices, sources, region]);
+    return renderSlice([l, r], decoded.sampleRate, { ...snd.spec, shift: (snd.spec.shift ?? 0) + shift || undefined });
+  }, [soundOf, region]);
+
+  /** Cue points of the pool's own files (a WAV with cues), read from their headers once. */
+  const [sourceCues, setSourceCues] = useState<Record<string, number[]>>({});
+  useEffect(() => {
+    const todo = sources.filter(s => !(s.id in sourceCues));
+    if (todo.length === 0) return;
+    let alive = true;
+    Promise.all(todo.map(async s => {
+      try { return [s.id, (await readWavHeaderInfo(s.blob)).metadata?.slicePoints ?? []] as const; } catch { return [s.id, []] as const; }
+    })).then(found => { if (alive) setSourceCues(prev => ({ ...prev, ...Object.fromEntries(found) })); });
+    return () => { alive = false; };
+  }, [sources, sourceCues]);
+
+  /** What a cue track can play: results (they all have cues) and pool files with cue points. */
+  const cueSounds = useMemo<CueSound[]>(() => [
+    ...results.filter(r => r.recipe.cuePoints.length >= 2).map(r => ({
+      kind: 'result' as const, id: r.id, name: r.name, cues: r.recipe.cuePoints.map(c => c / SR), duration: r.duration,
+    })),
+    ...sources.filter(s => (sourceCues[s.id]?.length ?? 0) >= 2).map(s => ({
+      kind: 'source' as const, id: s.id, name: s.name, cues: [...sourceCues[s.id]].sort((a, b) => a - b), duration: s.duration,
+    })),
+  ], [results, sources, sourceCues]);
 
   const midi = useMidiLink();
   const sequencer = useSequencePlayer(sequenceKey, sequenceAudio, midi.hooks);
@@ -1092,18 +1147,17 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       const allCues = sequenceCues(seq, hits, cueMode, SR);
       const cuePoints = allCues.slice(0, MAX_CUE_POINTS);
       // Each hit as a snippet: the list shows them, licenses follow them, and they can go back to the slice pool.
-      const used = [...new Set(hits.map(h => slices.find(s => s.id === h.sliceId)?.sourceId).filter((id): id is string => !!id))];
-      const recipeSources: RecipeSource[] = used.map(id => {
-        const s = sources.find(x => x.id === id);
-        return { id, name: s?.name ?? '?', origin: s?.origin ?? '', license: s?.license, licenseLevel: s?.licenseLevel };
-      });
+      // Where every hit came from (a pool source, or a result for a cue track), so licences follow them.
+      const recipeSources: RecipeSource[] = [];
       const snippets: SnippetInfo[] = hits.flatMap(h => {
-        const s = slices.find(x => x.id === h.sliceId);
+        const snd = soundOf(h.sliceId);
         const a = audio.get(sequenceKey(h.sliceId, h.shift) ?? '');
-        if (!s || !a) return [];
+        if (!snd || !a) return [];
+        let index = recipeSources.findIndex(rs => rs.id === snd.origin.id);
+        if (index < 0) index = recipeSources.push(snd.origin) - 1;
         return [{
-          ...sliceAsSnippet({ ...s, shift: (s.shift ?? 0) + h.shift || undefined }, used.indexOf(s.sourceId), SR),
-          outStart: h.at, length: a[0].length, gainDb: (s.gainDb ?? 0) + 20 * Math.log10(Math.max(1e-6, h.gain)),
+          ...sliceAsSnippet({ ...snd.spec, shift: (snd.spec.shift ?? 0) + h.shift || undefined }, index, SR),
+          outStart: h.at, length: a[0].length, gainDb: (snd.spec.gainDb ?? 0) + 20 * Math.log10(Math.max(1e-6, h.gain)),
         }];
       });
       const taken = new Set(results.map(r => r.name));
@@ -1142,12 +1196,15 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       console.error(e);
       showToast('Could not render the sequence', 'error');
     }
-  }, [results, slices, sources, sequenceKey, sequenceAudio, storeEntry, sequencer, showToast]);
+  }, [results, soundOf, sequenceKey, sequenceAudio, storeEntry, sequencer, showToast]);
 
-  const auditionSlice = useCallback((sliceId: string, shift: number) => {
-    const s = slices.find(x => x.id === sliceId);
-    if (s) playSlice({ ...s, shift: (s.shift ?? 0) + shift || undefined });
-  }, [slices, playSlice]);
+  /** A sequencer sound (a slice, or a cue's segment) at a shift, as the sequencer plays it. */
+  const auditionSound = useCallback(async (id: string, shift: number) => {
+    player.stop();
+    region.stop();
+    const audio = await sequenceAudio(id, shift).catch(() => null);
+    if (audio) await slicePlayer.playAudio(id, audio, SR);
+  }, [player, region, sequenceAudio, slicePlayer]);
 
   const lockedFixed = (r: MangleResultEntry) =>
     r.recipe.snippets.map((s, i) => (r.locked?.includes(i) ? s : null));
@@ -1997,9 +2054,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               if (midi.enabled && midi.settings.follow) void sequencer.startExternal(true); else void sequencer.start();
             }}
             onStop={sequencer.stop}
-            onAudition={auditionSlice}
+            onAudition={(id, shift) => { void auditionSound(id, shift); }}
             onRender={(cueMode, fold) => renderSequence(sequence, cueMode, fold)}
             newId={newId}
+            cueSounds={cueSounds}
             link={{
               supported: midi.supported, enabled: midi.enabled, error: midi.error, ports: midi.ports,
               settings: midi.settings, setSettings: midi.setSettings, enable: midi.enable,
