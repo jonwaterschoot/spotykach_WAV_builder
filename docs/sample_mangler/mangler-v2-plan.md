@@ -239,8 +239,12 @@ Each phase is usable on its own.
 
 **Phase 6 — Sequencer**
 
-- [ ] Patterns A–D, chain, tracks, slice lock, velocity
-- [ ] Live playback; offline render to a result with cues
+- [x] `sequence.ts`: patterns A–D of 16 sixteenths (one bar each), a chain of up to 16 (as many bars as fit 42 s), up to 8 tracks. Per step: on, velocity (100 / 66 / 33), a slice of its own (slice lock). Per track: slice, volume, shift, mute, solo. Tempo and swing (odd sixteenths late by up to half a step). Every step on its own rounded line, so the chain is exact
+- [x] *Sequence* station (third in the top bar): transport, tempo, swing, the pattern being edited, the chain (click a pattern to cycle it), tracks of 16 steps with the playhead; right-click or long-press a step for velocity and slice lock; add tracks, clear a pattern, copy it to another. Edits go through updaters, so quick clicks build on each other. Saved in `localStorage` (`mangler_sequence`)
+- [x] Live playback (`ui/useSequencePlayer.ts`): a look-ahead scheduler on the audio clock; it reads the sequence every step, so edits, tempo and swing are heard straight away. Each sound is rendered once (the slice as it is now plus the track's shift) and kept
+- [x] Render: the chain mixed exactly, tails past the end folded into the start (*Loop tails*) or cut, a −1 dBFS limiter, cues at hits, per beat or per bar. A result marked *sequence* (named `seq_<bpm>bpm_<bars>bars_<chain>`): playable, croppable, re-cueable, savable and usable as a source; each hit is kept as a snippet entry, so licences follow the slices used
+- [x] Checks: hits follow the chain, slice lock, velocity, mute and solo, swing on odd steps only, exact length, folded tails, cues
+- [ ] Later: export and import a sequence as JSON or text
 
 **Phase 7 — Synth**
 

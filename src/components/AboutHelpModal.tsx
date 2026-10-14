@@ -512,6 +512,11 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                         file as a loop.
                                     </p>
                                     <p className="text-gray-400">
+                                        <strong className="text-gray-300">Sequence</strong> (top bar) is a step sequencer for your slices: four
+                                        patterns of 16 steps, a chain, up to 8 tracks. Right-click (or long-press) a step for its velocity and a slice
+                                        of its own. <em>Render</em> makes a result of the whole chain, with cues at the hits.
+                                    </p>
+                                    <p className="text-gray-400">
                                         <strong className="text-gray-300">On a phone</strong> it switches to phone mode by itself (the phone
                                         button in the header): sources are mixed to mono, the pool warns from 2&nbsp;minutes, and a click
                                         makes at most 4 variations. The output is the same 48&nbsp;kHz stereo file.

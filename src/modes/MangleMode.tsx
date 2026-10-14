@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Briefcase, ChevronDown, Grid2x2, Import, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  Briefcase, ChevronDown, Drum, Grid2x2, Import, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -63,6 +63,13 @@ import {
 import { Segmented, Slider } from '../mangler/ui/Sliders';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
 import { SlicePool } from '../mangler/ui/SlicePool';
+import { SequencerStation } from '../mangler/ui/SequencerStation';
+import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
+import {
+  MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, sequenceCues, sequenceFrames, sequenceHits,
+  type SeqCues, type Sequence,
+} from '../mangler/sequence';
+import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
 import { renderSlice, sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
@@ -86,7 +93,28 @@ type Pane = 'sources' | 'settings' | 'results';
  * The stations in the top bar. Mangle is the sources, settings and results;
  * Slices the slice pool. The sequencer and the synth join them later.
  */
-type Station = 'mangle' | 'slices';
+type Station = 'mangle' | 'slices' | 'sequence';
+const STATIONS: readonly Station[] = ['mangle', 'slices', 'sequence'];
+const SEQUENCE_KEY = 'mangler_sequence';
+
+/** The stored sequence, if it still has the shape this version expects. */
+const loadSequence = (): Sequence | null => {
+  try {
+    const s = JSON.parse(appStorage.getItem(SEQUENCE_KEY) ?? 'null') as Sequence | null;
+    if (!s || !Array.isArray(s.tracks) || !Array.isArray(s.chain) || !s.tracks.length) return null;
+    const okTrack = (tr: Sequence['tracks'][number]) => PATTERNS.every(p => Array.isArray(tr.patterns?.[p]) && tr.patterns[p].length === STEPS);
+    if (!s.tracks.every(okTrack) || !s.chain.every(p => PATTERNS.includes(p))) return null;
+    return {
+      ...s,
+      bpm: Math.min(240, Math.max(40, Number(s.bpm) || 120)),
+      swing: Math.min(0.5, Math.max(0, Number(s.swing) || 0)),
+      chain: s.chain.slice(0, maxChain(s.bpm)),
+      tracks: s.tracks.slice(0, MAX_TRACKS),
+    };
+  } catch {
+    return null;
+  }
+};
 const STATION_KEY = 'mangler_station';
 
 /**
@@ -250,7 +278,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [tourOpen, setTourOpen] = useState(() => !appStorage.getItem(TOUR_KEY));
   /** Below lg, one column at a time: the bottom bar picks it. */
   const [pane, setPane] = useState<Pane>('sources');
-  const [station, setStation] = useState<Station>(() => (appStorage.getItem(STATION_KEY) === 'slices' ? 'slices' : 'mangle'));
+  const [station, setStation] = useState<Station>(() => {
+    const stored = appStorage.getItem(STATION_KEY) as Station | null;
+    return stored && STATIONS.includes(stored) ? stored : 'mangle';
+  });
+  const [sequence, setSequence] = useState<Sequence>(() => loadSequence() ?? newSequence(newId));
+  useEffect(() => { appStorage.setItem(SEQUENCE_KEY, JSON.stringify(sequence)); }, [sequence]);
   useEffect(() => { appStorage.setItem(STATION_KEY, station); }, [station]);
   const [slices, setSlices] = useState<MangleSliceEntry[]>([]);
   const [userLibrary, setUserLibrary] = useState<UserLibrary | undefined>(undefined);
@@ -294,6 +327,32 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const slicePlayer = useSlicePlayer(region.load);
   const stopSlice = slicePlayer.stop;
   useEffect(() => { stopSlice(); }, [station, stopSlice]);
+
+  // ---------------------------------------------------------------------------
+  // Sequencer
+  // ---------------------------------------------------------------------------
+
+  /** A slice's sound as it is now, plus a track's shift: what the sequencer keys its buffers on. */
+  const sequenceKey = useCallback((sliceId: string, shift: number) => {
+    const s = slices.find(x => x.id === sliceId);
+    if (!s || !sources.some(x => x.id === s.sourceId)) return null;
+    return JSON.stringify([s.id, s.start, s.end, s.reverse ?? false, (s.shift ?? 0) + shift, s.gainDb ?? 0, s.envelope ?? null]);
+  }, [slices, sources]);
+
+  const sequenceAudio = useCallback(async (sliceId: string, shift: number): Promise<Stereo | null> => {
+    const s = slices.find(x => x.id === sliceId);
+    const source = s && sources.find(x => x.id === s.sourceId);
+    if (!s || !source) return null;
+    const decoded = await region.load(source.id, source.blob);
+    const l = decoded.getChannelData(0);
+    const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+    return renderSlice([l, r], decoded.sampleRate, { ...s, shift: (s.shift ?? 0) + shift || undefined });
+  }, [slices, sources, region]);
+
+  const sequencer = useSequencePlayer(sequenceKey, sequenceAudio);
+  const { update: updateSequencer, stop: stopSequencer } = sequencer;
+  useEffect(() => { updateSequencer(sequence); }, [sequence, updateSequencer, sequenceKey]);
+  useEffect(() => { if (station !== 'sequence') stopSequencer(); }, [station, stopSequencer]);
   /** The list as last rendered, for async work that must not act on a stale copy. */
   const resultsRef = useRef(results);
   useEffect(() => { resultsRef.current = results; }, [results]);
@@ -929,6 +988,82 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     putMangleSlicesToDB([next]).catch(e => console.error(e));
   }, [slices, sources, region]);
 
+  /** The whole chain as a result: mixed, limited, with cues. Listed but not re-rollable. */
+  const renderSequence = useCallback(async (seq: Sequence, cueMode: SeqCues, fold: boolean) => {
+    const hits = sequenceHits(seq, SR);
+    if (hits.length === 0) {
+      showToast('Nothing to render: switch on some steps on tracks with a slice', 'info');
+      return;
+    }
+    try {
+      const audio = new Map<string, Stereo | null>();
+      for (const h of hits) {
+        const key = sequenceKey(h.sliceId, h.shift);
+        if (key && !audio.has(key)) audio.set(key, await sequenceAudio(h.sliceId, h.shift));
+      }
+      const total = sequenceFrames(seq, SR);
+      const mix = mixSequence(hits, h => audio.get(sequenceKey(h.sliceId, h.shift) ?? '') ?? null, total, fold);
+      const reduction = limit(mix, dbToGain(-1), Math.round(0.005 * SR));
+      const allCues = sequenceCues(seq, hits, cueMode, SR);
+      const cuePoints = allCues.slice(0, MAX_CUE_POINTS);
+      // Each hit as a snippet: the list shows them, licenses follow them, and they can go back to the slice pool.
+      const used = [...new Set(hits.map(h => slices.find(s => s.id === h.sliceId)?.sourceId).filter((id): id is string => !!id))];
+      const recipeSources: RecipeSource[] = used.map(id => {
+        const s = sources.find(x => x.id === id);
+        return { id, name: s?.name ?? '?', origin: s?.origin ?? '', license: s?.license, licenseLevel: s?.licenseLevel };
+      });
+      const snippets: SnippetInfo[] = hits.flatMap(h => {
+        const s = slices.find(x => x.id === h.sliceId);
+        const a = audio.get(sequenceKey(h.sliceId, h.shift) ?? '');
+        if (!s || !a) return [];
+        return [{
+          ...sliceAsSnippet({ ...s, shift: (s.shift ?? 0) + h.shift || undefined }, used.indexOf(s.sourceId), SR),
+          outStart: h.at, length: a[0].length, gainDb: (s.gainDb ?? 0) + 20 * Math.log10(Math.max(1e-6, h.gain)),
+        }];
+      });
+      const taken = new Set(results.map(r => r.name));
+      const base = `seq_${Math.round(seq.bpm * 10) / 10}bpm_${seq.chain.length}bars_${seq.chain.join('')}`;
+      let name = base;
+      for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+      const entry: MangleResultEntry = {
+        id: newId(),
+        name,
+        blob: wavWithCues(mix[0], mix[1], cuePoints, name),
+        duration: total / SR,
+        recipe: {
+          seed: 0,
+          settings: sanitizeSettings({ ...DEFAULT_SETTINGS, grid: true, bpm: seq.bpm, division: '1/16', bars: seq.chain.length }),
+          sources: recipeSources,
+          snippets,
+          cuePoints,
+          cuesCapped: allCues.length > cuePoints.length,
+          peakReductionDb: reduction,
+        },
+        peaks: waveformPeaks(mix[0], mix[1]),
+        kept: true,
+        batchId: Date.now(),
+        createdAt: Date.now(),
+        edited: true,
+        kind: 'sequence',
+      };
+      await storeEntry(entry);
+      setResults(prev => sortResults([...prev, entry]));
+      sequencer.stop();
+      setStation('mangle');
+      setPane('results');
+      setFlashId(entry.id);
+      showToast(`${name} is ready in Results`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Could not render the sequence', 'error');
+    }
+  }, [results, slices, sources, sequenceKey, sequenceAudio, storeEntry, sequencer, showToast]);
+
+  const auditionSlice = useCallback((sliceId: string, shift: number) => {
+    const s = slices.find(x => x.id === sliceId);
+    if (s) playSlice({ ...s, shift: (s.shift ?? 0) + shift || undefined });
+  }, [slices, playSlice]);
+
   const lockedFixed = (r: MangleResultEntry) =>
     r.recipe.snippets.map((s, i) => (r.locked?.includes(i) ? s : null));
 
@@ -1432,6 +1567,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             {([
               ['mangle', <Dices size={13} />, 'Mangle', 'Sources, settings and results'],
               ['slices', <Grid2x2 size={13} />, 'Slices', 'The slice pool: single sounds to collect and make kits from'],
+              ['sequence', <Drum size={13} />, 'Sequence', 'A step sequencer for the slices: patterns A–D, a chain, up to 8 tracks'],
             ] as const).map(([id, icon, label, hint]) => (
               <button key={id} onClick={() => setStation(id)} aria-pressed={station === id} title={hint}
                 className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest transition-colors
@@ -1464,6 +1600,25 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </button>
         </div>
       </div>
+
+      {station === 'sequence' && (
+        <div className="flex-1 min-h-0">
+          <SequencerStation
+            seq={sequence}
+            onChange={setSequence}
+            slices={slices}
+            available={availableSources}
+            playing={sequencer.playing}
+            step={sequencer.step}
+            busy={busy}
+            onPlay={() => { player.stop(); region.stop(); slicePlayer.stop(); sequencer.start(); }}
+            onStop={sequencer.stop}
+            onAudition={auditionSlice}
+            onRender={(cueMode, fold) => renderSequence(sequence, cueMode, fold)}
+            newId={newId}
+          />
+        </div>
+      )}
 
       {station === 'slices' && (
         <div className="flex-1 min-h-0">
@@ -1785,7 +1940,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     <div className="min-w-0 flex-1 basis-40">
                       <div className="text-xs font-bold truncate flex items-center gap-1.5">
                         {r.name}
-                        {r.edited && (
+                        {r.kind === 'sequence' ? (
+                          <span className="shrink-0 px-1 rounded border border-synthux-blue/50 text-synthux-blue text-[9px] uppercase tracking-wider font-normal"
+                            title="Rendered from the sequencer: change it there and render again">
+                            sequence
+                          </span>
+                        ) : r.edited && (
                           <span className="shrink-0 px-1 rounded border border-synthux-pink/40 text-synthux-pink text-[9px] uppercase tracking-wider font-normal"
                             title="Changed in the editor: play, crop, re-cue and save it, but its snippets can't be edited any more">
                             edited
@@ -1812,11 +1972,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                       )}
                     </div>
                     <div className="flex items-center gap-0.5 ml-auto">
+                    {r.kind !== 'sequence' && (
                     <button onClick={() => applySeed(r.recipe.seed)}
                       className="shrink-0 font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
                       title="Use this seed for the next batch">
                       {r.recipe.seed}
                     </button>
+                    )}
                     <IconButton title={r.kept ? 'Kept: survives the next batch' : 'Keep'} onClick={() => toggleKeep(r)}
                       className={r.kept ? 'text-synthux-yellow' : 'text-gray-500 hover:text-synthux-yellow'}>
                       <Star size={15} fill={r.kept ? 'currentColor' : 'none'} />
@@ -1954,7 +2116,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
                   {r.edited ? (
                     <p className="mt-2 text-[10px] text-gray-500">
-                      Edited in the editor, so its snippets can't be changed here. The original result is still editable.
+                      {r.kind === 'sequence'
+                        ? <>Rendered from the sequencer: change the pattern in <button onClick={() => setStation('sequence')} className="underline hover:text-white">Sequence</button> and render again.</>
+                        : <>Edited in the editor, so its snippets can't be changed here. The original result is still editable.</>}
                     </p>
                   ) : (
                   <button onClick={() => setExpanded(isOpen ? null : r.id)}

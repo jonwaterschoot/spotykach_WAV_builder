@@ -369,6 +369,8 @@ export interface MangleResultEntry {
      * can be played, cropped, re-cued and saved, but not re-rendered.
      */
     edited?: boolean;
+    /** Rendered from the sequencer: not re-rollable (`edited` is set too), changed there and rendered again. */
+    kind?: 'sequence';
 }
 
 const loadAll = async <T>(store: string): Promise<T[]> => {

@@ -571,6 +571,53 @@ section('Slices');
 }
 
 // ---------------------------------------------------------------------------
+// Sequencer: hits on the steps, exact length, folded tails
+// ---------------------------------------------------------------------------
+
+section('Sequencer');
+{
+    const seqMod = await import('../src/mangler/sequence.ts');
+    const { newSequence, sequenceHits, sequenceFrames, mixSequence, sequenceCues, stepAt, maxChain } = seqMod;
+    let n = 0;
+    const seq = newSequence(() => `t${n++}`);
+    seq.bpm = 125;
+    seq.chain = ['A', 'B', 'A'];
+    seq.tracks[0].sliceId = 'kick';
+    [0, 4, 8, 12].forEach(s => { seq.tracks[0].patterns.A[s].on = true; });
+    seq.tracks[0].patterns.B[0].on = true;
+    seq.tracks[1].sliceId = 'hat';
+    seq.tracks[1].patterns.A[2] = { on: true, velocity: 0.5, sliceId: 'open' };
+    const hits = sequenceHits(seq, SR);
+    check(hits.length === 4 + 1 + 4 + 2, 'hits follow the chain (A, B, A)', `${hits.length} hits`);
+    check(hits.find(h => h.track === 1).sliceId === 'open' && hits.find(h => h.track === 1).gain === 0.5, 'slice lock and velocity on a step');
+    const total = sequenceFrames(seq, SR);
+    check(total === Math.round(3 * 16 * (60 / 125 / 4) * SR), 'exactly three bars at 125 bpm', `${total} frames`);
+    seq.tracks[0].mute = true;
+    check(sequenceHits(seq, SR).every(h => h.track === 1), 'a muted track is left out');
+    seq.tracks[0].mute = false;
+    seq.tracks[1].solo = true;
+    check(sequenceHits(seq, SR).every(h => h.track === 1), 'with a solo, only the solo plays');
+    seq.tracks[1].solo = false;
+
+    seq.swing = 0.25;
+    const step = (60 / 125 / 4) * SR;
+    check(stepAt(seq, 2, SR) === Math.round(2 * step) && stepAt(seq, 3, SR) === Math.round(3 * step) + Math.round(0.25 * step),
+        'swing moves only the odd sixteenths');
+    seq.swing = 0;
+
+    // A long tail on the last step folds into the start.
+    const click = [new Float32Array(Math.round(step * 2)).fill(0.5), new Float32Array(Math.round(step * 2)).fill(0.5)];
+    const last = [{ track: 0, step: 47, at: stepAt(seq, 47, SR), sliceId: 'x', gain: 1, shift: 0 }];
+    const folded = mixSequence(last, () => click, total, true);
+    const cut2 = mixSequence(last, () => click, total, false);
+    check(folded[0][0] === 0.5 && cut2[0][0] === 0, 'a tail past the end folds into the start (or is cut)');
+    const cues = sequenceCues(seq, hits, 'hits', SR);
+    check(cues[0] === 0 && cues.every((c, i) => i === 0 || c > cues[i - 1]), 'cues at hits, in order, from 0');
+    check(sequenceCues(seq, hits, 'bars', SR).length === 3 && sequenceCues(seq, hits, 'beats', SR).length === 12, 'cues per bar and per beat');
+    check(maxChain(60) === 10 && maxChain(120) === 16, 'the chain fits 42 s', `${maxChain(60)} bars at 60 bpm`);
+}
+
+// ---------------------------------------------------------------------------
 // The engine stands alone: no imports from outside src/mangler, so it can
 // become a package without untangling (mangler-v2-plan.md, "Packaging").
 // ---------------------------------------------------------------------------
