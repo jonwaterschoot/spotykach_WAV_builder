@@ -787,6 +787,25 @@ section('Dice');
     check(ok, 'Surprise: 200 rolls, all valid, crossfades under half the shortest snippet, length kept');
     const shape = rollGroup('shape', rnd);
     check(!('outputSeconds' in shape) && !('loudnessTargetDb' in shape), 'a group roll touches only its group');
+
+    // Styles and locks.
+    const { rollInStyle, GROUP_OF } = await import('../src/mangler/randomize.ts');
+    check(Object.entries(PRESETS).every(([, p]) => Object.keys(p).every(k => GROUP_OF[k])), 'every preset setting belongs to a group (so a lock can keep it)');
+    check(Object.entries(PRESETS).every(([, p]) => {
+        const s = sanitizeSettings({ ...DEFAULT_SETTINGS, ...p });
+        return Object.entries(p).every(([k, v]) => s[k] === v);
+    }), 'every preset is valid as it stands (nothing clamped)', Object.keys(PRESETS).join(', '));
+    let near = true, lockedKept = true;
+    const start = sanitizeSettings({ ...DEFAULT_SETTINGS, ...PRESETS['Drum hits'] });
+    for (let i = 0; i < 200; i++) {
+        const s = rollInStyle(start, PRESETS['Drum hits'], rnd);
+        if (!s.oneHit || s.detector !== 'flux' || !s.envelope || s.grid || s.polyphony) near = false;
+        if (s.snippetMinMs < 60 / 1.5 - 1 || s.snippetMinMs > 60 * 1.5 + 1 || s.decayMaxMs > 400 * 1.5 + 1) near = false;
+        const l = rollInStyle(start, PRESETS.Cloud, rnd, ['shape', 'loudness']);
+        for (const [k, g] of Object.entries(GROUP_OF)) if ((g === 'shape' || g === 'loudness') && l[k] !== start[k]) lockedKept = false;
+    }
+    check(near, 'dice in a style: its switches kept, its ranges near the preset (Drum hits, 200 rolls)');
+    check(lockedKept, 'locked groups: untouched by the dice, even in another style (200 rolls)');
     const lows = Array.from({ length: 300 }, () => rollSteps('low', rnd));
     const onBeat = lows.filter(p => p[0].on).length, offBeat = lows.filter(p => p[1].on).length;
     check(onBeat === 300 && offBeat < 45, 'low patterns: always on the one, rarely off the beat', `${offBeat}/300 on step 2`);

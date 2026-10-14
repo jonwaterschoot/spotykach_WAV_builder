@@ -42,9 +42,9 @@ const STEPS: TourStep[] = [
         title: '2 · Roll the settings',
         body: (
             <>
-                <Die /> next to the Preset rolls everything; the <Die /> on a group rolls only that group. Every
-                slider is a range the dice pick from, per snippet. Like most of it but not all? Open the group and
-                drag the one that bothers you.
+                <Die /> at the top rolls everything; pick a style (Cloud, Beat grid, Drum hits…) and it stays near
+                that sound. The <Die /> on a group rolls only that group, and its lock keeps a group you like. Every
+                slider is a range the dice pick from, per snippet: open a group to drag the one that bothers you.
             </>
         ),
     },

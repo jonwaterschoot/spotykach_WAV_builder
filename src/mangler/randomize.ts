@@ -90,16 +90,91 @@ export function rollGroup(group: DiceGroup, r: R = Math.random): Partial<MangleS
     return {};
 }
 
-/** Every group at once ("Surprise"), sanitised. The fill and the output length stay. */
-export const rollAll = (s: MangleSettings, r: R = Math.random): MangleSettings => sanitizeSettings({
-    ...s,
-    ...rollGroup('shape', r),
-    ...rollGroup('loudness', r),
-    ...(chance(r, 0.4) ? rollGroup('envelope', r) : { envelope: false }),
-    ...rollGroup('pitch', r),
-    ...rollGroup('file', r),
-    ...(s.grid ? rollGroup('tempo', r) : {}),
-});
+/** Which group each setting belongs to: what a group's lock keeps. The fill, the length and the variations belong to none. */
+export const GROUP_OF: Partial<Record<keyof MangleSettings, DiceGroup>> = {
+    snippetMinMs: 'shape', snippetMaxMs: 'shape', bias: 'shape', xfadeMinMs: 'shape', xfadeMaxMs: 'shape', hardCuts: 'shape',
+    polyphony: 'shape', overlapMinPct: 'shape', overlapMaxPct: 'shape', maxLayers: 'shape', reverseProbability: 'shape',
+    snapStart: 'shape', oneHit: 'shape', detector: 'shape',
+    grid: 'tempo', bpm: 'tempo', division: 'tempo', bars: 'tempo', stepsMin: 'tempo', stepsMax: 'tempo', gridFit: 'tempo',
+    loudnessTargetDb: 'loudness', loudnessSpreadDb: 'loudness', maxBoostDb: 'loudness', skipSilence: 'loudness',
+    silenceThresholdDb: 'loudness', restProbability: 'loudness', softProbability: 'loudness', softMinDb: 'loudness',
+    softMaxDb: 'loudness', limiter: 'loudness',
+    envelope: 'envelope', attackMinMs: 'envelope', attackMaxMs: 'envelope', decayMinMs: 'envelope', decayMaxMs: 'envelope',
+    envelopeCurve: 'envelope',
+    repitch: 'pitch', pitchConfidence: 'pitch', scaleRoot: 'pitch', scaleMask: 'pitch', detuneSt: 'pitch', resampler: 'pitch',
+    sourceMix: 'file', maxPerSource: 'file', cuePoints: 'file', loop: 'file',
+};
+
+/** `patch` without the settings of locked groups. */
+export const unlocked = (patch: Partial<MangleSettings>, locked: readonly DiceGroup[]): Partial<MangleSettings> => {
+    if (locked.length === 0) return patch;
+    const out: Partial<MangleSettings> = {};
+    for (const [key, value] of Object.entries(patch) as [keyof MangleSettings, unknown][]) {
+        const group = GROUP_OF[key];
+        if (!group || !locked.includes(group)) (out as Record<string, unknown>)[key] = value;
+    }
+    return out;
+};
+
+/** Every group at once ("Surprise"), sanitised. The fill and the output length stay, and so do locked groups. */
+export const rollAll = (s: MangleSettings, r: R = Math.random, locked: readonly DiceGroup[] = []): MangleSettings => {
+    const open = (g: DiceGroup) => !locked.includes(g);
+    return sanitizeSettings({
+        ...s,
+        ...(open('shape') ? rollGroup('shape', r) : {}),
+        ...(open('loudness') ? rollGroup('loudness', r) : {}),
+        ...(open('envelope') ? (chance(r, 0.4) ? rollGroup('envelope', r) : { envelope: false }) : {}),
+        ...(open('pitch') ? rollGroup('pitch', r) : {}),
+        ...(open('file') ? rollGroup('file', r) : {}),
+        ...(s.grid && open('tempo') ? rollGroup('tempo', r) : {}),
+    });
+};
+
+// Near a preset's value: lengths by up to ×/÷1.5, chances by ±0.1, the rest
+// by a little. A 0 stays 0 (the preset says none) and switches and choices stay.
+const MS_KEYS = new Set<keyof MangleSettings>(['snippetMinMs', 'snippetMaxMs', 'xfadeMinMs', 'xfadeMaxMs', 'attackMinMs', 'attackMaxMs', 'decayMinMs', 'decayMaxMs']);
+const CHANCE_KEYS = new Set<keyof MangleSettings>(['reverseProbability', 'restProbability', 'softProbability']);
+function near(key: keyof MangleSettings, value: unknown, r: R): unknown {
+    if (typeof value !== 'number' || value === 0) return value;
+    if (MS_KEYS.has(key)) return round(value * logBetween(r, 1 / 1.5, 1.5), 1);
+    if (CHANCE_KEYS.has(key)) return Math.min(1, Math.max(0, round(value + between(r, -0.1, 0.1), 0.01)));
+    switch (key) {
+        case 'bias': return round(value + between(r, -0.15, 0.15), 0.05);
+        case 'loudnessSpreadDb': case 'softMinDb': case 'softMaxDb': case 'detuneSt':
+            return round(value * between(r, 0.75, 1.25), 0.5);
+        case 'overlapMinPct': case 'overlapMaxPct': return Math.round(value + between(r, -10, 10));
+        case 'bpm': return Math.round(value * between(r, 0.92, 1.08));
+        default: return value;
+    }
+}
+
+/** A preset's settings nudged by the dice (see `near`); locked groups left out. */
+export const presetNear = (preset: Partial<MangleSettings>, r: R = Math.random, locked: readonly DiceGroup[] = []): Partial<MangleSettings> => {
+    const out: Partial<MangleSettings> = {};
+    for (const [key, value] of Object.entries(unlocked(preset, locked)) as [keyof MangleSettings, unknown][]) {
+        (out as Record<string, unknown>)[key] = near(key, value, r);
+    }
+    return out;
+};
+
+/**
+ * The dice within a style: everything rolled (locked groups kept), then the
+ * preset's own settings put back near their values. No style: `rollAll`.
+ */
+export const rollInStyle = (
+    s: MangleSettings, preset: Partial<MangleSettings> | null, r: R = Math.random, locked: readonly DiceGroup[] = [],
+): MangleSettings => {
+    const rolled = rollAll(preset?.grid !== undefined && !locked.includes('tempo') ? { ...s, grid: preset.grid } : s, r, locked);
+    return preset ? sanitizeSettings({ ...rolled, ...presetNear(preset, r, locked) }) : rolled;
+};
+
+/** One group's dice within a style: the group rolled, then the preset's settings of that group put back near their values. */
+export const rollGroupInStyle = (group: DiceGroup, preset: Partial<MangleSettings> | null, r: R = Math.random): Partial<MangleSettings> => {
+    const rolled = rollGroup(group, r);
+    if (!preset) return rolled;
+    const own = Object.fromEntries(Object.entries(preset).filter(([key]) => GROUP_OF[key as keyof MangleSettings] === group));
+    return { ...rolled, ...presetNear(own, r) };
+};
 
 // ---------------------------------------------------------------------------
 // Sequencer

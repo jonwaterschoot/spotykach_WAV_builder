@@ -288,6 +288,8 @@ Each phase is usable on its own.
 - [x] The editor opened from the mangler has no Mangler tool (and no *Edit in Mangler* in the slicer)
 - [x] Pool icon: waves (Browse pool, the phone's Sources tab)
 - [x] Merge in a result's snippet list (as in the hits list): a snippet joined to the one before it gets no cue point, so the two play as one slice; per row (with the next) or for neighbouring selected rows, and split again the same way. The audio stays bit-identical; stored on the snippet (`joined`)
+- [x] Presets as styles: eight new ones for what came since (Drum hits, Beat grid, Broken beat, Tape chops, Cloud, Drone, Sparse, Melodic). Picking one sets its settings and keeps it as the style; the dice next to it then roll everything, with the style's own settings put back near their values (lengths ×/÷1.5, chances ±0.1, switches kept). *All* rolls ignoring the style; a group's dice stays near the style too
+- [x] A lock per settings group: the dice (all, style, the group's own) and presets leave a locked group as it is. Style and locks are remembered
 - Note: on the Spotykach a note only retriggers a deck at a pitch (firmware: `_on_midi_note_on`), so cue tracks play their segments here; over the Link they send their cue's note
 
 ## Decided Oct 14

@@ -188,21 +188,80 @@ export const DEFAULT_SETTINGS: MangleSettings = {
 };
 
 /** Starting points for the preset menu. Each only overrides what it cares about. */
+/**
+ * Starting points, and styles for the dice: chosen, a preset's values are set,
+ * and the dice then stay near them (randomize.ts, rollInStyle) while what the
+ * preset leaves out rolls freely.
+ */
 export const PRESETS: Record<string, Partial<MangleSettings>> = {
     Glitch: {
         snippetMinMs: 20, snippetMaxMs: 300, bias: -0.4,
         xfadeMinMs: 0, xfadeMaxMs: 3, hardCuts: true,
         reverseProbability: 0.4, loudnessSpreadDb: 6, detuneSt: 0,
+        grid: false, polyphony: false,
     },
     Texture: {
         snippetMinMs: 800, snippetMaxMs: 6000, bias: 0.3,
         xfadeMinMs: 300, xfadeMaxMs: 2000, hardCuts: false,
         reverseProbability: 0.5, loudnessSpreadDb: 3, detuneSt: 0,
+        grid: false, polyphony: false,
     },
     Phrases: {
         snippetMinMs: 400, snippetMaxMs: 3000, bias: 0,
         xfadeMinMs: 10, xfadeMaxMs: 60, hardCuts: false,
         reverseProbability: 0.1, loudnessSpreadDb: 0, repitch: 'apply',
+        grid: false, polyphony: false,
+    },
+    /** One sound per slice, cut at its attack and shaped like a hit: a kit for the slice mode. */
+    'Drum hits': {
+        oneHit: true, detector: 'flux', snapStart: 'onset',
+        snippetMinMs: 60, snippetMaxMs: 400, bias: -0.3,
+        xfadeMinMs: 0, xfadeMaxMs: 2, hardCuts: false, reverseProbability: 0.05,
+        envelope: true, attackMinMs: 0, attackMaxMs: 2, decayMinMs: 80, decayMaxMs: 400, envelopeCurve: 'exp',
+        restProbability: 0, softProbability: 0, grid: false, polyphony: false,
+    },
+    /** A loop on the tempo grid, snippets on the attacks. */
+    'Beat grid': {
+        grid: true, bpm: 120, division: '1/16', stepsMin: 1, stepsMax: 4, gridFit: 'cut',
+        snapStart: 'onset', restProbability: 0.1, softProbability: 0, reverseProbability: 0.1,
+        loop: true, polyphony: false,
+    },
+    /** On the grid with holes and ghost notes: rests, soft parts, hard edges. */
+    'Broken beat': {
+        grid: true, division: '1/16', stepsMin: 1, stepsMax: 2, gridFit: 'cut',
+        restProbability: 0.25, softProbability: 0.3, softMinDb: 4, softMaxDb: 12,
+        reverseProbability: 0.2, hardCuts: true, snapStart: 'onset', polyphony: false,
+    },
+    /** On the grid, each snippet sped up or slowed down to fit its steps, like tape. */
+    'Tape chops': {
+        grid: true, division: '1/8', stepsMin: 1, stepsMax: 4, gridFit: 'tape',
+        reverseProbability: 0.3, restProbability: 0, polyphony: false,
+    },
+    /** Many short grains at once (polyphony), shaped and spread in pitch. */
+    Cloud: {
+        polyphony: true, overlapMinPct: 50, overlapMaxPct: 90, maxLayers: 6,
+        snippetMinMs: 40, snippetMaxMs: 250, xfadeMinMs: 5, xfadeMaxMs: 20,
+        envelope: true, attackMinMs: 5, attackMaxMs: 40, decayMinMs: 40, decayMaxMs: 250, envelopeCurve: 'linear',
+        reverseProbability: 0.5, detuneSt: 2, grid: false,
+    },
+    /** Long layered stretches with slow fades, looping. */
+    Drone: {
+        polyphony: true, overlapMinPct: 60, overlapMaxPct: 90, maxLayers: 4,
+        snippetMinMs: 2000, snippetMaxMs: 8000, xfadeMinMs: 500, xfadeMaxMs: 2000,
+        reverseProbability: 0.4, envelope: false, restProbability: 0, grid: false, loop: true,
+    },
+    /** Room between the sounds: rests, soft parts and short decays. */
+    Sparse: {
+        restProbability: 0.35, softProbability: 0.3, softMinDb: 6, softMaxDb: 18,
+        snippetMinMs: 100, snippetMaxMs: 800,
+        envelope: true, attackMinMs: 0, attackMaxMs: 5, decayMinMs: 100, decayMaxMs: 600, envelopeCurve: 'exp',
+        grid: false, polyphony: false,
+    },
+    /** Pitched snippets moved into A minor pentatonic. */
+    Melodic: {
+        repitch: 'apply', scaleRoot: 9, scaleMask: 0b10010101001, pitchConfidence: 0.7, detuneSt: 0,
+        snippetMinMs: 200, snippetMaxMs: 1200, xfadeMinMs: 10, xfadeMaxMs: 50,
+        grid: false, polyphony: false,
     },
 };
 

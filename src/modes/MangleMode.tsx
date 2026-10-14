@@ -79,7 +79,7 @@ import {
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
-import { rollAll } from '../mangler/randomize';
+import { rollAll, rollInStyle, unlocked, type DiceGroup } from '../mangler/randomize';
 import { renderSlice, sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
 import type { HitClass } from '../mangler/hits';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
@@ -108,6 +108,10 @@ const SOURCE_KINDS: { id: SourceKind; label: string; hint: string }[] = [
   { id: 'synth', label: 'Synth', hint: 'Synth takes' },
   { id: 'made', label: 'Made here', hint: 'Results and slices put back in the pool' },
 ];
+const STYLE_KEY = 'mangler_style';
+const LOCKS_KEY = 'mangler_dice_locks';
+const DICE_GROUPS: readonly DiceGroup[] = ['shape', 'tempo', 'loudness', 'envelope', 'pitch', 'file'];
+
 /** The pool's own tags: typed filters kept, each on or off. */
 interface PoolTag { text: string; on: boolean }
 const POOL_TAGS_KEY = 'mangler_pool_tags';
@@ -324,6 +328,21 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [results, setResults] = useState<MangleResultEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [settings, setSettings] = useState<MangleSettings>(loadSettings);
+  /** The preset the dice stay near (null: anything), and the groups they leave alone. Both remembered. */
+  const [style, setStyle] = useState<string | null>(() => {
+    const name = appStorage.getItem(STYLE_KEY);
+    return name && PRESETS[name] ? name : null;
+  });
+  useEffect(() => { if (style) appStorage.setItem(STYLE_KEY, style); else appStorage.removeItem(STYLE_KEY); }, [style]);
+  const [diceLocks, setDiceLocks] = useState<DiceGroup[]>(() => {
+    try {
+      const raw = JSON.parse(appStorage.getItem(LOCKS_KEY) ?? '[]');
+      return Array.isArray(raw) ? raw.filter((g): g is DiceGroup => DICE_GROUPS.includes(g)) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => { appStorage.setItem(LOCKS_KEY, JSON.stringify(diceLocks)); }, [diceLocks]);
   // Phone mode: smaller limits (see mangler/ui/phoneMode.ts). Guessed until switched.
   const [phoneMode, setPhoneMode] = useState(loadPhoneMode);
   const limits = phoneMode ? PHONE_LIMITS : DESKTOP_LIMITS;
@@ -2547,26 +2566,50 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           <div className="flex items-center justify-between">
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Settings</h2>
             <select
-              value=""
+              value={style ?? ''}
               onChange={e => {
                 const name = e.target.value;
-                if (name === '__default') setSettings({ ...DEFAULT_SETTINGS, variations: settings.variations });
-                else if (PRESETS[name]) updateMany(PRESETS[name]);
+                if (name === '__default') {
+                  // Every setting back to its default, but the variations and locked groups.
+                  const defaults: Partial<MangleSettings> = { ...DEFAULT_SETTINGS };
+                  delete defaults.variations;
+                  setSettings(prev => sanitizeSettings({ ...prev, ...unlocked(defaults, diceLocks) }));
+                  setStyle(null);
+                } else if (PRESETS[name]) {
+                  updateMany(unlocked(PRESETS[name], diceLocks));
+                  setStyle(name);
+                } else {
+                  setStyle(null);
+                }
               }}
-              className="bg-black/40 border border-white/10 rounded px-2 py-1 text-[11px] text-gray-300"
+              title={style
+                ? `Style: ${style}. Its settings are set, and the dice next to it stay near them`
+                : 'Pick a preset: its settings are set, and the dice then stay near them. Locked groups keep theirs'}
+              className={`min-w-0 max-w-[9rem] bg-black/40 border rounded px-1.5 py-1 text-[11px] ${style ? 'border-synthux-red/50 text-white' : 'border-white/10 text-gray-300'}`}
             >
-              <option value="" disabled>Preset…</option>
+              <option value="">Any style</option>
               {Object.keys(PRESETS).map(name => <option key={name} value={name}>{name}</option>)}
               <option value="__default">Defaults</option>
             </select>
-            <button onClick={() => setSettings(prev => rollAll(prev))}
-              title="Surprise: roll every group of settings at once (the fill and the length stay)"
-              className="ml-1 p-1.5 rounded-md border border-white/10 text-gray-400 hover:text-synthux-red hover:bg-white/5 transition-colors">
+            <button onClick={() => setSettings(prev => rollInStyle(prev, style ? PRESETS[style] : null, Math.random, diceLocks))}
+              title={style
+                ? `Dice: roll within the ${style} style (its settings stay near the preset; locked groups stay)`
+                : 'Dice: roll every group of settings (the fill, the length and locked groups stay)'}
+              className="ml-1 p-1.5 rounded-md border border-synthux-red/40 text-synthux-red hover:bg-synthux-red/10 transition-colors">
               <Dices size={13} />
             </button>
+            {style && (
+              <button onClick={() => setSettings(prev => rollAll(prev, Math.random, diceLocks))}
+                title="Dice: anything, ignoring the style (locked groups stay)"
+                className="p-1.5 rounded-md border border-white/10 text-[10px] font-bold text-gray-400 hover:text-synthux-red hover:bg-white/5 transition-colors">
+                <Dices size={11} className="inline -mt-0.5" /> All
+              </button>
+            )}
           </div>
 
-          <SettingsPanel settings={settings} onChange={updateMany} storageKey="mangler_groups" className="space-y-3" />
+          <SettingsPanel settings={settings} onChange={updateMany} storageKey="mangler_groups" className="space-y-3"
+            locked={diceLocks} style={style ? PRESETS[style] : null}
+            onLock={(g, on) => setDiceLocks(prev => (on ? [...prev.filter(x => x !== g), g] : prev.filter(x => x !== g)))} />
         </section>
 
         {/* Generate + results (min-w-0: a grid column otherwise never gets narrower than its content) */}

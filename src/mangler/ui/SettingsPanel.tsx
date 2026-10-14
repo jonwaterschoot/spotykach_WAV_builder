@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Dices } from 'lucide-react';
-import { rollGroup } from '../randomize';
+import { ChevronDown, ChevronRight, Dices, Lock, Unlock } from 'lucide-react';
+import { rollGroupInStyle } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import { NOTE_NAMES } from '../pitch';
 import { appStorage } from '../../utils/storageNamespace';
@@ -39,6 +39,11 @@ interface SettingsPanelProps {
     /** Compact (the default): one row per slider, tighter groups. */
     density?: Density;
     className?: string;
+    /** Groups the dice and presets leave alone. With `onLock`, each group gets a lock next to its dice. */
+    locked?: readonly SettingsGroup[];
+    onLock?: (group: SettingsGroup, locked: boolean) => void;
+    /** The style (a preset) the group dice stay near. */
+    style?: Partial<MangleSettings> | null;
 }
 
 /**
@@ -110,6 +115,7 @@ const loadOpen = (key: string, closed: readonly SettingsGroup[]): Record<Setting
 
 export function SettingsPanel({
     settings: s, onChange, hide = [], storageKey, initiallyClosed = [], lengthStep = 1, onHint, density = 'compact', className,
+    locked = [], onLock, style = null,
 }: SettingsPanelProps) {
     const [open, setOpen] = useState(() => loadOpen(storageKey, initiallyClosed));
     useEffect(() => {
@@ -136,9 +142,20 @@ export function SettingsPanel({
                     <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</span>
                     {!open[id] && <span className="ml-auto truncate text-[10px] font-mono text-gray-600">{summaries[id](s)}</span>}
                 </button>
-                <button onClick={() => onChange(rollGroup(id))}
-                    title={`Dice: roll the ${title.toLowerCase()} settings`} aria-label={`Roll the ${title.toLowerCase()} settings`}
-                    className="shrink-0 mr-2 p-1 rounded text-gray-600 hover:text-synthux-red hover:bg-white/5 transition-colors">
+                {onLock && (
+                    <button onClick={() => onLock(id, !locked.includes(id))} aria-pressed={locked.includes(id)}
+                        title={locked.includes(id)
+                            ? `Locked: the dice and presets leave the ${title.toLowerCase()} settings as they are. Click to unlock`
+                            : `Lock the ${title.toLowerCase()} settings: the dice and presets leave them alone`}
+                        aria-label={`${locked.includes(id) ? 'Unlock' : 'Lock'} the ${title.toLowerCase()} settings`}
+                        className={`shrink-0 p-1 rounded hover:bg-white/5 transition-colors ${locked.includes(id) ? 'text-synthux-yellow' : 'text-gray-700 hover:text-white'}`}>
+                        {locked.includes(id) ? <Lock size={11} /> : <Unlock size={11} />}
+                    </button>
+                )}
+                <button onClick={() => onChange(rollGroupInStyle(id, style))} disabled={locked.includes(id)}
+                    title={`Dice: roll the ${title.toLowerCase()} settings${style ? ', near the style' : ''}`} aria-label={`Roll the ${title.toLowerCase()} settings`}
+                    className="shrink-0 mr-2 p-1 rounded text-gray-600 hover:text-synthux-red hover:bg-white/5 transition-colors
+                        disabled:opacity-25 disabled:hover:text-gray-600 disabled:hover:bg-transparent">
                     <Dices size={12} />
                 </button>
             </div>

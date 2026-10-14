@@ -526,7 +526,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     <p className="text-gray-400">
                                         <strong className="text-gray-300">Projects</strong> (the Project menu) save everything (pools, results,
                                         slices, sequence, synth and settings) to <em>Mangler/</em> in your workspace folder, or as a .mangler.zip.
-                                        <em> Start fresh</em> empties it all. The dice buttons roll settings, patterns, slices and ranges.
+                                        <em> Start fresh</em> empties it all. The dice buttons roll settings, patterns, slices and ranges; a <em>style</em> (a preset) keeps the settings dice near its sound, and a group&apos;s lock keeps that group as it is.
                                     </p>
                                     <p className="text-gray-400">
                                         <strong className="text-gray-300">Spotykach link:</strong> in Sequence, <em>Link</em> connects over MIDI.
