@@ -688,6 +688,23 @@ section('Sequencer: cues, scale, CC');
     check(dh && dh.sliceId === null && dh.note === 67 && dh.deck === 'A', 'a deck-only step: note 67 for +7 st, no sound here');
 }
 
+// Removing sources and results: the sequence lets go of what used them.
+{
+    const S = await import('../src/mangler/sequence.ts');
+    let n = 0;
+    const seq = S.newSequence(() => `p${n++}`);
+    seq.tracks[0].sliceId = 'gone';
+    seq.tracks[0].patterns.B[3] = { on: true, velocity: 1, sliceId: 'gone' };
+    seq.tracks[1].sliceId = 'stays';
+    seq.tracks[2].kind = 'cue';
+    seq.tracks[2].cue = { kind: 'result', id: 'r9', name: 'kit', cues: [0, 1], duration: 2 };
+    const pruned = S.pruneSequence(seq, new Set(['gone']), new Set(['r9']));
+    check(pruned.tracks[0].sliceId === null && pruned.tracks[0].patterns.B[3].sliceId === undefined && pruned.tracks[0].patterns.B[3].on
+        && pruned.tracks[1].sliceId === 'stays' && pruned.tracks[2].cue === undefined,
+        'removing a slice and a result: the tracks and step locks that used them let go, the rest stays');
+    check(S.pruneSequence(seq, new Set(['other']), new Set(['x'])) === seq, 'nothing used: the same sequence back');
+}
+
 // ---------------------------------------------------------------------------
 // Synth: every generator, seeded, in range, the right class
 // ---------------------------------------------------------------------------

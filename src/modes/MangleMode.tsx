@@ -73,7 +73,7 @@ import { GENERATORS, defaultRanges, synthesize, type SynthKind, type SynthRanges
 import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
 import { useMidiFollow, useMidiLink } from '../mangler/ui/useMidiLink';
 import {
-  MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, parseCueSoundId, sequenceCues, sequenceFrames, sequenceHits,
+  MAX_TRACKS, PATTERNS, STEPS, maxChain, mixSequence, newSequence, parseCueSoundId, pruneSequence, sequenceCues, sequenceFrames, sequenceHits,
   type CueSound, type SeqCues, type SeqHit, type Sequence,
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
@@ -651,11 +651,28 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     showToast(`${on.size} of ${ids.length} sources on`, 'info');
   }, [shownSources, setSourcesEnabled, showToast]);
 
+  /**
+   * What hangs on removed sources goes with them: the slices cut from them, and
+   * the sequencer's uses of both (a track's slice, a step's lock, a cue track on
+   * one of the files). Results made from them stay: they are audio of their own.
+   */
+  const forgetSources = useCallback((ids: ReadonlySet<string>) => {
+    const goneSlices = slices.filter(s => ids.has(s.sourceId)).map(s => s.id);
+    if (goneSlices.length) {
+      setSlices(prev => prev.filter(s => !ids.has(s.sourceId)));
+      deleteMangleSlicesFromDB(goneSlices);
+    }
+    setSequence(seq => pruneSequence(seq, new Set(goneSlices), ids));
+    return goneSlices.length;
+  }, [slices]);
+
   const removeSource = useCallback((id: string) => {
     if (player.activeFileId === id) player.stop();
     setSources(prev => prev.filter(s => s.id !== id));
     deleteMangleSourcesFromDB([id]);
-  }, [player]);
+    const slicesGone = forgetSources(new Set([id]));
+    if (slicesGone) showToast(`${slicesGone} slice${slicesGone === 1 ? '' : 's'} cut from it went too`, 'info');
+  }, [player, forgetSources, showToast]);
 
   /** The header's delete: every switched-on source, so select-all then delete clears the pool. */
   const [confirmRemoveEnabled, setConfirmRemoveEnabled] = useState(false);
@@ -665,8 +682,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (player.activeFileId && ids.has(player.activeFileId)) player.stop();
     setSources(prev => prev.filter(s => !ids.has(s.id)));
     deleteMangleSourcesFromDB([...ids]);
-    showToast(`${ids.size} source${ids.size === 1 ? '' : 's'} removed from the pool`, 'success');
-  }, [shownSources, player, showToast]);
+    const slicesGone = forgetSources(ids);
+    showToast(`${ids.size} source${ids.size === 1 ? '' : 's'} removed from the pool${slicesGone ? `, and ${slicesGone} slice${slicesGone === 1 ? '' : 's'} cut from them` : ''}`, 'success');
+  }, [shownSources, player, forgetSources, showToast]);
 
   const enabledSources = useMemo(() => sources.filter(s => s.enabled), [sources]);
   const enabledSeconds = useMemo(() => enabledSources.reduce((sum, s) => sum + s.duration, 0), [enabledSources]);
@@ -840,6 +858,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       region.stop();
       await deleteMangleResultsFromDB(unkept);
       setResults(prev => prev.filter(r => r.kept));
+      setSequence(seq => pruneSequence(seq, new Set(), new Set(unkept)));
     }
 
     const count = variationCount;
@@ -1532,6 +1551,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (region.playing?.resultId === id) region.stop();
     setResults(prev => prev.filter(r => r.id !== id));
     deleteMangleResultsFromDB([id]);
+    setSequence(seq => pruneSequence(seq, new Set(), new Set([id])));
   }, [player, region]);
 
   const clearUnkept = useCallback(() => {
@@ -1539,6 +1559,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     if (player.activeFileId && ids.includes(player.activeFileId)) player.stop();
     setResults(prev => prev.filter(r => r.kept));
     deleteMangleResultsFromDB(ids);
+    setSequence(seq => pruneSequence(seq, new Set(), new Set(ids)));
   }, [results, player]);
 
   const applySeed = useCallback((value: number) => {
@@ -2877,7 +2898,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         onClose={() => setConfirmRemoveEnabled(false)}
         onConfirm={() => { setConfirmRemoveEnabled(false); removeEnabledSources(); }}
         title="Remove the switched-on sources"
-        message={`${shownSources.filter(s => s.enabled).length} source${shownSources.filter(s => s.enabled).length === 1 ? '' : 's'} will be removed from the pool${shownSources.length < sources.length ? ' (only those the filter shows)' : ''}. Results made from them are kept; slices cut from them can no longer play.`}
+        message={`${shownSources.filter(s => s.enabled).length} source${shownSources.filter(s => s.enabled).length === 1 ? '' : 's'} will be removed from the pool${shownSources.length < sources.length ? ' (only those the filter shows)' : ''}, with the slices cut from them and their place in the sequencer. Results made from them are kept.`}
         confirmLabel="Remove"
         isDestructive
       />

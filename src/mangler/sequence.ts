@@ -269,6 +269,31 @@ export function stepHits(seq: Sequence, k: number): Omit<SeqHit, 'at'>[] {
     return out;
 }
 
+/**
+ * The sequence without what has gone from the mangler: slices (a track's, a
+ * step's lock) and the samples cue tracks play (a result or a pool file, by
+ * id). Unchanged, it is the same object.
+ */
+export function pruneSequence(seq: Sequence, goneSlices: ReadonlySet<string>, goneOwners: ReadonlySet<string>): Sequence {
+    let changed = false;
+    const tracks = seq.tracks.map(track => {
+        let next = track;
+        if (track.sliceId && goneSlices.has(track.sliceId)) next = { ...next, sliceId: null };
+        if (track.cue && goneOwners.has(track.cue.id)) next = { ...next, cue: undefined };
+        const locked = (Object.values(track.patterns) as SeqStep[][]).some(steps => steps.some(s => s.sliceId && goneSlices.has(s.sliceId)));
+        if (locked) {
+            const patterns = { ...next.patterns };
+            for (const p of Object.keys(patterns) as PatternId[]) {
+                patterns[p] = patterns[p].map(s => (s.sliceId && goneSlices.has(s.sliceId) ? { ...s, sliceId: undefined } : s));
+            }
+            next = { ...next, patterns };
+        }
+        if (next !== track) changed = true;
+        return next;
+    });
+    return changed ? { ...seq, tracks } : seq;
+}
+
 /** Every sound a sequence can make (any pattern), to render ahead of playing. */
 export function sequenceSounds(seq: Sequence): { sliceId: string; shift: number }[] {
     const out = new Map<string, { sliceId: string; shift: number }>();
