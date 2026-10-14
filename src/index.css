@@ -183,11 +183,13 @@ img {
         animation: pulse-ring 2s infinite;
     }
 
-    /* Apply texture to background classes */
-    .bg-synthux-panel, 
-    .bg-synthux-browsebg, 
-    .bg-synthux-tapebg,
-    .bg-synthux-main {
+    /*
+     * Apply texture to background classes. :where() keeps these at zero
+     * specificity: an element that asks for absolute, fixed or sticky keeps it
+     * (a menu, an overlay, a sticky header); everything else becomes the
+     * containing block its ::before texture needs.
+     */
+    :where(.bg-synthux-panel, .bg-synthux-browsebg, .bg-synthux-tapebg, .bg-synthux-main) {
         position: relative;
     }
 
@@ -208,7 +210,7 @@ img {
         z-index: 0;
     }
 
-    .noise-texture {
+    :where(.noise-texture) {
         position: relative;
     }
 
@@ -226,7 +228,7 @@ img {
         mix-blend-mode: overlay;
     }
 
-    .noise-texture-light {
+    :where(.noise-texture-light) {
         position: relative;
     }
 

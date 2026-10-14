@@ -1740,6 +1740,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const fullscreen = useFullscreen();
   const [confirmFresh, setConfirmFresh] = useState(false);
   useEscapeLayer(projectMenu, () => { setProjectMenu(false); return true; });
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+  // A click anywhere else closes it.
+  useEffect(() => {
+    if (!projectMenu) return;
+    const away = (e: PointerEvent) => { if (!projectMenuRef.current?.contains(e.target as Node)) setProjectMenu(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [projectMenu]);
 
   /** Everything emptied: sources, results (kept ones too), slices, synth takes, the sequence. Settings stay. */
   const startFresh = useCallback(async () => {
@@ -2002,7 +2010,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </nav>
         </div>
         <div className="flex items-center gap-1">
-        <div className="relative">
+        <div className="relative" ref={projectMenuRef}>
           <button
             onClick={() => setProjectMenu(o => !o)}
             aria-expanded={projectMenu}
