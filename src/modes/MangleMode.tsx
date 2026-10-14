@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Briefcase, ChevronDown, Drum, Grid2x2, Import, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
+  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Search, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Layers, Library, Loader, Lock, Package,
   Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, Trash2, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -11,7 +11,7 @@ import { ProjectCreatedModal } from '../shell/ProjectCreatedModal';
 import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle } from '../utils/storageUtils';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
-import { LEVEL_LABEL, resultLicense, sourceLicense } from '../mangler/license';
+import { LEVEL_LABEL, LOCAL_ORIGINS, resultLicense, sourceLicense } from '../mangler/license';
 import type { LicenseLevel } from '../submission/licenses';
 import { addResultsToBrowsePool, resultsAsDetached, resultsAsProjectFiles, saveResultsToLibrary } from '../mangler/save';
 import { useEscapeLayer } from '../shell/escapeStack';
@@ -20,7 +20,7 @@ import { Toast } from '../components/Toast';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { appStorage } from '../utils/storageNamespace';
 import {
-  deleteMangleResultsFromDB, deleteMangleSlicesFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB,
+  clearMangleStores, deleteMangleResultsFromDB, deleteMangleSlicesFromDB, deleteMangleSourcesFromDB, loadMangleResultsFromDB,
   loadMangleSlicesFromDB, loadMangleSourcesFromDB, putMangleSlicesToDB,
   loadUserLibraryFromDB, putMangleResultDiskBacked, putMangleResultToDB, putMangleSourceDiskBacked, putMangleSourceToDB,
 } from '../utils/persistence';
@@ -90,6 +90,22 @@ const SR = 48000;
 type PlayMode = 'full' | 'fades' | 'cue';
 
 type Pane = 'sources' | 'settings' | 'results';
+
+/** What a source is, for the pool's filter. */
+type SourceKind = 'files' | 'packs' | 'project' | 'synth' | 'made';
+const SOURCE_KINDS: { id: SourceKind; label: string; hint: string }[] = [
+  { id: 'files', label: 'Files', hint: 'Your own files' },
+  { id: 'packs', label: 'Packs', hint: 'From the sample packs and online sources' },
+  { id: 'project', label: 'Project', hint: "The open Studio project's files" },
+  { id: 'synth', label: 'Synth', hint: 'Synth takes' },
+  { id: 'made', label: 'Made here', hint: 'Results and slices put back in the pool' },
+];
+const sourceKind = (s: MangleSourceEntry): SourceKind =>
+  s.sourceSamplePath?.startsWith('project:') ? 'project'
+    : s.origin === 'Synth' ? 'synth'
+      : s.origin === 'Sample Mangler' || s.origin.startsWith('Slice of') ? 'made'
+        : LOCAL_ORIGINS.includes(s.origin) ? 'files'
+          : 'packs';
 
 /**
  * The stations in the top bar. Mangle is the sources, settings and results;
@@ -526,14 +542,37 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     putMangleSourceToDB(next).catch(e => console.error(e));
   }, []);
 
-  const setAllSources = useCallback((enabled: boolean) => {
+  // The pool's filter: what the list shows, and what its checkbox, bin and dice act on.
+  const [poolQuery, setPoolQuery] = useState('');
+  const [poolKind, setPoolKind] = useState<SourceKind | 'all'>('all');
+  const shownSources = useMemo(() => {
+    const q = poolQuery.trim().toLowerCase();
+    return sources.filter(s => (poolKind === 'all' || sourceKind(s) === poolKind)
+      && (!q || s.name.toLowerCase().includes(q) || s.origin.toLowerCase().includes(q)));
+  }, [sources, poolQuery, poolKind]);
+  const poolKinds = useMemo(() => SOURCE_KINDS.filter(k => sources.some(s => sourceKind(s) === k.id)), [sources]);
+
+  /** Switch these sources on or off (the rest stay as they are). */
+  const setSourcesEnabled = useCallback((ids: Set<string>, enabled: (id: string) => boolean) => {
     setSources(prev => prev.map(s => {
-      if (s.enabled === enabled) return s;
-      const next = { ...s, enabled };
+      if (!ids.has(s.id) || s.enabled === enabled(s.id)) return s;
+      const next = { ...s, enabled: enabled(s.id) };
       putMangleSourceToDB(next).catch(e => console.error(e));
       return next;
     }));
   }, []);
+  const setAllSources = useCallback((enabled: boolean) => {
+    setSourcesEnabled(new Set(shownSources.map(s => s.id)), () => enabled);
+  }, [shownSources, setSourcesEnabled]);
+  /** Dice: a random few of the shown sources on, the others shown off. */
+  const rollSources = useCallback(() => {
+    const ids = shownSources.map(s => s.id);
+    if (ids.length < 2) return;
+    const want = 1 + Math.floor(Math.random() * Math.min(ids.length - 1, Math.max(2, Math.ceil(ids.length / 2))));
+    const on = new Set([...ids].sort(() => Math.random() - 0.5).slice(0, want));
+    setSourcesEnabled(new Set(ids), id => on.has(id));
+    showToast(`${on.size} of ${ids.length} sources on`, 'info');
+  }, [shownSources, setSourcesEnabled, showToast]);
 
   const removeSource = useCallback((id: string) => {
     if (player.activeFileId === id) player.stop();
@@ -544,13 +583,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   /** The header's delete: every switched-on source, so select-all then delete clears the pool. */
   const [confirmRemoveEnabled, setConfirmRemoveEnabled] = useState(false);
   const removeEnabledSources = useCallback(() => {
-    const ids = new Set(sources.filter(s => s.enabled).map(s => s.id));
+    const ids = new Set(shownSources.filter(s => s.enabled).map(s => s.id));
     if (ids.size === 0) return;
     if (player.activeFileId && ids.has(player.activeFileId)) player.stop();
     setSources(prev => prev.filter(s => !ids.has(s.id)));
     deleteMangleSourcesFromDB([...ids]);
     showToast(`${ids.size} source${ids.size === 1 ? '' : 's'} removed from the pool`, 'success');
-  }, [sources, player, showToast]);
+  }, [shownSources, player, showToast]);
 
   const enabledSources = useMemo(() => sources.filter(s => s.enabled), [sources]);
   const enabledSeconds = useMemo(() => enabledSources.reduce((sum, s) => sum + s.duration, 0), [enabledSources]);
@@ -1564,6 +1603,36 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     addToProject([await takeResult(t)]);
   }, [takeResult, addToProject]);
 
+  // ---------------------------------------------------------------------------
+  // The mangler as a whole: start fresh (and, below, save and open)
+  // ---------------------------------------------------------------------------
+
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [confirmFresh, setConfirmFresh] = useState(false);
+  useEscapeLayer(projectMenu, () => { setProjectMenu(false); return true; });
+
+  /** Everything emptied: sources, results (kept ones too), slices, synth takes, the sequence. Settings stay. */
+  const startFresh = useCallback(async () => {
+    player.stop();
+    region.stop();
+    sequencer.stop();
+    try {
+      await clearMangleStores();
+    } catch (e) {
+      console.error(e);
+      showToast('Could not clear the stored pools', 'error');
+      return;
+    }
+    setSources([]);
+    setResults([]);
+    setSlices([]);
+    setTakes([]);
+    setUndo({});
+    setExpanded(null);
+    setSequence(newSequence(newId));
+    showToast('Started fresh: sources, results, slices and the sequence are empty', 'success');
+  }, [player, region, sequencer, showToast]);
+
   const downloadResult = useCallback((r: MangleResultEntry) => {
     if (savable([r]).length) downloadBlob(r.blob, `${r.name}.wav`);
   }, [savable]);
@@ -1678,6 +1747,26 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </nav>
         </div>
         <div className="flex items-center gap-1">
+        <div className="relative">
+          <button
+            onClick={() => setProjectMenu(o => !o)}
+            aria-expanded={projectMenu}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest
+              text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            title="The whole mangler: start fresh, save it, open a saved one"
+          >
+            <FolderOpen size={14} /> <span className="hidden sm:inline">Project</span> <ChevronDown size={12} />
+          </button>
+          {projectMenu && (
+            <div className="absolute right-0 top-full mt-1 z-[60] w-64 rounded-lg border border-white/15 bg-synthux-panel shadow-2xl p-1 text-[12px]">
+              <button onClick={() => { setProjectMenu(false); setConfirmFresh(true); }} disabled={busy}
+                className="w-full text-left px-3 py-2 rounded hover:bg-white/5 disabled:opacity-40">
+                <span className="block font-bold text-gray-100">Start fresh</span>
+                <span className="block text-[10px] text-gray-500">Empty every pool: sources, results, slices, sequence</span>
+              </button>
+            </div>
+          )}
+        </div>
         <button
           onClick={togglePhoneMode}
           aria-pressed={phoneMode}
@@ -1776,22 +1865,28 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap" title="Switch every source on or off">
               <input
                 type="checkbox"
-                checked={sources.length > 0 && enabledSources.length === sources.length}
-                ref={el => { if (el) el.indeterminate = enabledSources.length > 0 && enabledSources.length < sources.length; }}
+                checked={shownSources.length > 0 && shownSources.every(s => s.enabled)}
+                ref={el => { if (el) el.indeterminate = shownSources.some(s => s.enabled) && !shownSources.every(s => s.enabled); }}
                 onChange={e => setAllSources(e.target.checked)}
-                disabled={sources.length === 0}
+                disabled={shownSources.length === 0}
                 className="accent-synthux-red h-3.5 w-3.5 cursor-pointer disabled:cursor-default"
               />
               <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Source pool</h2>
             </label>
             <button
+              onClick={rollSources}
+              disabled={shownSources.length < 2}
+              className="ml-1 p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              title="Dice: switch on a random few of the sources shown, and the others off"
+            >
+              <Dices size={13} />
+            </button>
+            <button
               onClick={() => setConfirmRemoveEnabled(true)}
-              disabled={enabledSources.length === 0}
-              className="mr-auto ml-1 p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5 transition-colors
+              disabled={!shownSources.some(s => s.enabled)}
+              className="mr-auto p-1 rounded text-gray-500 hover:text-synthux-red hover:bg-white/5 transition-colors
                 disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:bg-transparent"
-              title={enabledSources.length === sources.length
-                ? 'Remove every source from the pool'
-                : `Remove the ${enabledSources.length} switched-on source${enabledSources.length === 1 ? '' : 's'} from the pool`}
+              title={`Remove the switched-on sources shown (${shownSources.filter(s => s.enabled).length}) from the pool`}
             >
               <Trash2 size={13} />
             </button>
@@ -1835,6 +1930,26 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               }}
             />
           </div>
+          {sources.length > 0 && (
+            <div className="shrink-0 px-4 pb-2 space-y-1.5 text-[10px]">
+              <label className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 bg-black/30 text-gray-400">
+                <Search size={11} />
+                <input value={poolQuery} onChange={e => setPoolQuery(e.target.value)} placeholder="Filter by name or origin"
+                  className="min-w-0 flex-1 bg-transparent text-[11px] text-gray-200 placeholder:text-gray-600 focus:outline-none" />
+                {poolQuery && <button onClick={() => setPoolQuery('')} aria-label="Clear the filter"><X size={11} /></button>}
+              </label>
+              {poolKinds.length > 1 && (
+                <div className="flex flex-wrap gap-1">
+                  {[{ id: 'all' as const, label: 'All', hint: 'Every source' }, ...poolKinds].map(k => (
+                    <button key={k.id} onClick={() => setPoolKind(k.id)} title={k.hint}
+                      className={`px-1.5 py-0.5 rounded border transition-colors ${poolKind === k.id ? 'bg-synthux-red/80 border-transparent text-white' : 'border-white/10 text-gray-400 hover:text-white'}`}>
+                      {k.label} <span className="font-mono opacity-70">{k.id === 'all' ? sources.length : sources.filter(s => sourceKind(s) === k.id).length}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
             {loaded && sources.length === 0 && adding === 0 && (
@@ -1851,8 +1966,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               </button>
             )}
 
+            {sources.length > 0 && shownSources.length === 0 && (
+              <p className="px-2 py-4 text-center text-[11px] text-gray-500">Nothing matches the filter.</p>
+            )}
             <ul className="space-y-1">
-              {sources.map(s => {
+              {shownSources.map(s => {
                 const playing = player.activeFileId === s.id && player.isPlaying;
                 const active = player.activeFileId === s.id;
                 const partCount = s.regions?.length ?? 0;
@@ -2474,11 +2592,21 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       />
 
       <ConfirmModal
+        isOpen={confirmFresh}
+        onClose={() => setConfirmFresh(false)}
+        onConfirm={() => { setConfirmFresh(false); startFresh(); }}
+        title="Start fresh"
+        message={`This empties the source pool (${sources.length}), the results (${results.length}, kept ones too), the slice pool (${slices.length}), the synth takes and the sequence. Settings stay. Save the mangler as a project first if you want to come back to it.`}
+        confirmLabel="Empty everything"
+        isDestructive
+      />
+
+      <ConfirmModal
         isOpen={confirmRemoveEnabled}
         onClose={() => setConfirmRemoveEnabled(false)}
         onConfirm={() => { setConfirmRemoveEnabled(false); removeEnabledSources(); }}
-        title={enabledSources.length === sources.length ? 'Clear the source pool' : 'Remove the switched-on sources'}
-        message={`${enabledSources.length === sources.length ? `All ${sources.length}` : enabledSources.length} source${enabledSources.length === 1 ? '' : 's'} will be removed from the pool. Results made from them are kept.`}
+        title="Remove the switched-on sources"
+        message={`${shownSources.filter(s => s.enabled).length} source${shownSources.filter(s => s.enabled).length === 1 ? '' : 's'} will be removed from the pool${shownSources.length < sources.length ? ' (only those the filter shows)' : ''}. Results made from them are kept; slices cut from them can no longer play.`}
         confirmLabel="Remove"
         isDestructive
       />

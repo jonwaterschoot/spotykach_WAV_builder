@@ -455,4 +455,10 @@ export const putMangleSlicesToDB = async (entries: MangleSliceEntry[]) => {
 };
 export const deleteMangleSlicesFromDB = (ids: string[]) => deleteMany(MANGLE_SLICES_STORE, ids);
 
+/** Every mangler store emptied: sources, results and slices. "Start fresh". */
+export const clearMangleStores = async () => {
+    const db = await initDB();
+    await Promise.all([MANGLE_SOURCES_STORE, MANGLE_RESULTS_STORE, MANGLE_SLICES_STORE].map(s => db.clear(s)));
+};
+
 export const deleteMangleResultsFromDB = (ids: string[]) => deleteMany(MANGLE_RESULTS_STORE, ids);
