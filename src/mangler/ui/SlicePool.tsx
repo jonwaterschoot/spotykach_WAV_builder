@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Dices, Import, Package, Play, Search, Square, Trash2 } from 'lucide-react';
 import { rollSelection } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
@@ -10,8 +10,9 @@ import { formatMs } from './format';
 
 /**
  * The slice pool: single sounds kept from hits and snippets, as tiles. Click to
- * select (Shift for a range, Ctrl/Cmd to add), the play button or a double click
- * to listen. The selection, in the order shown, becomes a kit.
+ * select (Shift for a range, Ctrl/Cmd to add; on a touch screen a tap toggles),
+ * the play button or a double click to listen. The selection, in the order
+ * shown, becomes a kit.
  */
 
 interface SlicePoolProps {
@@ -42,6 +43,8 @@ export const SlicePool: React.FC<SlicePoolProps> = ({
     const [query, setQuery] = useState('');
     const [selection, setSelection] = useState<Set<string>>(new Set());
     const [anchor, setAnchor] = useState<number | null>(null);
+    /** How the last tile press came: a tap on a touch screen adds to the selection. */
+    const pointerType = useRef('mouse');
 
     const shown = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -66,7 +69,7 @@ export const SlicePool: React.FC<SlicePoolProps> = ({
             return;
         }
         setAnchor(index);
-        if (e.ctrlKey || e.metaKey) {
+        if (e.ctrlKey || e.metaKey || pointerType.current === 'touch') {
             setSelection(prev => {
                 const next = new Set(prev);
                 if (next.has(id)) next.delete(id); else next.add(id);
@@ -141,6 +144,12 @@ export const SlicePool: React.FC<SlicePoolProps> = ({
                             className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5">
                             <Trash2 size={11} /> Delete
                         </button>
+                        {selected.length < shown.length && (
+                            <button onClick={() => setSelection(new Set(shown.map(s => s.id)))} title="Select all the slices shown (Ctrl/Cmd+A)"
+                                className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
+                                All
+                            </button>
+                        )}
                         <button onClick={() => setSelection(new Set())} className="px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
                             Clear
                         </button>
@@ -167,6 +176,7 @@ export const SlicePool: React.FC<SlicePoolProps> = ({
                             const isPlaying = playingId === s.id;
                             return (
                                 <div key={s.id}
+                                    onPointerDown={e => { pointerType.current = e.pointerType; }}
                                     onClick={e => click(e, i)}
                                     onDoubleClick={() => !missing && onPlay(s)}
                                     className={`group relative rounded-lg border p-2 cursor-pointer select-none transition-colors
