@@ -24,6 +24,12 @@ The waveform editor's new **Tools** menu has a Mangler under FX: a new take from
 
 ![The Mangler tool in the editor](images/samplemangler_editorfxtools.jpg)
 
+## Since launch
+
+- **Hits and slices:** *Find hits* splits a source into single sounds, sorted into low, mid and high. Keep them in the slice pool, shape each one (shift, direction, gain, envelope), and turn a selection into a kit with a cue at each slice.
+- **More dice:** the dice now roll settings, sources, slices, patterns and synth ranges too. Presets act as styles for the dice, and group locks keep the settings you like where they are.
+- **A step sequencer** plays slices, cue points and a small synth. Linked to a Spotykach over MIDI, it sends or follows clock and Start / Stop, plays the decks with notes, and CC tracks move its controls step by step or with an LFO.
+
 ## Licences travel along
 
 A mangled file is still made of the samples it came from. Packs that allow use in your own music but not passing the samples on mark the result *personal use*, and that note goes with the file wherever you save it. A pack that forbids changes altogether can be listened to in the mangler, but results using it can't be saved.
