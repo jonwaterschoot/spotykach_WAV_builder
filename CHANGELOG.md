@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.1] - 2026-10-16
+
 ### Added
 
 - **Sample Mangler sequencer: a timeline.** The whole chain as bars along the bottom: drag
@@ -35,6 +39,8 @@
 - **Mangler: select results.** *Select* on the results bar puts a tick box on each card; the
   *Selected* menu saves, sends or reuses just those, next to the *Kept* menu for every starred
   one.
+- **Mangler: rename a result.** Click its name on the card. The new name goes into the WAV
+  too, so the Spotykach, the library and a download all show it.
 
 ### Fixed
 
