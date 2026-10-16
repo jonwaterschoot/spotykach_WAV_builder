@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Sample Mangler sequencer: a timeline.** The whole chain as bars along the bottom: drag
+  them into a new order, view all tracks as steps, one track as a piano roll, or a CC track's
+  automation. Resize it, zoom it; on a phone it takes turns with the pattern grid.
+- **Sequencer: more to play with.** Chance per step; drawn CC automation (smooth, and joined
+  across bars); up to 16 patterns (A–P); loop the pattern being edited; undo and redo.
+- **Sequencer: scales and envelopes.** A piano down the roll, *Lock* to keep notes in the
+  scale, a scale per track. An attack/decay per track while it plays, or open a slice in the
+  editor and save the edit back as that slice.
+- **Sequencer: other MIDI devices.** Any output, its own channel and any CC number, next to
+  the Spotykach's decks; clock to them too if wanted.
+
 ### Fixed
 
 - **Moving a file to another slot no longer resets the project.** Moving, swapping or dropping
@@ -16,6 +29,8 @@
 - **Over USB, a card another project wrote is recognised.** A slot with the project file's
   name is compared with the file a build would write, a few KB read in place, nothing
   downloaded. Same sound: in sync. Other name or slices: a header update, nothing pooled.
+- **Dropdown lists are dark with light text.** Coloured selects (a track kind, a deck) made
+  their options hard to read on the browser's light grey.
 
 ---
 
