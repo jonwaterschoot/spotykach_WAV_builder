@@ -132,7 +132,7 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
     };
     // The listener is bound once (non-passive, to stop the page scrolling); it calls the current handler.
     const handleWheelRef = useRef(handleWheel);
-    handleWheelRef.current = handleWheel;
+    useEffect(() => { handleWheelRef.current = handleWheel; });
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
