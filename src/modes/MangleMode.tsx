@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AudioWaveform, Briefcase, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Maximize, Minimize, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Library, Loader, Lock, Package,
-  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Star, HardDrive, Share, Tag, Trash2, Waves, Undo2, Unlock, X, ZoomIn,
+  AudioWaveform, Briefcase, CheckSquare, ChevronDown, Drum, FolderOpen, Grid2x2, Import, Maximize, Minimize, Search, Usb, ChevronLeft, ChevronRight, Dices, Download, FolderPlus, Library, Loader, Lock, Package,
+  Crop as CropIcon, HelpCircle, Pause, Pencil, Play, ListMusic, Plus, RefreshCw, Scissors, SlidersHorizontal, Smartphone, Square, Star, HardDrive, Share, Tag, Trash2, Waves, Undo2, Unlock, X, ZoomIn,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ExportProgressModal } from '../components/ExportProgressModal';
@@ -375,6 +375,14 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [adding, setAdding] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  /** Select mode: tick results to send just those somewhere, instead of every starred one. */
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const toggleSelected = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(() => !appStorage.getItem(TOUR_KEY));
   /** Below lg, one column at a time: the bottom bar picks it. */
@@ -2074,12 +2082,19 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     player.stop(); region.stop(); sequencer.stop();
     setCard({ mode: 'send', items });
   };
-  /** Where results can go from here (standalone): one card's Export menu, and the Kept menu for all starred. */
+  /** Where results can go from here (standalone): one card's Export menu, and the Kept and Selected menus. */
   const exportItems = (list: MangleResultEntry[]) => [
     { label: 'Save to the user library', icon: <Library size={13} />, onClick: () => requestSave('library', list) },
     { label: 'Add to the Browse pool', icon: <Waves size={13} />, onClick: () => requestSave('pool', list) },
     { label: list.length === 1 ? 'New Studio project with it' : 'New Studio project with them', icon: <FolderPlus size={13} />, onClick: () => startProject(list) },
     ...(cardEnabled ? [{ label: 'Send to Spotykach (USB or SD card)', icon: <Usb size={13} />, onClick: () => sendToCard(list) }] : []),
+  ];
+  /** A group of results (kept, or selected): out of the mangler, or back into the source pool. */
+  const groupItems = (list: MangleResultEntry[]) => [
+    ...(studio
+      ? [{ label: 'Add to project', icon: <Plus size={13} />, onClick: () => addToProject(list) }]
+      : exportItems(list)),
+    { label: 'Into the source pool', icon: <Import size={13} />, onClick: () => { for (const r of list) void resultToSource(r); } },
   ];
   /** Slot files from the card, into the source pool: the user's own, cue points in the file. */
   const importFromCard = async (files: { file: File; tape: string; slot: number }[]) => {
@@ -2273,6 +2288,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   };
 
   const keptResults = useMemo(() => results.filter(r => r.kept), [results]);
+  /** The ticked results still in the list (a discarded one drops out by itself). */
+  const selectedResults = useMemo(() => results.filter(r => selectedIds.has(r.id)), [results, selectedIds]);
 
   const resultsBytes = useMemo(() => results.reduce((sum, r) => sum + r.blob.size, 0), [results]);
   const busy = batch !== null;
@@ -2847,18 +2864,37 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                 {results.length} result{results.length === 1 ? '' : 's'} ·{' '}
                 <span className={keptResults.length ? 'text-synthux-yellow' : ''}>{keptResults.length} kept</span>
               </span>
-              <ActionMenu
-                label={`Kept (${keptResults.length})`}
-                icon={<Star size={12} />}
-                disabled={keptResults.length === 0}
-                title={keptResults.length ? 'Where the kept results go' : 'Keep results (the star on a card) to save, send or reuse them together'}
-                items={[
-                  ...(studio
-                    ? [{ label: 'Add to project', icon: <Plus size={13} />, onClick: () => addToProject(keptResults) }]
-                    : exportItems(keptResults)),
-                  { label: 'Into the source pool', icon: <Import size={13} />, onClick: () => { for (const r of keptResults) void resultToSource(r); } },
-                ]}
-              />
+              {selecting ? (
+                <>
+                  <ActionMenu
+                    label={`Selected (${selectedResults.length})`}
+                    icon={<CheckSquare size={12} />}
+                    disabled={selectedResults.length === 0}
+                    title={selectedResults.length ? 'Where the selected results go' : 'Tick results on their cards'}
+                    items={groupItems(selectedResults)}
+                  />
+                  <button onClick={() => setSelectedIds(new Set(results.map(r => r.id)))}
+                    className="px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">All</button>
+                  <button onClick={() => setSelectedIds(new Set())} disabled={selectedResults.length === 0}
+                    className="px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 disabled:opacity-40">None</button>
+                  <button onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}
+                    className="px-2 py-0.5 rounded border border-synthux-blue/50 text-synthux-blue hover:bg-synthux-blue/10">Done</button>
+                </>
+              ) : (
+                <>
+                  <ActionMenu
+                    label={`Kept (${keptResults.length})`}
+                    icon={<Star size={12} />}
+                    disabled={keptResults.length === 0}
+                    title={keptResults.length ? 'Where the kept results go' : 'Keep results (the star on a card) to save, send or reuse them together'}
+                    items={groupItems(keptResults)}
+                  />
+                  <button onClick={() => setSelecting(true)} title="Tick results to save, send or reuse just those"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
+                    <CheckSquare size={12} /> Select
+                  </button>
+                </>
+              )}
               {results.some(r => !r.kept) && !busy && (
                 <button onClick={clearUnkept} title="Discard every result without a star"
                   className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 text-gray-300 hover:text-white hover:bg-white/5">
@@ -2910,9 +2946,18 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               return (
                 <article key={r.id} id={`result-${r.id}`}
                   className={`min-w-0 rounded-xl border p-3 bg-synthux-panel/80 transition-shadow
-                    ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'} ${flashId === r.id ? 'ring-2 ring-synthux-red shadow-lg shadow-synthux-red/20' : ''}`}>
+                    ${r.kept ? 'border-synthux-yellow/40' : 'border-white/10'} ${flashId === r.id ? 'ring-2 ring-synthux-red shadow-lg shadow-synthux-red/20' : ''}
+                    ${selecting && selectedIds.has(r.id) ? 'ring-2 ring-synthux-blue' : ''}`}>
                   {/* On a phone the buttons go to a line of their own, together. */}
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
+                    {selecting && (
+                      <button onClick={() => toggleSelected(r.id)}
+                        title={selectedIds.has(r.id) ? 'Selected' : 'Select'} aria-pressed={selectedIds.has(r.id)}
+                        className={`h-8 w-8 shrink-0 flex items-center justify-center rounded-md
+                          ${selectedIds.has(r.id) ? 'text-synthux-blue' : 'text-gray-500 hover:text-white'}`}>
+                        {selectedIds.has(r.id) ? <CheckSquare size={18} /> : <Square size={18} />}
+                      </button>
+                    )}
                     <button
                       onClick={() => togglePlay(r)}
                       className="h-8 w-8 shrink-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
@@ -2954,10 +2999,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-0.5 ml-auto">
+                    <div className="flex flex-wrap items-center justify-end gap-0.5 ml-auto min-w-0 max-w-full">
                     {!r.kind && (
                     <button onClick={() => applySeed(r.recipe.seed)}
-                      className="shrink-0 font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
+                      className="min-w-0 max-w-[6.5rem] truncate font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
                       title="Use this seed for the next batch">
                       {r.recipe.seed}
                     </button>
@@ -2990,6 +3035,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         align="right"
                         title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Out of the mangler: Studio, Browse, the Spotykach. The Kept menu does every starred result at once'}
                         tone="plain"
+                        labelClassName="max-sm:hidden"
                         items={exportItems([r])}
                       />
                     )}
@@ -3470,7 +3516,9 @@ const ActionMenu: React.FC<{
   align?: 'left' | 'right';
   /** yellow: the Kept menu; plain: a card's own buttons. */
   tone?: 'yellow' | 'plain';
-}> = ({ label, icon, title, disabled, items, align = 'left', tone = 'yellow' }) => {
+  /** Classes for the label, e.g. to show only the icon on a narrow screen. */
+  labelClassName?: string;
+}> = ({ label, icon, title, disabled, items, align = 'left', tone = 'yellow', labelClassName }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEscapeLayer(open, () => { setOpen(false); return true; });
@@ -3486,7 +3534,7 @@ const ActionMenu: React.FC<{
         className={`flex items-center gap-1 rounded border disabled:border-white/10 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-default ${tone === 'yellow'
           ? 'px-2 py-0.5 border-synthux-yellow/40 text-synthux-yellow hover:bg-synthux-yellow/10'
           : 'h-8 px-2 text-[11px] font-bold border-white/10 text-gray-300 hover:text-white hover:bg-white/5'}`}>
-        {icon} {label} <ChevronDown size={12} />
+        {icon} <span className={labelClassName}>{label}</span> <ChevronDown size={12} />
       </button>
       {open && (
         <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1 z-40 min-w-[220px] py-1 rounded-lg border border-white/10 bg-synthux-panel shadow-2xl`}>

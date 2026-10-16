@@ -341,7 +341,9 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
           sourcePath: entry.sourcePath,
           edited: entry.edited,
         }))));
-        setIsPoolOpen(true);
+        // Beside the list it is a column, so it shows what came back. Below `md` it
+        // would take the whole screen before the browser was even seen: it stays shut.
+        if (window.matchMedia('(min-width: 768px)').matches) setIsPoolOpen(true);
       })
       .catch(e => console.warn('Could not read the temporary pool', e))
       .finally(() => { if (!cancelled) setIsHydrated(true); });

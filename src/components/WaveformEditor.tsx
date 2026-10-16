@@ -5119,7 +5119,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
 
 
-                            <div className="flex flex-wrap justify-center gap-4 px-6 pb-4 pt-3 phone:gap-2 phone:px-2 phone:pt-2 phone:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                            <div className="flex flex-wrap phone:flex-nowrap justify-center gap-4 px-6 pb-4 pt-3 phone:gap-2 phone:px-2 phone:pt-2 phone:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                                 <button
                                     onClick={() => {
                                         const newLooping = !isLooping;
@@ -5134,7 +5134,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }
                                     }}
-                                    className={`flex items-center justify-center w-12 h-12 phone:w-10 phone:h-10 rounded-full border border-gray-700 transition-all ${isLooping ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                                    className={`flex items-center justify-center w-12 h-12 phone:w-10 phone:h-10 phone:shrink-0 rounded-full border border-gray-700 transition-all ${isLooping ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
                                     title={isLooping ? "Looping Active" : "Enable Looping"}
                                 >
                                     <Repeat size={20} />
@@ -5142,12 +5142,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                 <button
                                     onClick={handlePlayPause}
-                                    className="flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
+                                    aria-label={isPlaying ? 'Pause' : 'Play'}
+                                    className="flex items-center justify-center gap-2 px-6 h-12 phone:w-10 phone:shrink-0 phone:px-0 phone:h-10 bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
                                 >
                                     {isPlaying ? <Pause fill="white" size={18} /> : <Play fill="white" size={18} />}
-                                    {isPlaying ? 'PAUSE' : 'PLAY'}
+                                    <span className="phone:hidden">{isPlaying ? 'PAUSE' : 'PLAY'}</span>
                                 </button>
-                                <div title={commitClean ? "File is up to date" : commitLabels.hint}>
+                                <div title={commitClean ? "File is up to date" : commitLabels.hint} className="phone:flex-1 phone:min-w-0">
                                     <button
                                         onClick={() => {
                                             if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
@@ -5161,7 +5162,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }}
                                         disabled={isProcessing}
-                                        className={`flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs rounded-full text-base font-bold transition-all shadow-lg ${
+                                        className={`flex items-center gap-2 px-6 h-12 phone:w-full phone:justify-center phone:px-3 phone:h-10 phone:gap-1.5 phone:text-[11px] rounded-full text-base font-bold transition-all shadow-lg ${
                                             isProcessing
                                                 ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
                                                 : !commitClean
@@ -5171,8 +5172,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         : 'bg-green-600/90 hover:bg-green-600 text-white shadow-green-900/40'
                                         }`}
                                     >
-                                        {isProcessing ? <RefreshCw className="animate-spin" size={18} /> : commitClean ? <Check size={18} /> : <Save size={18} />}
-                                        {isProcessing ? 'SAVING...' : commitClean ? commitLabels.clean : commitLabels.dirty}
+                                        {isProcessing ? <RefreshCw className="animate-spin shrink-0" size={18} /> : commitClean ? <Check size={18} className="shrink-0" /> : <Save size={18} className="shrink-0" />}
+                                        {/* A long label takes two lines on a phone rather than the row */}
+                                        <span className="phone:min-w-0 phone:text-left phone:leading-tight phone:line-clamp-2">
+                                            {isProcessing ? 'SAVING...' : commitClean ? commitLabels.clean : commitLabels.dirty}
+                                        </span>
                                     </button>
                                 </div>
 

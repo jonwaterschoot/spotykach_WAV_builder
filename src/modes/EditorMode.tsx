@@ -326,24 +326,26 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
       <>
         <button
           onClick={download}
-          className={`flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs rounded-full text-sm font-bold transition-all hover:scale-105
+          aria-label="Download"
+          className={`flex items-center justify-center gap-2 px-6 h-12 phone:w-10 phone:shrink-0 phone:px-0 phone:h-10 rounded-full text-sm font-bold transition-all hover:scale-105
             active:scale-95 shadow-lg border ${commitClean
               ? 'bg-synthux-blue border-synthux-blue text-white hover:bg-blue-500 shadow-synthux-blue/30'
               : 'border-synthux-blue/50 bg-synthux-blue/15 text-synthux-blue hover:bg-synthux-blue/25'}`}
           title={`Download this file as SK-ready WAV${stale}`}
         >
-          <Download size={16} /> DOWNLOAD
+          <Download size={16} /> <span className="phone:hidden">DOWNLOAD</span>
         </button>
         {!onEdited && (
           <button
             onClick={addToPool}
             disabled={busy !== null}
-            className="flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs rounded-full text-sm font-bold transition-all hover:scale-105
+            aria-label={pooledId ? 'Update in pool' : 'Add to pool'}
+            className="flex items-center justify-center gap-2 px-6 h-12 phone:w-10 phone:shrink-0 phone:px-0 phone:h-10 rounded-full text-sm font-bold transition-all hover:scale-105
               active:scale-95 shadow-lg border border-synthux-yellow/50 bg-synthux-yellow/15 text-synthux-yellow
               hover:bg-synthux-yellow/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             title={`Put this file in Browse's pool, where the card builder and the project exit pick it up${stale}`}
           >
-            <Library size={16} /> {pooledId ? 'UPDATE IN POOL' : 'ADD TO POOL'}
+            <Library size={16} /> <span className="phone:hidden">{pooledId ? 'UPDATE IN POOL' : 'ADD TO POOL'}</span>
           </button>
         )}
       </>
