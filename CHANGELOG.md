@@ -14,6 +14,11 @@
   editor and save the edit back as that slice.
 - **Sequencer: other MIDI devices.** Any output, its own channel and any CC number, next to
   the Spotykach's decks; clock to them too if wanted.
+- **Sequencer: drum presets.** TouchPlaited's patterns (idm, techno, electro) as seven tracks
+  over patterns A–D, with its density control redrawing them live. With an empty slice pool
+  the synth makes the kit; *Render new kit* swaps in fresh sounds, *Clear patterns* empties
+  the steps and keeps them. Track names are easier to find and rename, and on a phone the
+  header folds to play, undo and the patterns.
 
 ### Fixed
 
