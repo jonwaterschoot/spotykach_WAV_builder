@@ -282,6 +282,10 @@ const downloadBlob = (blob: Blob, fileName: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+/** A typed result name made fit for a file name: no spaces, nothing a file system refuses. */
+const cleanResultName = (raw: string) =>
+  raw.trim().replace(/\.wav$/i, '').replace(/\s+/g, '_').replace(/[\\/:*?"<>|]/g, '').slice(0, 64);
+
 interface BatchState {
   handle: BatchHandle;
   /** What the bar says while rendering. */
@@ -1711,13 +1715,42 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     });
   }, [missingFor, settings, variationCount, results, showToast, sourcesFor, startJob, makeEntry, storeEntry]);
 
+  /** The result's WAV with another `INAM` name: the audio and cue points stay. */
+  const wavNamed = useCallback(async (r: MangleResultEntry, name: string) => {
+    const buffer = await region.load(r.id, r.blob);
+    const left = buffer.getChannelData(0);
+    const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+    return wavWithCues(left, right, r.recipe.cuePoints, name);
+  }, [region]);
+
+  /** A new name for a result, on its card and in the WAV it saves as. */
+  const renameResult = useCallback(async (r: MangleResultEntry, raw: string) => {
+    const name = cleanResultName(raw);
+    if (!name || name === r.name) return;
+    if (resultsRef.current.some(x => x.id !== r.id && x.name === name)) {
+      showToast(`Another result is called ${name}`, 'info');
+      return;
+    }
+    try {
+      const entry: MangleResultEntry = { ...r, name, blob: await wavNamed(r, name) };
+      await storeEntry(entry);
+      setResults(prev => prev.map(x => (x.id === r.id ? { ...entry, kept: x.kept } : x)));
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not rename ${r.name}`, 'error');
+    }
+  }, [wavNamed, storeEntry, showToast]);
+
   const undoEdit = useCallback(async (r: MangleResultEntry) => {
     const previous = undo[r.id];
     if (!previous) return;
     if (player.activeFileId === r.id) player.stop();
     region.stop();
     region.forget(r.id);
-    const restored = { ...previous, kept: r.kept };
+    // A rename since the edit stays.
+    const restored = previous.name === r.name
+      ? { ...previous, kept: r.kept }
+      : { ...previous, kept: r.kept, name: r.name, blob: await wavNamed(previous, r.name) };
     await storeEntry(restored);
     setResults(prev => prev.map(x => (x.id === r.id ? restored : x)));
     setUndo(prev => {
@@ -1725,7 +1758,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       delete next[r.id];
       return next;
     });
-  }, [undo, player, region, storeEntry]);
+  }, [undo, player, region, storeEntry, wavNamed]);
 
   /** Plays snippet `index` the way the play mode says. */
   const playSnippet = useCallback((r: MangleResultEntry, index: number) => {
@@ -2967,7 +3000,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                     </button>
                     <div className="min-w-0 flex-1 basis-40">
                       <div className="text-xs font-bold truncate flex items-center gap-1.5">
-                        {r.name}
+                        <ResultName name={r.name} disabled={busy} onRename={name => renameResult(r, name)} />
                         {r.kind ? (
                           <span className="shrink-0 px-1 rounded border border-synthux-blue/50 text-synthux-blue text-[9px] uppercase tracking-wider font-normal"
                             title={r.kind === 'sequence' ? 'Rendered from the sequencer: change it there and render again' : r.kind === 'file' ? 'A pool file, kept as it is' : 'A synth take'}>
@@ -3560,6 +3593,38 @@ const IconButton: React.FC<{
     {children}
   </button>
 );
+
+/** A result's name: click it to type a new one. Enter or leaving the field keeps it, Esc doesn't. */
+const ResultName: React.FC<{ name: string; disabled?: boolean; onRename: (name: string) => void }> = ({ name, disabled, onRename }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Enter closes the field, and the blur that may follow must not rename again.
+  const open = useRef(false);
+  if (draft === null) {
+    return (
+      <button onClick={() => { open.current = true; setDraft(name); }} disabled={disabled} title="Rename"
+        className="min-w-0 truncate text-left rounded hover:bg-white/5 hover:text-white disabled:cursor-default disabled:hover:bg-transparent">
+        {name}
+      </button>
+    );
+  }
+  const done = (keep: boolean) => {
+    if (!open.current) return;
+    open.current = false;
+    if (keep) onRename(draft);
+    setDraft(null);
+  };
+  return (
+    <input autoFocus value={draft} maxLength={64} aria-label="Result name"
+      onFocus={e => e.currentTarget.select()}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => done(true)}
+      onKeyDown={e => {
+        if (e.key === 'Enter') done(true);
+        else if (e.key === 'Escape') { e.stopPropagation(); done(false); }
+      }}
+      className="min-w-0 flex-1 bg-black/40 border border-white/20 rounded px-1 text-xs font-bold text-white outline-none focus:border-synthux-blue" />
+  );
+};
 
 const CardAction: React.FC<{
   onClick: () => void; icon: React.ReactNode; title: string; children: React.ReactNode;
