@@ -2,7 +2,7 @@ import type React from 'react';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, XCircle, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Dices } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, XCircle, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Dices, History as HistoryIcon } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
@@ -671,6 +671,8 @@ const WAVE_HEIGHT_KEY = 'waveformEditor.waveHeight';
 const WAVE_HEIGHT_DEFAULT = 256;
 const WAVE_HEIGHT_MIN = 128;
 const WAVE_HEIGHT_MAX = 1000;
+/** The `phone` variant (index.css): narrow or short, where History is a drawer. */
+const isPhoneWidth = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 767.98px), (max-height: 500px)').matches;
 const clampWaveHeight = (h: number) => Math.round(Math.min(WAVE_HEIGHT_MAX, Math.max(WAVE_HEIGHT_MIN, h)));
 const V_ZOOM_MIN = 0.5;
 const V_ZOOM_MAX = 15;
@@ -885,7 +887,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     type ToolId = 'trim' | 'automation' | 'loop' | 'eq' | 'limiter' | 'normalize' | 'cutter' | 'slicer' | 'pitch' | 'stereo' | 'mangle' | null;
     const [activeTool, setActiveTool] = useState<ToolId>(null);
     const [pendingTool, setPendingTool] = useState<ToolId | undefined>(undefined);
-    const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
+    const [isHistoryExpanded, setIsHistoryExpanded] = useState(() => !isPhoneWidth());
     const [stereoSplitView, setStereoSplitView] = useState(false);
     const [internalMetadata, setInternalMetadata] = useState<WavMetadata | null>(metadata || null);
     const [hasTrimInteracted, setHasTrimInteracted] = useState(false);
@@ -3134,7 +3136,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const commitClean = !isDirty && loadedVersionId === activeVersionId;
 
     return (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-6">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-6 phone:p-0">
             <style>{`
                 /* Allow clicks to pass through region body to seek */
                 .wavesurfer-region {
@@ -3269,7 +3271,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
               * top-right was neither. The header now spans the whole modal and the
               * two columns share the space beneath it.
               */}
-            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] max-h-[95vh] shadow-2xl flex flex-col overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
+            <div className={`bg-[#1a1a1a] border border-gray-800 rounded-2xl w-full max-w-[1440px] max-h-[95vh] phone:h-full phone:max-h-none phone:rounded-none phone:border-0 shadow-2xl flex flex-col overflow-hidden noise-texture ${activeTool === 'trim' ? 'show-trim-regions' : 'hide-trim-regions'}`}>
 
 
                 {/* Tool Switch Confirmation */}
@@ -3328,10 +3330,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 />
 
                 {/* MODAL HEADER — full width, so the ✕ is the top-right-most control */}
-                <div className="shrink-0 flex justify-between items-center gap-4 p-6 pb-4 border-b border-gray-800 bg-[#1a1a1a]">
+                <div className="shrink-0 flex justify-between items-center gap-4 p-6 pb-4 phone:gap-2 phone:px-3 phone:py-2 border-b border-gray-800 bg-[#1a1a1a]">
                     <div className="flex items-center gap-4 min-w-0">
                         {/* Tape Icon: Fixed size */}
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-center justify-center phone:hidden">
                             <TapeIcon color={tapeColor ? `var(--color-synthux-${tapeColor.toLowerCase()})` : 'gold'} size={40} />
                         </div>
                         <div className="min-w-0">
@@ -3348,7 +3350,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     />
                                 ) : (
                                     <h2
-                                        className="text-2xl font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase cursor-text hover:opacity-80 transition-opacity truncate"
+                                        className="text-2xl phone:text-lg font-black bg-gradient-to-r from-synthux-orange to-synthux-yellow bg-clip-text text-transparent tracking-tighter uppercase cursor-text hover:opacity-80 transition-opacity truncate"
                                         onDoubleClick={(e) => {
                                             e.stopPropagation();
                                             setRenameValue(slot.name);
@@ -3360,26 +3362,41 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     </h2>
                                 )}
                             </div>
-                            <div className="text-xs font-bold text-gray-500 tracking-widest uppercase flex items-center gap-2">
-                                <span>Waveform Editor</span>
-                                <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
+                            <div className="text-xs phone:text-[10px] font-bold text-gray-500 tracking-widest uppercase flex items-center gap-2">
+                                <span className="phone:hidden">Waveform Editor</span>
+                                <span className="w-1 h-1 bg-gray-600 rounded-full phone:hidden"></span>
                                 <span className={isDirty ? "text-amber-500" : "text-gray-600"}>
                                     {isDirty ? "Unsaved Changes" : "All Saved"}
                                 </span>
                             </div>
-                            <div className="text-[10px] text-gray-500 max-w-sm mt-1 leading-[1.2]">
+                            <div className="text-[10px] text-gray-500 max-w-sm mt-1 leading-[1.2] phone:hidden">
                                 Note: Edits save to this slot's history. The original file is not altered until export.
                             </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="shrink-0 p-2 hover:bg-gray-800 rounded-full transition-colors">✕</button>
+                    <div className="shrink-0 flex items-center gap-1">
+                        {/* A phone: History is a drawer, opened from here. */}
+                        <button onClick={() => setIsHistoryExpanded(o => !o)} aria-expanded={isHistoryExpanded}
+                            className={`hidden phone:flex items-center gap-1 px-2 py-1.5 rounded-md border text-[10px] font-bold uppercase tracking-widest transition-colors
+                                ${isHistoryExpanded ? 'border-synthux-blue/60 text-white bg-synthux-blue/15' : 'border-gray-700 text-gray-400'}`}
+                            title="This file's versions">
+                            <HistoryIcon size={13} /> {versions.length}
+                        </button>
+                        <button onClick={onClose} className="shrink-0 p-2 hover:bg-gray-800 rounded-full transition-colors" aria-label="Close the editor">✕</button>
+                    </div>
                 </div>
 
                 {/* The two columns, beneath the header they now share. */}
-                <div className="flex-1 flex flex-row-reverse min-h-0 overflow-hidden">
+                <div className="flex-1 flex flex-row-reverse min-h-0 overflow-hidden phone:relative">
+
+                {/* A phone: the open History drawer covers the editor; a tap beside it closes it. */}
+                {isHistoryExpanded && (
+                    <div className="hidden phone:block absolute inset-0 z-[55] bg-black/60" onClick={() => setIsHistoryExpanded(false)} />
+                )}
 
                 {/* SIDEBAR: Versions */}
-                <div className={`bg-[#111] border-l border-gray-800 flex flex-col shrink-0 transition-all duration-300 ${isHistoryExpanded ? 'w-64' : 'w-16 items-center'}`}>
+                <div className={`bg-[#111] border-l border-gray-800 flex flex-col shrink-0 transition-all duration-300 ${isHistoryExpanded ? 'w-64' : 'w-16 items-center'}
+                    phone:absolute phone:inset-y-0 phone:right-0 phone:z-[60] phone:shadow-2xl phone:shadow-black ${isHistoryExpanded ? 'phone:w-[min(16rem,85vw)]' : 'phone:hidden'}`}>
                     <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex flex-wrap gap-2 justify-between items-center relative overflow-hidden w-full">
                         <div className="flex items-center gap-2 w-full justify-between">
                             <div className="flex items-center gap-2">
@@ -3562,9 +3579,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                       * taller tool panel pushes the wave down. If it all outgrows the
                       * modal this body scrolls; the transport below it stays put.
                       */}
-                    <div className="flex-1 min-h-0 p-6 pt-4 pb-3 flex flex-col overflow-y-auto overflow-x-hidden editor-scroll [scrollbar-gutter:stable]">
+                    <div className="flex-1 min-h-0 p-6 pt-4 pb-3 phone:px-2 phone:pt-2 phone:pb-2 flex flex-col overflow-y-auto overflow-x-hidden editor-scroll [scrollbar-gutter:stable]">
                         {/* Toolbar Container */}
-                        <div className="flex flex-col mb-1 bg-[#111] relative z-40 p-4 rounded-xl border border-gray-800 shrink-0 max-w-full">
+                        <div className="flex flex-col mb-1 bg-[#111] relative z-40 p-4 phone:p-2 rounded-xl border border-gray-800 shrink-0 max-w-full">
 
                             {/* Tool menu: names the open tool, opens a grouped list of all of them */}
                             <EditorToolPicker
@@ -4633,11 +4650,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         </div>
 
                         {/* VIEW TOOLBAR (42s status & zoom) - sits right on top of the wave it controls */}
-                        <div className="relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-[#111] border border-gray-800 rounded-t-xl shrink-0">
+                        <div className="relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 phone:px-2 phone:gap-x-2 bg-[#111] border border-gray-800 rounded-t-xl shrink-0">
 
                             {/* Shortcuts (Left corner) + 42s Status */}
                             <div className="flex-1 flex items-center justify-start gap-4">
-                                <div className="relative group shrink-0">
+                                <div className="relative group shrink-0 phone:hidden">
                                     <button
                                         type="button"
                                         className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-800 focus:text-white focus:outline-none transition-colors"
@@ -4731,7 +4748,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         onDoubleClick={() => setVZoom(1.0)}
                                         onMouseEnter={() => setHelpText("Amplitude zoom · Shift+scroll · Double-click to reset")}
                                         onMouseLeave={() => setHelpText("")}
-                                        className="w-[150px] h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
+                                        className="w-[150px] phone:w-12 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-synthux-blue"
                                     />
                                     <button
                                         onClick={() => setVZoom(1.0)}
@@ -4752,12 +4769,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     <Eye size={14} />
                                 </button>
                                 <button onClick={handleFitView} className="px-2 py-1 hover:bg-gray-800 rounded text-[10px] font-bold uppercase text-gray-400 hover:text-white flex items-center gap-1 border border-transparent hover:border-gray-700 transition-all" title="Fit All">
-                                    <ArrowLeftRight size={14} /> Fit View
+                                    <ArrowLeftRight size={14} /> <span className="phone:hidden">Fit View</span>
                                 </button>
                                 <button onClick={handleFitTrim} className="px-2 py-1 hover:bg-gray-800 rounded text-[10px] font-bold uppercase text-gray-400 hover:text-white flex items-center gap-1 border border-transparent hover:border-gray-700 transition-all" title="Fit Trim">
-                                    <Scissors size={14} /> Fit Trim
+                                    <Scissors size={14} /> <span className="phone:hidden">Fit Trim</span>
                                 </button>
-                                <div className="w-px h-4 bg-gray-700 mx-2"></div>
+                                <div className="w-px h-4 bg-gray-700 mx-2 phone:hidden"></div>
                                 <button onClick={handleZoomOut} disabled={zoom <= (minZoom * 1.001)} className={`p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white ${zoom <= (minZoom * 1.001) ? 'opacity-30' : ''}`}><ZoomOut size={16} /></button>
                                 <input
                                     type="range" min={minZoom || 0.1} max="1000" step="0.1" value={zoom}
@@ -4765,7 +4782,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     onDoubleClick={() => setZoomCentered(minZoom)}
                                     onMouseEnter={() => setHelpText("Horizontal zoom · Ctrl+scroll · Double-click to fit")}
                                     onMouseLeave={() => setHelpText("")}
-                                    className="w-[150px] h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                    className="w-[150px] phone:w-14 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                                 />
                                 <button onClick={handleZoomIn} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white"><ZoomIn size={16} /></button>
                             </div>
@@ -5006,7 +5023,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
 
 
-                            <div className="flex flex-wrap justify-center gap-4 px-6 pb-4 pt-3">
+                            <div className="flex flex-wrap justify-center gap-4 px-6 pb-4 pt-3 phone:gap-2 phone:px-2 phone:pt-2 phone:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                                 <button
                                     onClick={() => {
                                         const newLooping = !isLooping;
@@ -5021,7 +5038,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }
                                     }}
-                                    className={`flex items-center justify-center w-12 h-12 rounded-full border border-gray-700 transition-all ${isLooping ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                                    className={`flex items-center justify-center w-12 h-12 phone:w-10 phone:h-10 rounded-full border border-gray-700 transition-all ${isLooping ? 'bg-synthux-blue text-white border-transparent' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
                                     title={isLooping ? "Looping Active" : "Enable Looping"}
                                 >
                                     <Repeat size={20} />
@@ -5029,7 +5046,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                 <button
                                     onClick={handlePlayPause}
-                                    className="flex items-center gap-2 px-6 h-12 bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
+                                    className="flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs bg-gray-800 hover:bg-gray-700 rounded-full text-base font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-black/50"
                                 >
                                     {isPlaying ? <Pause fill="white" size={18} /> : <Play fill="white" size={18} />}
                                     {isPlaying ? 'PAUSE' : 'PLAY'}
@@ -5048,7 +5065,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }}
                                         disabled={isProcessing}
-                                        className={`flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg ${
+                                        className={`flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs rounded-full text-base font-bold transition-all shadow-lg ${
                                             isProcessing
                                                 ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
                                                 : !commitClean
@@ -5072,7 +5089,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                   */}
                                 <button
                                     onClick={onClose}
-                                    className="flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg border
+                                    className="phone:hidden flex items-center gap-2 px-6 h-12 rounded-full text-base font-bold transition-all shadow-lg border
                                         bg-gray-800 hover:bg-gray-700 text-gray-400 border-transparent hover:border-gray-500"
                                     title={isDirty ? "Close without saving" : "Close Editor"}
                                 >
@@ -5118,7 +5135,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }}
                                         disabled={isProcessing}
-                                        className="flex items-center gap-2 px-6 h-12 bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
+                                        className="flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs bg-orange-600 hover:bg-orange-500 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-orange-500 text-white"
                                         title="Save as a new unique file and assign to this slot, leaving other duplicates unchanged."
                                     >
                                         <Copy size={16} /> SAVE UNIQUE
@@ -5138,7 +5155,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             }
                                         }}
                                         disabled={isProcessing}
-                                        className="flex items-center gap-2 px-6 h-12 bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
+                                        className="flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs bg-gray-700 hover:bg-gray-600 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-lg border border-gray-600 text-gray-300"
                                         title="Save as a new Parked file (Unassigned)"
                                     >
                                         <Save size={16} /> SAVE COPY TO POOL

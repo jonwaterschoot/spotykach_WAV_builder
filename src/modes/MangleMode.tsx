@@ -73,7 +73,8 @@ import { deriveSeed, randomSeed } from '../mangler/rng';
 import {
   DEFAULT_SETTINGS, MAX_CUE_POINTS, OUTPUT_MAX_SECONDS, PRESETS, sanitizeSettings, type MangleSettings,
 } from '../mangler/settings';
-import { Segmented, Slider } from '../mangler/ui/Sliders';
+import { Segmented } from '../mangler/ui/Sliders';
+import { ScrubNumber } from '../components/ScrubNumber';
 import { SettingsPanel } from '../mangler/ui/SettingsPanel';
 import { SlicePool } from '../mangler/ui/SlicePool';
 import { SequencerStation } from '../mangler/ui/SequencerStation';
@@ -191,6 +192,11 @@ const loadSequence = (): Sequence | null => {
 };
 const PROJECT_KEY = 'mangler_project_name';
 const STATION_KEY = 'mangler_station';
+const POOL_SORT_KEY = 'mangler_pool_sort';
+type PoolSort = 'newest' | 'oldest' | 'name';
+const POOL_SORTS: { id: PoolSort; label: string }[] = [
+  { id: 'newest', label: 'Newest' }, { id: 'oldest', label: 'Oldest' }, { id: 'name', label: 'A–Z' },
+];
 
 /**
  * A column that is always shown on a wide screen, and only when picked below lg.
@@ -732,6 +738,20 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       && (tagsOn.length === 0 || tagsOn.some(text => matches(s, text)))
       && (!q || matches(s, q)));
   }, [sources, poolQuery, poolKindsOn, poolTags]);
+  /**
+   * How the list is sorted: newest first by default. Only the list: Generate
+   * takes the sources in the order they were added, so a seed stays a seed.
+   */
+  const [poolSort, setPoolSort] = useState<PoolSort>(() => {
+    const stored = appStorage.getItem(POOL_SORT_KEY) as PoolSort | null;
+    return stored && POOL_SORTS.some(o => o.id === stored) ? stored : 'newest';
+  });
+  useEffect(() => { appStorage.setItem(POOL_SORT_KEY, poolSort); }, [poolSort]);
+  const listedSources = useMemo(() => {
+    if (poolSort === 'oldest') return shownSources;
+    if (poolSort === 'newest') return [...shownSources].reverse();
+    return [...shownSources].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [shownSources, poolSort]);
   const addPoolTag = () => {
     const text = poolQuery.trim();
     if (!text) return;
@@ -2263,7 +2283,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
   return (
     <div
-      className="h-screen w-full flex flex-col bg-synthux-main text-white overflow-hidden"
+      className="h-screen supports-[height:100dvh]:h-[100dvh] w-full flex flex-col bg-synthux-main text-white overflow-hidden"
       onDragOver={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={e => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={e => {
@@ -2544,7 +2564,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
           </div>
           {sources.length > 0 && (
             <div className="shrink-0 px-4 pb-2 space-y-1.5 text-[10px]">
-              <label className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 bg-black/30 text-gray-400"
+              <div className="flex items-center gap-1.5">
+              <label className="min-w-0 flex-1 flex items-center gap-1 px-2 py-1 rounded-md border border-white/10 bg-black/30 text-gray-400"
                 title="Filters as you type; Enter keeps it as a tag">
                 <Search size={11} />
                 <input value={poolQuery} onChange={e => setPoolQuery(e.target.value)} placeholder="Filter by name or origin (Enter: tag)"
@@ -2555,6 +2576,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                   <button onClick={() => setPoolQuery('')} aria-label="Clear the filter" className="hover:text-white"><X size={11} /></button>
                 </>}
               </label>
+              <select value={poolSort} onChange={e => setPoolSort(e.target.value as PoolSort)} aria-label="Sort the pool"
+                title="The list's order (Generate always takes the sources in the order they were added)"
+                className="shrink-0 bg-black/30 border border-white/10 rounded-md px-1 py-1 text-[11px] text-gray-300">
+                {POOL_SORTS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+              </div>
               {(poolKinds.length > 1 || poolTags.length > 0) && (
                 <div className="flex flex-wrap gap-1">
                   <button onClick={() => { setPoolKindsOn(new Set()); setPoolTags(prev => prev.map(t => ({ ...t, on: false }))); }}
@@ -2606,7 +2633,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               <p className="px-2 py-4 text-center text-[11px] text-gray-500">Nothing matches the filter.</p>
             )}
             <ul className="space-y-1">
-              {shownSources.map(s => {
+              {listedSources.map(s => {
                 const playing = player.activeFileId === s.id && player.isPlaying;
                 const active = player.activeFileId === s.id;
                 const partCount = s.regions?.length ?? 0;
@@ -2740,7 +2767,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
 
         {/* Generate + results (min-w-0: a grid column otherwise never gets narrower than its content) */}
         <section className={`min-h-0 min-w-0 ${paneClass('results', pane, 'flex')} flex-col`}>
-          <div data-tour="generate" className="shrink-0 px-4 py-3 border-b border-white/10 flex flex-wrap items-center gap-3">
+          {/* On a phone Generate lives in the bottom bar (on every pane), so this is two short rows. */}
+          <div data-tour="generate" className="shrink-0 px-4 py-2 lg:py-3 border-b border-white/10 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-400">Seed</span>
               <input
@@ -2763,16 +2791,17 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               </button>
             </div>
 
-            <div className="w-40">
-              <Slider label="Variations" min={1} max={limits.variationsMax} value={variationCount}
-                onChange={v => update('variations', v)} format={String} />
-            </div>
+            <label className="flex items-center gap-2 text-[11px] text-gray-400" title="How many takes one Generate makes, each with its own seed. Drag the field or use its arrows">
+              Variations
+              <ScrubNumber value={variationCount} min={1} max={limits.variationsMax} step={1} width="w-[3.75rem]" ariaLabel="Variations"
+                onChange={v => update('variations', v)} />
+            </label>
 
             <Segmented label="Click plays" value={playMode} onChange={setPlayMode}
               options={[{ value: 'full', label: 'Full' }, { value: 'fades', label: 'Fades' }, { value: 'cue', label: 'Cue' }]}
               hint="Full: from there to the end. Fades: the snippet with its crossfades. Cue: only what lies between two cue points, as the slice mode plays it" />
 
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto hidden lg:flex items-center gap-2">
               {busy ? (
                 <button onClick={cancelBatch}
                   className="flex items-center gap-2 px-4 h-10 rounded-full text-sm font-bold border border-white/20
@@ -3112,20 +3141,33 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         </section>
       </div>
 
-      {/* Phone and narrow windows: one column at a time. */}
-      <nav className="lg:hidden shrink-0 grid grid-cols-3 border-t border-white/10 bg-synthux-panel">
+      {/* Phone and narrow windows: one column at a time, and Generate (or Stop) from any of them. */}
+      <nav className="lg:hidden shrink-0 flex items-center border-t border-white/10 bg-synthux-panel pr-2 pb-[env(safe-area-inset-bottom)]">
         {([
           ['sources', <Waves size={18} />, 'Sources', `${enabledSources.length}/${sources.length}`],
           ['settings', <SlidersHorizontal size={18} />, 'Settings', ''],
           ['results', <ListMusic size={18} />, 'Results', busy ? '…' : String(results.length)],
         ] as const).map(([id, icon, label, count]) => (
           <button key={id} onClick={() => setPane(id)} aria-pressed={pane === id}
-            className={`flex flex-col items-center gap-0.5 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors
+            className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors
               ${pane === id ? 'text-synthux-red' : 'text-gray-500 hover:text-white'}`}>
             {icon}
-            <span>{label}{count && <span className="ml-1 font-mono normal-case text-gray-500">{count}</span>}</span>
+            <span className="truncate max-w-full">{label}{count && <span className="ml-1 font-mono normal-case text-gray-500">{count}</span>}</span>
           </button>
         ))}
+        {busy ? (
+          <button onClick={cancelBatch} title="Stop the batch"
+            className="shrink-0 flex items-center gap-1.5 px-3 h-10 rounded-full text-xs font-bold border border-white/20 text-gray-300 hover:bg-white/10">
+            <X size={14} /> Stop
+          </button>
+        ) : (
+          <button onClick={() => { setPane('results'); generate(); }} disabled={enabledSources.length === 0}
+            title={enabledSources.length ? `Generate ${variationCount} variation${variationCount === 1 ? '' : 's'}` : 'Switch on a source first'}
+            className="shrink-0 flex items-center gap-1.5 px-3.5 h-10 rounded-full text-xs font-bold bg-synthux-red text-white
+              shadow-lg shadow-synthux-red/30 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+            <Dices size={15} /> <span className="max-[379px]:hidden">Generate</span> {variationCount}
+          </button>
+        )}
       </nav>
       </>}
       </div>

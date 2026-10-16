@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 /**
  * A number field you can drag. Press and drag (up or right raises it, Shift for
  * fine steps) to scrub the value; a click without a drag puts the caret in to type.
+ * On a touch screen a vertical swipe scrolls the page instead, so a finger scrubs sideways.
  * The arrows step once, and keep stepping while held. Arrow keys work when typing.
  *
  * `scale: 'log'` is for wide ranges (milliseconds from 20 to 10 000): each pixel
@@ -148,7 +149,7 @@ export function ScrubNumber({
                     }
                 }}
                 className={`min-w-0 flex-1 bg-transparent px-1.5 py-1 text-center text-[11px] font-bold tabular-nums text-synthux-red
-                    focus:outline-none select-none touch-none ${editing ? 'cursor-text' : 'cursor-ew-resize'}`}
+                    focus:outline-none select-none touch-pan-y ${editing ? 'cursor-text' : 'cursor-ew-resize'}`}
                 title={editing ? undefined : 'Drag to change, click to type'}
             />
             <div className="flex flex-col border-l border-gray-700 group-hover:border-gray-500 transition-colors">

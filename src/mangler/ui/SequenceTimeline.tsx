@@ -295,7 +295,7 @@ export const SequenceTimeline: React.FC<SequenceTimelineProps> = ({
                             onClick={e => e.stopPropagation()}
                             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); cells.cancel(); onMenu({ pattern: p, t: ti, i }, e.clientX, e.clientY); }}
                             title={s.on ? `${tr.name}, bar ${ci + 1} step ${i + 1}${chanceLabel(s) ? ` · ${chanceLabel(s)} chance` : ''}` : undefined}
-                            className={`relative rounded-[1px] overflow-hidden touch-none ${i % 4 === 0 ? 'bg-white/[0.09]' : 'bg-white/[0.045]'} hover:bg-white/15
+                            className={`relative rounded-[1px] overflow-hidden touch-pan-x touch-pan-y select-none [-webkit-touch-callout:none] ${i % 4 === 0 ? 'bg-white/[0.09]' : 'bg-white/[0.045]'} hover:bg-white/15
                                 ${here ? 'ring-1 ring-white' : ''}`}>
                             {s.on && <span className="absolute inset-x-0 bottom-0"
                                 style={{ height: `${Math.max(25, Math.round(fill * 100))}%`, background: stepColor(s, colour, sliceById), opacity: 0.35 + 0.65 * (s.chance ?? 1) }} />}

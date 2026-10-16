@@ -6,7 +6,8 @@ import type { HitClass } from '../hits';
 import { GENERATORS, SYNTH_KINDS, type SynthKind, type SynthParam, type SynthRanges } from '../synth';
 import { DensityContext } from './density';
 import { formatMs } from './format';
-import { RangeSlider, Slider } from './Sliders';
+import { RangeSlider } from './Sliders';
+import { ScrubNumber } from '../../components/ScrubNumber';
 
 /**
  * The synth: pick a generator, set its ranges, generate a handful of takes, and
@@ -100,13 +101,19 @@ export const SynthStation: React.FC<SynthStationProps> = ({
                             );
                         })}
                     </div>
-                    <Slider label="Takes" min={1} max={maxCount} value={Math.min(count, maxCount)} onChange={onCount} format={String} />
                 </DensityContext.Provider>
-                <button onClick={onGenerate} disabled={generating}
-                    className="w-full flex items-center justify-center gap-2 px-4 h-10 rounded-full text-sm font-bold bg-synthux-red text-white
-                        shadow-lg shadow-synthux-red/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50">
-                    {generating ? <Loader size={15} className="animate-spin" /> : <Dices size={15} />} Generate {Math.min(count, maxCount)}
-                </button>
+                {/* How many, and go: one row. */}
+                <div className="flex items-center gap-3">
+                    <label className="shrink-0 flex items-center gap-2 text-[11px] text-gray-400" title="How many takes one Generate makes, each with its own seed">
+                        Takes
+                        <ScrubNumber value={Math.min(count, maxCount)} min={1} max={maxCount} step={1} width="w-[3.75rem]" ariaLabel="Takes" onChange={onCount} />
+                    </label>
+                    <button onClick={onGenerate} disabled={generating}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 h-10 rounded-full text-sm font-bold bg-synthux-red text-white
+                            shadow-lg shadow-synthux-red/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50">
+                        {generating ? <Loader size={15} className="animate-spin" /> : <Dices size={15} />} Generate {Math.min(count, maxCount)}
+                    </button>
+                </div>
                 <p className="text-[10px] leading-snug text-gray-500">
                     Each take picks its own values inside the ranges. Keep the good ones: as slices (for kits and the sequencer), as
                     sources (to mangle), or as results (to save).

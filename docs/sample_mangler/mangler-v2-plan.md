@@ -340,6 +340,32 @@ Slices already had an AD of their own in the slice pool (`SliceSpec.envelope`: i
 - [x] Checks: an A–D track filled to A–P (a malformed one refused), the patterns in use, a fifth pattern playing in the chain
 - Not checked in the browser: the loop's live playback (the headless browser has no audio); adding patterns, the loop button and the dropdowns were
 
+**Added Oct 16 — Phone layout pass** (after trying the live site on a OnePlus 10 Pro)
+
+- [x] Fixed: the bottom bar (Sources, Settings, Results) was below the screen on a phone. The page was `h-screen` (100vh), which a phone browser measures without its address bar; now `100dvh`, as Browse already had
+- [x] Generate (or Stop) sits in the bottom bar, so it is there on every pane, not only Results; it still jumps to Results. The Results header loses its own Generate below `lg` and becomes two short rows: *Variations* is a drag field instead of a slider
+- [x] Source pool: sorted newest first by default, with *Newest / Oldest / A–Z* next to the filter (remembered, `mangler_pool_sort`). Only the list: Generate still takes the sources in the order they were added, so a seed renders the same whatever the list shows
+- [x] Sequencer header regrouped. Always in view: play, undo, the patterns and their loop, and on a phone *More / Less* in the same corner, open or folded (it used to land mid-header once open). The rest comes in groups, a row each on a phone: pattern tools (+ −, Roll, Clear, Copy to), tempo / volume / swing, Drag and Scale, then Presets, Link, cues, loop tails and Render (which says how many bars). From `md` they flow in one row as before
+- [x] Volume and swing (sequencer) and Takes (synth) are drag fields like the tempo, no sliders
+- [x] Scrolling over the steps on a phone: a swipe that starts on a step scrolls instead of changing it. A finger holds a step still for a moment (200 ms; it shows its value and ticks) before a drag sets it; a tap still switches it, a long press still opens its menu. The same in the timeline's mini cells. The tracks list contains its overscroll, so a swipe down at the top doesn't reload the page
+- [x] Drag fields (`ScrubNumber`, everywhere) let a vertical swipe scroll on a touch screen; a finger scrubs sideways. A mouse is unchanged
+- [x] Checked in headless Chrome at 412 px with touch: the bar stays on screen, a quick swipe on a step scrolls 230 px and changes nothing, hold-and-drag sets the velocity without scrolling, a tap toggles
+- [ ] Later: try the hold time on a real phone (200 ms); a slice tile and a result card's waveform may want the same treatment
+
+**Added Oct 16 — The editor on a phone, first pass** (the mangler's slice and result editing opens it)
+
+The editor is one component (`WaveformEditor`) with two mounts: Studio (`App.tsx`) and `LooseFileEditor` (`EditorMode.tsx`), which the `#/editor` route, Mangle, Browse and Submit all open. So every change is for a phone only, and desktop stays as it was:
+
+- [x] A `phone` variant in `index.css`: narrower than 768 px *or* lower than 500 px (a phone on its side). Every editor change is behind it (`phone:` classes, `isPhoneWidth()` for the one piece of state), nothing else changes
+- [x] Edge to edge, no rounded box; the header is one line (name, saved state, History, ✕), without the tape icon and the note
+- [x] History is a drawer over the editor, folded at first, opened from the header (with the number of versions), closed by a tap beside it. On anything wider it is the column it was, open at first
+- [x] Less padding round the tools and the wave; the tool menu as wide as the screen; the view bar on one line (no hover-only shortcuts list, short zoom sliders, *Fit view* and *Fit trim* as icons)
+- [x] Transport: smaller buttons, wrapping onto a second row in portrait. Close is the header's ✕ there. The same sizes for the hosts' own buttons (Download, Add to pool; Studio's Save unique and Save copy)
+- [x] Checked: desktop pixel for pixel against before at 1400, 1024 and 800 px wide, with and without a tool open (the only difference is the clock in the History entry); phone portrait (412 × 860) and landscape (860 × 412) with Trim, EQ, Slicer, Automation, Pitch, the tool menu and the History drawer
+- [ ] Second pass, touch on the wave: a swipe over the wave doesn't scroll the page (it is `touch-none`), so in landscape the wave can only be reached by scrolling elsewhere; pinch to zoom; bigger trim, fade and marker handles for a finger
+- [ ] A lower wave by default on a short screen (it is 256 px, or the height last dragged)
+- [ ] Studio stays desktop-only for now; it gets the same layout in a narrow window, as it shares the component
+
 ## Decided Oct 14
 
 - **Tempo:** Spotykach reads none, from `config.txt` or the file. The tempo grid is a convenience for plain loops (5.4).

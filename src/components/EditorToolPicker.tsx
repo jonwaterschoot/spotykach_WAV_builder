@@ -68,7 +68,7 @@ export function EditorToolPicker<Id extends string>({ tools, activeTool, onToggl
                     <>
                         <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                         <div role="menu"
-                            className="absolute left-0 top-full mt-2 z-50 w-[40rem] max-w-[calc(100vw-6rem)] rounded-xl border border-gray-700
+                            className="absolute left-0 top-full mt-2 z-50 w-[40rem] max-w-[calc(100vw-6rem)] phone:max-w-[calc(100vw-2rem)] rounded-xl border border-gray-700
                                 bg-[#161616] shadow-2xl shadow-black/60 p-3 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-4">
                             {groups.map(group => (
                                 <div key={group} className="min-w-0">

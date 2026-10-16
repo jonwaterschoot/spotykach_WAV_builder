@@ -127,7 +127,8 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
     const [phoneView, setPhoneView] = useState<'pattern' | 'timeline'>('pattern');
     /** On a phone the header folds to the essentials (play, undo, the patterns) until opened. */
     const [headerOpen, setHeaderOpen] = useState(false);
-    const extra = headerOpen ? '' : 'max-md:hidden';
+    /** A group of header controls: a row of its own on a phone, items in the one row from md. */
+    const group = 'flex flex-wrap items-center gap-x-3 gap-y-2 max-md:w-full max-md:border-t max-md:border-white/5 max-md:pt-2';
     const [presetsOpen, setPresetsOpen] = useState(false);
     const [density, setDensity] = useState(DEFAULT_DENSITY);
     /** The preset last loaded and its tracks (by voice), so density and the next preset carry on with them. */
@@ -329,165 +330,174 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
 
     return (
         <div className="h-full min-h-0 flex flex-col" onClick={() => { setMenu(null); setEnvMenu(null); }}>
-            {/* Transport, patterns, scale, chain, render */}
+            {/*
+              * The header. Always: transport, the pattern being edited and its loop. The rest
+              * comes in groups; on a phone they fold away under More, a row each when open,
+              * and from md they all flow in one wrapping row.
+              */}
             <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 md:py-3 border-b border-white/10 text-[11px] text-gray-400">
-                <button onClick={() => (playing ? onStop() : onPlay())}
-                    title={playing ? 'Stop' : link.settings.follow && link.enabled ? 'Arm: the incoming clock plays it (Start, or just ticks)' : 'Play the chain, looping'}
-                    className={`h-9 w-9 flex items-center justify-center rounded-full transition-colors
-                        ${playing ? 'bg-synthux-red text-white' : 'bg-white/10 hover:bg-white/20 text-white'}`}>
-                    {playing ? <Square size={13} fill="currentColor" /> : <Play size={15} className="ml-0.5" />}
-                </button>
-                <span className="flex rounded-md border border-white/10 overflow-hidden">
-                    <button onClick={history.undo} disabled={!history.canUndo} title="Undo (Ctrl+Z): the last change, a dice roll too" aria-label="Undo"
-                        className="px-2 py-1.5 hover:text-white hover:bg-white/5 disabled:opacity-30"><Undo2 size={13} /></button>
-                    <button onClick={history.redo} disabled={!history.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo"
-                        className="px-2 py-1.5 border-l border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Redo2 size={13} /></button>
-                </span>
-                <label className={`flex items-center gap-2 ${extra}`}>
-                    Tempo
-                    <ScrubNumber value={seq.bpm} min={40} max={240} step={0.5} unit="bpm" width="w-[5.5rem]" ariaLabel="Tempo"
-                        onChange={v => onChange(seq => ({ ...seq, bpm: v, chain: seq.chain.slice(0, maxChain(v)) }))} />
-                </label>
-                <label className={`flex items-center gap-2 ${extra}`} title="Main volume: every track, live and in the render (the limiter keeps the render under −1 dBFS)">
-                    Volume
-                    <input type="range" min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} value={seq.masterDb ?? 0}
-                        onChange={e => onChange(seq => ({ ...seq, masterDb: Number(e.target.value) || undefined }))}
-                        onDoubleClick={() => onChange(seq => ({ ...seq, masterDb: undefined }))}
-                        className="w-24 accent-synthux-red" aria-label="Main volume" />
-                    <ScrubNumber value={seq.masterDb ?? 0} min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} unit="dB" width="w-[5rem]" ariaLabel="Main volume in dB"
-                        onChange={v => onChange(seq => ({ ...seq, masterDb: v || undefined }))} />
-                </label>
-                <label className={`flex items-center gap-2 ${extra}`} title="How late every second sixteenth comes">
-                    Swing
-                    <input type="range" min={0} max={50} value={Math.round(seq.swing * 100)}
-                        onChange={e => onChange(seq => ({ ...seq, swing: Number(e.target.value) / 100 }))}
-                        className="w-20 accent-synthux-red" aria-label="Swing" />
-                    <span className="font-mono w-8 text-gray-200">{Math.round(seq.swing * 100)}%</span>
-                </label>
+                <div className="flex items-center gap-2 min-w-0 max-md:w-full">
+                    <button onClick={() => (playing ? onStop() : onPlay())}
+                        title={playing ? 'Stop' : link.settings.follow && link.enabled ? 'Arm: the incoming clock plays it (Start, or just ticks)' : 'Play the chain, looping'}
+                        className={`h-9 w-9 shrink-0 flex items-center justify-center rounded-full transition-colors
+                            ${playing ? 'bg-synthux-red text-white' : 'bg-white/10 hover:bg-white/20 text-white'}`}>
+                        {playing ? <Square size={13} fill="currentColor" /> : <Play size={15} className="ml-0.5" />}
+                    </button>
+                    <span className="shrink-0 flex rounded-md border border-white/10 overflow-hidden">
+                        <button onClick={history.undo} disabled={!history.canUndo} title="Undo (Ctrl+Z): the last change, a dice roll too" aria-label="Undo"
+                            className="px-2 py-1.5 hover:text-white hover:bg-white/5 disabled:opacity-30"><Undo2 size={13} /></button>
+                        <button onClick={history.redo} disabled={!history.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo"
+                            className="px-2 py-1.5 border-l border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Redo2 size={13} /></button>
+                    </span>
+                    <span className="min-w-0 flex flex-wrap items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-1.5 py-1">
+                        <span className="hidden md:inline pl-0.5">Pattern</span>
+                        <span className="flex flex-wrap rounded-md border border-white/10 overflow-hidden">
+                            {inUse.map(p => (
+                                <button key={p} onClick={() => pick(p)} title={`Edit pattern ${p}`}
+                                    className={`relative ${inUse.length > 8 ? 'px-1.5' : 'px-2.5'} py-1 font-bold transition-colors
+                                        ${edit === p ? 'bg-synthux-red/80 text-white' : 'hover:text-white hover:bg-white/5'}`}>
+                                    {p}
+                                    {used(p) && <span className="absolute top-0.5 right-0.5 h-1 w-1 rounded-full bg-current" />}
+                                </button>
+                            ))}
+                        </span>
+                        <button onClick={() => onLoop(loop ? null : edit)} aria-pressed={!!loop}
+                            title={loop ? `Looping pattern ${loop}: click to play the chain again` : `Loop pattern ${edit} instead of the chain (it follows the pattern you edit)`}
+                            className={`flex items-center gap-1 px-2 py-1 rounded border ${loop ? 'border-synthux-green/60 text-synthux-green bg-synthux-green/10' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                            <Repeat size={11} /> <span className="hidden md:inline">Loop</span>{loop ? ` ${loop}` : ''}
+                        </button>
+                    </span>
+                    {/* A phone: the rest folds away; this stays in the same corner, open or folded. */}
+                    <button onClick={() => setHeaderOpen(o => !o)} aria-expanded={headerOpen}
+                        title={headerOpen ? 'Fold the header to play, undo and the patterns' : 'Pattern tools, tempo, volume, swing, scale, presets, the Link, render…'}
+                        className={`md:hidden ml-auto shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md border font-bold transition-colors
+                            ${headerOpen ? 'border-synthux-red/60 bg-synthux-red/10 text-white' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                        {headerOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {headerOpen ? 'Less' : 'More'}
+                    </button>
+                </div>
 
-                {/* The pattern being edited and what can be done to it, together. */}
-                <span className="flex flex-wrap items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">
-                    <span className={extra}>Pattern</span>
-                    <span className="flex flex-wrap rounded-md border border-white/10 overflow-hidden">
-                        {inUse.map(p => (
-                            <button key={p} onClick={() => pick(p)} title={`Edit pattern ${p}`}
-                                className={`relative ${inUse.length > 8 ? 'px-1.5' : 'px-2.5'} py-1 font-bold transition-colors
-                                    ${edit === p ? 'bg-synthux-red/80 text-white' : 'hover:text-white hover:bg-white/5'}`}>
-                                {p}
-                                {used(p) && <span className="absolute top-0.5 right-0.5 h-1 w-1 rounded-full bg-current" />}
-                            </button>
-                        ))}
+                {/* md:contents: from md these groups are items of the row above; on a phone, a column under it. */}
+                <div className={`${headerOpen ? 'flex' : 'hidden'} md:contents w-full flex-col gap-2`}>
+                    {/* What can be done to the pattern being edited. */}
+                    <span className={`${group} gap-x-1.5`} title={`Pattern ${edit}: add or remove patterns, roll, clear, copy`}>
+                        <span className="flex">
+                            <button onClick={addPattern} disabled={inUse.length >= PATTERNS.length}
+                                title={inUse.length >= PATTERNS.length ? `At most ${PATTERNS.length} patterns` : `Add pattern ${PATTERNS[inUse.length]} (empty) and edit it`}
+                                aria-label="Add a pattern"
+                                className="px-1.5 py-1 rounded-l border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Plus size={12} /></button>
+                            <button onClick={removePattern} disabled={inUse.length <= 1 || lastInChain}
+                                title={lastInChain ? `Pattern ${last} is in the chain: take it out there first` : `Remove pattern ${last} (its steps and automation are cleared)`}
+                                aria-label="Remove the last pattern"
+                                className="px-1.5 py-1 rounded-r border border-l-0 border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Minus size={12} /></button>
+                        </span>
+                        <button onClick={rollPattern}
+                            title={`Dice: a new pattern ${edit} on every track that has something to play (CC LFOs get a new LFO, automation new points)`}
+                            className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5">
+                            <Dices size={11} /> Roll
+                        </button>
+                        <button onClick={() => clearPattern(edit)} title={`Clear pattern ${edit}: every track's steps and automation`}
+                            className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
+                            <Eraser size={11} /> Clear
+                        </button>
+                        <span className="flex items-center gap-1" title={`Copy pattern ${edit} (steps and automation) over another`}>
+                            <Copy size={11} /> to
+                            {inUse.length <= 4 ? inUse.filter(p => p !== edit).map(p => (
+                                <button key={p} onClick={() => copyPattern(edit, p)}
+                                    className="w-6 py-0.5 rounded border border-white/10 font-bold hover:text-white hover:bg-white/5">{p}</button>
+                            )) : (
+                                <select value="" aria-label={`Copy pattern ${edit} to`} className={select}
+                                    onChange={e => { if (e.target.value) copyPattern(edit, e.target.value as PatternId); }}>
+                                    <option value="">…</option>
+                                    {inUse.filter(p => p !== edit).map(p => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                            )}
+                        </span>
                     </span>
-                    <span className={`flex ${extra}`}>
-                        <button onClick={addPattern} disabled={inUse.length >= PATTERNS.length}
-                            title={inUse.length >= PATTERNS.length ? `At most ${PATTERNS.length} patterns` : `Add pattern ${PATTERNS[inUse.length]} (empty) and edit it`}
-                            aria-label="Add a pattern"
-                            className="p-1 rounded-l border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Plus size={11} /></button>
-                        <button onClick={removePattern} disabled={inUse.length <= 1 || lastInChain}
-                            title={lastInChain ? `Pattern ${last} is in the chain: take it out there first` : `Remove pattern ${last} (its steps and automation are cleared)`}
-                            aria-label="Remove the last pattern"
-                            className="p-1 rounded-r border border-l-0 border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Minus size={11} /></button>
+
+                    {/* Tempo, main volume, swing: fields to drag (or tap to type), no sliders. */}
+                    <span className={group}>
+                        <label className="flex items-center gap-1.5">
+                            Tempo
+                            <ScrubNumber value={seq.bpm} min={40} max={240} step={0.5} unit="bpm" width="w-[5.5rem]" ariaLabel="Tempo"
+                                onChange={v => onChange(seq => ({ ...seq, bpm: v, chain: seq.chain.slice(0, maxChain(v)) }))} />
+                        </label>
+                        <label className="flex items-center gap-1.5" title="Main volume: every track, live and in the render (the limiter keeps the render under −1 dBFS)">
+                            Vol
+                            <ScrubNumber value={seq.masterDb ?? 0} min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} unit="dB" width="w-[4.75rem]" ariaLabel="Main volume in dB"
+                                onChange={v => onChange(seq => ({ ...seq, masterDb: v || undefined }))} />
+                        </label>
+                        <label className="flex items-center gap-1.5" title="How late every second sixteenth comes">
+                            Swing
+                            <ScrubNumber value={Math.round(seq.swing * 100)} min={0} max={50} step={1} unit="%" width="w-[4rem]" ariaLabel="Swing"
+                                onChange={v => onChange(seq => ({ ...seq, swing: v / 100 }))} />
+                        </label>
                     </span>
-                    <button onClick={() => onLoop(loop ? null : edit)} aria-pressed={!!loop}
-                        title={loop ? `Looping pattern ${loop}: click to play the chain again` : `Loop pattern ${edit} instead of the chain (it follows the pattern you edit)`}
-                        className={`flex items-center gap-1 px-2 py-1 rounded border ${loop ? 'border-synthux-green/60 text-synthux-green bg-synthux-green/10' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
-                        <Repeat size={11} /> <span className={extra}>Loop</span>{loop ? ` ${loop}` : ''}
-                    </button>
-                    <button onClick={rollPattern}
-                        title={`Dice: a new pattern ${edit} on every track that has something to play (CC LFOs get a new LFO, automation new points)`}
-                        className={`flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5 ${extra}`}>
-                        <Dices size={11} /> Roll
-                    </button>
-                    <button onClick={() => clearPattern(edit)} title={`Clear pattern ${edit}: every track's steps and automation`}
-                        className={`flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 ${extra}`}>
-                        <Eraser size={11} /> Clear
-                    </button>
-                    <span className={`flex items-center gap-1 ${extra}`} title={`Copy pattern ${edit} (steps and automation) over another`}>
-                        <Copy size={11} /> to
-                        {inUse.length <= 4 ? inUse.filter(p => p !== edit).map(p => (
-                            <button key={p} onClick={() => copyPattern(edit, p)}
-                                className="w-6 py-0.5 rounded border border-white/10 font-bold hover:text-white hover:bg-white/5">{p}</button>
-                        )) : (
-                            <select value="" aria-label={`Copy pattern ${edit} to`} className={select}
-                                onChange={e => { if (e.target.value) copyPattern(edit, e.target.value as PatternId); }}>
-                                <option value="">…</option>
-                                {inUse.filter(p => p !== edit).map(p => <option key={p} value={p}>{p}</option>)}
+
+                    {/* How the steps are edited. */}
+                    <span className={group}>
+                        <span className="flex items-center gap-1.5" title="What dragging a step up or down sets. On cue tracks Pitch picks the cue; CC steps set their value unless it is Chance">
+                            Drag
+                            <span className="flex rounded-md border border-white/10 overflow-hidden">
+                                {(['velocity', 'pitch', 'chance'] as const).map(m => (
+                                    <button key={m} onClick={() => setDragEdits(m)}
+                                        className={`px-2 py-1 transition-colors ${dragEdits === m ? 'bg-synthux-red/80 text-white' : 'hover:text-white hover:bg-white/5'}`}>
+                                        {m === 'velocity' ? 'Velocity' : m === 'pitch' ? 'Pitch' : 'Chance'}
+                                    </button>
+                                ))}
+                            </span>
+                        </span>
+                        <span className="flex items-center gap-1.5" title="The scale tracks with Scale on snap their step pitches to (playback and MIDI notes alike)">
+                            Scale
+                            <select value={scale.root} aria-label="Scale root" className={select}
+                                onChange={e => onChange(seq => ({ ...seq, scale: { ...(seq.scale ?? { root: 0, mask: CHROMATIC }), root: Number(e.target.value) } }))}>
+                                {NOTE_NAMES.map((n, pc) => <option key={n} value={pc}>{n}</option>)}
                             </select>
-                        )}
+                            <select value={scaleName(scale.mask) ?? ''} aria-label="Scale" className={`${select} max-w-[9rem]`}
+                                onChange={e => {
+                                    const preset = SCALES.find(sc => sc.name === e.target.value);
+                                    if (preset) onChange(seq => ({ ...seq, scale: { root: seq.scale?.root ?? 0, mask: maskFromIntervals(preset.intervals) } }));
+                                }}>
+                                {scaleName(scale.mask) === null && <option value="">Custom</option>}
+                                {SCALES.map(sc => <option key={sc.name} value={sc.name}>{sc.name}</option>)}
+                            </select>
+                        </span>
                     </span>
-                </span>
 
-                {/* A phone: the rest of the header, folded away until asked for. */}
-                <button onClick={() => setHeaderOpen(o => !o)} aria-expanded={headerOpen}
-                    title={headerOpen ? 'Fold the header to play, undo and the patterns' : 'Tempo, volume, swing, scale, presets, the Link, render…'}
-                    className="md:hidden ml-auto flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
-                    {headerOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {headerOpen ? 'Less' : 'More'}
-                </button>
-
-                <span className={`flex items-center gap-2 ${extra}`} title="What dragging a step up or down sets. On cue tracks Pitch picks the cue; CC steps set their value unless it is Chance">
-                    Drag
-                    <span className="flex rounded-md border border-white/10 overflow-hidden">
-                        {(['velocity', 'pitch', 'chance'] as const).map(m => (
-                            <button key={m} onClick={() => setDragEdits(m)}
-                                className={`px-2 py-1 transition-colors ${dragEdits === m ? 'bg-synthux-red/80 text-white' : 'hover:text-white hover:bg-white/5'}`}>
-                                {m === 'velocity' ? 'Velocity' : m === 'pitch' ? 'Pitch' : 'Chance'}
+                    {/* Where it comes from and where it goes: presets, the Link, the render. */}
+                    <span className={`${group} md:ml-auto`}>
+                        <button onClick={e => { e.stopPropagation(); setPresetsOpen(o => !o); }} aria-expanded={presetsOpen}
+                            title="Drum presets: TouchPlaited's patterns, with a density control. With an empty slice pool the synth makes the kit"
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
+                                ${presetsOpen ? 'border-synthux-red/60 text-white' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                            <ListMusic size={12} /> Presets
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setLinkOpen(o => !o); }}
+                            title="Link to a Spotykach over MIDI: clock, Start / Stop, notes for its decks, and CC tracks"
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
+                                ${linked ? 'border-synthux-green/50 text-synthux-green' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                            <Cable size={12} /> Link
+                            {link.following && <span className="font-mono text-[10px]">{link.tempo ? `${link.tempo} bpm` : 'waiting'}</span>}
+                        </button>
+                        <span className="flex items-center gap-2 max-md:w-full">
+                            <select value={cues} onChange={e => setCues(e.target.value as SeqCues)} aria-label="Cue points"
+                                title="Where the rendered file gets its cue points" className={select}>
+                                <option value="hits">Cues at hits</option>
+                                <option value="beats">Cues per beat</option>
+                                <option value="bars">Cues per bar</option>
+                            </select>
+                            <label className="flex items-center gap-1 cursor-pointer" title="Tails past the end come back in at the start, so the loop has no gap or cut">
+                                <input type="checkbox" checked={fold} onChange={e => setFold(e.target.checked)} className="accent-synthux-red" />
+                                Loop tails
+                            </label>
+                            <button onClick={() => onRender(cues, fold)} disabled={busy}
+                                title={`Render the whole chain (${bars} bar${bars === 1 ? '' : 's'}, ${formatSeconds(seconds)}) as a result (Mangle › Results). MIDI-only steps and CC tracks are not in it`}
+                                className="max-md:ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold bg-synthux-red text-white hover:bg-synthux-red/80 disabled:opacity-40">
+                                <Music size={12} /> Render
+                                <span className="font-normal opacity-80">· {bars} bar{bars === 1 ? '' : 's'}</span>
                             </button>
-                        ))}
+                        </span>
                     </span>
-                </span>
-
-                <span className={`flex items-center gap-1.5 ${extra}`} title="The scale tracks with Scale on snap their step pitches to (playback and MIDI notes alike)">
-                    Scale
-                    <select value={scale.root} aria-label="Scale root" className={select}
-                        onChange={e => onChange(seq => ({ ...seq, scale: { ...(seq.scale ?? { root: 0, mask: CHROMATIC }), root: Number(e.target.value) } }))}>
-                        {NOTE_NAMES.map((n, pc) => <option key={n} value={pc}>{n}</option>)}
-                    </select>
-                    <select value={scaleName(scale.mask) ?? ''} aria-label="Scale" className={select}
-                        onChange={e => {
-                            const preset = SCALES.find(sc => sc.name === e.target.value);
-                            if (preset) onChange(seq => ({ ...seq, scale: { root: seq.scale?.root ?? 0, mask: maskFromIntervals(preset.intervals) } }));
-                        }}>
-                        {scaleName(scale.mask) === null && <option value="">Custom</option>}
-                        {SCALES.map(sc => <option key={sc.name} value={sc.name}>{sc.name}</option>)}
-                    </select>
-                </span>
-
-                <span className={`font-mono text-gray-500 ${extra}`} title="The chain: edit it in the timeline">
-                    {bars} bar{bars === 1 ? '' : 's'} · {formatSeconds(seconds)}
-                </span>
-
-                <button onClick={e => { e.stopPropagation(); setPresetsOpen(o => !o); }} aria-expanded={presetsOpen}
-                    title="Drum presets: TouchPlaited's patterns, with a density control. With an empty slice pool the synth makes the kit"
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors ${extra}
-                        ${presetsOpen ? 'border-synthux-red/60 text-white' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
-                    <ListMusic size={12} /> Presets
-                </button>
-
-                <button onClick={e => { e.stopPropagation(); setLinkOpen(o => !o); }}
-                    title="Link to a Spotykach over MIDI: clock, Start / Stop, notes for its decks, and CC tracks"
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors ${extra}
-                        ${linked ? 'border-synthux-green/50 text-synthux-green' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
-                    <Cable size={12} /> Link
-                    {link.following && <span className="font-mono text-[10px]">{link.tempo ? `${link.tempo} bpm` : 'waiting'}</span>}
-                </button>
-
-                <span className={`flex items-center gap-2 ml-auto ${extra}`}>
-                    <select value={cues} onChange={e => setCues(e.target.value as SeqCues)} aria-label="Cue points"
-                        title="Where the rendered file gets its cue points" className={select}>
-                        <option value="hits">Cues at hits</option>
-                        <option value="beats">Cues per beat</option>
-                        <option value="bars">Cues per bar</option>
-                    </select>
-                    <label className="flex items-center gap-1 cursor-pointer" title="Tails past the end come back in at the start, so the loop has no gap or cut">
-                        <input type="checkbox" checked={fold} onChange={e => setFold(e.target.checked)} className="accent-synthux-red" />
-                        Loop tails
-                    </label>
-                    <button onClick={() => onRender(cues, fold)} disabled={busy}
-                        title="Render the whole chain as a result (Mangle › Results). MIDI-only steps and CC tracks are not in it"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold bg-synthux-red text-white hover:bg-synthux-red/80 disabled:opacity-40">
-                        <Music size={12} /> Render
-                    </button>
-                </span>
+                </div>
             </div>
 
             {presetsOpen && (
@@ -510,7 +520,8 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
             </div>
 
             {/* Tracks */}
-            <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-2 ${phoneView === 'timeline' ? 'hidden md:block' : ''}`}>
+            {/* overscroll-contain: a swipe down over the steps at the top doesn't reload the page. */}
+            <div className={`flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 space-y-2 ${phoneView === 'timeline' ? 'hidden md:block' : ''}`}>
                 {slices.length === 0 && cueSounds.length === 0 && (
                     <p className="text-[11px] text-gray-500">
                         Slice tracks play slices (Slices, or <em>To slices</em> from the hits or a result&apos;s snippets); cue tracks play a result
@@ -703,7 +714,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                                     + `. Drag up or down for its ${what}; right-click for more`
                                                     : `Click to switch on, or drag to set its ${what}`}
                                                 aria-pressed={s.on}
-                                                className={`relative h-8 rounded-sm border overflow-hidden touch-none transition-colors
+                                                className={`relative h-8 rounded-sm border overflow-hidden touch-pan-y select-none [-webkit-touch-callout:none] transition-colors
                                                     ${i % 4 === 0 ? 'border-white/20' : 'border-white/5'}
                                                     ${playingHere === i ? 'ring-1 ring-white' : ''}
                                                     ${s.on ? 'bg-white/[0.08]' : 'bg-white/[0.04] hover:bg-white/10'}`}>
@@ -753,7 +764,8 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                         className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30">
                         <Plus size={11} /> Track
                     </button>
-                    <span className="ml-auto text-gray-500">Click a step to switch it · drag it up or down · right-click or long-press for its options</span>
+                    <span className="ml-auto text-gray-500 pointer-coarse:hidden">Click a step to switch it · drag it up or down · right-click for its options</span>
+                    <span className="ml-auto text-gray-500 hidden pointer-coarse:inline">Tap a step to switch it · hold it a moment, then drag up or down · long-press for its options · swipe to scroll</span>
                 </div>
             </div>
 

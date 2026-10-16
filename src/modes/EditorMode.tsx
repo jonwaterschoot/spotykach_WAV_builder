@@ -326,7 +326,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
       <>
         <button
           onClick={download}
-          className={`flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
+          className={`flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs rounded-full text-sm font-bold transition-all hover:scale-105
             active:scale-95 shadow-lg border ${commitClean
               ? 'bg-synthux-blue border-synthux-blue text-white hover:bg-blue-500 shadow-synthux-blue/30'
               : 'border-synthux-blue/50 bg-synthux-blue/15 text-synthux-blue hover:bg-synthux-blue/25'}`}
@@ -338,7 +338,7 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
           <button
             onClick={addToPool}
             disabled={busy !== null}
-            className="flex items-center gap-2 px-6 h-12 rounded-full text-sm font-bold transition-all hover:scale-105
+            className="flex items-center gap-2 px-6 h-12 phone:px-3 phone:h-10 phone:gap-1.5 phone:text-xs rounded-full text-sm font-bold transition-all hover:scale-105
               active:scale-95 shadow-lg border border-synthux-yellow/50 bg-synthux-yellow/15 text-synthux-yellow
               hover:bg-synthux-yellow/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             title={`Put this file in Browse's pool, where the card builder and the project exit pick it up${stale}`}

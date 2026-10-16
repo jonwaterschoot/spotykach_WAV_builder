@@ -10,6 +10,16 @@
    v4 is guarding against: a real finger tap can leave an element stuck in its hover
    look until you tap elsewhere. See S1-15 in roadmap-bugs.md. */
 @custom-variant hover (&:hover);
+/*
+ * A phone in either orientation: narrow, or short (a phone on its side). The
+ * editor's compact layout uses it, so a desktop window keeps the full one.
+ * WaveformEditor's isPhoneWidth() asks the same question.
+ */
+@custom-variant phone {
+  @media (max-width: 767.98px), (max-height: 500px) {
+    @slot;
+  }
+}
 
 /* mobile-drag-drop polyfill override */
 .dnd-drag-image-translate-override {

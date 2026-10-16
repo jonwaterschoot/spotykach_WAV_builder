@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { HitClass } from '../hits';
 import type { MangleSliceEntry } from '../../utils/persistence';
 import {
@@ -57,7 +57,18 @@ interface DragState {
     step: SeqStep;
     wasOn: boolean;
     moved: boolean;
+    /** A finger: it has to hold still for a moment before a drag sets anything. */
+    touch: boolean;
+    /** The finger held still long enough: this drag edits the step, not the page's scroll. */
+    held: boolean;
+    /** The finger moved off before the hold: neither a drag nor a tap. */
+    abandoned: boolean;
 }
+
+/** How long a finger holds a step still before dragging it sets a value; a quicker swipe scrolls. */
+export const TOUCH_HOLD_MS = 200;
+/** How far a finger may wander during the hold. */
+const TOUCH_SLOP_PX = 8;
 
 /**
  * The patch a vertical drag of `dy` pixels (up is positive) makes to a step, and
@@ -95,20 +106,46 @@ export interface StepRef { pattern: PatternId; t: number; i: number }
  */
 export function useStepDrag(apply: (ref: StepRef, patch: Partial<SeqStep>) => void, scale: { root: number; mask: number }) {
     const drag = useRef<DragState | null>(null);
+    const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const [label, setLabel] = useState<{ key: string; text: string } | null>(null);
 
-    const cancel = () => { drag.current = null; setLabel(null); };
+    // Steps let a finger scroll the page (touch-action: pan), so a swipe over the grid
+    // scrolls it. Once a step is held, this stops the scroll, so the drag sets its value.
+    useEffect(() => {
+        const block = (e: TouchEvent) => { if (drag.current?.held && e.cancelable) e.preventDefault(); };
+        window.addEventListener('touchmove', block, { passive: false });
+        return () => { window.removeEventListener('touchmove', block); clearTimeout(holdTimer.current); };
+    }, []);
+
+    const cancel = () => { clearTimeout(holdTimer.current); drag.current = null; setLabel(null); };
 
     const handlers = (key: string, ref: StepRef, track: SeqTrack, step: SeqStep, what: DragWhat) => ({
         onPointerDown: (e: React.PointerEvent) => {
             if (e.button !== 0) return;
             try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* no live pointer: still a click */ }
-            drag.current = { key, y0: e.clientY, step, wasOn: step.on, moved: false };
+            const touch = e.pointerType === 'touch';
+            drag.current = { key, y0: e.clientY, step, wasOn: step.on, moved: false, touch, held: !touch, abandoned: false };
+            clearTimeout(holdTimer.current);
+            if (touch) {
+                holdTimer.current = setTimeout(() => {
+                    const d = drag.current;
+                    if (!d || d.key !== key || d.abandoned) return;
+                    d.held = true;
+                    // Grabbed: show what a drag would change, and a tick where the phone can.
+                    setLabel({ key, text: dragPatch(track, what, d.step, 0, scale).label });
+                    try { navigator.vibrate?.(8); } catch { /* not allowed: fine */ }
+                }, TOUCH_HOLD_MS);
+            }
         },
         onPointerMove: (e: React.PointerEvent) => {
             const d = drag.current;
-            if (!d || d.key !== key) return;
+            if (!d || d.key !== key || d.abandoned) return;
             const dy = d.y0 - e.clientY;
+            if (!d.held) {
+                // A finger that moves before the hold is scrolling (or sliding off): leave the step alone.
+                if (Math.abs(dy) > TOUCH_SLOP_PX) { d.abandoned = true; clearTimeout(holdTimer.current); }
+                return;
+            }
             if (!d.moved && Math.abs(dy) < 4) return;
             d.moved = true;
             const { patch, label } = dragPatch(track, what, d.step, dy, scale);
@@ -118,8 +155,9 @@ export function useStepDrag(apply: (ref: StepRef, patch: Partial<SeqStep>) => vo
         onPointerUp: () => {
             const d = drag.current;
             cancel();
-            if (d && d.key === key && !d.moved) apply(ref, { on: !d.wasOn });
+            if (d && d.key === key && !d.moved && !d.abandoned) apply(ref, { on: !d.wasOn });
         },
+        // The browser took the touch for a scroll.
         onPointerCancel: cancel,
     });
 
