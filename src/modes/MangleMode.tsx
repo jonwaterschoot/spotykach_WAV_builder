@@ -2999,10 +2999,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         </div>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-0.5 ml-auto min-w-0 max-w-full">
+                    {/* One line, never wrapped: when it runs short the seed gives way (truncated), not the trash can. */}
+                    <div className="flex items-center justify-end gap-0.5 ml-auto min-w-0 max-w-full">
                     {!r.kind && (
                     <button onClick={() => applySeed(r.recipe.seed)}
-                      className="min-w-0 max-w-[6.5rem] truncate font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
+                      className="min-w-[2.5rem] shrink max-w-[6.5rem] truncate font-mono text-[10px] text-gray-500 hover:text-white px-1.5 py-0.5 rounded border border-white/10"
                       title="Use this seed for the next batch">
                       {r.recipe.seed}
                     </button>
