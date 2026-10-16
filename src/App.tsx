@@ -1363,7 +1363,7 @@ function App({ onExitToHub }: AppProps) {
     if (source === 'usb') {
       // Not connected yet: the modal opens on its Connect bar, against no card.
       setSdCardMissing(false);
-      return calculateSyncDiff(projectState, (await cardFor('usb')) ?? unreachableCard);
+      return calculateSyncDiff(projectState, (await cardFor('usb')) ?? unreachableCard, { convert: convertAudioToWav });
     }
     if (!sdHandle) {
       setSdCardMissing(true);
@@ -4736,6 +4736,19 @@ function App({ onExitToHub }: AppProps) {
         const newState = JSON.parse(JSON.stringify(baseState)) as typeof baseState;
         for (const [id, fr] of Object.entries(baseState.files)) {
           if (newState.files[id]) newState.files[id].versions = fr.versions;
+        }
+
+        // Slots the diff found already holding what the project would write (over USB,
+        // by building the file): record them, so the next diff ties them by the snapshot.
+        const adopted = Object.values(syncDiff?.slots ?? {}).filter(sd =>
+          sd.adopt && newState.tapes[sd.color]?.slots[sd.index]?.fileId === sd.adopt.fileId);
+        if (adopted.length > 0) {
+          newState.cardSnapshot = {
+            updatedAt: new Date().toISOString(),
+            totalKiB: syncDiff?.cardTotalKiB ?? newState.cardSnapshot?.totalKiB,
+            slots: { ...(newState.cardSnapshot?.slots ?? {}), ...Object.fromEntries(adopted.map(sd => [sd.slotId, sd.adopt!])) },
+          };
+          setState(prev => ({ ...prev, cardSnapshot: newState.cardSnapshot }));
         }
 
         // ─── PHASE A: IMPORT / POOL (Read from SD) ───

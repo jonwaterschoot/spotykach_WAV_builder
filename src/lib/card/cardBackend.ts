@@ -118,6 +118,8 @@ export interface CardBackend {
     readHeader(tape: TapeColor, slot: number): Promise<SlotDescriptor | null>;
     /** The whole file. Over USB this is a download. */
     readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<File>;
+    /** USB only: pieces of a slot file, by byte offset, without downloading the rest. */
+    readRanges?(tape: TapeColor, slot: number, ranges: { offset: number; length: number }[]): Promise<Uint8Array[]>;
     /** True when it wrote, false when `compare` found the slot already holds `blob`. */
     writeSlot(tape: TapeColor, slot: number, blob: Blob, options?: WriteSlotOptions): Promise<boolean>;
     deleteSlot(tape: TapeColor, slot: number): Promise<void>;

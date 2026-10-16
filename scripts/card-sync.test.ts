@@ -212,6 +212,55 @@ const run = async () => {
         check(diff.slots.Blue1.status === 'CONFLICT' && diff.slots.Blue1.ownOlderVersion === true, 'a new version: Changed');
     }
 
+    console.log('\nUSB: another project with the same files (no snapshot, other ids)');
+    {
+        const dev = device();
+        await build(project(), dev.backend);
+        const other: any = { ...project(), cardSnapshot: undefined };
+        other.files = {
+            k2: record('k2', 'KICK', 1, 60, [0, 0.5]),
+            p2: record('p2', 'PAD', 2, 220, [0, 1]),     // slices added in this project
+            l2: record('l2', 'LONG', 43, 110, [0, 20, 42.5]),
+        };
+        ['k2', 'p2', 'l2'].forEach((id, i) => { other.tapes.Blue.slots[i].fileId = id; });
+        dev.calls.download = 0;
+        diff = await calculateSyncDiff(other, dev.backend);
+        const s = (slot: string) => `${diff.slots[slot].status}/${diff.slots[slot].match}${diff.slots[slot].staleHeader ? '/stale' : ''}`;
+        check(['Blue1', 'Blue3'].every(k => diff.slots[k].status === 'MATCH' && diff.slots[k].match === 'predicted' && !diff.slots[k].staleHeader && !!diff.slots[k].adopt),
+            'same name and audio: in sync by prediction, nothing to write (LONG too, as cut)', `${s('Blue1')} ${s('Blue3')}`);
+        check(diff.slots.Blue2.status === 'MATCH' && diff.slots.Blue2.match === 'predicted' && diff.slots.Blue2.staleHeader === true && !diff.slots.Blue2.adopt,
+            'same audio, other slices: a header update, nothing pooled', s('Blue2'));
+        check(dev.calls.download === 0, 'without downloading a slot', String(dev.calls.download));
+
+        const adopted: AppState = { ...other, cardSnapshot: { updatedAt: '', slots: { Blue1: diff.slots.Blue1.adopt!, Blue3: diff.slots.Blue3.adopt! } } };
+        dev.calls.readSlot = 0;
+        diff = await calculateSyncDiff(adopted, dev.backend);
+        check(diff.slots.Blue1.match === 'snapshot' && diff.slots.Blue3.match === 'snapshot' && diff.slots.Blue1.status === 'MATCH',
+            'recorded: the next diff ties them by the snapshot', `${s('Blue1')} ${s('Blue3')}`);
+        dev.calls.upload = 0;
+        await build(adopted, dev.backend);
+        check(dev.files.size === 3 && dev.calls.upload === 1, 'a build after it uploads only PAD (its slices)', String(dev.calls.upload));
+
+        const imposter: any = { ...project(), cardSnapshot: undefined, files: { k3: record('k3', 'KICK', 1, 61, [0, 0.5]) } };
+        imposter.tapes.Blue.slots = imposter.tapes.Blue.slots.map((x: any) => ({ ...x, fileId: x.id === 1 ? 'k3' : null }));
+        diff = await calculateSyncDiff(imposter, dev.backend);
+        check(diff.slots.Blue1.status === 'CONFLICT' && diff.slots.Blue1.match === 'name', 'same name and length, other audio: still "Same name?"', s('Blue1'));
+    }
+    {
+        const dev = device();
+        const flacRecord = (id: string) => ({ id, name: 'loop.flac', originalName: 'loop.flac', isParked: false, currentVersionId: `${id}-v`,
+            versions: [{ id: `${id}-v`, timestamp: 0, description: 'Original', blob: new Blob([new Uint8Array([9, 9, 9])], { type: 'audio/flac' }), duration: 1 }] } as FileRecord);
+        const onConvert = async () => assembleWav(pcm(1, 700));
+        const a: any = { ...project(), files: { fa: flacRecord('fa') }, cardSnapshot: undefined };
+        a.tapes.Blue.slots = a.tapes.Blue.slots.map((x: any) => ({ ...x, fileId: x.id === 1 ? 'fa' : null }));
+        await exportSDStructure(a, { card: dev.backend, directWrite: true, skMode: 'overwrite', includeConfig: false, onConvert });
+        const b: any = { ...a, files: { fb: flacRecord('fb') } };
+        b.tapes.Blue.slots = b.tapes.Blue.slots.map((x: any) => ({ ...x, fileId: x.id === 1 ? 'fb' : null }));
+        diff = await calculateSyncDiff(b, dev.backend, { convert: onConvert });
+        check(diff.slots.Blue1.status === 'MATCH' && diff.slots.Blue1.match === 'predicted', 'a FLAC in another project: converted the way a build does, in sync',
+            `${diff.slots.Blue1.status}/${diff.slots.Blue1.match}`);
+    }
+
     console.log('\nUSB: a slot recorded on the device, imported into its slot');
     {
         const dev = device();

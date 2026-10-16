@@ -189,6 +189,17 @@ export class UsbBackend implements CardBackend {
         return new File([toBuffer(bytes)], slotFileName(slot), { type: 'audio/wav' });
     }
 
+    async readRanges(tape: TapeColor, slot: number, ranges: { offset: number; length: number }[]): Promise<Uint8Array[]> {
+        if (!(await this.entry(tape, slot))) throw new Error(`${tape} ${slot} is empty on the card.`);
+        return this.link.readSlot(this.tapeIndex(tape), this.deviceSlot(slot), async (size, read) => {
+            const pieces: Uint8Array[] = [];
+            for (const { offset, length } of ranges) {
+                pieces.push(offset < size ? await read(offset, Math.min(length, size - offset)) : new Uint8Array(0));
+            }
+            return pieces;
+        }).catch(unmask);
+    }
+
     async writeSlot(tape: TapeColor, slot: number, blob: Blob, options: WriteSlotOptions = {}): Promise<boolean> {
         const { compare = 'content', onProgress, signal, expected } = options;
         signal?.throwIfAborted();

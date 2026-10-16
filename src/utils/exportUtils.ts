@@ -743,7 +743,7 @@ const estimateHardwareSize = async (version: AudioVersion): Promise<number | nul
  * browser's decoder), then encoded by the transfer package with its name and slice
  * points and cut at `maxFrames`.
  */
-const hardwareSlotFile = async (
+export const hardwareSlotFile = async (
     version: AudioVersion,
     metadata: WavMetadata,
     maxFrames: number,
@@ -764,7 +764,7 @@ const hardwareSlotFile = async (
     return toSlotFile(wav, options);
 };
 
-const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
+export const slotWavMetadata = async (file: FileRecord, version: AudioVersion): Promise<WavMetadata> => ({
     id: file.id,
     // The name the project shows, renames included.
     name: file.name || file.originalName,
