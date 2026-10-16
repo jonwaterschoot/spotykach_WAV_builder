@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Moving a file to another slot no longer resets the project.** Moving, swapping or dropping
+  a file on a slot or tape dropped the project's card record, device settings and notes. Over
+  USB, the next build then saw every slot as changed, copied the whole card to the pool and
+  uploaded it again.
+- **FLAC and other non-float files no longer show as "Changed" on every sync.** The build
+  already skipped them, but the window counted them as updates.
+
+### Changed
+
+- **Over USB, a card another project wrote is recognised.** A slot with the project file's
+  name is compared with the file a build would write, a few KB read in place, nothing
+  downloaded. Same sound: in sync. Other name or slices: a header update, nothing pooled.
+
 ---
 
 ## [4.2.0] - 2026-10-13
