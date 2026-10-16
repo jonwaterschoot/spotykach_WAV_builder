@@ -3350,7 +3350,7 @@ function App({ onExitToHub }: AppProps) {
           sourceTapeClone.slots = sourceTapeClone.slots.map(s => s.id === sourceSlotId ? { ...s, fileId: previousFileId } : s);
 
           // Don't park anyone. Swap complete.
-          return { files: nextFiles, tapes: nextTapes };
+          return { ...prev, files: nextFiles, tapes: nextTapes };
         }
       }
 
@@ -3398,7 +3398,7 @@ function App({ onExitToHub }: AppProps) {
         });
       }
 
-      return { files: nextFiles, tapes: nextTapes };
+      return { ...prev, files: nextFiles, tapes: nextTapes };
     });
   };
 
@@ -3679,7 +3679,7 @@ function App({ onExitToHub }: AppProps) {
         };
       }
 
-      return { files: nextFiles, tapes: nextTapes };
+      return { ...prev, files: nextFiles, tapes: nextTapes };
     });
     setHasUnsavedChanges(true); // Mark project as dirty after slot movement
   };
@@ -3745,7 +3745,7 @@ function App({ onExitToHub }: AppProps) {
         )
       };
 
-      return { files: nextFiles, tapes: nextTapes };
+      return { ...prev, files: nextFiles, tapes: nextTapes };
     });
     setHasUnsavedChanges(true); // Mark project as dirty after slot movement
   };
