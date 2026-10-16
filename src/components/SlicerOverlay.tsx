@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
+import { isCoarsePointer } from '../utils/touchGestures';
 
 interface SlicerOverlayProps {
     points: number[]; // time positions in seconds
@@ -34,6 +35,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const [bannerDismissed, setBannerDismissed] = useState(false);
     const wasDragging = useRef(false);
+    const grab = isCoarsePointer() ? 32 : 16;
 
     const timeToX = useCallback((t: number) => (t / duration) * width, [duration, width]);
     const xToTime = useCallback((x: number) => Math.max(0, Math.min(duration, (x / width) * duration)), [duration, width]);
@@ -86,11 +88,13 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
             }, 50);
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
+        window.addEventListener('pointercancel', handleMouseUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
+            window.removeEventListener('pointercancel', handleMouseUp);
         };
     }, [dragIdx, points, getMouseX, xToTime, onPointsChange]);
 
@@ -174,13 +178,13 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
 
                         {/* Drag handle (wider invisible area) */}
                         <rect
-                            x={x - 8}
+                            x={x - grab / 2}
                             y={0}
-                            width={16}
+                            width={grab}
                             height={height}
                             fill="transparent"
                             style={{ cursor: 'ew-resize' }}
-                            onMouseDown={(e) => handlePointMouseDown(e, idx)}
+                            onPointerDown={(e) => handlePointMouseDown(e, idx)}
                             onMouseEnter={() => setHoverIdx(idx)}
                             onMouseLeave={() => setHoverIdx(null)}
                         />
@@ -272,15 +276,15 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                 <foreignObject x={0} y={0} width={width} height={height} className="pointer-events-none">
                     <div className="w-full h-full flex flex-col items-center justify-center p-4">
                         {!bannerDismissed ? (
-                            <div className="bg-red-950/90 border border-red-500/50 backdrop-blur-md px-8 py-4 rounded-2xl shadow-2xl shadow-red-900/40 flex flex-col items-center gap-2 pointer-events-auto relative group">
+                            <div className="bg-red-950/90 border border-red-500/50 backdrop-blur-md px-8 py-4 phone:px-8 phone:py-1.5 phone:gap-0.5 rounded-2xl shadow-2xl shadow-red-900/40 flex flex-col items-center gap-2 pointer-events-auto relative group">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setBannerDismissed(true); }}
-                                    className="absolute top-2 right-2 p-1 text-red-500/50 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-all"
+                                    className="absolute top-2 right-2 p-1 phone:top-0 phone:right-0 phone:p-2 text-red-500/50 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-all"
                                     title="Dismiss"
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                 </button>
-                                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30">
+                                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30 phone:hidden">
                                     <svg
                                         width="20"
                                         height="20"
@@ -299,7 +303,7 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                                         <line x1="8.12" y1="8.12" x2="12" y2="12" />
                                     </svg>
                                 </div>
-                                <span className="text-red-400 font-black uppercase tracking-[0.2em] text-sm text-center">
+                                <span className="text-red-400 font-black uppercase tracking-[0.2em] text-sm phone:text-[10px] phone:tracking-widest text-center">
                                     not implemented on Spotykach yet
                                 </span>
                                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">

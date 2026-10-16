@@ -362,9 +362,25 @@ The editor is one component (`WaveformEditor`) with two mounts: Studio (`App.tsx
 - [x] Less padding round the tools and the wave; the tool menu as wide as the screen; the view bar on one line (no hover-only shortcuts list, short zoom sliders, *Fit view* and *Fit trim* as icons)
 - [x] Transport: smaller buttons, wrapping onto a second row in portrait. Close is the header's ✕ there. The same sizes for the hosts' own buttons (Download, Add to pool; Studio's Save unique and Save copy)
 - [x] Checked: desktop pixel for pixel against before at 1400, 1024 and 800 px wide, with and without a tool open (the only difference is the clock in the History entry); phone portrait (412 × 860) and landscape (860 × 412) with Trim, EQ, Slicer, Automation, Pitch, the tool menu and the History drawer
-- [ ] Second pass, touch on the wave: a swipe over the wave doesn't scroll the page (it is `touch-none`), so in landscape the wave can only be reached by scrolling elsewhere; pinch to zoom; bigger trim, fade and marker handles for a finger
-- [ ] A lower wave by default on a short screen (it is 256 px, or the height last dragged)
+- [x] Second pass, touch on the wave: see below
+- [x] A lower wave by default on a short screen: 160 px below 500 px high. Only a height you set is remembered, so the default follows the screen
 - [ ] Studio stays desktop-only for now; it gets the same layout in a narrow window, as it shares the component
+
+**Added Oct 16 — Touch on the wave** (after a test of the editor on a phone: "very usable, so this is the right method")
+
+What the test found, and why. Most of it was one cause: the overlays (Pitch, Slicer, Cutter, Automation, the ruler) dragged with `mousedown` and a window `mousemove`, and a touch screen sends no `mousemove` while a finger drags. A tap worked (it showed Pitch's light bar), a drag did nothing. The trim grips used pointer events but sat in the wave's scroll area, where the browser took the drag as a scroll.
+
+- [x] One finger for the tools, two for the view (`utils/touchGestures.ts`, `useTwoFingerGesture`). The wave's scroll area is `touch-none`. A second finger starts the gesture: spread sideways to zoom in time around the point between the fingers, up and down for amplitude (as Ctrl and Shift+scroll); move both to pan, and up or down scrolls the editor (so in landscape the wave and its grips can be reached). The hook listens in the capture phase: once two fingers are down, nothing in the wave sees their moves, so a pinch that starts on a trim grip leaves the trim alone
+- [x] The same on the mangler's result waves; a pinch on a compact card opens it zoomed, as the wheel does
+- [x] A double tap reaches the wave as a `dblclick` (phone browsers don't send one reliably), so the existing double-click actions work: an automation point, a pitch region, a slice marker
+- [x] Pitch, Slicer, Cutter, Automation and the ruler drag with pointer events. A mouse behaves as before
+- [x] Automation by touch: double tap adds a point, hold a point (250 ms, a short buzz where the phone has one) then drag to move it, a tap selects it, a swipe that misses changes nothing. Segments the same. The mouse keeps its box select
+- [x] Bigger grab areas on a touch screen (`pointer: coarse`), same look with a mouse: trim grips 28 × 40 px with the trim's edge drawn up the wave, fade corners 36 px, loop crossfade handles 40 px, slice markers 32 px, cut edges 32 px, automation points 44 px, ruler markers
+- [x] Advanced EQ and the keyboard map: a sheet along the bottom on a phone (a window elsewhere). Their ✕ didn't respond to touch because it sat in the window's drag handle, which swallowed the tap; buttons no longer start a drag. Both close when the tool changes, and on a phone when the tool menu opens (the sheet covered its lower half). The EQ's bands drag with a finger; the keyboard's keys shrink to fit
+- [x] Tool rows: the dividers between groups are hidden on a phone and the button groups wrap, so EQ and Pitch no longer push a lone divider onto a line and leave a gap
+- [x] The slicer's "not implemented on Spotykach yet" banner is a small strip on a phone; it covered most of the wave
+- [x] Checked in headless Chrome with real touch input (CDP touch events) at 412 × 860, 360 × 740 and 860 × 412: pinch both ways, two-finger pan, trim grips and move bar, a pinch from a grip, the advanced EQ (fits, band drag, ✕, reopen, closes on a tool switch), Pitch edges and double tap, Automation double tap / quick swipe / hold-and-drag, a slice marker drag, the keyboard map (fits, ✕). Result cards: pinch opens and zooms, amplitude, pan, two fingers up scroll the list
+- [ ] On a real phone: the hold time (250 ms) and how pinching feels on a long file (each step redraws the wave)
 
 ## Decided Oct 14
 

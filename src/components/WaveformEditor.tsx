@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissors, Save, Repeat, BarChart2, Eye, EyeOff, Lock, Unlock, Magnet, Download, Copy, Trash2, X, XCircle, Activity, PlusCircle, Sliders, RefreshCw, Maximize2, Minimize2, Music, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Keyboard, Dices, History as HistoryIcon } from 'lucide-react';
@@ -26,6 +26,7 @@ import { CUE_LEVELS, transientCues, type CueLevel } from '../mangler/recue';
 import { EditorManglePanel } from '../mangler/ui/EditorManglePanel';
 import { EditorToolPicker } from './EditorToolPicker';
 import { ScrubNumber } from './ScrubNumber';
+import { isCoarsePointer, useTwoFingerGesture } from '../utils/touchGestures';
 
 // Fade Overlay Component
 interface FadeOverlayProps {
@@ -56,6 +57,12 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
     const regionEndPx = region.end * pxPerSec;
     const regionWidthPx = regionEndPx - regionStartPx;
     const regionDuration = region.end - region.start;
+
+    // A fingertip needs room: wider grips, a taller bar, bigger fade corners.
+    const coarse = isCoarsePointer();
+    const grip = coarse ? 28 : 10;
+    const bar = coarse ? 40 : 24;
+    const corner = coarse ? 36 : 24;
 
     const fadeInEndPx = regionStartPx + (fadeIn * pxPerSec);
     const fadeOutStartPx = regionEndPx - (fadeOut * pxPerSec);
@@ -228,44 +235,47 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
             <g className="move-group">
                 {/* Center Move Bar */}
                 <rect
-                    x={regionStartPx + 10}
-                    y={height - 24}
-                    width={Math.max(0, regionWidthPx - 20)}
-                    height={24}
+                    x={regionStartPx + grip}
+                    y={height - bar}
+                    width={Math.max(0, regionWidthPx - 2 * grip)}
+                    height={bar}
                     className="move-bar"
                     onPointerDown={(e) => handlePointerDown('move', e)}
                 />
 
                 {/* Left Resize Handle */}
                 <g className="resize-handle" onPointerDown={(e) => handlePointerDown('resize-start', e)}>
+                    {/* On a touch screen the edge itself shows, so the grip reads as the trim's start */}
+                    {coarse && <line x1={regionStartPx + 1} y1={0} x2={regionStartPx + 1} y2={height - bar} stroke="#fff" strokeWidth="2" opacity={0.6} pointerEvents="none" />}
                     <rect
                         x={regionStartPx}
-                        y={height - 24}
-                        width={10}
-                        height={24}
+                        y={height - bar}
+                        width={grip}
+                        height={bar}
                         fill="#fff"
                         opacity={0.8}
                         rx="2"
                     />
                     {/* Grip Lines */}
-                    <line x1={regionStartPx + 3} y1={height - 20} x2={regionStartPx + 3} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
-                    <line x1={regionStartPx + 6} y1={height - 20} x2={regionStartPx + 6} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
+                    <line x1={regionStartPx + grip * 0.3} y1={height - bar + 4} x2={regionStartPx + grip * 0.3} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
+                    <line x1={regionStartPx + grip * 0.6} y1={height - bar + 4} x2={regionStartPx + grip * 0.6} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
                 </g>
 
                 {/* Right Resize Handle */}
                 <g className="resize-handle" onPointerDown={(e) => handlePointerDown('resize-end', e)}>
+                    {coarse && <line x1={regionEndPx - 1} y1={0} x2={regionEndPx - 1} y2={height - bar} stroke="#fff" strokeWidth="2" opacity={0.6} pointerEvents="none" />}
                     <rect
-                        x={regionEndPx - 10}
-                        y={height - 24}
-                        width={10}
-                        height={24}
+                        x={regionEndPx - grip}
+                        y={height - bar}
+                        width={grip}
+                        height={bar}
                         fill="#fff"
                         opacity={0.8}
                         rx="2"
                     />
                     {/* Grip Lines */}
-                    <line x1={regionEndPx - 7} y1={height - 20} x2={regionEndPx - 7} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
-                    <line x1={regionEndPx - 4} y1={height - 20} x2={regionEndPx - 4} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
+                    <line x1={regionEndPx - grip * 0.7} y1={height - bar + 4} x2={regionEndPx - grip * 0.7} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
+                    <line x1={regionEndPx - grip * 0.4} y1={height - bar + 4} x2={regionEndPx - grip * 0.4} y2={height - 4} stroke="black" strokeWidth="1" opacity={0.5} />
                 </g>
 
                 {/* Duration Text */}
@@ -309,8 +319,8 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
 
             {/* Corner Fade Creator (Start) - Always visible at curve start (top), allows pulling out a fade */}
             <g className="corner-handle" onPointerDown={(e) => handlePointerDown('in', e)}>
-                <polygon points={`${regionStartPx},0 ${regionStartPx + 24},0 ${regionStartPx},24`} />
-                <rect x={regionStartPx} y={0} width={24} height={24} fill="transparent" style={{ pointerEvents: 'auto', cursor: 'ew-resize' }} />
+                <polygon points={`${regionStartPx},0 ${regionStartPx + corner},0 ${regionStartPx},${corner}`} />
+                <rect x={regionStartPx} y={0} width={corner} height={corner} fill="transparent" style={{ pointerEvents: 'auto', cursor: 'ew-resize' }} />
             </g>
 
 
@@ -350,8 +360,8 @@ const FadeOverlay = ({ width, height, fadeIn, fadeOut, duration, region, active 
 
             {/* Corner Fade Creator (End) - Top Right Corner */}
             <g className="corner-handle" onPointerDown={(e) => handlePointerDown('out', e)}>
-                <polygon points={`${regionEndPx},0 ${regionEndPx - 24},0 ${regionEndPx},24`} />
-                <rect x={regionEndPx - 24} y={0} width={24} height={24} fill="transparent" style={{ pointerEvents: 'auto', cursor: 'ew-resize' }} />
+                <polygon points={`${regionEndPx},0 ${regionEndPx - corner},0 ${regionEndPx},${corner}`} />
+                <rect x={regionEndPx - corner} y={0} width={corner} height={corner} fill="transparent" style={{ pointerEvents: 'auto', cursor: 'ew-resize' }} />
             </g>
 
         </svg>
@@ -408,6 +418,8 @@ const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeCh
     const regionStartPx = region.start * pxPerSec;
     const regionEndPx = region.end * pxPerSec;
     const xfPx = crossfade * pxPerSec;
+    /** The handles' grab width: a fingertip's on a touch screen. */
+    const hit = isCoarsePointer() ? 40 : 20;
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (!active) return;
@@ -519,15 +531,15 @@ const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeCh
             {/* Start Handle */}
             <g style={{ cursor: 'col-resize', pointerEvents: 'auto' }} onPointerDown={handlePointerDown}>
                 <line x1={regionStartPx + xfPx} y1={0} x2={regionStartPx + xfPx} y2={height} stroke="#00A3FF" strokeWidth="2" />
-                <rect x={regionStartPx + xfPx - 10} y={0} width={20} height={height} fill="transparent" />
-                <circle cx={regionStartPx + xfPx} cy={height / 2} r={4} fill="#00A3FF" />
+                <rect x={regionStartPx + xfPx - hit / 2} y={0} width={hit} height={height} fill="transparent" />
+                <circle cx={regionStartPx + xfPx} cy={height / 2} r={hit > 20 ? 8 : 4} fill="#00A3FF" />
             </g>
 
             {/* End Handle */}
             <g style={{ cursor: 'col-resize', pointerEvents: 'auto' }} onPointerDown={handlePointerDown}>
                 <line x1={regionEndPx - xfPx} y1={0} x2={regionEndPx - xfPx} y2={height} stroke="#00A3FF" strokeWidth="2" />
-                <rect x={regionEndPx - xfPx - 10} y={0} width={20} height={height} fill="transparent" />
-                <circle cx={regionEndPx - xfPx} cy={height / 2} r={4} fill="#00A3FF" />
+                <rect x={regionEndPx - xfPx - hit / 2} y={0} width={hit} height={height} fill="transparent" />
+                <circle cx={regionEndPx - xfPx} cy={height / 2} r={hit > 20 ? 8 : 4} fill="#00A3FF" />
             </g>
 
             {/* Label */}
@@ -544,6 +556,40 @@ const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeCh
         </svg>
     );
 };
+
+/**
+ * A tool's floating panel: a window dragged by its `drag-handle`, or on a phone a
+ * sheet along the bottom of the screen. Buttons never start a drag; on a touch
+ * screen the drag would swallow their click (the ✕ in a panel's header).
+ */
+const FloatingPanel = ({ phone, width, height, position, onMove, zIndex, children }: {
+    phone: boolean;
+    width: number;
+    height: number;
+    position: { x: number; y: number };
+    onMove: (pos: { x: number; y: number }) => void;
+    zIndex: string;
+    children: React.ReactNode;
+}) => phone ? (
+    <div className={`fixed inset-x-0 bottom-0 ${zIndex} max-h-[90dvh] flex flex-col [&>*]:rounded-b-none [&>*]:border-x-0 [&>*]:border-b-0 pb-[env(safe-area-inset-bottom)] bg-[#1a1a1a]`}>
+        {children}
+    </div>
+) : (
+    <Rnd
+        size={{ width, height }}
+        position={position}
+        onDragStop={(_, d) => onMove({ x: d.x, y: d.y })}
+        minWidth={width - 50}
+        minHeight={height - 50}
+        enableResizing={false}
+        dragHandleClassName="drag-handle"
+        cancel="button"
+        className={zIndex}
+        bounds="window"
+    >
+        {children}
+    </Rnd>
+);
 
 // Custom BPM Input Component
 const BpmInput = ({ value, onChange }: { value: number | null, onChange: (val: number | null) => void }) => {
@@ -669,10 +715,21 @@ export const TAPE_COMMIT_LABELS: CommitLabels = {
 
 const WAVE_HEIGHT_KEY = 'waveformEditor.waveHeight';
 const WAVE_HEIGHT_DEFAULT = 256;
+/** A phone on its side: a lower wave, so it fits under the tools with its trim grips in view. */
+const defaultWaveHeight = () =>
+    typeof window !== 'undefined' && window.matchMedia?.('(max-height: 500px)').matches ? 160 : WAVE_HEIGHT_DEFAULT;
 const WAVE_HEIGHT_MIN = 128;
 const WAVE_HEIGHT_MAX = 1000;
 /** The `phone` variant (index.css): narrow or short, where History is a drawer. */
-const isPhoneWidth = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 767.98px), (max-height: 500px)').matches;
+const PHONE_QUERY = '(max-width: 767.98px), (max-height: 500px)';
+const isPhoneWidth = () => typeof window !== 'undefined' && !!window.matchMedia?.(PHONE_QUERY).matches;
+const subscribePhone = (cb: () => void) => {
+    const mq = typeof window !== 'undefined' ? window.matchMedia?.(PHONE_QUERY) : undefined;
+    mq?.addEventListener('change', cb);
+    return () => mq?.removeEventListener('change', cb);
+};
+/** `isPhoneWidth`, kept current as the window turns or resizes. */
+const usePhoneWidth = () => useSyncExternalStore(subscribePhone, isPhoneWidth, () => false);
 const clampWaveHeight = (h: number) => Math.round(Math.min(WAVE_HEIGHT_MAX, Math.max(WAVE_HEIGHT_MIN, h)));
 const V_ZOOM_MIN = 0.5;
 const V_ZOOM_MAX = 15;
@@ -740,9 +797,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             const saved = Number(localStorage.getItem(WAVE_HEIGHT_KEY));
             if (saved) return clampWaveHeight(saved);
         } catch { /* storage blocked: use the default */ }
-        return WAVE_HEIGHT_DEFAULT;
+        return defaultWaveHeight();
     });
     const waveHeightRef = useRef(waveHeight);
+    /** Remember a height once it is set, not the default (which depends on the screen). */
+    const waveHeightSet = useRef(false);
     const [fadeIn, setFadeIn] = useState(0);
     const [fadeOut, setFadeOut] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
@@ -888,6 +947,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [activeTool, setActiveTool] = useState<ToolId>(null);
     const [pendingTool, setPendingTool] = useState<ToolId | undefined>(undefined);
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(() => !isPhoneWidth());
+    const isPhone = usePhoneWidth();
+    // The floating panels belong to their tool: switching tools closes them.
+    useEffect(() => {
+        if (activeTool !== 'eq') setShowAdvancedEQModal(false);
+        if (activeTool !== 'slicer') setShowKeyboardMapModal(false);
+    }, [activeTool]);
     const [stereoSplitView, setStereoSplitView] = useState(false);
     const [internalMetadata, setInternalMetadata] = useState<WavMetadata | null>(metadata || null);
     const [hasTrimInteracted, setHasTrimInteracted] = useState(false);
@@ -1290,6 +1355,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (wavesurfer.current) {
             wavesurfer.current.setOptions({ height: waveHeight });
         }
+        if (!waveHeightSet.current) { waveHeightSet.current = true; return; }
         try { localStorage.setItem(WAVE_HEIGHT_KEY, String(waveHeight)); } catch { /* not critical */ }
     }, [waveHeight]);
 
@@ -1896,6 +1962,34 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
     }, []);
+
+    /*
+     * Two fingers on the wave do what Ctrl and Shift+scroll do for a mouse:
+     * spread them sideways to zoom in time around the point between them, up and
+     * down for amplitude; move them together to pan (up and down scrolls the editor).
+     */
+    const pinchStart = useRef<{ zoom: number; vZoom: number; fraction: number } | null>(null);
+    useTwoFingerGesture(scrollContainerRef, {
+        onStart: ({ midX }) => {
+            const el = scrollContainerRef.current;
+            if (!el) return;
+            const local = midX - el.getBoundingClientRect().left;
+            const width = Math.max(viewportWidth, editorDuration * zoom);
+            pinchStart.current = { zoom, vZoom, fraction: (el.scrollLeft + local) / width };
+        },
+        onMove: ({ scaleX, scaleY, midX }) => {
+            const start = pinchStart.current, el = scrollContainerRef.current;
+            if (!start || !el) return;
+            const nextZoom = Math.min(1200, Math.max(minZoom, start.zoom * scaleX));
+            setZoom(nextZoom);
+            setVZoom(Math.round(Math.min(V_ZOOM_MAX, Math.max(V_ZOOM_MIN, start.vZoom * scaleY)) * 100) / 100);
+            // Keep the spot that was between the fingers under them, once the new width is laid out.
+            const width = Math.max(viewportWidth, editorDuration * nextZoom);
+            const local = midX - el.getBoundingClientRect().left;
+            requestAnimationFrame(() => { el.scrollLeft = Math.max(0, start.fraction * width - local); });
+        },
+        onEnd: () => { pinchStart.current = null; },
+    });
 
     // Drag the wave's bottom edge to make it taller or shorter.
     const handleWaveResizeStart = (e: React.PointerEvent) => {
@@ -3588,6 +3682,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 activeTool={activeTool}
                                 onToggle={toggleTool}
                                 setHelpText={setHelpText}
+                                // On a phone a tool's sheet would cover the menu's lower half.
+                                onMenuOpen={isPhone ? () => { setShowAdvancedEQModal(false); setShowKeyboardMapModal(false); } : undefined}
                                 tools={[
                                     { id: 'trim', group: 'Edit', label: 'Trim/Fade', icon: <Scissors size={13} />, description: 'Cut the ends, fade in and out', textColor: 'text-synthux-green', activeColor: 'bg-synthux-green', hasContent: isTrimDirty },
                                     { id: 'cutter', group: 'Edit', label: 'Cutter', icon: <Scissors size={13} />, description: 'Remove parts from the middle', textColor: 'text-amber-400', activeColor: 'bg-amber-500', hasContent: isCutterDirty },
@@ -3610,7 +3706,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* Trim / Fade Panel */}
                                     {activeTool === 'trim' && (
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500 min-w-[6rem]">
                                                         <label>Fade In</label>
@@ -3639,9 +3735,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 {(() => {
                                                     const duration = regionState.end - regionState.start;
                                                     const isFullSelection = Math.abs(duration - editorDuration) < 0.05;
@@ -3752,9 +3848,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 )}
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button
                                                     onClick={() => handleApplyNormalization(normalizationLevel)}
                                                     disabled={isProcessing}
@@ -3778,7 +3874,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {activeTool === 'automation' && (
                                         <div className="flex flex-wrap items-center gap-3">
                                             {/* Point Volume Controls */}
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1 min-w-[8rem]">
                                                     <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
                                                         <span>Point Volume</span>
@@ -3857,10 +3953,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
                                             <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-gray-800">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 phone:flex-wrap">
                                                     <input
                                                         type="checkbox"
                                                         id="automation-normalize"
@@ -3874,7 +3970,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
                                             {/* Scale Help Text & Toggle */}
                                             <div className="flex items-center gap-3 bg-black/40 px-3 py-1.5 rounded-lg border border-gray-800 group relative">
@@ -3895,10 +3991,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </button>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
                                             {/* Automation Actions */}
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button onClick={handlePreviewAutomation}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white'}`}
                                                     onMouseEnter={() => setHelpText(isPreviewing ? "Refresh Preview" : "Hear Automation Effect")}
@@ -3925,7 +4021,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* Loop Settings Panel */}
                                     {activeTool === 'loop' && (
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1 min-w-[12rem]">
                                                     {(() => {
                                                         const dur = regionState.end - regionState.start;
@@ -3953,9 +4049,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
                                             {originalBuffer && originalBuffer.duration > 42 && (
                                                 <>
-                                                    <div className="h-6 w-px bg-gray-800"></div>
+                                                    <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
                                                     <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-gray-800">
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex items-center gap-2 phone:flex-wrap">
                                                             <input
                                                                 type="checkbox"
                                                                 id="loop-fit-42"
@@ -3971,9 +4067,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </>
                                             )}
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button onClick={handlePreviewLoop}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLoop ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white'}`}
                                                     onMouseEnter={() => setHelpText(isPreviewingLoop ? "Stop Preview & Return to Edit" : "Preview Loop")}
@@ -4007,7 +4103,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* EQ Panel */}
                                     {activeTool === 'eq' && (
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 {isAdvancedEQ ? (
                                                     <div className="flex items-center gap-3 px-2">
                                                         <div className="flex flex-col gap-0.5">
@@ -4061,7 +4157,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 )}
 
                                                 {!isAdvancedEQ && (
-                                                    <div className="h-6 w-px bg-gray-800 mx-1"></div>
+                                                    <div className="h-6 w-px bg-gray-800 mx-1 phone:hidden"></div>
                                                 )}
 
                                                 {!isAdvancedEQ && (
@@ -4082,9 +4178,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 )}
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button onClick={handlePreviewEQ}
                                                     disabled={!isAdvancedEQ && eqLow === 0 && eqMid === 0 && eqHigh === 0}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingEQ ? 'bg-purple-500 text-white hover:bg-red-500' : (!isAdvancedEQ && eqLow === 0 && eqMid === 0 && eqHigh === 0) ? 'bg-gray-900 text-gray-600 cursor-not-allowed' : 'bg-gray-800 hover:bg-purple-500 text-white'}`}
@@ -4128,7 +4224,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 >Peak</button>
                                             </div>
 
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-1 min-w-[7rem]">
                                                     <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
                                                         <label>{limiterMode === 'peak' ? 'Limit' : 'Threshold'}</label>
@@ -4160,7 +4256,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 )}
                                             </div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button onClick={handlePreviewLimiter}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewingLimiter ? 'bg-red-500 text-white hover:bg-gray-800' : 'bg-gray-800 hover:bg-red-500 text-white'}`}
                                                     onMouseEnter={() => setHelpText(isPreviewingLimiter ? "Stop Preview" : "Hear Limiter Effect")}
@@ -4187,7 +4283,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* Cutter Panel */}
                                     {activeTool === 'cutter' && (
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[6rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Regions</div>
                                                     <div className="text-xs font-bold text-amber-400">
@@ -4215,9 +4311,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button
                                                     onClick={() => {
                                                         if (isPreviewingCut && currentBlob && wavesurfer.current) {
@@ -4349,7 +4445,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     </div>
                                                 </div>
 
-                                                <div className="h-6 w-px bg-gray-800 mx-1"></div>
+                                                <div className="h-6 w-px bg-gray-800 mx-1 phone:hidden"></div>
 
                                                 <div className="flex items-center gap-1 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                     <button 
@@ -4375,9 +4471,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     </button>
                                                 </div>
 
-                                                <div className="h-6 w-px bg-gray-800 mx-1"></div>
+                                                <div className="h-6 w-px bg-gray-800 mx-1 phone:hidden"></div>
 
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 phone:flex-wrap">
                                                     <button onClick={handleApplySlicer}
                                                         className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${JSON.stringify([...slicePoints].sort()) === JSON.stringify([...initialSlicePoints].sort())
                                                             ? 'bg-gray-800 hover:bg-gray-700 text-gray-400 border-gray-700/50'
@@ -4416,11 +4512,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         <div className="text-xs font-bold text-red-400">{slicePoints.length}</div>
                                                     </div>
 
-                                                    <div className="h-6 w-px bg-gray-800"></div>
+                                                    <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
                                                     <BpmInput value={tempo} onChange={setTempo} />
 
-                                                    <div className="h-6 w-px bg-gray-800"></div>
+                                                    <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
                                                     <div className="flex items-center gap-1">
                                                         <div className="text-[9px] uppercase font-bold text-gray-600 mr-2">Auto-Slice:</div>
@@ -4448,7 +4544,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         </div>
                                                     </div>
 
-                                                    <div className="h-6 w-px bg-gray-800 mx-2"></div>
+                                                    <div className="h-6 w-px bg-gray-800 mx-2 phone:hidden"></div>
 
                                                     <div className="flex items-center gap-1">
                                                         <div className="text-[9px] uppercase font-bold text-gray-600 mr-2">Detect hits:</div>
@@ -4478,7 +4574,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         </button>
                                                     </div>
 
-                                                    <div className="h-6 w-px bg-gray-800 mx-2"></div>
+                                                    <div className="h-6 w-px bg-gray-800 mx-2 phone:hidden"></div>
 
                                                     <button
                                                         onClick={() => setShowKeyboardMapModal(true)}
@@ -4507,7 +4603,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* Pitch Panel */}
                                     {activeTool === 'pitch' && (
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[7rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Semitones</div>
                                                     <div className="text-xs font-bold text-synthux-blue">
@@ -4528,9 +4624,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button onClick={handleSelectAllPitch} disabled={isPreviewing}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isPreviewing ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}`}
                                                     onMouseEnter={() => setHelpText("Select entire waveform for pitching")}
@@ -4539,7 +4635,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     <Maximize2 size={12} /> All
                                                 </button>
 
-                                                <div className="h-4 w-px bg-gray-700 mx-1"></div>
+                                                <div className="h-4 w-px bg-gray-700 mx-1 phone:hidden"></div>
 
                                                 <button onClick={isPreviewing ? handleResetPitch : handlePreviewPitch} disabled={isProcessing || (pitchRegions.length === 0 && !isPreviewing)}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isProcessing || (pitchRegions.length === 0 && !isPreviewing) ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : (isPreviewing ? 'bg-synthux-blue text-white hover:bg-red-500' : 'bg-gray-800 hover:bg-synthux-blue text-white')}`}
@@ -4566,7 +4662,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 ><RotateCcw size={12} /> Reset Tool</button>
 
 
-                                                <div className="h-4 w-px bg-gray-700 mx-1"></div>
+                                                <div className="h-4 w-px bg-gray-700 mx-1 phone:hidden"></div>
 
                                                 <button onClick={handleDetectPitch} disabled={isProcessing || isPreviewing}
                                                     className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isProcessing || isPreviewing ? 'bg-gray-900 text-gray-700 cursor-not-allowed' : 'bg-gray-800 hover:bg-synthux-blue hover:text-white text-gray-400'}`}
@@ -4583,7 +4679,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     {/* Stereo Panel */}
                                     {activeTool === 'stereo' && (
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
                                                 <div className="flex flex-col gap-0.5 min-w-[7rem]">
                                                     <div className="text-[10px] uppercase font-bold text-gray-500">Channels</div>
                                                     <div className="text-xs font-bold text-purple-400">
@@ -4595,7 +4691,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button
                                                     onClick={() => setStereoSplitView(!stereoSplitView)}
                                                     disabled={!originalBuffer || originalBuffer.numberOfChannels <= 1}
@@ -4613,10 +4709,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </button>
                                             </div>
 
-                                            <div className="h-6 w-px bg-gray-800"></div>
+                                            <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
 
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 phone:flex-wrap">
                                                 <button onClick={() => handleSplitStereo('L')}
                                                     className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-[#00A3FF]/20 border border-[#00A3FF]/30 text-[#00A3FF] hover:bg-[#00A3FF] hover:text-white transition-all shadow-lg shadow-blue-500/10"
                                                     onMouseEnter={() => setHelpText("Save Left Channel to Pool")}
@@ -4794,7 +4890,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             {/* Scroll Area Wrapper - This handles the overflow-x */}
                             <div
                                 ref={scrollContainerRef}
-                                className="w-full overflow-x-auto overflow-y-hidden editor-scroll"
+                                className="w-full overflow-x-auto overflow-y-hidden editor-scroll touch-none"
                                 style={{ userSelect: 'none' }}
                                 onScroll={handleEditorScroll}
                             >
@@ -5008,7 +5104,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         {/* Resize grip: drag the wave's bottom edge (Alt+scroll does the same) */}
                         <div
                             onPointerDown={handleWaveResizeStart}
-                            onDoubleClick={() => setWaveHeight(WAVE_HEIGHT_DEFAULT)}
+                            onDoubleClick={() => setWaveHeight(defaultWaveHeight())}
                             onMouseEnter={() => setHelpText("Drag to resize the wave · Alt+scroll · Double-click to reset")}
                             onMouseLeave={() => setHelpText("")}
                             className="shrink-0 h-3 flex items-center justify-center bg-[#111] border border-t-0 border-gray-800 rounded-b-xl cursor-ns-resize group touch-none"
@@ -5174,17 +5270,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             {/* Advanced EQ Modal */}
             {
                 showAdvancedEQModal && (
-                    <Rnd
-                        size={{ width: 600, height: 400 }}
-                        position={advancedEQPos}
-                        onDragStop={(_, d) => setAdvancedEQPos({ x: d.x, y: d.y })}
-                        minWidth={550}
-                        minHeight={350}
-                        enableResizing={false}
-                        dragHandleClassName="drag-handle"
-                        className="z-[100]"
-                        bounds="window"
-                    >
+                    <FloatingPanel phone={isPhone} width={600} height={400} position={advancedEQPos} onMove={setAdvancedEQPos} zIndex="z-[100]">
                         <div className="bg-[#1a1a1a] border border-gray-700 rounded-2xl p-4 w-full h-full shadow-2xl relative overflow-hidden flex flex-col">
                             {/* Background Decoration */}
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 drag-handle cursor-move"></div>
@@ -5204,7 +5290,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 </button>
                             </div>
 
-                            <div className="flex justify-between items-center h-56 gap-0.5 mb-4 bg-black/40 p-3 rounded-xl border border-gray-800/50 relative">
+                            <div className="flex justify-between items-center h-56 phone:h-44 gap-0.5 mb-4 phone:mb-3 bg-black/40 p-3 rounded-xl border border-gray-800/50 relative">
                                 {/* DB Scale Background */}
                                 <div className="absolute left-1 inset-y-4 flex flex-col justify-between text-[11px] font-mono text-gray-600 pointer-events-none pr-1 border-r border-gray-800/30">
                                     <span>+24</span>
@@ -5215,7 +5301,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 {ADVANCED_EQ_FREQS.map((freq, i) => (
                                     <div key={freq} className="flex-1 flex flex-col items-center h-full group pointer-events-none">
                                         <div
-                                            className="flex-1 w-full flex flex-col items-center relative mb-2 pointer-events-auto cursor-ns-resize"
+                                            className="flex-1 w-full flex flex-col items-center relative mb-2 pointer-events-auto cursor-ns-resize touch-none"
                                             onPointerDown={(e) => handleSliderPointerDown(i, e)}
                                             onPointerMove={(e) => handleSliderPointerMove(i, e)}
                                             onPointerUp={handleSliderPointerUp}
@@ -5258,7 +5344,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                             </div>
 
                             <div className="flex flex-col gap-3 mt-auto">
-                                <div className="flex justify-between items-center bg-black/20 p-2 rounded-xl border border-white/5">
+                                <div className="flex justify-between items-center phone:flex-wrap phone:gap-2 bg-black/20 p-2 rounded-xl border border-white/5">
                                     <div className="flex items-center gap-1.5">
                                         <button
                                             onClick={() => { setIsAdvancedEQ(false); setShowAdvancedEQModal(false); }}
@@ -5299,23 +5385,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 </div>
                             </div>
                         </div>
-                    </Rnd>
+                    </FloatingPanel>
                 )
             }
 
             {/* Keyboard Slicer Map Panel */}
             {showKeyboardMapModal && (
-                <Rnd
-                    size={{ width: 550, height: 320 }}
-                    position={keyboardSlicerPos}
-                    onDragStop={(_, d) => setKeyboardSlicerPos({ x: d.x, y: d.y })}
-                    minWidth={500}
-                    minHeight={300}
-                    enableResizing={false}
-                    dragHandleClassName="drag-handle"
-                    className="z-[200]"
-                    bounds="window"
-                >
+                <FloatingPanel phone={isPhone} width={550} height={320} position={keyboardSlicerPos} onMove={setKeyboardSlicerPos} zIndex="z-[200]">
                     <KeyboardSlicerModal
                         isOpen={showKeyboardMapModal}
                         onClose={() => setShowKeyboardMapModal(false)}
@@ -5325,7 +5401,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                         activeSliceIdx={activeSliceIdx}
                         triggeredSliceIdx={triggeredSliceIdx}
                     />
-                </Rnd>
+                </FloatingPanel>
             )}
         </div>
     );

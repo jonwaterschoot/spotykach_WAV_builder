@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { isCoarsePointer } from '../utils/touchGestures';
 
 export interface AutomationPoint {
     id: string;
@@ -19,6 +20,46 @@ interface AutomationOverlayProps {
     snapPoints?: number[];
     snapToSlices?: boolean;
 }
+
+/** How long a finger rests on a point before it picks it up. */
+const HOLD_MS = 250;
+/** Further than this before the hold ends, and it was a swipe, not a hold. */
+const HOLD_SLOP = 8;
+
+/**
+ * A finger on a point: rest it there and the point comes up to drag, lift it
+ * sooner and it was a tap. A second finger, or moving off first, is neither
+ * (that is the view's two-finger gesture, or a miss).
+ */
+const holdToDrag = (e: React.PointerEvent, onHold: () => void, onTap: () => void) => {
+    const id = e.pointerId, x0 = e.clientX, y0 = e.clientY;
+    const opts = { capture: true } as const;
+    const done = () => {
+        clearTimeout(timer);
+        window.removeEventListener('pointermove', move, opts);
+        window.removeEventListener('pointerup', up, opts);
+        window.removeEventListener('pointercancel', up, opts);
+        window.removeEventListener('pointerdown', other, opts);
+    };
+    const move = (ev: PointerEvent) => {
+        if (ev.pointerId === id && Math.hypot(ev.clientX - x0, ev.clientY - y0) > HOLD_SLOP) done();
+    };
+    const up = (ev: PointerEvent) => {
+        if (ev.pointerId !== id) return;
+        done();
+        if (ev.type === 'pointerup') onTap();
+    };
+    const other = (ev: PointerEvent) => { if (ev.pointerId !== id) done(); };
+    const timer = setTimeout(() => {
+        done();
+        navigator.vibrate?.(10);
+        onHold();
+    }, HOLD_MS);
+    window.addEventListener('pointermove', move, opts);
+    window.addEventListener('pointerup', up, opts);
+    window.addEventListener('pointercancel', up, opts);
+    window.addEventListener('pointerdown', other, opts);
+};
 
 export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
     points,
@@ -45,6 +86,10 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
 
     // Store initial state for group dragging
     const initialPointsRef = useRef<AutomationPoint[]>([]);
+    /** Grab sizes: a fingertip's on a touch screen. */
+    const coarse = isCoarsePointer();
+    const pointHit = coarse ? 22 : 12;
+    const segmentHit = coarse ? 28 : 15;
 
     const COLOR_MAIN = "#FF5500";
     const COLOR_SELECTED = "#CC4400";
@@ -230,13 +275,15 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         };
 
         if (dragStart) {
-            window.addEventListener('mousemove', handleGlobalMove);
-            window.addEventListener('mouseup', handleGlobalUp);
+            window.addEventListener('pointermove', handleGlobalMove);
+            window.addEventListener('pointerup', handleGlobalUp);
+            window.addEventListener('pointercancel', handleGlobalUp);
         }
 
         return () => {
-            window.removeEventListener('mousemove', handleGlobalMove);
-            window.removeEventListener('mouseup', handleGlobalUp);
+            window.removeEventListener('pointermove', handleGlobalMove);
+            window.removeEventListener('pointerup', handleGlobalUp);
+            window.removeEventListener('pointercancel', handleGlobalUp);
         };
     }, [active, dragStart, isDragging, draggingPointId, selectionBox, points, duration, width, height, onPointsChange, onSeek, MAX_GAIN_VAL]);
 
@@ -285,7 +332,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [active, points, duration, onPointsChange]);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleMouseDown = (e: React.PointerEvent) => {
         if (!svgRef.current) return;
         const rect = svgRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -295,16 +342,29 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
             onPointsChange(points.map(p => ({ ...p, selected: false })));
         }
 
-        setSelectionBox({ x, y, w: 0, h: 0 });
+        // A finger on the wave taps to seek; it draws no selection box, so a
+        // swipe that misses a point changes nothing.
+        setSelectionBox(e.pointerType === 'touch' ? null : { x, y, w: 0, h: 0 });
         setDragStart({ x, y });
         setIsDragging(false);
     };
 
-    const handlePointMouseDown = (e: React.MouseEvent, pointId: string) => {
+    const handlePointMouseDown = (e: React.PointerEvent, pointId: string) => {
         e.stopPropagation();
+        if (e.pointerType === 'touch') {
+            const { clientX, clientY } = e;
+            holdToDrag(e,
+                () => beginPointDrag(clientX, clientY, pointId, false),
+                () => onPointsChange(points.map(p => ({ ...p, selected: p.id === pointId }))));
+            return;
+        }
+        beginPointDrag(e.clientX, e.clientY, pointId, e.shiftKey);
+    };
+
+    const beginPointDrag = (clientX: number, clientY: number, pointId: string, shiftKey: boolean) => {
         const rect = svgRef.current!.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
 
         initialPointsRef.current = JSON.parse(JSON.stringify(points));
 
@@ -315,7 +375,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         setDragStart({ x, y });
         setIsDragging(false); // Reset dragging state, wait for move
 
-        if (e.shiftKey) {
+        if (shiftKey) {
             const newPoints = points.map(p => p.id === pointId ? { ...p, selected: !p.selected } : p);
             onPointsChange(newPoints);
             initialPointsRef.current = newPoints; // Update initial ref for immediate drag
@@ -326,11 +386,23 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         }
     };
 
-    const handleSegmentMouseDown = (e: React.MouseEvent, p1Id: string | null, p2Id: string | null) => {
+    const handleSegmentMouseDown = (e: React.PointerEvent, p1Id: string | null, p2Id: string | null) => {
         e.stopPropagation();
+        if (e.pointerType === 'touch') {
+            const { clientX, clientY } = e;
+            const ids = [p1Id, p2Id].filter(Boolean);
+            holdToDrag(e,
+                () => beginSegmentDrag(clientX, clientY, p1Id, p2Id, false),
+                () => onPointsChange(points.map(p => ({ ...p, selected: ids.includes(p.id) }))));
+            return;
+        }
+        beginSegmentDrag(e.clientX, e.clientY, p1Id, p2Id, e.shiftKey);
+    };
+
+    const beginSegmentDrag = (clientX: number, clientY: number, p1Id: string | null, p2Id: string | null, shiftKey: boolean) => {
         const rect = svgRef.current!.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
 
         initialPointsRef.current = JSON.parse(JSON.stringify(points));
 
@@ -343,7 +415,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
         if (p1Id) idsToSelect.push(p1Id);
         if (p2Id) idsToSelect.push(p2Id);
 
-        if (e.shiftKey) {
+        if (shiftKey) {
             const newPoints = points.map(p => idsToSelect.includes(p.id) ? { ...p, selected: true } : p);
             onPointsChange(newPoints);
             initialPointsRef.current = newPoints; // Update initial ref
@@ -409,8 +481,8 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                         strokeWidth={isHovered ? "4" : "2"} strokeOpacity="0.8"
                     />
                     <line x1={0} y1={startY} x2={endX} y2={endY}
-                        stroke="transparent" strokeWidth="15"
-                        onMouseDown={(e) => handleSegmentMouseDown(e, null, first.id)}
+                        stroke="transparent" strokeWidth={segmentHit}
+                        onPointerDown={(e) => handleSegmentMouseDown(e, null, first.id)}
                         className="cursor-pointer"
                     />
                 </g>
@@ -450,8 +522,8 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                             fill="none"
                         />
                         <path d={pathData}
-                            stroke="transparent" strokeWidth="15"
-                            onMouseDown={(e) => handleSegmentMouseDown(e, p1.id, p2.id)}
+                            stroke="transparent" strokeWidth={segmentHit}
+                            onPointerDown={(e) => handleSegmentMouseDown(e, p1.id, p2.id)}
                             className="cursor-pointer"
                             fill="none"
                         />
@@ -469,8 +541,8 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                             strokeOpacity="0.8"
                         />
                         <line x1={x1} y1={y1} x2={x2} y2={y2}
-                            stroke="transparent" strokeWidth="15"
-                            onMouseDown={(e) => handleSegmentMouseDown(e, p1.id, p2.id)}
+                            stroke="transparent" strokeWidth={segmentHit}
+                            onPointerDown={(e) => handleSegmentMouseDown(e, p1.id, p2.id)}
                             className="cursor-pointer"
                         />
                     </g>
@@ -495,8 +567,8 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                         strokeWidth={isHovered ? "4" : "2"} strokeOpacity="0.8"
                     />
                     <line x1={startX} y1={startY} x2={width} y2={startY}
-                        stroke="transparent" strokeWidth="15"
-                        onMouseDown={(e) => handleSegmentMouseDown(e, last.id, null)}
+                        stroke="transparent" strokeWidth={segmentHit}
+                        onPointerDown={(e) => handleSegmentMouseDown(e, last.id, null)}
                         className="cursor-pointer"
                     />
                 </g>
@@ -515,7 +587,7 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                 height={height}
                 className="absolute top-0 left-0 z-20"
                 onDoubleClick={handleDoubleClick}
-                onMouseDown={handleMouseDown}
+                onPointerDown={handleMouseDown}
                 style={{
                     pointerEvents: 'none',
                     userSelect: 'none'
@@ -549,9 +621,9 @@ export const AutomationOverlay: React.FC<AutomationOverlayProps> = ({
                     {points.map(p => (
                         <g key={p.id} transform={`translate(${timeToX(p.time)}, ${valueToY(p.value)})`}>
                             <circle
-                                r="12"
+                                r={pointHit}
                                 fill="transparent"
-                                onMouseDown={(e) => handlePointMouseDown(e, p.id)}
+                                onPointerDown={(e) => handlePointMouseDown(e, p.id)}
                                 className="cursor-pointer"
                             />
                             <circle

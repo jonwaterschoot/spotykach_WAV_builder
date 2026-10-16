@@ -268,11 +268,13 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
             setTimeout(() => setHasDragged(false), 50);
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
+        window.addEventListener('pointercancel', handleMouseUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
+            window.removeEventListener('pointercancel', handleMouseUp);
         };
     }, [dragState, regions, duration, width, getMouseX, onRegionsChange]);
 
@@ -323,7 +325,7 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
                             strokeWidth={isSelected ? 2 : 1}
                             strokeDasharray={isPreviewing ? "4 4" : "0"}
                             style={{ cursor: isPreviewing ? 'default' : 'move' }}
-                            onMouseDown={(e) => !isPreviewing && handleBodyMouseDown(e, region.id)}
+                            onPointerDown={(e) => !isPreviewing && handleBodyMouseDown(e, region.id)}
                             onClick={(e) => {
                                 if (isPreviewing) return;
                                 // If we just finished a drag, don't toggle
@@ -347,7 +349,7 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
                                                 height={height}
                                                 fill="transparent"
                                                 style={{ cursor: 'col-resize' }}
-                                                onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
+                                                onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
                                                 onMouseEnter={() => setHoveredEdge({ regionId: region.id, edge: 'start', zone: 'middle' })}
                                                 onMouseLeave={() => setHoveredEdge(null)}
                                             />
@@ -364,7 +366,7 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
                                                 height={height}
                                                 fill="transparent"
                                                 style={{ cursor: 'col-resize' }}
-                                                onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
+                                                onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
                                                 onMouseEnter={() => setHoveredEdge({ regionId: region.id, edge: 'start', zone: 'middle' })}
                                                 onMouseLeave={() => setHoveredEdge(null)}
                                             />
@@ -375,7 +377,7 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
                                                 height={height}
                                                 fill="transparent"
                                                 style={{ cursor: 'e-resize' }}
-                                                onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
+                                                onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
                                                 onMouseEnter={() => setHoveredEdge({ regionId: region.id, edge: 'start', zone: 'right' })}
                                                 onMouseLeave={() => setHoveredEdge(null)}
                                             />
@@ -436,7 +438,7 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
                                                 height={height}
                                                 fill="transparent"
                                                 style={{ cursor: 'col-resize' }}
-                                                onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'end')}
+                                                onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'end')}
                                                 onMouseEnter={() => setHoveredEdge({ regionId: region.id, edge: 'end', zone: 'middle' })}
                                                 onMouseLeave={() => setHoveredEdge(null)}
                                             />
@@ -453,7 +455,7 @@ const PitchOverlay: React.FC<PitchOverlayProps> = ({
                                                 height={height}
                                                 fill="transparent"
                                                 style={{ cursor: 'w-resize' }}
-                                                onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'end')}
+                                                onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'end')}
                                                 onMouseEnter={() => setHoveredEdge({ regionId: region.id, edge: 'end', zone: 'left' })}
                                                 onMouseLeave={() => setHoveredEdge(null)}
                                             />

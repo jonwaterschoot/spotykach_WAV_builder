@@ -60,10 +60,10 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
                 </button>
             </div>
 
-            <div className="p-4 overflow-y-auto flex-1">
-                <div className="flex flex-col gap-2.5 items-center">
+            <div className="p-4 phone:p-3 overflow-y-auto flex-1">
+                <div className="flex flex-col gap-2.5 phone:gap-1.5 items-center [--kb-stagger:12px] phone:[--kb-stagger:2vw]">
                     {rows.map((row, rowIdx) => (
-                        <div key={rowIdx} className="flex gap-1.5 justify-center" style={{ marginLeft: `${rowIdx * 12}px` }}>
+                        <div key={rowIdx} className="flex gap-1.5 phone:gap-1 justify-center" style={{ marginLeft: `calc(${rowIdx} * var(--kb-stagger))` }}>
                             {row.map((key) => {
                                 const currentSliceIdx = sliceCounter++ - 1;
                                 const isTriggered = triggeredSliceIdx === currentSliceIdx;
@@ -73,7 +73,7 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
                                     <div key={key} className="flex flex-col items-center gap-1">
                                         <button
                                             onClick={() => onPlaySlice(currentSliceIdx)}
-                                            className={`w-10 h-10 border-2 rounded-lg flex items-center justify-center font-black text-sm transition-all duration-75 relative group/key
+                                            className={`w-10 h-10 phone:w-[8vw] phone:max-w-10 phone:text-xs border-2 rounded-lg flex items-center justify-center font-black text-sm transition-all duration-75 relative group/key
                                                 ${isTriggered
                                                     ? 'bg-red-500 border-red-300 text-white scale-95 shadow-[0_0_15px_rgba(248,113,113,0.6)]'
                                                     : isActive
@@ -96,7 +96,7 @@ export const KeyboardSlicerModal: React.FC<KeyboardSlicerModalProps> = ({ isOpen
                     ))}
                 </div>
 
-                <div className="mt-4 p-2.5 bg-red-900/10 border border-red-500/20 rounded-lg">
+                <div className="mt-4 phone:mt-3 p-2.5 bg-red-900/10 border border-red-500/20 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
                         <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
                         <h3 className="text-red-500 font-black uppercase tracking-widest text-[9px]">MIDI & KEYBOARD SYNC</h3>

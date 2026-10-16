@@ -75,23 +75,25 @@ export const PlayheadRuler: React.FC<PlayheadRulerProps> = ({
         };
 
         if (isDraggingPlayhead || draggingMarkerId) {
-            window.addEventListener('mousemove', handleGlobalMove);
-            window.addEventListener('mouseup', handleGlobalUp);
+            window.addEventListener('pointermove', handleGlobalMove);
+            window.addEventListener('pointerup', handleGlobalUp);
+            window.addEventListener('pointercancel', handleGlobalUp);
         }
 
         return () => {
-            window.removeEventListener('mousemove', handleGlobalMove);
-            window.removeEventListener('mouseup', handleGlobalUp);
+            window.removeEventListener('pointermove', handleGlobalMove);
+            window.removeEventListener('pointerup', handleGlobalUp);
+            window.removeEventListener('pointercancel', handleGlobalUp);
         };
     }, [isDraggingPlayhead, draggingMarkerId, duration, points, onPointsChange, onSeek]);
 
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleMouseDown = (e: React.PointerEvent) => {
         if (!containerRef.current) return;
 
         const x = getXFromEvent(e);
         const width = containerRef.current.offsetWidth;
-        const tolerance = 6;
+        const tolerance = e.pointerType === 'touch' ? 14 : 6;
 
         const hitMarker = points.find(p => {
             const px = (p.time / duration) * width;
@@ -155,7 +157,7 @@ export const PlayheadRuler: React.FC<PlayheadRulerProps> = ({
             ref={containerRef}
             className={`relative h-6 bg-gray-900 border-b border-gray-800 cursor-pointer select-none ${className}`}
             style={{ overflowX: 'clip', overflowY: 'visible' }}
-            onMouseDown={handleMouseDown}
+            onPointerDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
         >

@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { appStorage } from '../../utils/storageNamespace';
+import { useTwoFingerGesture } from '../../utils/touchGestures';
 
 interface ResultWaveformProps {
     /** Stored outline, used until (or unless) the decoded audio is there. */
@@ -140,6 +141,34 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
     }, []);
+
+    // Two fingers do what Ctrl and Shift+scroll do: spread them sideways to zoom
+    // in time, up and down for amplitude; move them together to pan (up and down
+    // scrolls the list). On a compact card that opens the zoomed view, as the wheel does.
+    const pinchStart = useRef<{ z: number; gain: number; fraction: number } | null>(null);
+    useTwoFingerGesture(scrollRef, {
+        onStart: ({ midX }) => {
+            const el = scrollRef.current;
+            if (!el || !onZoom) return;
+            const offset = midX - el.getBoundingClientRect().left;
+            pinchStart.current = { z, gain, fraction: (el.scrollLeft + offset) / (el.clientWidth * z) };
+            if (!zoomed) onZoom(1);
+        },
+        onMove: ({ scaleX, scaleY, midX }) => {
+            const start = pinchStart.current, el = scrollRef.current;
+            if (!start || !el || !onZoom) return;
+            const offset = midX - el.getBoundingClientRect().left;
+            setGain(Math.round(Math.min(GAIN_MAX, Math.max(GAIN_MIN, start.gain * scaleY)) * 100) / 100);
+            const next = Math.round(Math.min(MAX_ZOOM, Math.max(1, start.z * scaleX)) * 100) / 100;
+            if (next !== z) {
+                zoomAnchor.current = { fraction: start.fraction, offset };
+                onZoom(next);
+            } else {
+                el.scrollLeft = Math.max(0, start.fraction * el.clientWidth * z - offset);
+            }
+        },
+        onEnd: () => { pinchStart.current = null; },
+    });
 
     // Follow the playhead when it leaves the view.
     useEffect(() => {
@@ -281,8 +310,8 @@ export const ResultWaveform: React.FC<ResultWaveformProps> = ({
                     <ZoomButton title="Zoom out" onClick={() => setZoom(z / 2)} disabled={z <= 1}><Minus size={12} /></ZoomButton>
                     <ZoomButton title="Zoom in" onClick={() => setZoom(z * 2)} disabled={z >= MAX_ZOOM}><Plus size={12} /></ZoomButton>
                     <ZoomButton title="Fit the whole file" onClick={() => setZoom(1)} disabled={z === 1}><Maximize2 size={11} /></ZoomButton>
-                    <span className="font-mono ml-1 tabular-nums"
-                        title="Ctrl+scroll zooms, Alt+scroll sets the height, Shift+scroll the amplitude">
+                    <span className="font-mono ml-1 tabular-nums whitespace-nowrap"
+                        title="Ctrl+scroll zooms, Alt+scroll sets the height, Shift+scroll the amplitude. On a touch screen: pinch sideways to zoom, up and down for the amplitude, two fingers to move">
                         {Number.isInteger(z) ? z : z.toFixed(1)}×{gain !== 1 && ` · amp ${gain.toFixed(1)}×`}
                     </span>
                     {!audio && z > 1 && <span className="ml-2">loading detail…</span>}

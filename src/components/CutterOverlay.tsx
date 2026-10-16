@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
+import { isCoarsePointer } from '../utils/touchGestures';
 
 export interface CutRegion {
     id: string;
@@ -31,6 +32,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
     snapToSlices = false,
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
+    const coarse = isCoarsePointer();
     const [dragState, setDragState] = useState<{
         type: 'create' | 'move' | 'resize-start' | 'resize-end';
         regionId?: string;
@@ -209,11 +211,13 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
             setDragState(null);
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
+        window.addEventListener('pointercancel', handleMouseUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
+            window.removeEventListener('pointercancel', handleMouseUp);
         };
     }, [dragState, regions, duration, width, getMouseX, onRegionsChange]);
 
@@ -293,7 +297,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
                             strokeWidth={isSelected ? 2 : 1}
                             opacity={isSelected ? 0.9 : 0.6}
                             style={{ cursor: 'move' }}
-                            onMouseDown={(e) => handleBodyMouseDown(e, region.id)}
+                            onPointerDown={(e) => handleBodyMouseDown(e, region.id)}
                             onClick={(e) => handleRegionClick(e, region.id)}
                         />
 
@@ -316,7 +320,7 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
                             fill={isSelected ? '#ef4444' : '#dc2626'}
                             opacity={0.8}
                             style={{ cursor: 'ew-resize' }}
-                            onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
+                            onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'start')}
                         />
 
                         {/* Right edge handle */}
@@ -328,8 +332,21 @@ const CutterOverlay: React.FC<CutterOverlayProps> = ({
                             fill={isSelected ? '#ef4444' : '#dc2626'}
                             opacity={0.8}
                             style={{ cursor: 'ew-resize' }}
-                            onMouseDown={(e) => handleEdgeMouseDown(e, region.id, 'end')}
+                            onPointerDown={(e) => handleEdgeMouseDown(e, region.id, 'end')}
                         />
+
+                        {/* A fingertip's grab round each edge */}
+                        {coarse && (['start', 'end'] as const).map(edge => (
+                            <rect
+                                key={edge}
+                                x={(edge === 'start' ? x : x + w) - 16}
+                                y={0}
+                                width={32}
+                                height={height}
+                                fill="transparent"
+                                onPointerDown={(e) => handleEdgeMouseDown(e, region.id, edge)}
+                            />
+                        ))}
 
                         {/* "CUT" label */}
                         {w > 30 && (

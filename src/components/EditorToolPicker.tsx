@@ -27,9 +27,11 @@ interface EditorToolPickerProps<Id extends string> {
     /** Opens a tool, or closes it when it is the open one. */
     onToggle: (id: Id) => void;
     setHelpText: (text: string) => void;
+    /** The menu is opening. */
+    onMenuOpen?: () => void;
 }
 
-export function EditorToolPicker<Id extends string>({ tools, activeTool, onToggle, setHelpText }: EditorToolPickerProps<Id>) {
+export function EditorToolPicker<Id extends string>({ tools, activeTool, onToggle, setHelpText, onMenuOpen }: EditorToolPickerProps<Id>) {
     const [open, setOpen] = useState(false);
     useEscapeLayer(open, () => { setOpen(false); return true; });
 
@@ -46,7 +48,7 @@ export function EditorToolPicker<Id extends string>({ tools, activeTool, onToggl
         <div className="flex items-center gap-3 min-w-0 w-full">
             <div className="relative shrink-0">
                 <button
-                    onClick={() => setOpen(o => !o)}
+                    onClick={() => { if (!open) onMenuOpen?.(); setOpen(!open); }}
                     onMouseEnter={() => setHelpText('Pick an edit tool or effect')}
                     onMouseLeave={() => setHelpText('')}
                     aria-haspopup="menu"
