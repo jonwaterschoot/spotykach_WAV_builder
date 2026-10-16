@@ -19,9 +19,21 @@
   the synth makes the kit; *Render new kit* swaps in fresh sounds, *Clear patterns* empties
   the steps and keeps them. Track names are easier to find and rename, and on a phone the
   header folds to play, undo and the patterns.
+- **Sample Mangler on a phone: tidier and easier to scroll.** Generate is in the bottom bar on
+  every pane. The source pool lists the newest first (or oldest, or A–Z). The sequencer's
+  header is grouped, with *More / Less* always in the same corner, and volume, swing,
+  variations and takes are fields you drag instead of sliders. A swipe over the steps now
+  scrolls; hold a step for a moment to drag its value.
+- **The editor fits a phone.** Opened from the mangler (or Browse, or the editor's own page)
+  on a phone, upright or on its side, it goes edge to edge with a one-line header, History as
+  a drawer, and smaller buttons, so the wave and the tools have the room. A desktop window
+  looks exactly as before.
 
 ### Fixed
 
+- **The mangler's bottom bar no longer hides below a phone's screen.** The page counted the
+  browser's address bar in its height, which pushed Sources, Settings and Results off the
+  bottom.
 - **Moving a file to another slot no longer resets the project.** Moving, swapping or dropping
   a file on a slot or tape dropped the project's card record, device settings and notes. Over
   USB, the next build then saw every slot as changed, copied the whole card to the pool and
