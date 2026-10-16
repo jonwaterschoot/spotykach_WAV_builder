@@ -28,9 +28,18 @@
   on a phone, upright or on its side, it goes edge to edge with a one-line header, History as
   a drawer, and smaller buttons, so the wave and the tools have the room. A desktop window
   looks exactly as before.
+- **Touch on the editor's wave and the mangler's results.** Two fingers zoom (spread sideways
+  for time, up and down for the amplitude) and move the view; on a result card a pinch opens
+  it zoomed. Trim grips, fade corners and markers are sized for a finger. Automation: double
+  tap adds a point, hold a point to move it. A double tap also adds a pitch region or a slice.
 
 ### Fixed
 
+- **The editor's tools respond to a finger.** Pitch edges, slice markers, cut regions,
+  automation points and the ruler could be tapped but not dragged on a touch screen, and the
+  trim grips lost the drag to the page. The advanced EQ and the keyboard map now fit a phone
+  as a sheet along the bottom, their ✕ works by touch, and they close when you switch tools.
+  Tool rows no longer leave a stray divider or a gap when they wrap.
 - **The mangler's bottom bar no longer hides below a phone's screen.** The page counted the
   browser's address bar in its height, which pushed Sources, Settings and Results off the
   bottom.
