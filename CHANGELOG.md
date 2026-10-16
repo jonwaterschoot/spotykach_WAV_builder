@@ -32,6 +32,9 @@
   for time, up and down for the amplitude) and move the view; on a result card a pinch opens
   it zoomed. Trim grips, fade corners and markers are sized for a finger. Automation: double
   tap adds a point, hold a point to move it. A double tap also adds a pitch region or a slice.
+- **Mangler: select results.** *Select* on the results bar puts a tick box on each card; the
+  *Selected* menu saves, sends or reuses just those, next to the *Kept* menu for every starred
+  one.
 
 ### Fixed
 
@@ -40,6 +43,12 @@
   trim grips lost the drag to the page. The advanced EQ and the keyboard map now fit a phone
   as a sheet along the bottom, their ✕ works by touch, and they close when you switch tools.
   Tool rows no longer leave a stray divider or a gap when they wrap.
+- **The editor's buttons fit one row on a phone.** Loop, play, download and add to pool are
+  round icons; the save button takes the rest and breaks a long label over two lines.
+- **Mangler result cards keep their buttons inside the card** on a narrow phone; *Export*
+  shows only its icon there.
+- **Browse on a phone opens on the list.** A pool kept from last time no longer takes over
+  the screen on the way in; the *Pool* button opens it.
 - **The mangler's bottom bar no longer hides below a phone's screen.** The page counted the
   browser's address bar in its height, which pushed Sources, Settings and Results off the
   bottom.
