@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Cable, Copy, Dices, Eraser, Minus, Music, PenLine, Pencil, Play, Plus, Redo2, Repeat, Square, Trash2, Undo2, X } from 'lucide-react';
+import { Cable, ChevronDown, ChevronUp, Copy, Dices, Eraser, ListMusic, Loader, Minus, Music, PenLine, Pencil, Play, Plus, Redo2, Repeat, Square, Trash2, Undo2, X } from 'lucide-react';
 import type { MidiPort, MidiSettings } from './useMidiLink';
 import { pickAny, rollAutomation, rollCcSteps, rollCueSteps, rollLfo, rollSteps } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
@@ -16,6 +16,10 @@ import {
 import { SequenceTimeline, type TimelineView } from './SequenceTimeline';
 import { CC_COLOR, CONNECT_HINT, chanceLabel, dragWhat, kindOf, stepColor, trackColor, useStepDrag, type DragEdit, type StepRef } from './seqUi';
 import { formatSeconds } from './format';
+import {
+    DEFAULT_DENSITY, DENSITY_LABELS, DENSITY_MAX, DENSITY_MIN, DRUM_GENRES, DRUM_PRESETS, DRUM_VOICES, EMPTY_PRESET, PRESET_BARS,
+    matchSlices, presetById, presetHits, presetTracks, withPresetDensity,
+} from '../drumPresets';
 
 /**
  * The step sequencer: patterns A–D of 16 steps, a chain that plays them in
@@ -54,6 +58,8 @@ interface SequencerStationProps {
     onAudition: (soundId: string, shift: number, env?: SnippetEnvelope) => void;
     /** Open a slice in the editor; its save replaces the slice's sound everywhere. */
     onEditSlice: (sliceId: string) => void;
+    /** A drum preset loaded with no slices to play: the synth makes one per voice; their ids, in voice order. */
+    onDrumKit: () => Promise<(string | null)[]>;
     onRender: (cues: SeqCues, fold: boolean) => void;
     newId: () => string;
     /** Looping one pattern instead of the chain (a playback setting, not part of the sequence), or null. */
@@ -86,7 +92,7 @@ const cueKey = (c: Pick<CueSound, 'kind' | 'id'>) => `${c.kind}:${c.id}`;
 const CHANCES = [1, 0.75, 0.5, 0.25] as const;
 
 export const SequencerStation: React.FC<SequencerStationProps> = ({
-    seq, onChange, slices, available, cueSounds, playing, step, busy, onPlay, onStop, onAudition, onEditSlice, onRender, newId, link, history, loop, onLoop,
+    seq, onChange, slices, available, cueSounds, playing, step, busy, onPlay, onStop, onAudition, onEditSlice, onDrumKit, onRender, newId, link, history, loop, onLoop,
 }) => {
     // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, unless a field is being typed in (it has its own undo).
     useEffect(() => {
@@ -119,6 +125,14 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
     const [folded, setFolded] = useState(false);
     /** On a phone the pattern grid and the timeline take turns. */
     const [phoneView, setPhoneView] = useState<'pattern' | 'timeline'>('pattern');
+    /** On a phone the header folds to the essentials (play, undo, the patterns) until opened. */
+    const [headerOpen, setHeaderOpen] = useState(false);
+    const extra = headerOpen ? '' : 'max-md:hidden';
+    const [presetsOpen, setPresetsOpen] = useState(false);
+    const [density, setDensity] = useState(DEFAULT_DENSITY);
+    /** The preset last loaded and its tracks (by voice), so density and the next preset carry on with them. */
+    const [loaded, setLoaded] = useState<{ presetId: string; trackIds: string[] } | null>(null);
+    const [kitBusy, setKitBusy] = useState(false);
     useEffect(() => {
         if (!menu) return;
         const close = () => setMenu(null);
@@ -220,6 +234,70 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
         tracks: seq.tracks.map(tr => (kindOf(tr) === 'slice' && !tr.sliceId) || (kindOf(tr) === 'cue' && !tr.cue) ? tr : rollFor(tr)),
     }));
 
+    /**
+     * A drum preset: seven tracks over patterns A–D, chained A B C D (CC tracks
+     * stay, as room allows). Slices: those of the preset loaded before (still
+     * there), or ones from the pool that fit; an empty pool gets a synth kit.
+     */
+    const loadPreset = async (presetId: string, kit?: (string | null)[]) => {
+        const preset = presetById(presetId);
+        if (!preset || (kitBusy && !kit)) return;
+        const before = loaded ? loaded.trackIds.map(id => seq.tracks.find(tr => tr.id === id)) : [];
+        const pool = slices.filter(s => available.has(s.sourceId));
+        let matched: (string | null)[];
+        if (kit) matched = kit;
+        else if (pool.length) matched = matchSlices(pool);
+        else {
+            setKitBusy(true);
+            try { matched = await onDrumKit(); } finally { setKitBusy(false); }
+        }
+        const tracks = presetTracks(preset, density, newId, v => {
+            const kept = before[v]?.sliceId;
+            return !kit && kept && playable(kept) ? kept : matched[v] ?? null;
+        });
+        onChange(seq => ({
+            ...seq,
+            patternCount: Math.max(PRESET_BARS, patternsOf(seq).length),
+            chain: PATTERNS.slice(0, Math.min(PRESET_BARS, maxChain(seq.bpm))),
+            tracks: [...tracks, ...seq.tracks.filter(tr => kindOf(tr) === 'cc')].slice(0, MAX_TRACKS),
+        }));
+        setLoaded({ presetId, trackIds: tracks.map(tr => tr.id) });
+        pick('A');
+    };
+    const loadedPreset = loaded && seq.tracks.some(tr => loaded.trackIds.includes(tr.id))
+        ? presetById(loaded.presetId) ?? null : null;
+    /** Density: which weights play; redrawn live over the loaded preset's tracks (patterns A–D). Not over the empty one: nothing to redraw, only what was programmed. */
+    const changeDensity = (d: number) => {
+        setDensity(d);
+        if (!loaded || !loadedPreset || loadedPreset === EMPTY_PRESET) return;
+        onChange(seq => ({
+            ...seq,
+            tracks: seq.tracks.map(tr => {
+                const v = loaded.trackIds.indexOf(tr.id);
+                return v < 0 ? tr : withPresetDensity(tr, loadedPreset, v, d);
+            }),
+        }));
+    };
+    /**
+     * A fresh synth kit, a sound per voice: onto the loaded preset's tracks
+     * (their steps stay), or with none loaded, onto the empty one.
+     */
+    const newKit = async () => {
+        if (kitBusy) return;
+        setKitBusy(true);
+        let kit: (string | null)[];
+        try { kit = await onDrumKit(); } finally { setKitBusy(false); }
+        if (!kit.some(Boolean)) return;
+        if (!loaded || !loadedPreset) { await loadPreset(EMPTY_PRESET.id, kit); return; }
+        onChange(seq => ({
+            ...seq,
+            tracks: seq.tracks.map(tr => {
+                const id = kit[loaded.trackIds.indexOf(tr.id)];
+                return id ? { ...tr, sliceId: id } : tr;
+            }),
+        }));
+    };
+
     const changeKind = (t: number, kind: TrackKind) => onChange(seq => ({
         ...seq,
         tracks: seq.tracks.map((tr, i) => {
@@ -252,7 +330,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
     return (
         <div className="h-full min-h-0 flex flex-col" onClick={() => { setMenu(null); setEnvMenu(null); }}>
             {/* Transport, patterns, scale, chain, render */}
-            <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-b border-white/10 text-[11px] text-gray-400">
+            <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 md:py-3 border-b border-white/10 text-[11px] text-gray-400">
                 <button onClick={() => (playing ? onStop() : onPlay())}
                     title={playing ? 'Stop' : link.settings.follow && link.enabled ? 'Arm: the incoming clock plays it (Start, or just ticks)' : 'Play the chain, looping'}
                     className={`h-9 w-9 flex items-center justify-center rounded-full transition-colors
@@ -265,12 +343,12 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     <button onClick={history.redo} disabled={!history.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo"
                         className="px-2 py-1.5 border-l border-white/10 hover:text-white hover:bg-white/5 disabled:opacity-30"><Redo2 size={13} /></button>
                 </span>
-                <label className="flex items-center gap-2">
+                <label className={`flex items-center gap-2 ${extra}`}>
                     Tempo
                     <ScrubNumber value={seq.bpm} min={40} max={240} step={0.5} unit="bpm" width="w-[5.5rem]" ariaLabel="Tempo"
                         onChange={v => onChange(seq => ({ ...seq, bpm: v, chain: seq.chain.slice(0, maxChain(v)) }))} />
                 </label>
-                <label className="flex items-center gap-2" title="Main volume: every track, live and in the render (the limiter keeps the render under −1 dBFS)">
+                <label className={`flex items-center gap-2 ${extra}`} title="Main volume: every track, live and in the render (the limiter keeps the render under −1 dBFS)">
                     Volume
                     <input type="range" min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} value={seq.masterDb ?? 0}
                         onChange={e => onChange(seq => ({ ...seq, masterDb: Number(e.target.value) || undefined }))}
@@ -279,7 +357,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     <ScrubNumber value={seq.masterDb ?? 0} min={MASTER_MIN_DB} max={MASTER_MAX_DB} step={0.5} unit="dB" width="w-[5rem]" ariaLabel="Main volume in dB"
                         onChange={v => onChange(seq => ({ ...seq, masterDb: v || undefined }))} />
                 </label>
-                <label className="flex items-center gap-2" title="How late every second sixteenth comes">
+                <label className={`flex items-center gap-2 ${extra}`} title="How late every second sixteenth comes">
                     Swing
                     <input type="range" min={0} max={50} value={Math.round(seq.swing * 100)}
                         onChange={e => onChange(seq => ({ ...seq, swing: Number(e.target.value) / 100 }))}
@@ -289,7 +367,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
 
                 {/* The pattern being edited and what can be done to it, together. */}
                 <span className="flex flex-wrap items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">
-                    Pattern
+                    <span className={extra}>Pattern</span>
                     <span className="flex flex-wrap rounded-md border border-white/10 overflow-hidden">
                         {inUse.map(p => (
                             <button key={p} onClick={() => pick(p)} title={`Edit pattern ${p}`}
@@ -300,7 +378,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                             </button>
                         ))}
                     </span>
-                    <span className="flex">
+                    <span className={`flex ${extra}`}>
                         <button onClick={addPattern} disabled={inUse.length >= PATTERNS.length}
                             title={inUse.length >= PATTERNS.length ? `At most ${PATTERNS.length} patterns` : `Add pattern ${PATTERNS[inUse.length]} (empty) and edit it`}
                             aria-label="Add a pattern"
@@ -313,18 +391,18 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     <button onClick={() => onLoop(loop ? null : edit)} aria-pressed={!!loop}
                         title={loop ? `Looping pattern ${loop}: click to play the chain again` : `Loop pattern ${edit} instead of the chain (it follows the pattern you edit)`}
                         className={`flex items-center gap-1 px-2 py-1 rounded border ${loop ? 'border-synthux-green/60 text-synthux-green bg-synthux-green/10' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
-                        <Repeat size={11} /> Loop{loop ? ` ${loop}` : ''}
+                        <Repeat size={11} /> <span className={extra}>Loop</span>{loop ? ` ${loop}` : ''}
                     </button>
                     <button onClick={rollPattern}
                         title={`Dice: a new pattern ${edit} on every track that has something to play (CC LFOs get a new LFO, automation new points)`}
-                        className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5">
+                        className={`flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-synthux-red hover:bg-white/5 ${extra}`}>
                         <Dices size={11} /> Roll
                     </button>
                     <button onClick={() => clearPattern(edit)} title={`Clear pattern ${edit}: every track's steps and automation`}
-                        className="flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
+                        className={`flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5 ${extra}`}>
                         <Eraser size={11} /> Clear
                     </button>
-                    <span className="flex items-center gap-1" title={`Copy pattern ${edit} (steps and automation) over another`}>
+                    <span className={`flex items-center gap-1 ${extra}`} title={`Copy pattern ${edit} (steps and automation) over another`}>
                         <Copy size={11} /> to
                         {inUse.length <= 4 ? inUse.filter(p => p !== edit).map(p => (
                             <button key={p} onClick={() => copyPattern(edit, p)}
@@ -339,7 +417,14 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     </span>
                 </span>
 
-                <span className="flex items-center gap-2" title="What dragging a step up or down sets. On cue tracks Pitch picks the cue; CC steps set their value unless it is Chance">
+                {/* A phone: the rest of the header, folded away until asked for. */}
+                <button onClick={() => setHeaderOpen(o => !o)} aria-expanded={headerOpen}
+                    title={headerOpen ? 'Fold the header to play, undo and the patterns' : 'Tempo, volume, swing, scale, presets, the Link, render…'}
+                    className="md:hidden ml-auto flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:text-white hover:bg-white/5">
+                    {headerOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {headerOpen ? 'Less' : 'More'}
+                </button>
+
+                <span className={`flex items-center gap-2 ${extra}`} title="What dragging a step up or down sets. On cue tracks Pitch picks the cue; CC steps set their value unless it is Chance">
                     Drag
                     <span className="flex rounded-md border border-white/10 overflow-hidden">
                         {(['velocity', 'pitch', 'chance'] as const).map(m => (
@@ -351,7 +436,7 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     </span>
                 </span>
 
-                <span className="flex items-center gap-1.5" title="The scale tracks with Scale on snap their step pitches to (playback and MIDI notes alike)">
+                <span className={`flex items-center gap-1.5 ${extra}`} title="The scale tracks with Scale on snap their step pitches to (playback and MIDI notes alike)">
                     Scale
                     <select value={scale.root} aria-label="Scale root" className={select}
                         onChange={e => onChange(seq => ({ ...seq, scale: { ...(seq.scale ?? { root: 0, mask: CHROMATIC }), root: Number(e.target.value) } }))}>
@@ -367,19 +452,26 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                     </select>
                 </span>
 
-                <span className="font-mono text-gray-500" title="The chain: edit it in the timeline">
+                <span className={`font-mono text-gray-500 ${extra}`} title="The chain: edit it in the timeline">
                     {bars} bar{bars === 1 ? '' : 's'} · {formatSeconds(seconds)}
                 </span>
 
+                <button onClick={e => { e.stopPropagation(); setPresetsOpen(o => !o); }} aria-expanded={presetsOpen}
+                    title="Drum presets: TouchPlaited's patterns, with a density control. With an empty slice pool the synth makes the kit"
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors ${extra}
+                        ${presetsOpen ? 'border-synthux-red/60 text-white' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                    <ListMusic size={12} /> Presets
+                </button>
+
                 <button onClick={e => { e.stopPropagation(); setLinkOpen(o => !o); }}
                     title="Link to a Spotykach over MIDI: clock, Start / Stop, notes for its decks, and CC tracks"
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors ${extra}
                         ${linked ? 'border-synthux-green/50 text-synthux-green' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
                     <Cable size={12} /> Link
                     {link.following && <span className="font-mono text-[10px]">{link.tempo ? `${link.tempo} bpm` : 'waiting'}</span>}
                 </button>
 
-                <span className="flex items-center gap-2 ml-auto">
+                <span className={`flex items-center gap-2 ml-auto ${extra}`}>
                     <select value={cues} onChange={e => setCues(e.target.value as SeqCues)} aria-label="Cue points"
                         title="Where the rendered file gets its cue points" className={select}>
                         <option value="hits">Cues at hits</option>
@@ -398,6 +490,11 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                 </span>
             </div>
 
+            {presetsOpen && (
+                <PresetPanel density={density} onDensity={changeDensity} loaded={loadedPreset?.id ?? null} busy={kitBusy}
+                    emptyPool={!slices.some(s => available.has(s.sourceId))}
+                    onLoad={id => { void loadPreset(id); }} onNewKit={() => { void newKit(); }} onClose={() => setPresetsOpen(false)} />
+            )}
             {linkOpen && <LinkPanel link={link} onClose={() => setLinkOpen(false)} />}
 
             {/* A phone has room for one: the pattern grid or the timeline. */}
@@ -439,7 +536,10 @@ export const SequencerStation: React.FC<SequencerStationProps> = ({
                                     <Play size={11} className="ml-px" />
                                 </button>
                                 <input value={track.name} onChange={e => setTrack(t, { name: e.target.value })} aria-label="Track name"
-                                    className="w-16 min-w-0 bg-transparent text-[11px] font-bold text-gray-200 focus:outline-none focus:bg-black/40 rounded px-1" />
+                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur(); }}
+                                    placeholder={`Track ${t + 1}`} maxLength={24} title="The track's name: click to rename"
+                                    className="w-24 min-w-0 shrink bg-transparent border border-transparent hover:border-white/10 focus:border-white/20 text-[11px] font-bold
+                                        text-gray-200 placeholder:text-gray-600 focus:outline-none focus:bg-black/40 rounded px-1 py-0.5" />
                                 <select value={kind} onChange={e => changeKind(t, e.target.value as TrackKind)} aria-label="Track kind"
                                     title="Slice: a slice from the pool. Cue: a sample's cue points, one per step. CC: a Spotykach control over the Link"
                                     className={`${select} w-14 font-bold`} style={{ color }}>
@@ -982,6 +1082,82 @@ const LfoEditor: React.FC<{
                 <ScrubNumber value={Math.round(lfo.phase * 100)} min={0} max={99} step={1} unit="%" width="w-[4rem]" ariaLabel="LFO phase"
                     onChange={v => onChange({ ...lfo, phase: v / 100 })} />
             </span>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Drum presets
+// ---------------------------------------------------------------------------
+
+/** TouchPlaited's patterns by genre: a click loads one; density redraws the loaded one live. */
+const PresetPanel: React.FC<{
+    density: number; onDensity: (d: number) => void;
+    /** The preset whose tracks are in the sequence, or null. */
+    loaded: string | null;
+    /** The synth is making a kit. */
+    busy: boolean;
+    emptyPool: boolean;
+    onLoad: (id: string) => void;
+    /** A fresh synth kit for the loaded preset's tracks. */
+    onNewKit: () => void;
+    onClose: () => void;
+}> = ({ density, onDensity, loaded, busy, emptyPool, onLoad, onNewKit, onClose }) => {
+    const [genre, setGenre] = useState(() => DRUM_PRESETS.find(p => p.id === loaded)?.genre ?? DRUM_GENRES[0]);
+    return (
+        <div className="shrink-0 border-b border-white/10 bg-black/20 px-4 py-3 text-[11px] text-gray-300 space-y-2.5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-gray-100">Drum presets <span className="font-normal text-gray-500">· TouchPlaited&apos;s patterns</span></span>
+                <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close"><X size={12} /></button>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span className="flex rounded-md border border-white/10 overflow-hidden">
+                    {DRUM_GENRES.map(g => (
+                        <button key={g} onClick={() => setGenre(g)}
+                            className={`px-2.5 py-1 font-bold uppercase tracking-wider transition-colors ${genre === g ? 'bg-synthux-red/80 text-white' : 'hover:text-white hover:bg-white/5'}`}>
+                            {g}
+                        </button>
+                    ))}
+                </span>
+                <label className="flex items-center gap-2" title="Which weights play, as on TouchPlaited: 1 only the backbone (weight 4), 4 every ghost too">
+                    Density
+                    <input type="range" min={DENSITY_MIN} max={DENSITY_MAX} step={1} value={density}
+                        onChange={e => onDensity(Number(e.target.value))} className="w-24 accent-synthux-red" aria-label="Density" />
+                    <span className="font-mono text-gray-200 w-[6.5rem]">{density} · {DENSITY_LABELS[density]}</span>
+                </label>
+                <span className="flex items-center gap-1.5 sm:ml-auto">
+                    <button onClick={() => onLoad(EMPTY_PRESET.id)} disabled={busy} aria-pressed={loaded === EMPTY_PRESET.id}
+                        title="Clear: the seven drum tracks with empty patterns A–D, to program yourself (their slices stay). Undo takes it back"
+                        className={`flex items-center gap-1 px-2 py-1 rounded border disabled:opacity-40 transition-colors
+                            ${loaded === EMPTY_PRESET.id ? 'border-synthux-red/60 text-white' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                        <Eraser size={11} /> Clear patterns
+                    </button>
+                    <button onClick={onNewKit} disabled={busy}
+                        title={loaded ? 'Render a new kit with the synth: a sound per track, into the slice pool; the steps stay'
+                            : 'Render a new kit with the synth and load it on the seven drum tracks, patterns empty'}
+                        className="flex items-center gap-1 px-2 py-1 rounded border border-synthux-orange/50 text-synthux-orange hover:bg-synthux-orange/10 disabled:opacity-40">
+                        {busy ? <Loader size={11} className="animate-spin" /> : <Dices size={11} />} {busy ? 'Making a kit…' : 'Render new kit'}
+                    </button>
+                </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+                {DRUM_PRESETS.filter(p => p.genre === genre).map(p => (
+                    <button key={p.id} onClick={() => onLoad(p.id)} disabled={busy} aria-pressed={loaded === p.id}
+                        title={`Load ${p.name}: 7 tracks, patterns A–D chained (${presetHits(p, density)} hits at density ${density}). Undo takes it back`}
+                        className={`px-2.5 py-1 rounded border font-bold disabled:opacity-40 transition-colors
+                            ${loaded === p.id ? 'bg-synthux-red/80 text-white border-transparent' : 'border-white/10 hover:text-white hover:bg-white/5'}`}>
+                        {p.name}
+                    </button>
+                ))}
+            </div>
+            <p className="text-[10px] leading-snug text-gray-500">
+                A preset becomes seven tracks ({DRUM_VOICES.map(v => v.name).join(', ')}) over patterns A–D, chained A B C D; CC tracks stay.
+                {emptyPool
+                    ? ' The slice pool is empty: the synth makes a kit for it, a sound per track, into the pool.'
+                    : ' Each track takes a slice from the pool whose name or class fits; the next preset keeps those.'}
+                {' '}Density redraws the loaded preset&apos;s steps live (edits to A–D on its tracks are redrawn too).
+                {' '}<em>Render new kit</em> gives the tracks new synth sounds and keeps their steps; <em>Clear patterns</em> empties A–D and keeps the sounds.
+            </p>
         </div>
     );
 };

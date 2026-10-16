@@ -91,6 +91,7 @@ import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
 import { rollAll, rollInStyle, unlocked, type DiceGroup } from '../mangler/randomize';
 import { renderSlice, sliceAsSnippet, slicePeaks, snippetAsSlice, type SliceSpec } from '../mangler/slices';
 import type { HitClass } from '../mangler/hits';
+import { DRUM_VOICES } from '../mangler/drumPresets';
 import { DESKTOP_LIMITS, PHONE_LIMITS, loadPhoneMode, savePhoneMode } from '../mangler/ui/phoneMode';
 import { ResultWaveform } from '../mangler/ui/ResultWaveform';
 import { ManglerTour } from '../mangler/ui/ManglerTour';
@@ -1133,8 +1134,9 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   // Slice pool
   // ---------------------------------------------------------------------------
 
-  const addSlices = useCallback(async (items: Omit<MangleSliceEntry, 'id' | 'addedAt'>[]) => {
-    if (items.length === 0) return;
+  /** Into the pool; the entries as stored (none when storing failed). */
+  const addSlices = useCallback(async (items: Omit<MangleSliceEntry, 'id' | 'addedAt'>[]): Promise<MangleSliceEntry[]> => {
+    if (items.length === 0) return [];
     const now = Date.now();
     const entries: MangleSliceEntry[] = items.map((item, i) => ({ ...item, id: newId(), addedAt: now + i }));
     try {
@@ -1142,10 +1144,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     } catch (e) {
       console.error(e);
       showToast('Could not store the slices (storage full?)', 'error');
-      return;
+      return [];
     }
     setSlices(prev => [...prev, ...entries]);
     showToast(`${entries.length} slice${entries.length === 1 ? '' : 's'} added to the slice pool`, 'success');
+    return entries;
   }, [showToast]);
 
   const deleteSlices = useCallback((ids: string[]) => {
@@ -1892,6 +1895,30 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     await addSlices(items);
   }, [takeSource, addSlices]);
 
+  /**
+   * A drum preset loaded with an empty slice pool: the synth makes a sound per
+   * voice (kick, snare, hats …), each a slice; their ids in voice order.
+   */
+  const drumKitSlices = useCallback(async (): Promise<(string | null)[]> => {
+    const items: Omit<MangleSliceEntry, 'id' | 'addedAt'>[] = [];
+    for (const v of DRUM_VOICES) {
+      const seedValue = randomSeed();
+      const { values, audio } = synthesize(v.kind, { ...defaultRanges(v.kind), ...v.ranges }, seedValue, SR);
+      const n = (takeCounter.current[v.kind] ?? 0) + 1;
+      takeCounter.current[v.kind] = n;
+      const take: SynthTake = { id: newId(), name: `${v.name.toLowerCase()} ${n}`, kind: v.kind, seed: seedValue, values, audio, peaks: slicePeaks(audio) };
+      const source = await takeSource(take, false);
+      items.push({
+        start: 0, end: audio[0].length / SR, name: take.name, sourceId: source.id, sourceName: source.name, origin: 'Synth',
+        cls: v.cls, peaks: take.peaks,
+      });
+      // A breath between, so a phone stays responsive.
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    const entries = await addSlices(items);
+    return DRUM_VOICES.map((_, i) => entries[i]?.id ?? null);
+  }, [takeSource, addSlices]);
+
   const takesToSources = useCallback(async (list: SynthTake[]) => {
     for (const t of list) await takeSource(t, true);
     showToast(`${list.length} take${list.length === 1 ? '' : 's'} added to the source pool`, 'success');
@@ -2396,6 +2423,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             onStop={sequencer.stop}
             onAudition={(id, shift, env) => { void auditionSound(id, shift, env); }}
             onEditSlice={openSliceEditor}
+            onDrumKit={drumKitSlices}
             onRender={(cueMode, fold) => renderSequence(sequence, cueMode, fold)}
             newId={newId}
             cueSounds={cueSounds}
