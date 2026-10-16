@@ -944,6 +944,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                             // Written or already identical: either way the card now holds this.
                             snapshot.slots[slotRef] = {
                                 fileId: file.id,
+                                hash: metadata.hash,
                                 audioHash: audioHash ?? undefined,
                                 frames: slotWav.fingerprint.frames,
                                 name: slotWav.fingerprint.name,

@@ -190,6 +190,28 @@ const run = async () => {
     diff = await calculateSyncDiff({ ...renamedNow, cardSnapshot: renamedSnap }, usb.backend);
     check(diff.slots.Blue2.status === 'MATCH' && !diff.slots.Blue2.staleHeader, 'and then it is in sync');
 
+    console.log('\nUSB: a source that is not 48 kHz float (FLAC, 44.1 kHz)');
+    {
+        const dev = device();
+        const flac = (bytes: number[]) => {
+            const v = `flac-v${++n}`;
+            return { id: 'flac', name: 'loop.flac', originalName: 'loop.flac', isParked: false, currentVersionId: v,
+                versions: [{ id: v, timestamp: n, description: 'Original', blob: new Blob([new Uint8Array(bytes)], { type: 'audio/flac' }), duration: 1 }] } as FileRecord;
+        };
+        // Stands in for ffmpeg: the same "decoded" audio whatever the bytes.
+        const onConvert = async () => assembleWav(pcm(1, 500));
+        const fstate: AppState = { ...project(), files: { flac: flac([1, 2, 3]) }, cardSnapshot: undefined };
+        fstate.tapes.Blue.slots = fstate.tapes.Blue.slots.map(s => ({ ...s, fileId: s.id === 1 ? 'flac' : null }));
+        const fsnap = (await exportSDStructure(fstate, { card: dev.backend, directWrite: true, skMode: 'overwrite', includeConfig: false, onConvert }))!;
+        check(!!fsnap.slots.Blue1?.hash, 'the snapshot records the source hash');
+        diff = await calculateSyncDiff({ ...fstate, cardSnapshot: fsnap }, dev.backend);
+        check(diff.slots.Blue1.status === 'MATCH' && diff.slots.Blue1.match === 'snapshot',
+            'unchanged: in sync by the snapshot, not Changed', `${diff.slots.Blue1.status}/${diff.slots.Blue1.match}`);
+        const fedited: AppState = { ...fstate, files: { flac: flac([4, 5, 6]) }, cardSnapshot: fsnap };
+        diff = await calculateSyncDiff(fedited, dev.backend);
+        check(diff.slots.Blue1.status === 'CONFLICT' && diff.slots.Blue1.ownOlderVersion === true, 'a new version: Changed');
+    }
+
     console.log('\nUSB: a slot recorded on the device, imported into its slot');
     {
         const dev = device();

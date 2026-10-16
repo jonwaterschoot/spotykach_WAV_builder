@@ -62,7 +62,10 @@ export interface WavMetadata {
 /** What WAV Builder last wrote to one card slot. */
 export interface CardSnapshotSlot {
     fileId: string;
-    /** `ICMT.h` on slot files written before 4.2: SHA-256 of the whole source version. */
+    /**
+     * SHA-256 of the whole source version (`ICMT.h` on slot files written before 4.2).
+     * Ties the slot to the version when `audioHashOf` can't read it (FLAC, 44.1 kHz).
+     */
     hash?: string;
     /** SHA-256 of the version's audio alone, up to the device's limit (`audioHashOf`). */
     audioHash?: string;

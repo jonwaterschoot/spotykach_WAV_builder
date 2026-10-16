@@ -641,7 +641,11 @@ export const calculateSyncDiff = async (
                     // Same audio: a match. A new name or other slices only change the header,
                     // so the slot file is rewritten in place and nothing is pooled.
                     const would = currentVer ? await slotFileMeta(localFile, currentVer, remote.frames ?? snap.frames ?? 0) : null;
-                    isMatch = !!localAudio && localAudio === snap.audioHash;
+                    // A source that isn't 48 kHz stereo float has no audio hash of its own
+                    // (the snapshot holds its converted audio's): compare the source instead.
+                    isMatch = localAudio
+                        ? localAudio === snap.audioHash
+                        : !!localHash && localHash === snap.hash;
                     // A device recording has no name; the project calls it by its file name
                     // ("1.wav") until renamed. Not worth rewriting the whole file for that.
                     const unnamedRecording = !snap.name && localFile.name === localFile.originalName;
