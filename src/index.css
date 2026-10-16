@@ -80,6 +80,26 @@ img {
     --master-texture-position: center;
 }
 
+/*
+ * Dropdown lists: dark, with light text. Left alone, the browser draws them light
+ * grey, and a select's own coloured text (a track kind, a deck) carries into its
+ * options, which then can't be read.
+ */
+select {
+    color-scheme: dark;
+}
+select option,
+select optgroup {
+    background-color: var(--color-synthux-panel);
+    color: #e5e7eb;
+}
+select option:disabled {
+    color: #6b7280;
+}
+select optgroup {
+    color: #9ca3af;
+}
+
 @theme {
     --color-synthux-green: var(--color-synthux-green);
     --color-synthux-orange: var(--color-synthux-orange);

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Dices, Import, Package, Play, Search, Square, Trash2 } from 'lucide-react';
+import { Dices, Import, Package, Pencil, Play, Search, Square, Trash2 } from 'lucide-react';
 import { rollSelection } from '../randomize';
 import { ScrubNumber } from '../../components/ScrubNumber';
 import type { MangleSliceEntry } from '../../utils/persistence';
@@ -29,6 +29,8 @@ interface SlicePoolProps {
     onToSources: (slices: MangleSliceEntry[]) => void;
     /** A change to one slice: how it sounds, or its name. */
     onUpdate: (id: string, patch: Partial<SliceSpec> & { name?: string }) => void;
+    /** Open a slice in the editor; its save replaces the slice's sound. */
+    onEdit: (slice: MangleSliceEntry) => void;
 }
 
 const SR = 48000;
@@ -37,7 +39,7 @@ const CLASS_COLOR: Record<HitClass, string> = { low: '#f58b44', mid: '#f5d544', 
 type Filter = 'all' | HitClass | 'other';
 
 export const SlicePool: React.FC<SlicePoolProps> = ({
-    slices, available, playingId, busy, onPlay, onStop, onDelete, onKit, onToSources, onUpdate,
+    slices, available, playingId, busy, onPlay, onStop, onDelete, onKit, onToSources, onUpdate, onEdit,
 }) => {
     const [filter, setFilter] = useState<Filter>('all');
     const [query, setQuery] = useState('');
@@ -215,7 +217,7 @@ export const SlicePool: React.FC<SlicePoolProps> = ({
             {selected.length === 1 && (
                 <SliceEditor key={selected[0].id} slice={selected[0]} missing={!available.has(selected[0].sourceId)}
                     playing={playingId === selected[0].id} onPlay={() => onPlay(selected[0])} onStop={onStop}
-                    onUpdate={patch => onUpdate(selected[0].id, patch)} />
+                    onUpdate={patch => onUpdate(selected[0].id, patch)} onEdit={() => onEdit(selected[0])} />
             )}
             </div>
         </div>
@@ -233,7 +235,8 @@ const SliceEditor: React.FC<{
     onPlay: () => void;
     onStop: () => void;
     onUpdate: (patch: Partial<SliceSpec> & { name?: string }) => void;
-}> = ({ slice, missing, playing, onPlay, onStop, onUpdate }) => {
+    onEdit: () => void;
+}> = ({ slice, missing, playing, onPlay, onStop, onUpdate, onEdit }) => {
     const [name, setName] = useState(slice.name);
     const env = slice.envelope;
     const row = 'flex items-center justify-between gap-2 text-[11px]';
@@ -298,6 +301,15 @@ const SliceEditor: React.FC<{
                     </span>
                 </div>
             </>}
+            <button onClick={onEdit} disabled={missing}
+                title="Open the slice in the editor, as it sounds now (fades, volume, effects…). Its save replaces the slice; the source stays as it is"
+                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded border border-white/15 text-[11px] text-gray-200 hover:bg-white/10 disabled:opacity-30">
+                <Pencil size={11} /> Open in the editor
+            </button>
+            <p className="text-[10px] leading-snug text-gray-500">
+                The settings above change how the slice plays and keep the audio. The editor bakes the edit in: saved, the slice is the new
+                sound (put in the source pool, switched off).
+            </p>
             {missing && <p className="text-[10px] text-synthux-red">Its source has left the pool: it can&apos;t play or go into a kit.</p>}
         </aside>
     );

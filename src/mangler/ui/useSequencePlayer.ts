@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stereo } from '../dsp';
+import type { SnippetEnvelope } from '../render';
 import {
     STEPS, masterGain, sequenceFrames, sequenceSounds, stepAt, stepControls, stepHits, stepFrames,
     type SeqControl, type SeqHit, type Sequence,
@@ -12,7 +13,8 @@ import {
  * tempo and swing changes are heard on the next step.
  *
  * Slices are rendered once per sound (`keyFor`: the slice as it is now, plus the
- * track's shift) and kept; a step whose sound isn't ready yet is skipped.
+ * track's shift and playback envelope) and kept; a step whose sound isn't ready
+ * yet is skipped.
  *
  * Two clocks: its own (`start`), or one from outside (`startExternal`, then
  * `externalStep` on every sixteenth of an incoming MIDI clock). Either way each
@@ -46,8 +48,8 @@ export interface SequencerHooks {
 }
 
 export function useSequencePlayer(
-    keyFor: (sliceId: string, shift: number) => string | null,
-    render: (sliceId: string, shift: number) => Promise<Stereo | null>,
+    keyFor: (sliceId: string, shift: number, env?: SnippetEnvelope) => string | null,
+    render: (sliceId: string, shift: number, env?: SnippetEnvelope) => Promise<Stereo | null>,
     hooks: SequencerHooks = {},
 ) {
     const contextRef = useRef<AudioContext | null>(null);
@@ -83,14 +85,14 @@ export function useSequencePlayer(
     const toPerf = (ctx: AudioContext, t: number) => performance.now() + (t - ctx.currentTime) * 1000;
 
     /** Starts rendering a sound if it isn't there yet. */
-    const ensure = useCallback((sliceId: string, shift: number): AudioBuffer | null => {
-        const key = keyRef.current(sliceId, shift);
+    const ensure = useCallback((sliceId: string, shift: number, env?: SnippetEnvelope): AudioBuffer | null => {
+        const key = keyRef.current(sliceId, shift, env);
         if (!key) return null;
         const have = buffers.current.get(key);
         if (have instanceof AudioBuffer) return have;
         if (have === undefined) {
             buffers.current.set(key, 'pending');
-            renderRef.current(sliceId, shift).then(audio => {
+            renderRef.current(sliceId, shift, env).then(audio => {
                 if (!audio) { buffers.current.set(key, null); return; }
                 const ctx = context();
                 const buffer = ctx.createBuffer(2, audio[0].length, ctx.sampleRate);
@@ -104,7 +106,7 @@ export function useSequencePlayer(
 
     /** Every sound the sequence uses, rendered ahead so the first loop isn't patchy. */
     const prepare = useCallback((seq: Sequence) => {
-        for (const { sliceId, shift } of sequenceSounds(seq)) ensure(sliceId, shift);
+        for (const { sliceId, shift, env } of sequenceSounds(seq)) ensure(sliceId, shift, env);
     }, [ensure]);
 
     const update = useCallback((seq: Sequence) => {
@@ -119,7 +121,7 @@ export function useSequencePlayer(
         const hits = stepHits(s, w);
         for (const hit of hits) {
             if (!hit.sliceId) continue;
-            const buffer = ensure(hit.sliceId, hit.shift);
+            const buffer = ensure(hit.sliceId, hit.shift, hit.env);
             if (!buffer || hit.gain <= 0) continue;
             const source = ctx.createBufferSource();
             const gain = ctx.createGain();

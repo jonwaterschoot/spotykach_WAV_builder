@@ -39,6 +39,14 @@ const LooseFileEditor = React.lazy(() =>
   import('./EditorMode').then(m => ({ default: m.LooseFileEditor })),
 );
 
+/** The editor's commit button, when it edits a slice: the edit replaces the slice's sound. */
+const SLICE_COMMIT_LABELS: CommitLabels = {
+  clean: 'SAVED TO THE SLICE',
+  dirty: 'REPLACE THE SLICE',
+  hint: 'Replace the slice with these edits: everything that plays it (the sequencer, kits) gets the new sound',
+  cleanToast: 'The slice already has these edits',
+};
+
 /** The editor's commit button, when its edits come back to the mangler as a new result. */
 const MANGLER_COMMIT_LABELS: CommitLabels = {
   clean: 'SAVED TO MANGLER',
@@ -47,7 +55,7 @@ const MANGLER_COMMIT_LABELS: CommitLabels = {
   cleanToast: 'Already saved to the mangler',
 };
 import { runBatch, resultToWav, setDecodeLimits, wavWithCues, type BatchHandle, type BatchSource } from '../mangler/batch';
-import type { MangleResult, PitchChoice, SnippetInfo } from '../mangler/render';
+import { applyEnvelope, type MangleResult, type PitchChoice, type SnippetEnvelope, type SnippetInfo } from '../mangler/render';
 import { withChoice } from '../mangler/pitchChoice';
 import { CUE_LEVELS, snippetCues, transientCues, type CueLevel } from '../mangler/recue';
 import { NOTE_NAMES } from '../mangler/pitch';
@@ -72,10 +80,11 @@ import { SequencerStation } from '../mangler/ui/SequencerStation';
 import { SynthStation, type SynthTake } from '../mangler/ui/SynthStation';
 import { GENERATORS, defaultRanges, synthesize, type SynthKind, type SynthRanges } from '../mangler/synth';
 import { useSequencePlayer } from '../mangler/ui/useSequencePlayer';
+import { useUndoable } from '../mangler/ui/useUndoable';
 import { useMidiFollow, useMidiLink } from '../mangler/ui/useMidiLink';
 import {
-  MASTER_MAX_DB, MASTER_MIN_DB, MAX_TRACKS, PATTERNS, STEPS, masterGain, maxChain, mixSequence, newSequence, parseCueSoundId, pruneSequence, sequenceCues, sequenceFrames, sequenceHits,
-  type CueSound, type SeqCues, type SeqHit, type Sequence,
+  DEFAULT_PATTERNS, MASTER_MAX_DB, MASTER_MIN_DB, MAX_TRACKS, PATTERNS, withAllPatterns, masterGain, maxChain, mixSequence, newSequence, parseCueSoundId, pruneSequence, sequenceCues, sequenceFrames, sequenceHits,
+  type CueSound, type PatternId, type SeqCues, type SeqHit, type Sequence,
 } from '../mangler/sequence';
 import { dbToGain, limit, type Stereo } from '../mangler/dsp';
 import { useSlicePlayer } from '../mangler/ui/useSlicePlayer';
@@ -154,15 +163,19 @@ const validSequence = (input: unknown): Sequence | null => {
   try {
     const s = input as Sequence | null;
     if (!s || !Array.isArray(s.tracks) || !Array.isArray(s.chain) || !s.tracks.length) return null;
-    const okTrack = (tr: Sequence['tracks'][number]) => PATTERNS.every(p => Array.isArray(tr.patterns?.[p]) && tr.patterns[p].length === STEPS);
-    if (!s.tracks.every(okTrack) || !s.chain.every(p => PATTERNS.includes(p))) return null;
+    // Tracks saved with A–D only get empty steps for the patterns added since.
+    const tracks = s.tracks.map(withAllPatterns);
+    if (tracks.some(tr => !tr) || !s.chain.every(p => PATTERNS.includes(p))) return null;
+    const used = Math.max(DEFAULT_PATTERNS, ...s.chain.map(p => PATTERNS.indexOf(p) + 1));
     return {
       ...s,
       bpm: Math.min(240, Math.max(40, Number(s.bpm) || 120)),
       swing: Math.min(0.5, Math.max(0, Number(s.swing) || 0)),
       masterDb: Math.min(MASTER_MAX_DB, Math.max(MASTER_MIN_DB, Number(s.masterDb) || 0)),
       chain: s.chain.slice(0, maxChain(s.bpm)),
-      tracks: s.tracks.slice(0, MAX_TRACKS),
+      tracks: (tracks as Sequence['tracks']).slice(0, MAX_TRACKS),
+      // At least the patterns the chain plays.
+      patternCount: Math.min(PATTERNS.length, Math.max(used, Math.round(Number(s.patternCount)) || DEFAULT_PATTERNS)),
     };
   } catch {
     return null;
@@ -364,7 +377,12 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     const stored = appStorage.getItem(STATION_KEY) as Station | null;
     return stored && STATIONS.includes(stored) ? stored : 'mangle';
   });
-  const [sequence, setSequence] = useState<Sequence>(() => loadSequence() ?? newSequence(newId));
+  // The sequence keeps an undo history of the station's edits; tempo from a clock and pruning go around it.
+  const sequenceHistory = useUndoable<Sequence>(() => loadSequence() ?? newSequence(newId));
+  const { value: sequence, set: setSequence, reset: resetSequence } = sequenceHistory;
+  /** One pattern looping instead of the chain: how it plays, not part of the sequence (nor its undo). */
+  const [loopPattern, setLoopPattern] = useState<PatternId | null>(null);
+  const playedSequence = useMemo(() => (loopPattern ? { ...sequence, chain: [loopPattern] } : sequence), [sequence, loopPattern]);
   const [synth, setSynth] = useState(loadSynth);
   useEffect(() => { appStorage.setItem(SYNTH_KEY, JSON.stringify(synth)); }, [synth]);
   const [takes, setTakes] = useState<SynthTake[]>([]);
@@ -411,6 +429,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const [cropEdit, setCropEdit] = useState<{ id: string; range: [number, number] } | null>(null);
   /** The result open in the editor, and the copy its saves go to. */
   const [editing, setEditing] = useState<MangleResultEntry | null>(null);
+  /** A slice open in the editor: its sound as it plays now, as a WAV. */
+  const [editingSlice, setEditingSlice] = useState<{ id: string; name: string; blob: Blob; duration: number; license?: string } | null>(null);
   const editedCopyRef = useRef<string | null>(null);
   const region = useResultAudio();
   const slicePlayer = useSlicePlayer(region.load);
@@ -454,21 +474,25 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     } : null;
   }, [results, sources, slices]);
 
-  /** A sound as it is now, plus a track's shift: what the sequencer keys its buffers on. */
-  const sequenceKey = useCallback((id: string, shift: number) => {
+  /** A sound as it is now, plus a track's shift and playback envelope: what the sequencer keys its buffers on. */
+  const sequenceKey = useCallback((id: string, shift: number, env?: SnippetEnvelope) => {
     const snd = soundOf(id);
     if (!snd) return null;
     const { spec } = snd;
-    return JSON.stringify([id, snd.blob.size, spec.start, spec.end, spec.reverse ?? false, (spec.shift ?? 0) + shift, spec.gainDb ?? 0, spec.envelope ?? null]);
+    return JSON.stringify([id, snd.ownerId, snd.blob.size, spec.start, spec.end, spec.reverse ?? false, (spec.shift ?? 0) + shift,
+      spec.gainDb ?? 0, spec.envelope ?? null, env ?? null]);
   }, [soundOf]);
 
-  const sequenceAudio = useCallback(async (id: string, shift: number): Promise<Stereo | null> => {
+  /** The sound as the sequencer plays it: the slice (with its own envelope), shifted, then the track's envelope on top. */
+  const sequenceAudio = useCallback(async (id: string, shift: number, env?: SnippetEnvelope): Promise<Stereo | null> => {
     const snd = soundOf(id);
     if (!snd) return null;
     const decoded = await region.load(snd.ownerId, snd.blob);
     const l = decoded.getChannelData(0);
     const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
-    return renderSlice([l, r], decoded.sampleRate, { ...snd.spec, shift: (snd.spec.shift ?? 0) + shift || undefined });
+    const audio = renderSlice([l, r], decoded.sampleRate, { ...snd.spec, shift: (snd.spec.shift ?? 0) + shift || undefined });
+    if (env) applyEnvelope(audio, env, decoded.sampleRate);
+    return audio;
   }, [soundOf, region]);
 
   /** Cue points of the pool's own files (a WAV with cues), read from their headers once. */
@@ -502,7 +526,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     onTempo: bpm => setSequence(s => (Math.abs(s.bpm - bpm) >= 0.5 ? { ...s, bpm } : s)),
   });
   const { update: updateSequencer, stop: stopSequencer } = sequencer;
-  useEffect(() => { updateSequencer(sequence); }, [sequence, updateSequencer, sequenceKey]);
+  // The player plays the chain, or the looped pattern (it keeps its place in the bar when that changes).
+  useEffect(() => { updateSequencer(playedSequence); }, [playedSequence, updateSequencer, sequenceKey]);
   useEffect(() => { if (station !== 'sequence') stopSequencer(); }, [station, stopSequencer]);
   /** The list as last rendered, for async work that must not act on a stale copy. */
   const resultsRef = useRef(results);
@@ -580,7 +605,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       setLoaded(true);
     });
     return () => { alive = false; };
-  }, [showToast]);
+  }, [showToast, setSequence]);
 
   // The app's player and the snippet player never play at once.
   const stopRegion = region.stop;
@@ -749,7 +774,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     }
     setSequence(seq => pruneSequence(seq, new Set(goneSlices), ids));
     return goneSlices.length;
-  }, [slices]);
+  }, [slices, setSequence]);
 
   const removeSource = useCallback((id: string) => {
     if (player.activeFileId === id) player.stop();
@@ -972,7 +997,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       },
       onDone: () => { if (!locked) setSeedState({ seed: randomSeed(), locked: false }); },
     });
-  }, [enabledSources, results, settings, variationCount, seed, locked, player, region, showToast, startJob, makeEntry, storeEntry]);
+  }, [enabledSources, results, settings, variationCount, seed, locked, player, region, showToast, startJob, makeEntry, storeEntry, setSequence]);
 
   // ---------------------------------------------------------------------------
   // Editing a result
@@ -1128,7 +1153,16 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     const gone = new Set(ids);
     setSlices(prev => prev.filter(s => !gone.has(s.id)));
     deleteMangleSlicesFromDB(ids);
-  }, [slicePlayer]);
+    // A sound saved from the editor for a deleted slice goes too, unless another slice plays it.
+    const kept = slices.filter(s => !gone.has(s.id));
+    const orphans = sources.filter(s => s.forSlice && gone.has(s.forSlice) && !kept.some(k => k.sourceId === s.id)).map(s => s.id);
+    if (orphans.length) {
+      const drop = new Set(orphans);
+      setSources(prev => prev.filter(s => !drop.has(s.id)));
+      sourcesRef.current = sourcesRef.current.filter(s => !drop.has(s.id));
+      deleteMangleSourcesFromDB(orphans);
+    }
+  }, [slicePlayer, slices, sources]);
 
   const playSlice = useCallback((slice: MangleSliceEntry) => {
     const source = sources.find(s => s.id === slice.sourceId);
@@ -1265,11 +1299,11 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     try {
       const audio = new Map<string, Stereo | null>();
       for (const h of hits) {
-        const key = sequenceKey(h.sliceId, h.shift);
-        if (key && !audio.has(key)) audio.set(key, await sequenceAudio(h.sliceId, h.shift));
+        const key = sequenceKey(h.sliceId, h.shift, h.env);
+        if (key && !audio.has(key)) audio.set(key, await sequenceAudio(h.sliceId, h.shift, h.env));
       }
       const total = sequenceFrames(seq, SR);
-      const mix = mixSequence(hits, h => (h.sliceId ? audio.get(sequenceKey(h.sliceId, h.shift) ?? '') ?? null : null), total, fold);
+      const mix = mixSequence(hits, h => (h.sliceId ? audio.get(sequenceKey(h.sliceId, h.shift, h.env) ?? '') ?? null : null), total, fold);
       // The main volume, then the limiter.
       if (seq.masterDb) { const g = masterGain(seq); for (const ch of mix) for (let i = 0; i < ch.length; i++) ch[i] *= g; }
       const reduction = limit(mix, dbToGain(-1), Math.round(0.005 * SR));
@@ -1280,12 +1314,13 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
       const recipeSources: RecipeSource[] = [];
       const snippets: SnippetInfo[] = hits.flatMap(h => {
         const snd = soundOf(h.sliceId);
-        const a = audio.get(sequenceKey(h.sliceId, h.shift) ?? '');
+        const a = audio.get(sequenceKey(h.sliceId, h.shift, h.env) ?? '');
         if (!snd || !a) return [];
         let index = recipeSources.findIndex(rs => rs.id === snd.origin.id);
         if (index < 0) index = recipeSources.push(snd.origin) - 1;
         return [{
-          ...sliceAsSnippet({ ...snd.spec, shift: (snd.spec.shift ?? 0) + h.shift || undefined }, index, SR),
+          // The track's envelope stands in for the slice's when it has one (the list shows one envelope per snippet).
+          ...sliceAsSnippet({ ...snd.spec, shift: (snd.spec.shift ?? 0) + h.shift || undefined, envelope: h.env ?? snd.spec.envelope }, index, SR),
           outStart: h.at, length: a[0].length, gainDb: (snd.spec.gainDb ?? 0) + 20 * Math.log10(Math.max(1e-6, h.gain)),
         }];
       });
@@ -1328,10 +1363,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   }, [results, soundOf, sequenceKey, sequenceAudio, storeEntry, sequencer, showToast]);
 
   /** A sequencer sound (a slice, or a cue's segment) at a shift, as the sequencer plays it. */
-  const auditionSound = useCallback(async (id: string, shift: number) => {
+  const auditionSound = useCallback(async (id: string, shift: number, env?: SnippetEnvelope) => {
     player.stop();
     region.stop();
-    const audio = await sequenceAudio(id, shift).catch(() => null);
+    const audio = await sequenceAudio(id, shift, env).catch(() => null);
     if (audio) await slicePlayer.playAudio(id, audio, SR);
   }, [player, region, sequenceAudio, slicePlayer]);
 
@@ -1505,6 +1540,64 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     }
   }, [region, storeEntry, showToast]);
 
+  /** A slice into the editor: rendered as it sounds (shift, direction, gain, envelope), to edit and save back. */
+  const openSliceEditor = useCallback(async (id: string) => {
+    const sl = slices.find(x => x.id === id);
+    const source = sl && sources.find(x => x.id === sl.sourceId);
+    if (!sl || !source) { showToast('This slice can\'t be edited: its source has left the pool', 'error'); return; }
+    try {
+      region.stop();
+      if (player.isPlaying) player.pause();
+      const decoded = await region.load(source.id, source.blob);
+      const l = decoded.getChannelData(0);
+      const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+      const [a, b] = renderSlice([l, r], decoded.sampleRate, sl);
+      setEditingSlice({ id, name: sl.name, blob: wavWithCues(a, b, [], sl.name), duration: a.length / decoded.sampleRate, license: source.license });
+    } catch (e) {
+      console.error(e);
+      showToast('Could not open the slice in the editor', 'error');
+    }
+  }, [slices, sources, region, player, showToast]);
+
+  /**
+   * The editor's save for a slice: the edited sound goes in the pool (switched off,
+   * marked as this slice's), and the slice becomes all of it, with its shift,
+   * direction, gain and envelope baked in. A sound saved for this slice before,
+   * used by nothing else, makes way for the new one.
+   */
+  const saveEditedSlice = useCallback(async (id: string, blob: Blob) => {
+    const sl = slices.find(x => x.id === id);
+    if (!sl) return;
+    try {
+      // Its licence comes from the source it was cut from: without it, nothing to go on.
+      const before = sources.find(x => x.id === sl.sourceId);
+      if (!before) { showToast("Not saved: the slice's source has left the pool", 'error'); return; }
+      const source = await addBlobSource(blob, `${sl.name} (edited)`, `Slice of ${sl.sourceName}`, before.license,
+        sourceLicense(before).level, { enabled: false, forSlice: id });
+      const decoded = await region.load(source.id, source.blob);
+      const l = decoded.getChannelData(0);
+      const r = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : l;
+      const next: MangleSliceEntry = {
+        ...sl, sourceId: source.id, sourceName: source.name, start: 0, end: decoded.duration,
+        shift: undefined, reverse: undefined, gainDb: undefined, envelope: undefined,
+        peaks: slicePeaks([l, r]),
+      };
+      setSlices(prev => prev.map(x => (x.id === id ? next : x)));
+      await putMangleSlicesToDB([next]);
+      // The sound saved at this slice's last edit, if nothing else plays it.
+      if (before.forSlice === id && !slices.some(x => x.id !== id && x.sourceId === before.id)) {
+        setSources(prev => prev.filter(x => x.id !== before.id));
+        sourcesRef.current = sourcesRef.current.filter(x => x.id !== before.id);
+        deleteMangleSourcesFromDB([before.id]);
+        region.forget(before.id);
+      }
+      showToast(`${sl.name}: replaced with the edit`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Could not save the edit to the slice', 'error');
+    }
+  }, [slices, sources, addBlobSource, region, showToast]);
+
   const openEditor = useCallback((r: MangleResultEntry) => {
     region.stop();
     if (player.isPlaying) player.pause();
@@ -1676,7 +1769,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     setResults(prev => prev.filter(r => r.id !== id));
     deleteMangleResultsFromDB([id]);
     setSequence(seq => pruneSequence(seq, new Set(), new Set([id])));
-  }, [player, region]);
+  }, [player, region, setSequence]);
 
   const clearUnkept = useCallback(() => {
     const ids = results.filter(r => !r.kept).map(r => r.id);
@@ -1684,7 +1777,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     setResults(prev => prev.filter(r => r.kept));
     deleteMangleResultsFromDB(ids);
     setSequence(seq => pruneSequence(seq, new Set(), new Set(ids)));
-  }, [results, player]);
+  }, [results, player, setSequence]);
 
   const applySeed = useCallback((value: number) => {
     setSeedState({ seed: value >>> 0, locked: true });
@@ -1909,10 +2002,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     setTakes([]);
     setUndo({});
     setExpanded(null);
-    setSequence(newSequence(newId));
+    resetSequence(newSequence(newId));
     setProjectName(null);
     showToast('Started fresh: sources, results, slices and the sequence are empty', 'success');
-  }, [player, region, sequencer, showToast]);
+  }, [player, region, sequencer, showToast, resetSequence]);
 
   /** The project last saved or opened: Save writes to it again. */
   const [projectName, setProjectName] = useState<string | null>(() => appStorage.getItem(PROJECT_KEY));
@@ -2028,7 +2121,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     setResults(sortResults(stored.results));
     setSlices([...snap.slices].sort((a, b) => a.addedAt - b.addedAt));
     setSettings(sanitizeSettings(snap.settings));
-    setSequence(validSequence(snap.sequence) ?? newSequence(newId));
+    resetSequence(validSequence(snap.sequence) ?? newSequence(newId));
     if (snap.synth?.kind) setSynth(snap.synth);
     setTakes([]);
     setUndo({});
@@ -2287,7 +2380,10 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
         <div className="flex-1 min-h-0">
           <SequencerStation
             seq={sequence}
-            onChange={setSequence}
+            onChange={sequenceHistory.edit}
+            loop={loopPattern}
+            onLoop={setLoopPattern}
+            history={{ undo: sequenceHistory.undo, redo: sequenceHistory.redo, canUndo: sequenceHistory.canUndo, canRedo: sequenceHistory.canRedo }}
             slices={slices}
             available={availableSources}
             playing={sequencer.playing}
@@ -2298,7 +2394,8 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
               if (midi.enabled && midi.settings.follow) void sequencer.startExternal(true); else void sequencer.start();
             }}
             onStop={sequencer.stop}
-            onAudition={(id, shift) => { void auditionSound(id, shift); }}
+            onAudition={(id, shift, env) => { void auditionSound(id, shift, env); }}
+            onEditSlice={openSliceEditor}
             onRender={(cueMode, fold) => renderSequence(sequence, cueMode, fold)}
             newId={newId}
             cueSounds={cueSounds}
@@ -2323,6 +2420,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             onDelete={deleteSlices}
             onToSources={slicesToSources}
             onUpdate={updateSlice}
+            onEdit={slice => { void openSliceEditor(slice.id); }}
             onKit={list => makeKit(list.map(s => ({ sourceId: s.sourceId, spec: s })), list.length === 1 ? list[0].name : 'slices')}
           />
         </div>
@@ -3125,6 +3223,28 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
             noMangler
             onEdited={({ blob, duration }) => saveEditedCopy(editing, blob, duration)}
             onClose={() => { setEditing(null); editedCopyRef.current = null; }}
+          />
+        </Suspense>
+      )}
+
+      {editingSlice && (
+        <Suspense fallback={null}>
+          <LooseFileEditor
+            key={`slice-${editingSlice.id}`}
+            file={{
+              name: `${editingSlice.name}.wav`,
+              blob: editingSlice.blob,
+              duration: editingSlice.duration,
+              origin: 'Sample Mangler',
+              license: editingSlice.license,
+              metadata: { name: editingSlice.name },
+            }}
+            subtitle={`Editing the slice ${editingSlice.name}. "Replace the slice" makes it this sound; its source stays as it is.`}
+            commitLabels={SLICE_COMMIT_LABELS}
+            destination="the slice"
+            noMangler
+            onEdited={({ blob }) => saveEditedSlice(editingSlice.id, blob)}
+            onClose={() => setEditingSlice(null)}
           />
         </Suspense>
       )}

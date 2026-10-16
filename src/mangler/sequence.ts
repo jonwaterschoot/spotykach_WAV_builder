@@ -1,23 +1,36 @@
 import type { Stereo } from './dsp.ts';
+import type { SnippetEnvelope } from './render.ts';
 import { NOTE_NAMES } from './pitch.ts';
 import { OUTPUT_MAX_SECONDS, scalePitchClasses } from './settings.ts';
 
 /**
- * The step sequencer: four patterns (A–D) of 16 sixteenth-note steps, a chain
- * that plays them in order, and tracks of three kinds:
+ * The step sequencer: patterns (A–D to start, up to A–P) of 16 sixteenth-note
+ * steps, a chain that plays them in order, and tracks of three kinds:
  *
  * - slice: plays a slice from the pool, repitched per step;
  * - cue: plays the segments of a sample with cue points, the step's note
  *   picking the segment (C1 the first cue, C#1 the second, …);
- * - cc: sends one of the Spotykach's MIDI CCs, a value per step or an LFO.
+ * - cc: sends one of the Spotykach's MIDI CCs: a value per step, an LFO, or
+ *   automation drawn per pattern.
+ *
+ * Any step can have a chance: how likely it plays each time round.
  *
  * Slice and cue tracks can also send their steps to a Spotykach deck as notes.
  * Pure functions here: where the hits fall, the controls, and the mix. Live
  * playback is in ui/useSequencePlayer.ts, MIDI in ui/useMidiLink.ts.
  */
 
-export const PATTERNS = ['A', 'B', 'C', 'D'] as const;
+/**
+ * Every pattern a sequence can have. Each track keeps steps for all of them (an
+ * unused one is empty), so any pattern can be read; `patternCount` says how many
+ * are in use.
+ */
+export const PATTERNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'] as const;
 export type PatternId = typeof PATTERNS[number];
+export const DEFAULT_PATTERNS = 4;
+/** The patterns in use: A up to the sequence's count. */
+export const patternsOf = (seq: Pick<Sequence, 'patternCount'>): PatternId[] =>
+    PATTERNS.slice(0, Math.min(PATTERNS.length, Math.max(1, seq.patternCount ?? DEFAULT_PATTERNS)));
 /** Sixteenths per pattern: a pattern is one bar of 4/4. */
 export const STEPS = 16;
 export const MAX_TRACKS = 8;
@@ -34,6 +47,8 @@ export interface SeqStep {
     shift?: number;
     /** Cue tracks: the note that picks the cue (CUE_BASE_NOTE is the first). */
     note?: number;
+    /** 0–1: how likely the step plays, drawn afresh each time round. Absent: always. */
+    chance?: number;
 }
 
 export type TrackKind = 'slice' | 'cue' | 'cc';
@@ -50,10 +65,19 @@ export interface CueSound {
 
 export type LfoShape = 'sine' | 'triangle' | 'saw' | 'square' | 'random';
 
+/** An automation point: where in the pattern, in steps (0–16), and the CC value there. */
+export interface AutoPoint {
+    at: number;
+    /** 0–127. */
+    value: number;
+}
+
+export type CcMode = 'steps' | 'lfo' | 'auto';
+
 export interface CcSetup {
     cc: number;
-    /** A value per step, or an LFO running over the chain. */
-    mode: 'steps' | 'lfo';
+    /** A value per step, an LFO running over the chain, or automation drawn per pattern. */
+    mode: CcMode;
     lfo: {
         shape: LfoShape;
         /** Steps per cycle: 16 is a bar. */
@@ -64,6 +88,25 @@ export interface CcSetup {
         /** 0–1 of a cycle. */
         phase: number;
     };
+    /**
+     * Automation: points per pattern, sorted by `at`, so a pattern's curve goes
+     * wherever the pattern does in the chain. A pattern without points sends nothing.
+     */
+    auto?: Partial<Record<PatternId, AutoPoint[]>>;
+    /** Curves between automation points instead of straight lines. */
+    smooth?: boolean;
+    /**
+     * Automation runs on across the chain: from a pattern's last point to the
+     * next block's first, and from the chain's end round to its start, instead
+     * of holding within each pattern. Follows the chain as its blocks move.
+     */
+    connect?: boolean;
+}
+
+/** Another MIDI device than the Spotykach: its output port, by name, and a channel (1–16). */
+export interface MidiOut {
+    name: string;
+    channel: number;
 }
 
 export interface SeqTrack {
@@ -83,13 +126,28 @@ export interface SeqTrack {
      * A CC track sends to this deck's channel (A when unset).
      */
     midi?: Deck;
+    /**
+     * Another MIDI device instead of a Spotykach deck: notes (60 + pitch) or,
+     * for a CC track, any CC number. Wins over `midi`.
+     */
+    port?: MidiOut;
     /** Absent: slice. */
     kind?: TrackKind;
     cue?: CueSound;
     cc?: CcSetup;
-    /** Step pitches snap to the sequence's scale. */
+    /** Step pitches snap to the track's scale. */
     scaleLock?: boolean;
+    /** A scale of its own; absent: the sequence's. */
+    scale?: Scale;
+    /**
+     * A playback envelope (attack, decay) on top of the sound's own, for slice
+     * and cue tracks. The slice itself stays as it is.
+     */
+    env?: SnippetEnvelope;
 }
+
+/** A root (0 = C) and a 12-bit mask of pitch classes (settings.ts). */
+export interface Scale { root: number; mask: number }
 
 export interface Sequence {
     bpm: number;
@@ -101,6 +159,8 @@ export interface Sequence {
     scale?: { root: number; mask: number };
     /** Main volume, dB, on top of every track's: the live output and the render. Absent: 0. */
     masterDb?: number;
+    /** How many patterns are in use, A onwards (1–16). Absent: 4, A–D. */
+    patternCount?: number;
 }
 
 /** The Spotykach's two decks, each on its own MIDI channel. */
@@ -152,6 +212,26 @@ export const ccInfo = (cc: number) => SK_CCS.find(c => c.cc === cc) ?? { cc, nam
 
 export const defaultCc = (): CcSetup => ({ cc: 22, mode: 'steps', lfo: { shape: 'sine', rateSteps: 16, min: 0, max: 127, phase: 0 } });
 
+/** The scale a track's pitches snap to: its own, or the sequence's (chromatic when neither has one). */
+export const trackScale = (seq: Pick<Sequence, 'scale'>, track: Pick<SeqTrack, 'scale'>): Scale =>
+    track.scale ?? seq.scale ?? { root: 0, mask: 0xfff };
+
+/**
+ * Locks a slice track to its scale: every step's pitch moves to the nearest
+ * scale note (as playback would snap it), and Scale is switched on.
+ */
+export function lockToScale(track: SeqTrack, scale: Scale): SeqTrack {
+    const patterns = { ...track.patterns };
+    for (const p of Object.keys(patterns) as PatternId[]) {
+        patterns[p] = patterns[p].map(st => {
+            const note = Math.round(ROOT_NOTE + track.shift + (st.shift ?? 0));
+            const shift = snapToScale(note, scale) - Math.round(ROOT_NOTE + track.shift);
+            return shift === (st.shift ?? 0) ? st : { ...st, shift: shift || undefined };
+        });
+    }
+    return { ...track, scaleLock: true, patterns };
+}
+
 /** The nearest note whose pitch class is in the scale (ties go up). */
 export function snapToScale(note: number, scale: { root: number; mask: number } | undefined): number {
     if (!scale) return note;
@@ -178,13 +258,13 @@ export function stepSound(seq: Pick<Sequence, 'scale'>, track: SeqTrack, step: S
         const sliceId = cue && i >= 0 && i < cue.cues.length
             ? cueSoundId(cue, i)
             : null;
-        if (!sliceId && !track.midi) return null;
+        if (!sliceId && !track.midi && !track.port) return null;
         return { sliceId, shift: 0, note };
     }
     const sliceId = step.sliceId ?? track.sliceId;
-    if (!sliceId && !track.midi) return null;
+    if (!sliceId && !track.midi && !track.port) return null;
     let note = ROOT_NOTE + track.shift + (step.shift ?? 0);
-    if (track.scaleLock) note = snapToScale(Math.round(note), seq.scale);
+    if (track.scaleLock) note = snapToScale(Math.round(note), track.scale ?? seq.scale);
     return { sliceId, shift: note - ROOT_NOTE, note: Math.round(note) };
 }
 
@@ -200,8 +280,23 @@ export const parseCueSoundId = (id: string) => {
 
 export const newTrack = (id: string, name: string, sliceId: string | null = null): SeqTrack => ({
     id, name, sliceId, volumeDb: 0, shift: 0, mute: false, solo: false,
-    patterns: { A: emptySteps(), B: emptySteps(), C: emptySteps(), D: emptySteps() },
+    patterns: allPatterns(),
 });
+
+/** Empty steps for every pattern. */
+export const allPatterns = () => Object.fromEntries(PATTERNS.map(p => [p, emptySteps()])) as Record<PatternId, SeqStep[]>;
+
+/**
+ * A track as stored, with steps for every pattern: one saved with fewer (A–D,
+ * before more could be added) gets empty ones. Null when a pattern it has isn't
+ * 16 steps: not a shape this version reads.
+ */
+export function withAllPatterns(track: SeqTrack): SeqTrack | null {
+    const have = (track.patterns ?? {}) as Partial<Record<PatternId, SeqStep[]>>;
+    if (PATTERNS.some(p => have[p] !== undefined && (!Array.isArray(have[p]) || have[p]!.length !== STEPS))) return null;
+    if (PATTERNS.every(p => have[p])) return track;
+    return { ...track, patterns: Object.fromEntries(PATTERNS.map(p => [p, have[p] ?? emptySteps()])) as Record<PatternId, SeqStep[]> };
+}
 
 export const newSequence = (ids: () => string): Sequence => ({
     bpm: 120,
@@ -248,13 +343,20 @@ export interface SeqHit {
     /** The note for a Spotykach deck. */
     note: number;
     deck?: Deck;
+    /** Another MIDI device, instead of a deck. */
+    port?: MidiOut;
+    /** The track's playback envelope, applied when the sound is rendered. */
+    env?: SnippetEnvelope;
 }
+
+/** Whether a step with a chance plays this time round (one draw, only when it has one). */
+const plays = (step: SeqStep, roll: () => number) => step.chance === undefined || step.chance >= 1 || roll() < step.chance;
 
 /**
  * What plays on global step k (chain position × 16 + step), without its time:
  * the live player asks this per step. Muted tracks out; with any solo, only solos.
  */
-export function stepHits(seq: Sequence, k: number): Omit<SeqHit, 'at'>[] {
+export function stepHits(seq: Sequence, k: number, roll: () => number = Math.random): Omit<SeqHit, 'at'>[] {
     const pattern = seq.chain[Math.floor(k / STEPS)];
     if (!pattern) return [];
     const soloed = seq.tracks.some(t => t.solo);
@@ -263,14 +365,15 @@ export function stepHits(seq: Sequence, k: number): Omit<SeqHit, 'at'>[] {
         if (track.mute || (soloed && !track.solo)) return;
         const step = track.patterns[pattern][k % STEPS];
         const sound = step && stepSound(seq, track, step);
-        if (!sound) return;
+        if (!sound || !plays(step, roll)) return;
         out.push({
             track: t, step: k, sliceId: sound.sliceId,
             gain: step.velocity * Math.pow(10, track.volumeDb / 20),
             velocity: step.velocity,
             shift: sound.shift,
             note: sound.note,
-            ...(track.midi ? { deck: track.midi } : {}),
+            ...(track.port ? { port: track.port } : track.midi ? { deck: track.midi } : {}),
+            ...(track.env ? { env: track.env } : {}),
         });
     });
     return out;
@@ -302,13 +405,16 @@ export function pruneSequence(seq: Sequence, goneSlices: ReadonlySet<string>, go
 }
 
 /** Every sound a sequence can make (any pattern), to render ahead of playing. */
-export function sequenceSounds(seq: Sequence): { sliceId: string; shift: number }[] {
-    const out = new Map<string, { sliceId: string; shift: number }>();
+export function sequenceSounds(seq: Sequence): { sliceId: string; shift: number; env?: SnippetEnvelope }[] {
+    const out = new Map<string, { sliceId: string; shift: number; env?: SnippetEnvelope }>();
     for (const track of seq.tracks) {
         for (const steps of Object.values(track.patterns)) {
             for (const step of steps) {
                 const sound = stepSound(seq, track, step);
-                if (sound?.sliceId) out.set(`${sound.sliceId}|${sound.shift}`, { sliceId: sound.sliceId, shift: sound.shift });
+                if (sound?.sliceId) {
+                    out.set(`${sound.sliceId}|${sound.shift}|${JSON.stringify(track.env ?? null)}`,
+                        { sliceId: sound.sliceId, shift: sound.shift, ...(track.env ? { env: track.env } : {}) });
+                }
             }
         }
     }
@@ -321,7 +427,9 @@ export function sequenceSounds(seq: Sequence): { sliceId: string; shift: number 
 
 export interface SeqControl {
     track: number;
-    deck: Deck;
+    /** A Spotykach deck, unless it goes to another device (`port`). */
+    deck?: Deck;
+    port?: MidiOut;
     cc: number;
     /** Where in the step, 0–1. */
     at: number;
@@ -351,11 +459,61 @@ export function lfoAt(shape: LfoShape, cycles: number, seed = 0): number {
 export const LFO_PER_STEP = 4;
 
 /**
- * The CC messages of global step k: a value per switched-on step, or the LFO
- * four times a step. A toggle CC sends 127 on its steps; a momentary one 127,
- * and 0 near the end of the step when the next step is off.
+ * Automation's value, 0–127, `pos` steps into the pattern: straight lines (or
+ * S-curves when `smooth`) between the points, held before the first and after
+ * the last. Null without points.
  */
-export function stepControls(seq: Sequence, k: number): SeqControl[] {
+export function autoAt(points: readonly AutoPoint[] | undefined, pos: number, smooth = false): number | null {
+    if (!points?.length) return null;
+    if (pos <= points[0].at) return points[0].value;
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        if (pos > b.at) continue;
+        if (b.at <= a.at) return b.value;
+        let u = (pos - a.at) / (b.at - a.at);
+        if (smooth) u = 0.5 - 0.5 * Math.cos(Math.PI * u);
+        return a.value + (b.value - a.value) * u;
+    }
+    return points[points.length - 1].value;
+}
+
+/**
+ * Automation across the whole chain, `pos` steps from its start: every block's
+ * points in chain order, joined from one block to the next and round from the
+ * end to the start. Null when no block has points.
+ */
+export function chainAutoAt(
+    chain: readonly PatternId[], auto: CcSetup['auto'], pos: number, smooth = false,
+): number | null {
+    const total = chain.length * STEPS;
+    const points: AutoPoint[] = [];
+    chain.forEach((p, ci) => { for (const pt of auto?.[p] ?? []) points.push({ at: ci * STEPS + pt.at, value: pt.value }); });
+    if (!points.length || !total) return null;
+    const first = points[0], last = points[points.length - 1];
+    const loop = [{ at: last.at - total, value: last.value }, ...points, { at: first.at + total, value: first.value }];
+    return autoAt(loop, ((pos % total) + total) % total, smooth);
+}
+
+/** A CC track's automation at global step `pos` (fractions too): per pattern, or across the chain when connected. */
+export function trackAutoAt(seq: Pick<Sequence, 'chain'>, track: SeqTrack, pos: number): number | null {
+    const cc = track.cc;
+    if (!cc) return null;
+    if (cc.connect) return chainAutoAt(seq.chain, cc.auto, pos, cc.smooth);
+    const pattern = seq.chain[Math.floor(pos / STEPS)];
+    return pattern ? autoAt(cc.auto?.[pattern], pos - Math.floor(pos / STEPS) * STEPS, cc.smooth) : null;
+}
+
+/** How a track's CC acts: the Spotykach's table for its decks; a plain value for any other device. */
+export const trackCcKind = (track: SeqTrack) => (track.port ? 'value' : ccInfo(track.cc?.cc ?? 0).kind);
+
+/**
+ * The CC messages of global step k: a value per switched-on step, or the LFO
+ * four times a step, or the automation up to four times a step (at the
+ * pattern's start, then only when the value moves). A toggle CC sends 127 on its steps; a momentary one 127, and 0
+ * near the end of the step when the next step is off (or at once when a step
+ * of its loses its chance).
+ */
+export function stepControls(seq: Sequence, k: number, roll: () => number = Math.random): SeqControl[] {
     const total = seq.chain.length * STEPS;
     const pattern = seq.chain[Math.floor(k / STEPS)];
     if (!pattern) return [];
@@ -364,34 +522,52 @@ export function stepControls(seq: Sequence, k: number): SeqControl[] {
     seq.tracks.forEach((track, t) => {
         if (track.kind !== 'cc' || !track.cc || track.mute || (soloed && !track.solo)) return;
         const { cc, mode, lfo } = track.cc;
-        const deck = track.midi ?? 'A';
+        const to = track.port ? { port: track.port } : { deck: track.midi ?? 'A' };
         if (mode === 'lfo') {
             const span = Math.max(1, lfo.rateSteps);
             for (let i = 0; i < LFO_PER_STEP; i++) {
                 const v = lfoAt(lfo.shape, (k + i / LFO_PER_STEP) / span + lfo.phase, t);
-                out.push({ track: t, deck, cc, at: i / LFO_PER_STEP, value: Math.round(lfo.min + (lfo.max - lfo.min) * v) });
+                out.push({ track: t, ...to, cc, at: i / LFO_PER_STEP, value: Math.round(lfo.min + (lfo.max - lfo.min) * v) });
+            }
+            return;
+        }
+        if (mode === 'auto') {
+            // What went out a quarter step ago (nothing at the pattern's start, or the chain's
+            // when connected), so a held value goes out once.
+            const fresh = track.cc.connect ? k === 0 : k % STEPS === 0;
+            let last = fresh ? -1 : Math.round(trackAutoAt(seq, track, k - 1 / LFO_PER_STEP) ?? -1);
+            for (let i = 0; i < LFO_PER_STEP; i++) {
+                const v = trackAutoAt(seq, track, k + i / LFO_PER_STEP);
+                if (v === null) return;
+                const value = Math.round(v);
+                if (value !== last) out.push({ track: t, ...to, cc, at: i / LFO_PER_STEP, value });
+                last = value;
             }
             return;
         }
         const step = track.patterns[pattern][k % STEPS];
         if (!step?.on) return;
-        const kind = ccInfo(cc).kind;
-        out.push({ track: t, deck, cc, at: 0, value: kind === 'value' ? Math.round(step.velocity * 127) : 127 });
+        const kind = trackCcKind(track);
+        if (!plays(step, roll)) {
+            if (kind === 'momentary') out.push({ track: t, ...to, cc, at: 0, value: 0 });
+            return;
+        }
+        out.push({ track: t, ...to, cc, at: 0, value: kind === 'value' ? Math.round(step.velocity * 127) : 127 });
         if (kind === 'momentary') {
             const nextK = (k + 1) % total;
             const next = track.patterns[seq.chain[Math.floor(nextK / STEPS)]][nextK % STEPS];
-            if (!next?.on) out.push({ track: t, deck, cc, at: 0.9, value: 0 });
+            if (!next?.on) out.push({ track: t, ...to, cc, at: 0.9, value: 0 });
         }
     });
     return out;
 }
 
-/** Every hit of the chain, in time order. */
-export function sequenceHits(seq: Sequence, sampleRate: number): SeqHit[] {
+/** Every hit of the chain, in time order. Steps with a chance draw from `roll`. */
+export function sequenceHits(seq: Sequence, sampleRate: number, roll: () => number = Math.random): SeqHit[] {
     const hits: SeqHit[] = [];
     for (let k = 0; k < seq.chain.length * STEPS; k++) {
         const at = stepAt(seq, k, sampleRate);
-        for (const h of stepHits(seq, k)) hits.push({ ...h, at });
+        for (const h of stepHits(seq, k, roll)) hits.push({ ...h, at });
     }
     return hits;
 }

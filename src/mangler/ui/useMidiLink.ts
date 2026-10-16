@@ -16,6 +16,10 @@ import type { SequencerHooks, StepEvent } from './useSequencePlayer';
  *
  * Over USB the Spotykach is either a MIDI device or in transfer mode: sending a
  * sample over USB switches it, and it comes back to MIDI after.
+ *
+ * Other devices: a track can send to any output instead of a deck (its `port`:
+ * the output's name and a channel). The clock goes to them too when they are
+ * ticked in `clockTo`.
  */
 
 export interface MidiSettings {
@@ -28,6 +32,8 @@ export interface MidiSettings {
     /** MIDI channels of the decks, 1–16. */
     channelA: number;
     channelB: number;
+    /** Other outputs (by name) that get the clock and Start / Stop too, when it is sent. */
+    clockTo: string[];
 }
 
 export interface MidiPort {
@@ -36,7 +42,7 @@ export interface MidiPort {
 }
 
 const KEY = 'mangler_midi';
-const DEFAULTS: MidiSettings = { outputId: null, inputId: null, sendClock: true, follow: false, channelA: 1, channelB: 2 };
+const DEFAULTS: MidiSettings = { outputId: null, inputId: null, sendClock: true, follow: false, channelA: 1, channelB: 2, clockTo: [] };
 /** How a Spotykach (a Daisy) names its USB MIDI port. */
 const LOOKS_LIKE_SK = /spotykach|daisy/i;
 
@@ -83,34 +89,52 @@ export function useMidiLink() {
 
     // The sequencer's hooks read the latest port and settings through refs, so the
     // hooks object itself never changes.
-    const live = useRef({ output, settings });
-    useEffect(() => { live.current = { output, settings }; }, [output, settings]);
+    const live = useRef({ output, settings, access });
+    useEffect(() => { live.current = { output, settings, access }; }, [output, settings, access]);
+
+    /** An output by name (another device), or null when it isn't connected. */
+    const byName = (name: string) => {
+        const a = live.current.access;
+        if (!a) return null;
+        for (const o of a.outputs.values()) if (o.name === name) return o;
+        return null;
+    };
+    /** Where the clock goes: the Spotykach's output and the ticked others, once each. */
+    const clockOuts = () => {
+        const { output: out, settings: s } = live.current;
+        if (!s.sendClock || s.follow) return [];
+        const outs = new Set<MIDIOutput>();
+        if (out) outs.add(out);
+        for (const name of s.clockTo) { const o = byName(name); if (o) outs.add(o); }
+        return [...outs];
+    };
 
     const hooks = useMemo<SequencerHooks>(() => ({
-        onStart: perfMs => {
-            const { output: out, settings: s } = live.current;
-            if (out && s.sendClock && !s.follow) out.send([0xfa], perfMs);
-        },
-        onStop: () => {
-            const { output: out, settings: s } = live.current;
-            if (out && s.sendClock && !s.follow) out.send([0xfc]);
-        },
+        onStart: perfMs => { for (const o of clockOuts()) o.send([0xfa], perfMs); },
+        onStop: () => { for (const o of clockOuts()) o.send([0xfc]); },
         onStep: (e: StepEvent) => {
-            const { output: out, settings: s } = live.current;
-            if (!out) return;
+            const { output: sk, settings: s } = live.current;
             // 24 clocks a beat: six to a sixteenth, on the unswung grid so the clock stays even.
-            if (s.sendClock && !s.follow) for (let i = 0; i < 6; i++) out.send([0xf8], e.gridPerfMs + (i * e.stepMs) / 6);
-            const channelOf = (deck: 'A' | 'B') => Math.min(16, Math.max(1, deck === 'A' ? s.channelA : s.channelB)) - 1;
-            for (const c of e.controls) out.send([0xb0 | channelOf(c.deck), c.cc, Math.min(127, Math.max(0, c.value))], e.perfMs + c.at * e.stepMs);
+            for (const o of clockOuts()) for (let i = 0; i < 6; i++) o.send([0xf8], e.gridPerfMs + (i * e.stepMs) / 6);
+            const ch = (n: number) => Math.min(16, Math.max(1, Math.round(n) || 1)) - 1;
+            /** A deck goes to the Spotykach on its channel; a port to that device on its own. */
+            const target = (m: { deck?: 'A' | 'B'; port?: { name: string; channel: number } }) =>
+                m.port ? { out: byName(m.port.name), channel: ch(m.port.channel) }
+                    : m.deck ? { out: sk, channel: ch(m.deck === 'A' ? s.channelA : s.channelB) } : null;
+            for (const c of e.controls) {
+                const to = target(c);
+                to?.out?.send([0xb0 | to.channel, Math.min(127, Math.max(0, c.cc)), Math.min(127, Math.max(0, c.value))], e.perfMs + c.at * e.stepMs);
+            }
             for (const hit of e.hits) {
-                if (!hit.deck) continue;
-                const channel = channelOf(hit.deck);
+                const to = target(hit);
+                if (!to?.out) continue;
                 const note = Math.min(127, Math.max(0, Math.round(hit.note)));
                 const velocity = Math.min(127, Math.max(1, Math.round(hit.velocity * 127)));
-                out.send([0x90 | channel, note, velocity], e.perfMs);
-                out.send([0x80 | channel, note, 0], e.perfMs + Math.min(e.stepMs * 0.9, 120));
+                to.out.send([0x90 | to.channel, note, velocity], e.perfMs);
+                to.out.send([0x80 | to.channel, note, 0], e.perfMs + Math.min(e.stepMs * 0.9, 120));
             }
         },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads everything through `live`
     }), []);
 
     return { supported: midiSupported(), enabled: !!access, enable, error, ports, settings, setSettings, output, input, hooks };

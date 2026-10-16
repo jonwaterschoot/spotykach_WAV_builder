@@ -653,6 +653,32 @@ section('Sequencer');
     check(cues[0] === 0 && cues.every((c, i) => i === 0 || c > cues[i - 1]), 'cues at hits, in order, from 0');
     check(sequenceCues(seq, hits, 'bars', SR).length === 3 && sequenceCues(seq, hits, 'beats', SR).length === 12, 'cues per bar and per beat');
     check(maxChain(60) === 10 && maxChain(120) === 16, 'the chain fits 42 s', `${maxChain(60)} bars at 60 bpm`);
+
+    // More patterns than A–D: a track saved with four gets the rest empty, and a fifth plays in the chain.
+    const old = { ...seq.tracks[0], patterns: { A: seq.tracks[0].patterns.A, B: seq.tracks[0].patterns.B, C: seq.tracks[0].patterns.C, D: seq.tracks[0].patterns.D } };
+    const filled = seqMod.withAllPatterns(old);
+    check(filled && seqMod.PATTERNS.every(p => filled.patterns[p]?.length === 16) && filled.patterns.A === old.patterns.A
+        && seqMod.withAllPatterns({ ...old, patterns: { ...old.patterns, E: [] } }) === null,
+        'a track saved with A–D gets empty E–P; a malformed pattern is refused');
+    check(seqMod.patternsOf({}).join('') === 'ABCD' && seqMod.patternsOf({ patternCount: 6 }).join('') === 'ABCDEF', 'patterns in use: A–D, or as many as set');
+    const five = { ...seq, chain: ['E'], patternCount: 5 };
+    five.tracks = seq.tracks.map((tr, i) => (i === 0 ? { ...tr, patterns: { ...tr.patterns, E: tr.patterns.E.map((st, k) => ({ ...st, on: k === 3 })) } } : tr));
+    check(sequenceHits(five, SR).some(h => h.track === 0 && h.step === 3), 'a fifth pattern plays in the chain');
+
+    // Chance: drawn per step from the roll; a step without one never draws.
+    const { createRng: rng } = await import('../src/mangler/rng.ts');
+    let draws = 0;
+    const counting = () => { draws++; return 0.99; };
+    sequenceHits(seq, SR, counting);
+    check(draws === 0, 'steps without a chance never draw');
+    seq.tracks[0].patterns.A[0].chance = 0.5;
+    const r = rng(7);
+    const runs = Array.from({ length: 400 }, () => sequenceHits(seq, SR, r.next).filter(h => h.track === 0 && h.step === 0).length);
+    const played = runs.reduce((a, b) => a + b, 0);
+    check(played > 150 && played < 250, 'a 50 % step plays about half the time', `${played} of 400`);
+    check(sequenceHits(seq, SR, () => 0.49).some(h => h.step === 0 && h.track === 0)
+        && !sequenceHits(seq, SR, () => 0.5).some(h => h.step === 0 && h.track === 0), 'chance: plays when the roll is under it');
+    delete seq.tracks[0].patterns.A[0].chance;
 }
 
 // ---------------------------------------------------------------------------
@@ -690,6 +716,17 @@ section('Sequencer: cues, scale, CC');
     sliceTrack.scaleLock = true;
     const locked = S.sequenceHits(seq, SR).find(h => h.track === 1).shift;
     check(free === 4 && (locked === 3 || locked === 5), 'scale lock snaps the step to the scale, only when on', `+4 → ${locked}`);
+    // A scale of its own wins over the sequence's: C major keeps E.
+    sliceTrack.scale = { root: 0, mask: maskFromIntervals([0, 2, 4, 5, 7, 9, 11]) };
+    check(S.sequenceHits(seq, SR).find(h => h.track === 1).shift === 4, 'a track\'s own scale wins over the sequence\'s');
+    delete sliceTrack.scale;
+    // Locking moves the stored pitches into the scale, and leaves those in it alone.
+    sliceTrack.scaleLock = undefined;
+    sliceTrack.patterns.B[3] = { on: true, velocity: 1, shift: 7 };
+    const lockedTrack = S.lockToScale(sliceTrack, S.trackScale(seq, sliceTrack));
+    check(lockedTrack.scaleLock && [3, 5].includes(lockedTrack.patterns.A[0].shift) && lockedTrack.patterns.B[3].shift === 7
+        && sliceTrack.patterns.A[0].shift === 4, 'lock to scale: E moves to the scale, G stays, the original untouched');
+    sliceTrack.scaleLock = true;
 
     // CC steps: a value, a toggle, a momentary one with its release.
     const cc = seq.tracks[2];
@@ -714,12 +751,62 @@ section('Sequencer: cues, scale, CC');
     check(['sine', 'triangle', 'saw', 'square', 'random'].every(sh => [0, 0.25, 0.5, 0.75].every(p => { const v = S.lfoAt(sh, p); return v >= 0 && v <= 1; }))
         && S.lfoAt('random', 3.2, 1) === S.lfoAt('random', 3.7, 1), 'every LFO shape in 0–1; random holds within a cycle');
 
+    // Automation: per pattern, lines between points, held outside them; sent only when the value moves.
+    cc.cc = { cc: 22, mode: 'auto', lfo: cc.cc.lfo, auto: { A: [{ at: 4, value: 0 }, { at: 8, value: 100 }] } };
+    check(S.autoAt(cc.cc.auto.A, 0) === 0 && S.autoAt(cc.cc.auto.A, 6) === 50 && S.autoAt(cc.cc.auto.A, 12) === 100
+        && S.autoAt([], 3) === null, 'automation: held before the first point, a line between, held after the last');
+    const smoothMid = S.autoAt(cc.cc.auto.A, 5, true);
+    check(Math.abs(S.autoAt(cc.cc.auto.A, 6, true) - 50) < 1e-9 && smoothMid < S.autoAt(cc.cc.auto.A, 5),
+        'smooth automation: an S-curve, slower off the point, through the middle', `${smoothMid.toFixed(1)}`);
+    const ramp = Array.from({ length: 16 }, (_, k) => S.stepControls(seq, k).filter(c => c.track === 2)).flat();
+    check(ramp.filter(c => c.value === 0).length === 1 && ramp.filter(c => c.value === 100).length === 1
+        && ramp.length === 2 + 4 * 4 - 1, 'automation: one message while it holds, four a step while it moves', `${ramp.length} messages`);
+    seq.chain = ['A', 'B'];
+    check(S.stepControls(seq, 16).filter(c => c.track === 2).length === 0, 'a pattern without automation sends nothing');
+
+    // Connected: A's points (4: 0, 8: 100) run on through B and round to the start.
+    cc.cc.connect = true;
+    check(Math.abs(S.trackAutoAt(seq, cc, 20) - (100 - 100 * 12 / 28)) < 1e-9 && Math.abs(S.trackAutoAt(seq, cc, 0) - 100 * 4 / 28) < 1e-9,
+        'connected automation: on through a pattern without points, and round from the end to the start');
+    check(S.stepControls(seq, 16).filter(c => c.track === 2).length > 0, 'connected automation sends in a pattern without points');
+    seq.chain = ['B', 'A'];
+    check(S.trackAutoAt(seq, cc, 16 + 4) === 0 && S.trackAutoAt(seq, cc, 24) === 100, 'connected automation follows its pattern when the chain changes');
+    cc.cc.connect = undefined;
+    seq.chain = ['A'];
+
+    // Another MIDI device: its own channel, any CC as a plain value.
+    cc.cc = { ...S.defaultCc(), cc: 85, mode: 'steps' };
+    cc.port = { name: 'Synth', channel: 5 };
+    const portCtl = S.stepControls(seq, 0).find(c => c.track === 2);
+    check(portCtl.port?.name === 'Synth' && !portCtl.deck && portCtl.value === 64 && S.trackCcKind(cc) === 'value',
+        'a CC to another device: its port, no deck, CC 85 as a value (not the Spotykach\'s toggle)', JSON.stringify(portCtl));
+    delete cc.port;
+
     // A deck track without a slice still plays (the deck makes the sound).
     const deckOnly = seq.tracks[3];
     deckOnly.midi = 'A';
     deckOnly.patterns.A[2] = { on: true, velocity: 0.8, shift: 7 };
     const dh = S.sequenceHits(seq, SR).find(h => h.track === 3);
     check(dh && dh.sliceId === null && dh.note === 67 && dh.deck === 'A', 'a deck-only step: note 67 for +7 st, no sound here');
+    deckOnly.midi = undefined;
+    deckOnly.port = { name: 'Synth', channel: 3 };
+    const ph = S.sequenceHits(seq, SR).find(h => h.track === 3);
+    check(ph && ph.port?.channel === 3 && !ph.deck && ph.note === 67, 'a step for another device: its port and channel, no deck');
+
+    // A track's playback envelope rides on its hits, and is part of what gets rendered ahead.
+    const env = { attackMs: 5, decayMs: 120, curve: 'exp' };
+    sliceTrack.env = env;
+    const envHit = S.sequenceHits(seq, SR).find(h => h.track === 1);
+    const sounds = S.sequenceSounds(seq).filter(x => x.sliceId === 'kick');
+    check(envHit.env === env && sounds.length >= 1 && sounds.every(x => x.env === env), 'a track\'s envelope goes with its hits and its sounds');
+    seq.tracks[0].kind = undefined;
+    seq.tracks[0].sliceId = 'kick';
+    seq.tracks[0].patterns.A[0] = { on: true, velocity: 1, shift: 0 };
+    sliceTrack.patterns.A[0] = { on: true, velocity: 1, shift: 0 };
+    sliceTrack.scaleLock = undefined;
+    const both = S.sequenceSounds(seq).filter(x => x.sliceId === 'kick' && x.shift === 0);
+    check(both.length === 2 && both.some(x => !x.env) && both.some(x => x.env === env), 'the same slice with and without an envelope: two sounds');
+    delete sliceTrack.env;
 }
 
 // Removing sources and results: the sequence lets go of what used them.

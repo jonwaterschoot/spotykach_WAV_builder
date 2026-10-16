@@ -351,6 +351,8 @@ export interface MangleSourceEntry {
     synth?: { kind: import('../mangler/synth').SynthKind; seed: number; values: Record<string, number> };
     /** A result put in the pool: which one, so the pool's star shows it kept. */
     fromResult?: string;
+    /** A slice edited in the editor: the slice this audio now is (replaced again on its next edit). */
+    forSlice?: string;
 }
 
 export interface MangleResultEntry {

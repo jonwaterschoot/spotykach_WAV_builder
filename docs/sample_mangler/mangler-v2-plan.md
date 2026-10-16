@@ -292,6 +292,54 @@ Each phase is usable on its own.
 - [x] A lock per settings group: the dice (all, style, the group's own) and presets leave a locked group as it is. Style and locks are remembered
 - Note: on the Spotykach a note only retriggers a deck at a pitch (firmware: `_on_midi_note_on`), so cue tracks play their segments here; over the Link they send their cue's note
 
+**Added Oct 16 — Timeline, chance, automation**
+
+- [x] Step menu: the note name next to the pitch field has a fixed width, so the field stays put while dragging (C4 → C#4)
+- [x] Chance per step (5–100 %, absent: always): drawn afresh each time round, live, in the render and over MIDI alike (one draw per step, only for steps that have one). In the step menu (100 / 75 / 50 / 25 and a field), as a *Drag* mode, and on the lane. A step with a chance is fainter and has a corner mark. A momentary CC step that loses its draw lets go at once
+- [x] Pattern controls together at the top: A–D, Roll, Clear, Copy to. Clear and copy take CC automation along
+- [x] CC tracks get a third mode, *Auto*: automation drawn per pattern (points at quarter steps, 0–127, lines or *Smooth* S-curves, held before the first point and after the last). It belongs to the pattern, like its steps, so it moves with the pattern's blocks. Sent at the pattern's start, then only when the value moves (up to four a step). Value CCs only, like the LFO. Dice: 2–5 new points
+- [x] Timeline (`ui/SequenceTimeline.tsx`) under the grid: the chain as one block per bar, scrolling sideways. Drag a block by its handle to move it (Alt: copy), click it to edit its pattern above, cycle its letter, remove it; add, roll and drop bars from its header (the chain row at the top is gone)
+- [x] Timeline views, as in a DAW's clip editor: *Steps* (every track, mini cells that click and drag like the grid's; LFO and automation tracks show their curve), *Notes* (the active track as a piano roll: a slice track's pitches, out-of-scale rows dark with Scale on; a cue track's cues), *Automation* (the active CC track, a lane per block: double-click adds a point or removes one, drag moves, Alt for free time, box select, Delete and the arrow keys). The active track is the last one touched
+- [x] Under Steps and Notes, a lollipop lane for the active track: velocity (a CC step's value), pitch (a cue track's cue) or chance; drag across it to draw
+- [x] Phone (under 768 px): *Pattern* / *Timeline* switch, one at a time. Tablets and up: the timeline stays docked at the bottom (at most 45 % of the height, foldable)
+- [x] Checks: chance (no draw without one, about half at 50 %, under the roll plays), automation (held, line, S-curve, messages only when moving, nothing for a pattern without points)
+- [ ] Later: a playhead-follow option for the timeline; drawing automation across several blocks in one stroke
+
+**Added Oct 16 — Undo, connected automation, timeline size, other MIDI devices**
+
+- [x] Undo and redo for the sequencer (`ui/useUndoable.ts`): buttons next to Play, Ctrl+Z and Ctrl+Shift+Z / Ctrl+Y (not while typing in a field). Every edit in the station is a step, a dice roll too; changes within 400 ms merge (a drag is one step). A clock's tempo and letting go of removed slices don't count; opening a project or starting fresh clears the history. In memory, 100 steps
+- [x] *Connect* for automation: one curve over the whole chain, from a block's last point to the next block's first and from the end round to the start, instead of holding within each pattern. It still lives per pattern, so it follows the blocks when they move. Sent at the chain's start, then when it moves
+- [x] Timeline size: drag its top edge (tablet and up; double-click for the default); the steps rows, the piano roll, the lane and the automation grow with it. Zoom the step width (6–32 px) with the magnifiers or Ctrl + wheel. Both remembered (`mangler_timeline_size`)
+- [x] Dropdowns: dark lists with light text everywhere (`index.css`); a select's own colour no longer carries into its options
+- [x] Other MIDI devices: a track's *SK* menu lists every other output (once MIDI is connected) under *Other MIDI devices*, with its own channel (1–16). Notes go there as for a deck; a CC track takes any CC number (0–127, a plain value: LFO and automation work). The Link panel can send the clock and Start / Stop to chosen other devices too. A track keeps the device's name, so it finds it again; one not connected is marked so
+- [x] Checks: connected automation (through a pattern without points, round the loop, following the chain), a step and a CC to another device (its port and channel, no deck, CC as a value)
+- [ ] Later: the undo history in the editor's style for the other stations; names for a device's CCs
+
+**Added Oct 16 — Piano roll scales**
+
+- [x] Step menu wide enough for the chance row (20rem, never wider than the screen)
+- [x] Notes view: a piano down the side (white and black keys, every key named when the rows are tall enough, C in bold); click a key to hear the track at that pitch (a cue track: its cue). Grid rows shaded as the keys; note blocks show their name when there is room
+- [x] Scale mode in the Notes view: *Free* shows every row, those outside the scale hatched (a note on one gets a red edge); *Lock* folds the rows to the scale's notes only (each key keeps its name and colour) and moves the notes outside it to the nearest scale note (`lockToScale`, also behind the track's *Scale* button). Locked, playback snaps as before
+- [x] A scale per track: the Notes view's root and scale pickers change the sequence's scale (*All tracks*) or the track's own (*This track*, `SeqTrack.scale`, which wins over the sequence's in playback, MIDI notes, dragging and the step menu)
+- [x] Checks: a track's own scale wins; locking moves out-of-scale pitches and leaves the rest
+
+**Added Oct 16 — AD for slices, two ways**
+
+Slices already had an AD of their own in the slice pool (`SliceSpec.envelope`: it changes how the slice plays, everywhere). Two more:
+
+- [x] *Edit the audio:* a slice opens in the editor as it sounds (region, shift, direction, gain, envelope rendered), from the slice pool (*Open in the editor*) or a slice track (pencil, or *Edit the slice* in its AD popover). Every save there (an applied tool, or *Replace the slice*) puts the edited sound in the source pool, switched off and marked as that slice's (`forSlice`), and the slice becomes all of it with those settings baked in (reset to none). The next save replaces that sound when nothing else plays it; deleting the slice takes it along. The original source stays as it is; licences carry over from it
+- [x] *Playback only:* an AD per sequencer track (`SeqTrack.env`: attack, decay, exp or linear), for slice and cue tracks, from the track's *AD* button (a popover with the shape, the values, *Hear it*). Applied on top of the sound's own envelope when it is rendered to play: live (the player keys its buffers on it), in the sequence render, in auditions and on the piano keys. The slice isn't touched; the same slice on two tracks can have two envelopes
+- [x] Checks: a track's envelope goes with its hits and its sounds; the same slice with and without one makes two sounds. Tried in the browser: the editor opens on the slice as it plays, a save repoints the slice, a second save replaces the first edited sound
+- [ ] Later: an envelope per step (a step lock, as for the slice)
+
+**Added Oct 16 — Loop a pattern, more patterns**
+
+- [x] *Loop* in the pattern group: plays the pattern being edited over and over instead of the chain, and follows it when another pattern is picked. A playback setting, not part of the sequence or its undo; switching in or out keeps the place in the bar. The playhead shows on the pattern's picked bar in the timeline (or its first). *Render* still renders the chain
+- [x] More patterns: up to 16 (A–P), added with *+* (empty, and edited) and taken off the end with *−* (cleared; not while the chain plays it). `Sequence.patternCount` says how many are in use (absent: 4). Every track keeps steps for all 16, so any pattern reads safely; sequences and projects saved with A–D get empty E–P on load, and the count covers at least what the chain plays
+- [x] With more than four patterns, *Copy to* and a bar's pattern in the timeline become dropdowns (with four, the buttons and the click-to-cycle stay)
+- [x] Checks: an A–D track filled to A–P (a malformed one refused), the patterns in use, a fifth pattern playing in the chain
+- Not checked in the browser: the loop's live playback (the headless browser has no audio); adding patterns, the loop button and the dropdowns were
+
 ## Decided Oct 14
 
 - **Tempo:** Spotykach reads none, from `config.txt` or the file. The tempo grid is a convenience for plain loops (5.4).

@@ -1,5 +1,5 @@
 import type { HitClass } from './hits.ts';
-import { CUE_BASE_NOTE, STEPS, type CcSetup, type LfoShape, type PatternId, type SeqStep } from './sequence.ts';
+import { CUE_BASE_NOTE, STEPS, type AutoPoint, type CcSetup, type LfoShape, type PatternId, type SeqStep } from './sequence.ts';
 import {
     BPM_MAX, BPM_MIN, SCALES, maskFromIntervals, sanitizeSettings, type GridDivision, type MangleSettings,
 } from './settings.ts';
@@ -226,6 +226,14 @@ export function rollLfo(r: R = Math.random): CcSetup['lfo'] {
         min, max: Math.min(127, min + Math.round(between(r, 30, 127 - min))),
         phase: round(r(), 0.25) % 1,
     };
+}
+
+/** Automation for one pattern: 2–5 points, on quarter steps, anywhere in 0–127. */
+export function rollAutomation(r: R = Math.random): AutoPoint[] {
+    const n = 2 + Math.floor(r() * 4);
+    const ats = new Set<number>();
+    while (ats.size < n) ats.add(round(between(r, 0, STEPS), 0.25));
+    return [...ats].sort((a, b) => a - b).map(at => ({ at, value: Math.round(between(r, 0, 127)) }));
 }
 
 /** A chain of the same length from the patterns that have something in them (A if none). */
