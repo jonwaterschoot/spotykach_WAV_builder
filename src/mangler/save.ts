@@ -5,6 +5,8 @@ import {
 import type { DetachedSample } from '../utils/detachedState';
 import type { FileRecord, UserLibrary } from '../types';
 import { resultLicense } from './license';
+import { toM8Wav } from '../lib/audio/m8Wav';
+import JSZip from 'jszip';
 
 /**
  * The mangler's ways out besides a download: Browse's pool, Studio's user
@@ -121,3 +123,22 @@ export const resultsAsDetached = (results: MangleResultEntry[]): DetachedSample[
         origin: RESULT_ORIGIN,
         license: resultLicense(r.recipe).text,
     }));
+
+/**
+ * Results as Dirtywave M8 WAVs (16-bit PCM, a cue point per slice): one result
+ * is its WAV, more are a zip of them.
+ */
+export async function resultsForM8(results: MangleResultEntry[]): Promise<{ blob: Blob; fileName: string }> {
+    const wavs = await Promise.all(results.map(r => toM8Wav(r.blob, r.recipe.cuePoints)));
+    if (results.length === 1) return { blob: wavs[0], fileName: `${results[0].name}.wav` };
+
+    const zip = new JSZip();
+    const taken = new Set<string>();
+    results.forEach((r, i) => {
+        let fileName = `${r.name}.wav`;
+        for (let n = 2; taken.has(fileName.toLowerCase()); n++) fileName = `${r.name}-${n}.wav`;
+        taken.add(fileName.toLowerCase());
+        zip.file(fileName, wavs[i]);
+    });
+    return { blob: await zip.generateAsync({ type: 'blob' }), fileName: `mangler-m8-${results.length}.zip` };
+}

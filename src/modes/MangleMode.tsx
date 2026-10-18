@@ -18,7 +18,7 @@ import { runningStandalone, useFullscreen } from '../utils/useFullscreen';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';
 import { LEVEL_LABEL, isLocalOrigin, resultLicense, sourceLicense } from '../mangler/license';
 import type { LicenseLevel } from '../submission/licenses';
-import { addResultsToBrowsePool, resultsAsDetached, resultsAsProjectFiles, saveResultsToLibrary } from '../mangler/save';
+import { addResultsToBrowsePool, resultsAsDetached, resultsAsProjectFiles, resultsForM8, saveResultsToLibrary } from '../mangler/save';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
 import { Toast } from '../components/Toast';
@@ -65,6 +65,7 @@ import type { Part } from '../mangler/parts';
 import { ScrubBar } from '../mangler/ui/ScrubBar';
 import { clampCrop, cropAudio, cropResult, type Crop } from '../mangler/crop';
 import { readWavHeaderInfo } from '../lib/audio/wavHeader';
+import { M8_MAX_CUES } from '../lib/audio/m8Wav';
 import type { CommitLabels } from '../components/WaveformEditor';
 import { formatDb, formatSeconds } from '../mangler/ui/format';
 import { useResultAudio } from '../mangler/ui/useResultAudio';
@@ -2121,6 +2122,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
     { label: 'Add to the Browse pool', icon: <Waves size={13} />, onClick: () => requestSave('pool', list) },
     { label: list.length === 1 ? 'New Studio project with it' : 'New Studio project with them', icon: <FolderPlus size={13} />, onClick: () => startProject(list) },
     ...(cardEnabled ? [{ label: 'Send to Spotykach (USB or SD card)', icon: <Usb size={13} />, onClick: () => sendToCard(list) }] : []),
+    { label: list.length === 1 ? 'Download for the M8 (16-bit, slices)' : 'Download for the M8 (zip, 16-bit, slices)', icon: <Download size={13} />, onClick: () => void downloadForM8(list) },
   ];
   /** A group of results (kept, or selected): out of the mangler, or back into the source pool. */
   const groupItems = (list: MangleResultEntry[]) => [
@@ -2256,6 +2258,20 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
   const downloadResult = useCallback((r: MangleResultEntry) => {
     if (savable([r]).length) downloadBlob(r.blob, `${r.name}.wav`);
   }, [savable]);
+
+  /** The Dirtywave M8 reads 16-bit PCM without our LIST chunk: a converted copy, the result stays as it is. */
+  const downloadForM8 = useCallback(async (list: MangleResultEntry[]) => {
+    const ok = savable(list);
+    if (!ok.length) return;
+    try {
+      const { blob, fileName } = await resultsForM8(ok);
+      downloadBlob(blob, fileName);
+      if (ok.some(r => r.recipe.cuePoints.length > M8_MAX_CUES)) showToast(`The M8 takes ${M8_MAX_CUES} slices: the rest are left out`, 'info');
+    } catch (e) {
+      console.error(e);
+      showToast(`Could not make the M8 file: ${e instanceof Error ? e.message : e}`, 'error');
+    }
+  }, [savable, showToast]);
 
   const startProject = useCallback((list: MangleResultEntry[]) => {
     const ok = savable(list).slice(0, GRID_CAPACITY);
@@ -3067,7 +3083,7 @@ export const MangleMode: React.FC<MangleModeProps> = ({ onExitToHub, onEnterStud
                         icon={<Share size={13} />}
                         disabled={blocked}
                         align="right"
-                        title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Out of the mangler: Studio, Browse, the Spotykach. The Kept menu does every starred result at once'}
+                        title={blocked ? 'Uses a no-derivatives source: it stays here' : 'Out of the mangler: Studio, Browse, the Spotykach, the M8. The Kept menu does every starred result at once'}
                         tone="plain"
                         labelClassName="max-sm:hidden"
                         items={exportItems([r])}

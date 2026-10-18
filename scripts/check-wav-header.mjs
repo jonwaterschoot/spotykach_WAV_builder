@@ -753,5 +753,71 @@ function readerCheck(title, got, want) {
         { id: ICMT.id, hash: ICMT.h, tempo: 120 });
 }
 
+// --- Dirtywave M8 export (m8Wav.ts) ----------------------------------------
+// Not for the card: the M8 sampler wants 16-bit PCM and no LIST. Shape checks
+// against a file the M8 saved itself (docs/WAV-CUE/slice-cue/), not a firmware port.
+
+console.log('\nDirtywave M8 export (toM8Wav)\n');
+
+const { toM8Wav } = await import('../src/lib/audio/m8Wav.ts');
+const chunkIds = (file) => walkChunks(file).chunks.map(c => c.id);
+{
+    const frames = 48000;
+    const source = await encoded(frames, 2, encMeta);
+    // Out of order, a repeat, one past the end, and more than the M8's 128.
+    const cueFrames = [24000, 0, 12000, 12000, frames, ...Array.from({ length: 200 }, (_, i) => 100 + i)];
+    const m8 = new Uint8Array(await (await toM8Wav(new Blob([source]), cueFrames)).arrayBuffer());
+    const cueAt = 12 + 24 + 8 + frames * 4;
+    const ids = [], offsets = [];
+    for (let i = 0; i < u32(m8, cueAt + 8); i++) {
+        ids.push(u32(m8, cueAt + 12 + i * 24));
+        offsets.push(u32(m8, cueAt + 12 + i * 24 + 20));
+    }
+    const sorted = offsets.every((f, i) => i === 0 || f > offsets[i - 1]);
+    readerCheck('16-bit PCM, fmt > data > cue, no LIST, RIFF size exact', {
+        chunks: chunkIds(m8), problems: walkChunks(m8).problems, fmtSize: u32(m8, 16), format: u16(m8, 20), channels: u16(m8, 22),
+        rate: u32(m8, 24), bits: u16(m8, 34), dataSize: u32(m8, 40),
+    }, {
+        chunks: ['fmt ', 'data', 'cue '], problems: [], fmtSize: 16, format: 1, channels: 2,
+        rate: 48000, bits: 16, dataSize: frames * 4,
+    });
+    readerCheck('cues: at most 128, sorted, no repeats, inside the audio, ids from 0', {
+        count: offsets.length, sorted, first: offsets.slice(0, 3), inside: offsets[offsets.length - 1] < frames, ids0: ids[0], idsLast: ids[ids.length - 1],
+    }, { count: 128, sorted: true, first: [0, 100, 101], inside: true, ids0: 0, idsLast: 127 });
+
+    // The samples: a float sine in, the same in 16 bits out.
+    const dataAt = walkChunks(source).chunks.find(c => c.id === 'data').offset + 8;
+    const f = new DataView(source.buffer, source.byteOffset + dataAt);
+    const p = new DataView(m8.buffer, m8.byteOffset + 44);
+    let worst = 0;
+    for (let i = 0; i < 2000; i++) worst = Math.max(worst, Math.abs(f.getFloat32(i * 4, true) - p.getInt16(i * 2, true) / 32767));
+    readerCheck('samples within one 16-bit step', { close: worst < 2 / 32767 }, { close: true });
+
+    const back = await readWavHeaderInfo(new Blob([m8]));
+    readerCheck('readWavHeaderInfo reads it back', { frames: back.frames, format: back.audioFormat, bits: back.bitsPerSample, cues: back.metadata?.slicePoints?.length },
+        { frames, format: 1, bits: 16, cues: 128 });
+
+    // Without cue frames: the file's own cue chunk.
+    const own = new Uint8Array(await (await toM8Wav(new Blob([source]))).arrayBuffer());
+    const ownBack = await readWavHeaderInfo(new Blob([own]));
+    readerCheck("no cue frames given: the source's own cues", { cues: ownBack.metadata?.slicePoints }, { cues: [0, 0.25, 0.5] });
+
+    let refused = false;
+    try { await toM8Wav(new Blob([m8])); } catch { refused = true; }
+    readerCheck('a 16-bit file is refused, not converted twice', { refused }, { refused: true });
+}
+{
+    // The layout a sliced sample saved on the M8 has (its fmt is 18 bytes, and its RIFF size leaves out the cue chunk).
+    const { readFileSync, existsSync } = await import('node:fs');
+    const path = new URL('../docs/WAV-CUE/slice-cue/MANGLE_20261014SLICED-M8.wav', import.meta.url);
+    if (existsSync(path)) {
+        const device = new Uint8Array(readFileSync(path));
+        const info = await readWavHeaderInfo(new Blob([device]));
+        readerCheck('M8-saved file: the chunk order and format we copy', {
+            chunks: chunkIds(device), format: info.audioFormat, bits: info.bitsPerSample, cues: info.metadata?.slicePoints?.length,
+        }, { chunks: ['fmt ', 'data', 'cue '], format: 1, bits: 16, cues: 16 });
+    }
+}
+
 console.log(`\n${failures ? `${failures} check(s) failed` : 'All checks passed'}${warnings ? `, ${warnings} warning(s)` : ''}.`);
 process.exit(failures ? 1 : 0);
