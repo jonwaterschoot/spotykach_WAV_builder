@@ -64,16 +64,62 @@ After a reboot, with the Spotykach connected:
 4. Optional, separately: the Simple Touch's Code 10 on the laptop. Remove its stale `5740` entry (`pnputil /remove-device`), plug it back in, and read the end of `C:\Windows\INF\setupapi.dev.log`.
 ## Retest steps for Bay Mud
 
-Only send this once the diagnostics build is deployed: without it, step 4 has no "Copy diagnostics" button.
+Only send this once the diagnostics build is deployed: without it, step 5 has no "Copy diagnostics" button.
 
 1. **Flash firmware 1.4.0 beta 2**, the same way as before. Download [spotykach_1.4.0.b2.bin](https://github.com/Synthux-Academy/Spotykach/releases/download/v1.4.0.b2/spotykach_1.4.0.b2.bin). Connect the rear USB-C port, hold Reset on the back for about 3 s until the lights under the bottom pads breathe white, and flash the file with the Daisy web programmer. b2 is b1 with only the version number corrected; it makes sure we both run the same build.
-2. **Before testing:** close the Daisy web programmer tab and any app that uses MIDI (DAW, MIDI monitors). Unplug the Spotykach and plug it straight back into a USB port on the computer, not a hub.
-3. **Connect:** open https://jonwaterschoot.github.io/spotykach_WAV_builder/#/studio?usb=1 in Chrome and reload it with Ctrl+Shift+R so you get the new build. The link opens Studio with USB transfer switched on (the same switch as Settings ▸ System ▸ USB transfer). Click **USB** in the header, next to Import / Build. That connects straight away and opens a window with the connection status. Note whether the rings on the Spotykach light up.
-4. **Copy the diagnostics:** within about 30 s that window should stop with a message, and the step it stopped at, instead of spinning. Click "Copy diagnostics" in the window and paste the result. If it does connect, "Copy diagnostics" is next to Disconnect: paste that too, then close the window and try an upload with Import / Build.
+2. **Before testing:** close the Daisy web programmer tab and any app that uses MIDI (DAW, MIDI monitors). Unplug the Spotykach and plug it straight back into a USB port on the computer, not a hub. Let it start up and play as normal.
+3. **Snapshot before connecting:** press Win+X, choose *Terminal* (or *Windows PowerShell*), paste the snippet below (it's one long line), press Enter and copy everything it prints. It only reads; nothing is changed, and no admin rights are needed.
+4. **Connect:** open https://jonwaterschoot.github.io/spotykach_WAV_builder/#/studio?usb=1 in Chrome and reload it with Ctrl+Shift+R so you get the new build. The link opens Studio with USB transfer switched on (the same switch as Settings ▸ System ▸ USB transfer). Click **USB** in the header, next to Import / Build. That connects straight away and opens a window with the connection status. Note whether the rings on the Spotykach light up.
+5. **Copy the diagnostics:** within about 30 s that window should stop with a message, and the step it stopped at, instead of spinning. Click "Copy diagnostics" in the window and paste the result. If it does connect, "Copy diagnostics" is next to Disconnect: paste that too, then close the window and try an upload with Import / Build.
    - If it still spins after 30 s, press F12 and open Console. Type `[usb]` in its Filter box, so only our lines are left, then select and copy those.
-5. **Device Manager**, while it's stuck or right after: Win+X ▸ Device Manager ▸ View ▸ Show hidden devices. Screenshot these sections expanded: *Sound, video and game controllers*, *Ports (COM & LPT)*, *Universal Serial Bus devices* and *Universal Serial Bus controllers*. Any entry with a yellow mark: double-click it and copy the text under "Device status".
-6. **Chrome's device log:** open `chrome://device-log` in a new tab right after an attempt and copy what's there.
-7. **Two questions:**
-   - Which device did you pick in Zadig, and which driver did you install (WinUSB, libusb…)?
-   - Your Windows version: press Win+R, type `winver`, and send the line with the build number.
-8. **If the rings stay lit** after all this, switch the Spotykach off and on to get it back to playing.
+6. **Snapshot after:** without unplugging anything, run the same snippet again in the terminal (press the Up arrow, then Enter) and copy the output.
+7. **If the rings stay lit** after all this, switch the Spotykach off and on to get it back to playing.
+
+The snippet (PowerShell). Keep it on one line: a multi-line paste makes Windows Terminal ask "Paste anyway?" and leaves the last line waiting for another Enter.
+
+```powershell
+$os = Get-CimInstance Win32_OperatingSystem; "$($os.Caption) build $($os.BuildNumber)"; "Windows MIDI Service: " + $(try { (Get-Service midisrv -ErrorAction Stop).Status } catch { 'not installed' }); Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_0483' -or $_.FriendlyName -match 'Spotykach' } | ForEach-Object { [pscustomobject]@{ Status = $_.Status; Problem = $_.Problem; Class = $_.Class; Name = $_.FriendlyName; Driver = (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName DEVPKEY_Device_Service -ErrorAction SilentlyContinue).Data; Id = $_.InstanceId } } | Format-Table -AutoSize | Out-String -Width 220; "Zadig drivers:"; pnputil /enum-drivers | Select-String 'libwdi autogenerated'
+```
+
+What the two snapshots tell us (for us, not for Bay Mud):
+
+- **Windows build and the MIDI service:** whether the machine runs Windows MIDI Services (`midisrv`), like my PC.
+- **Every device Windows has seen for the Daisy's USB ID** (`0483`), and every Spotykach MIDI endpoint, present or not. For each: status, problem code, class and the driver it got.
+  - In MIDI mode the Spotykach shows as `MEDIA` with driver `usbaudio` and status OK (checked on my PC, Oct 18), plus its MIDI endpoints. In transfer mode the same `5740` entry should turn into `Ports` with driver `usbser` and status OK.
+  - A `5740` entry with `WinUSB` or `libusbK` as its driver means Zadig took over the serial port.
+  - A problem code such as `CM_PROB_FAILED_START` (Code 10) means the driver didn't start, like the Simple Touch on my laptop.
+  - Comparing the before and after snapshots shows whether the switch happened at all.
+- **Zadig drivers:** which USB IDs Zadig made drivers for. `PID_DF11` (the bootloader) is normal. `PID_5740` is the suspect.
+
+This replaces the Device Manager screenshots, `chrome://device-log` and the Zadig and `winver` questions of the earlier version. If the snapshots point somewhere specific, ask for those afterwards.
+
+### Reference: a machine where it works (my PC, Oct 18, firmware b2)
+
+Windows 11 Home build 26300, Windows MIDI Service running, Zadig drivers only for `PID_DF11`. The rows that matter (Daisy bootloader and Simple Touch rows left out):
+
+MIDI mode (playing, before Connect):
+
+```
+OK      CM_PROB_NONE    MidiEndpoint   Spotykach                            SWD\MIDISRV\MIDIU_KSA_…
+OK      CM_PROB_NONE    MEDIA          Spotykach                   usbaudio USB\VID_0483&PID_5740\336336683333
+OK      CM_PROB_NONE    SoftwareDevice Spotykach                            SWD\MMDEVAPI\MIDIU_KSA_…_0_0
+OK      CM_PROB_NONE    SoftwareDevice Spotykach                            SWD\MMDEVAPI\MIDIU_KSA_…_1_0
+```
+
+Transfer mode (connected in WAV Builder, rings lit):
+
+```
+Unknown CM_PROB_PHANTOM MidiEndpoint   Spotykach                            SWD\MIDISRV\MIDIU_KSA_…
+OK      CM_PROB_NONE    Ports          Serieel USB-apparaat (COM5) usbser   USB\VID_0483&PID_5740\336336683333
+Unknown CM_PROB_PHANTOM SoftwareDevice Spotykach                            SWD\MMDEVAPI\MIDIU_KSA_…_0_0
+Unknown CM_PROB_PHANTOM SoftwareDevice Spotykach                            SWD\MMDEVAPI\MIDIU_KSA_…_1_0
+```
+
+The same entry (`5740` plus the device's serial number) switches from `MEDIA`/`usbaudio` to `Ports`/`usbser`, and the MIDI endpoints go absent. In the diagnostics for that connect, the device replied after 0.22 s, its MIDI ports went at 0.30 s, and the serial port appeared at 1.47 s (all counted from sending the SysEx).
+
+How to read Bay Mud's output against this:
+
+- **Still `MEDIA`/`usbaudio` after Connect (rings lit or not):** Windows didn't switch drivers, or the device didn't switch.
+- **`Ports` with a problem code:** `usbser` was picked but didn't start.
+- **`5740` with `WinUSB` or `libusbK`:** Zadig's driver.
+- **No `MEDIA` row at all in MIDI mode, only MIDI endpoints:** a different MIDI setup from mine. Compare the Windows MIDI Service line.
