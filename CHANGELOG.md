@@ -2,11 +2,24 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.2] - 2026-10-18
+
 ### Fixed
 
 - **Connecting over USB no longer spins forever.** A step that stops responding (MIDI access,
   switching to transfer mode, opening the serial port) now ends in a message that names it.
   *Copy diagnostics* copies each step with its timing, to send along with a report.
+
+### Changed
+
+- **One place to build and import: Import / Build.** SD and USB in the header now pick the
+  route and show its status and what it reaches: USB connects, says which step failed and
+  offers *Copy diagnostics*; SD checks the card and lets you pick it (the card itself, not a
+  folder on it). Building a new project from the card is on the Import tab, *Into a new
+  project*. An empty project opens Import / Build on Import. The "?" help in Build & Import
+  now covers the card reader too, and the firmware link points to 1.4.0 beta 2.
 
 ---
 
@@ -73,12 +86,6 @@
 
 ### Changed
 
-- **One place to build and import: Import / Build.** SD and USB in the header now pick the
-  route and show its status and what it reaches: USB connects, says which step failed and
-  offers *Copy diagnostics*; SD checks the card and lets you pick it (the card itself, not a
-  folder on it). Building a new project from the card is on the Import tab, *Into a new
-  project*. An empty project opens Import / Build on Import. The "?" help in Build & Import
-  now covers the card reader too, and the firmware link points to 1.4.0 beta 2.
 - **Over USB, a card another project wrote is recognised.** A slot with the project file's
   name is compared with the file a build would write, a few KB read in place, nothing
   downloaded. Same sound: in sync. Other name or slices: a header update, nothing pooled.
