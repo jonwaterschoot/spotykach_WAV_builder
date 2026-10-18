@@ -5,6 +5,7 @@ import type { CardBackend, SlotDescriptor } from '../../lib/card/cardBackend';
 import { FolderBackend } from '../../lib/card/folderBackend';
 import { usbTransferSupported, useUsbTransferEnabled } from '../../lib/usb/flag';
 import { usbSession, useUsbSession } from '../../lib/usb/usbSession';
+import { UsbDiagnosticsButton } from '../../components/UsbDiagnosticsButton';
 import { useEscapeLayer } from '../../shell/escapeStack';
 import { TAPE_COLORS, type TapeColor } from '../../types';
 import { canPickFolder, ensureWorkspacePermission } from '../../utils/newProject';
@@ -212,6 +213,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({ mode, items = [], onClos
                                 </button>
                             )}
                             {usb.error && <p className="text-[12px] text-synthux-red">{usb.error}</p>}
+                            {usb.error && <UsbDiagnosticsButton />}
                         </>
                     )}
 

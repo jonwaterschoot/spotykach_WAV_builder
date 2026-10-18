@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AlertTriangle, Check, HelpCircle, Loader, Plug, Unplug, Usb } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { UsbState } from '../lib/usb/usbSession';
+import { UsbDiagnosticsButton } from './UsbDiagnosticsButton';
 
 export type CardSource = 'reader' | 'usb';
 
@@ -102,6 +103,7 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
     } else if (usb.status === 'needs-authorization') {
         status = <span className="flex items-start gap-1.5 text-amber-400"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> {usb.error}</span>;
         action = <>
+            <UsbDiagnosticsButton />
             {button(<><Usb size={12} /> Authorise port</>, onAuthorize, true)}
             {button('Try again', onConnect)}
         </>;
@@ -109,7 +111,10 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
         status = usb.error
             ? <span className="flex items-start gap-1.5 text-red-400"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> {usb.error}</span>
             : <span className="text-gray-500">Connect Spotykach to this computer through its rear USB-C port.</span>;
-        action = button(<><Plug size={12} /> {usb.error ? 'Try again' : 'Connect'}</>, onConnect, true);
+        action = <>
+            {usb.error && <UsbDiagnosticsButton />}
+            {button(<><Plug size={12} /> {usb.error ? 'Try again' : 'Connect'}</>, onConnect, true)}
+        </>;
     }
 
     return (

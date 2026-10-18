@@ -39,11 +39,34 @@ const set = (next: Partial<UsbState>) => {
 };
 
 const loadLink = () => import('@synthuxacademy/spotykach-transfer');
+const loadTraced = () => import('./tracedConnect');
 
 /** Starts loading the protocol code, so a later Authorise click doesn't wait on it. */
 export const preloadUsb = () => {
     void loadLink();
+    void loadTraced();
     void import('./usbBackend');
+};
+
+/** The steps of the last connect attempt, for "Copy diagnostics". */
+let trace: string[] = [];
+let traceStart = 0;
+
+const startTrace = (what: string) => {
+    trace = [];
+    traceStart = performance.now();
+    log(`${what} · ${new Date().toISOString()}`);
+};
+
+const log = (line: string) => {
+    const seconds = ((performance.now() - traceStart) / 1000).toFixed(2);
+    trace.push(`+${seconds}s ${line}`);
+    console.info(`[usb] ${line}`);
+};
+
+const endTrace = (error: unknown) => {
+    if (!error) log('connected');
+    else log(`failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
 };
 
 const adopt = async (connection: import('@synthuxacademy/spotykach-transfer').Connection): Promise<UsbBackend> => {
@@ -75,10 +98,14 @@ export const usbSession = {
         if (state.backend?.connected) return state.backend;
         if (state.status === 'connecting') return null;
         set({ status: 'connecting', error: null });
-        const link = await loadLink();
+        startTrace('connect');
+        const [link, { tracedConnect }] = await Promise.all([loadLink(), loadTraced()]);
         try {
-            return await adopt(await link.connect());
+            const backend = await adopt(await tracedConnect(log));
+            endTrace(null);
+            return backend;
         } catch (e) {
+            endTrace(e);
             const message = e instanceof Error ? e.message : String(e);
             const waiting = e instanceof link.NeedsAuthorizationError || e instanceof link.MidiPortNotFoundError;
             set({ status: waiting ? 'needs-authorization' : 'error', error: message });
@@ -89,10 +116,14 @@ export const usbSession = {
     /** The browser's port picker. Must run straight from a click. */
     async authorize(): Promise<UsbBackend | null> {
         set({ status: 'connecting', error: null });
-        const link = await loadLink();
+        startTrace('authorise port');
+        const { tracedAuthorize } = await loadTraced();
         try {
-            return await adopt(await link.authorizePort());
+            const backend = await adopt(await tracedAuthorize(log));
+            endTrace(null);
+            return backend;
         } catch (e) {
+            endTrace(e);
             // Picker closed without a choice: the device may still be waiting.
             const cancelled = e instanceof DOMException && e.name === 'NotFoundError';
             set({
@@ -103,6 +134,17 @@ export const usbSession = {
             });
             return null;
         }
+    },
+
+    /** The last connect attempt, step by step, with the browser and app version. */
+    diagnostics(): string {
+        return [
+            `WAV Builder ${typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '?'}`,
+            navigator.userAgent,
+            `status: ${state.status}${state.error ? ` (${state.error})` : ''}`,
+            '',
+            ...(trace.length ? trace : ['No connect attempt yet.']),
+        ].join('\n');
     },
 
     /** EXIT: the device goes back to MIDI and plays again. */

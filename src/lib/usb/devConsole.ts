@@ -64,6 +64,13 @@ const api = {
         return settle(await usbSession.authorize());
     },
 
+    /** The last connect attempt, step by step. */
+    diagnostics() {
+        const text = usbSession.diagnostics();
+        console.info(text);
+        return text;
+    },
+
     async info() {
         return need().info();
     },

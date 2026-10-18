@@ -4,6 +4,7 @@ import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { UsbState } from '../lib/usb/usbSession';
 import type { CardSource } from './CardSourceBar';
 import { useEscapeLayer } from '../shell/escapeStack';
+import { UsbDiagnosticsButton } from './UsbDiagnosticsButton';
 
 export type ReaderCheck =
     | { status: 'checking' }
@@ -62,6 +63,7 @@ export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
                             {usb.info?.freeKiB !== undefined && ` · ${formatSize(usb.info.freeKiB)} free`}
                             . Its audio is muted until you disconnect.
                         </span>
+                        <UsbDiagnosticsButton className="mt-1.5" />
                     </span>
                 </p>
             );
@@ -75,6 +77,7 @@ export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
                         <button onClick={onAuthorize} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"><Usb size={13} /> Authorise port</button>
                         <button onClick={onConnect} className="px-4 py-2 rounded-lg border border-white/10 text-gray-300 hover:text-white text-xs font-bold">Try again</button>
                     </div>
+                    <UsbDiagnosticsButton className="w-fit" />
                 </div>
             );
         } else {
@@ -87,6 +90,7 @@ export const CardRouteDialog: React.FC<CardRouteDialogProps> = ({
                     <button onClick={onConnect} className="w-fit flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold">
                         <Plug size={13} /> {usb.error ? 'Try again' : 'Connect'}
                     </button>
+                    {usb.error && <UsbDiagnosticsButton className="w-fit" />}
                 </div>
             );
         }
