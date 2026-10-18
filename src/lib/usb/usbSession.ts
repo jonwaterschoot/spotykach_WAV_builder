@@ -91,6 +91,7 @@ const adopt = async (connection: import('@synthuxacademy/spotykach-transfer').Co
     const backend = new UsbBackend(connection);
     backend.ondisconnect = (error) => {
         if (state.backend !== backend) return;
+        log(`connection ended by the device or the cable: ${error.message}`);
         set({ status: 'idle', backend: null, info: null, error: `Spotykach disconnected: ${error.message}`, step: null });
     };
     set({ status: 'connected', backend, info: await backend.info(), error: null, step: null });
@@ -168,6 +169,7 @@ export const usbSession = {
     /** EXIT: the device goes back to MIDI and plays again. */
     async disconnect(): Promise<void> {
         const backend = state.backend;
+        if (backend) log('disconnected from the app (EXIT sent)');
         set({ status: 'idle', backend: null, info: null, error: null, step: null });
         await backend?.close().catch(() => {});
     },
