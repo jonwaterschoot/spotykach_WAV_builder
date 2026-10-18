@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Connecting over USB no longer spins forever.** A step that stops responding (MIDI access,
+  switching to transfer mode, opening the serial port) now ends in a message that names it.
+  *Copy diagnostics* copies each step with its timing, to send along with a report.
+
 ---
 
 ## [4.2.1] - 2026-10-16
