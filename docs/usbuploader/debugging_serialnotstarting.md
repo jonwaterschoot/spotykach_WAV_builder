@@ -60,7 +60,7 @@ After a reboot, with the Spotykach connected:
    - If the switching step times out after the Spotykach MIDI port has disappeared, the device did switch, so it carries on and waits for the serial port.
    - After a failure, "Copy diagnostics" copies the app version, browser and the timed steps (`usbSession.diagnostics()`, or `skUsb.diagnostics()` in the console).
 2. My own device is on b2 (Oct 18), and the dry run of the steps below passed.
-3. First make the SD and USB controls clear: see `card-route-ui-plan.md`. Then update the steps below to match, deploy, and send them to Bay Mud.
+3. SD and USB controls made clear (Oct 18, see `card-route-ui-plan.md`), and the steps below updated to match. Still to do: deploy, then send them to Bay Mud.
 4. Optional, separately: the Simple Touch's Code 10 on the laptop. Remove its stale `5740` entry (`pnputil /remove-device`), plug it back in, and read the end of `C:\Windows\INF\setupapi.dev.log`.
 ## Retest steps for Bay Mud
 
@@ -68,8 +68,8 @@ Only send this once the diagnostics build is deployed: without it, step 4 has no
 
 1. **Flash firmware 1.4.0 beta 2**, the same way as before. Download [spotykach_1.4.0.b2.bin](https://github.com/Synthux-Academy/Spotykach/releases/download/v1.4.0.b2/spotykach_1.4.0.b2.bin). Connect the rear USB-C port, hold Reset on the back for about 3 s until the lights under the bottom pads breathe white, and flash the file with the Daisy web programmer. b2 is b1 with only the version number corrected; it makes sure we both run the same build.
 2. **Before testing:** close the Daisy web programmer tab and any app that uses MIDI (DAW, MIDI monitors). Unplug the Spotykach and plug it straight back into a USB port on the computer, not a hub.
-3. **Connect:** open https://jonwaterschoot.github.io/spotykach_WAV_builder/#/studio?usb=1 in Chrome and reload it with Ctrl+Shift+R so you get the new build. The link opens Studio with USB transfer switched on (the same switch as Settings ▸ System ▸ USB transfer). Switch the card in the header from SD to USB, then click Connect. Note whether the rings on the Spotykach light up.
-4. **Copy the diagnostics:** within about 30 s it should stop with a message instead of spinning. Click "Copy diagnostics" and paste the result. If it does connect, the button is under the green "connected" line: paste that too (and try an upload).
+3. **Connect:** open https://jonwaterschoot.github.io/spotykach_WAV_builder/#/studio?usb=1 in Chrome and reload it with Ctrl+Shift+R so you get the new build. The link opens Studio with USB transfer switched on (the same switch as Settings ▸ System ▸ USB transfer). Click **USB** in the header, next to Import / Build. That connects straight away and opens a window with the connection status. Note whether the rings on the Spotykach light up.
+4. **Copy the diagnostics:** within about 30 s that window should stop with a message, and the step it stopped at, instead of spinning. Click "Copy diagnostics" in the window and paste the result. If it does connect, "Copy diagnostics" is next to Disconnect: paste that too, then close the window and try an upload with Import / Build.
    - If it still spins after 30 s, press F12 and open Console. Type `[usb]` in its Filter box, so only our lines are left, then select and copy those.
 5. **Device Manager**, while it's stuck or right after: Win+X ▸ Device Manager ▸ View ▸ Show hidden devices. Screenshot these sections expanded: *Sound, video and game controllers*, *Ports (COM & LPT)*, *Universal Serial Bus devices* and *Universal Serial Bus controllers*. Any entry with a yellow mark: double-click it and copy the text under "Device status".
 6. **Chrome's device log:** open `chrome://device-log` in a new tab right after an attempt and copy what's there.

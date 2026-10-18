@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
 import { DISCORD_HANDLE, submissionEmail, submissionGuideLink, submissionMailto } from '../data/links';
 import { hashForMode, modeFromHash } from '../shell/useAppMode';
+import { USB_FIRMWARE } from '../lib/usb/flag';
 
 interface AboutHelpModalProps {
     onClose: () => void;
@@ -18,6 +19,8 @@ interface AboutHelpModalProps {
      */
     onReset?: () => void;
     initialTab?: 'about' | 'help' | 'contribute';
+    /** The Help section to open, for example 'formatting'. */
+    initialSection?: string;
 }
 
 
@@ -150,9 +153,9 @@ const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
     );
 };
 
-export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: AboutHelpModalProps) => {
+export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initialSection }: AboutHelpModalProps) => {
     const [activeTab, setActiveTab] = useState<'about' | 'help' | 'contribute'>(initialTab);
-    const [expandedSection, setExpandedSection] = useState<string | null>('concepts');
+    const [expandedSection, setExpandedSection] = useState<string | null>(initialSection ?? 'concepts');
     const [linkCopied, setLinkCopied] = useState(false);
     const copyGuideLink = () => {
         void navigator.clipboard?.writeText(submissionGuideLink()).then(() => {
@@ -665,16 +668,16 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about' }: About
                                     </div>
                                     <ol className="list-decimal list-inside space-y-2">
                                         <li>
-                                            <strong className="text-white">Flash firmware 1.4.0 beta 1</strong> from Synthux's GitHub:{' '}
-                                            <a href="https://github.com/Synthux-Academy/Spotykach/releases/tag/v.1.4.0.b1" target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">Spotykach v.1.4.0.b1</a>.
+                                            <strong className="text-white">Flash firmware {USB_FIRMWARE.version}</strong> from Synthux's GitHub:{' '}
+                                            <a href={USB_FIRMWARE.url} target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">Spotykach v1.4.0.b2</a>.
                                         </li>
                                         <li><strong className="text-white">Switch it on</strong> in Studio's <em>Settings ▸ System ▸ USB transfer</em>. It needs Chrome or Edge on a computer.</li>
                                         <li><strong className="text-white">Connect directly:</strong> a good data cable into a USB-A port on the computer, as in the table above.</li>
                                     </ol>
                                     <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-2">
-                                        <p><strong className="text-white">Studio:</strong> switch the card to USB in the header, then build to the card, import into the project, or start a new project from the card. You review every slot first.</p>
+                                        <p><strong className="text-white">Studio:</strong> click <em>USB</em> in the header. It connects and shows the status, what USB reaches and what to try if it doesn't connect (with <em>Copy diagnostics</em>). Then build or import with <em>Import / Build</em>: you review every slot first. <em>Import ▸ Into a new project</em> starts a clean project from the card.</p>
                                         <p><strong className="text-white">Preset to SD Card:</strong> <em>Write to SD card ▸ Over USB</em> shows which slots the preset fills and which files it replaces, and can save those to a ZIP first.</p>
-                                        <p><strong className="text-white">Only the slots.</strong> USB reaches the 36 slot files; <code className="bg-gray-800 px-1 rounded">config.txt</code> and the project copy on the card need the card reader.</p>
+                                        <p><strong className="text-white">Only the slots.</strong> USB reaches the 36 slot files; <code className="bg-gray-800 px-1 rounded">config.txt</code>, the notes, the project copy and the SK backup on the card need the card reader.</p>
                                         <p><strong className="text-white">Transfer mode.</strong> While connected the Spotykach is silent; it plays again when you disconnect. If the cable comes out, the slot being written keeps its old file, and <em>Continue</em> picks up where it stopped.</p>
                                         <p><strong className="text-white">Windows:</strong> close apps that hold the Spotykach's MIDI port (your DAW) before connecting.</p>
                                     </div>

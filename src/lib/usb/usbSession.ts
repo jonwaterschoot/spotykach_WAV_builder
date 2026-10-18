@@ -28,9 +28,11 @@ export interface UsbState {
     info: CardInfo | null;
     /** Why the last attempt failed, or why the connection was lost. */
     error: string | null;
+    /** The connect step that failed ("Switching to transfer mode"), with `error`. */
+    step: string | null;
 }
 
-let state: UsbState = { status: 'idle', backend: null, info: null, error: null };
+let state: UsbState = { status: 'idle', backend: null, info: null, error: null, step: null };
 const listeners = new Set<() => void>();
 
 const set = (next: Partial<UsbState>) => {
@@ -51,16 +53,31 @@ export const preloadUsb = () => {
 /** The steps of the last connect attempt, for "Copy diagnostics". */
 let trace: string[] = [];
 let traceStart = 0;
+/** The step the last attempt reached, named for the UI. */
+let currentStep: string | null = null;
+
+/** The trace lines that start a step (`tracedConnect.ts`), and what to call it. */
+const STEPS: [RegExp, string][] = [
+    [/^serial ports granted/, 'Looking for a granted port'],
+    [/^MIDI SysEx permission|^MIDI access/, 'MIDI access'],
+    [/^sending SysEx/, 'Switching to transfer mode'],
+    [/^waiting for the serial port/, 'Waiting for the serial port'],
+    [/^showing the port picker/, 'Port picker'],
+    [/^opening serial port/, 'Opening the serial port (HELLO)'],
+];
 
 const startTrace = (what: string) => {
     trace = [];
     traceStart = performance.now();
+    currentStep = null;
     log(`${what} · ${new Date().toISOString()}`);
 };
 
 const log = (line: string) => {
     const seconds = ((performance.now() - traceStart) / 1000).toFixed(2);
     trace.push(`+${seconds}s ${line}`);
+    const step = STEPS.find(([pattern]) => pattern.test(line));
+    if (step) currentStep = step[1];
     console.info(`[usb] ${line}`);
 };
 
@@ -74,9 +91,9 @@ const adopt = async (connection: import('@synthuxacademy/spotykach-transfer').Co
     const backend = new UsbBackend(connection);
     backend.ondisconnect = (error) => {
         if (state.backend !== backend) return;
-        set({ status: 'idle', backend: null, info: null, error: `Spotykach disconnected: ${error.message}` });
+        set({ status: 'idle', backend: null, info: null, error: `Spotykach disconnected: ${error.message}`, step: null });
     };
-    set({ status: 'connected', backend, info: await backend.info(), error: null });
+    set({ status: 'connected', backend, info: await backend.info(), error: null, step: null });
     return backend;
 };
 
@@ -97,7 +114,7 @@ export const usbSession = {
     async connect(): Promise<UsbBackend | null> {
         if (state.backend?.connected) return state.backend;
         if (state.status === 'connecting') return null;
-        set({ status: 'connecting', error: null });
+        set({ status: 'connecting', error: null, step: null });
         startTrace('connect');
         const [link, { tracedConnect }] = await Promise.all([loadLink(), loadTraced()]);
         try {
@@ -108,14 +125,14 @@ export const usbSession = {
             endTrace(e);
             const message = e instanceof Error ? e.message : String(e);
             const waiting = e instanceof link.NeedsAuthorizationError || e instanceof link.MidiPortNotFoundError;
-            set({ status: waiting ? 'needs-authorization' : 'error', error: message });
+            set({ status: waiting ? 'needs-authorization' : 'error', error: message, step: waiting ? null : currentStep });
             return null;
         }
     },
 
     /** The browser's port picker. Must run straight from a click. */
     async authorize(): Promise<UsbBackend | null> {
-        set({ status: 'connecting', error: null });
+        set({ status: 'connecting', error: null, step: null });
         startTrace('authorise port');
         const { tracedAuthorize } = await loadTraced();
         try {
@@ -131,6 +148,7 @@ export const usbSession = {
                 error: cancelled
                     ? 'No port selected. If the rings on Spotykach are lit, click Authorise port and select it.'
                     : e instanceof Error ? e.message : String(e),
+                step: cancelled ? null : currentStep,
             });
             return null;
         }
@@ -150,7 +168,7 @@ export const usbSession = {
     /** EXIT: the device goes back to MIDI and plays again. */
     async disconnect(): Promise<void> {
         const backend = state.backend;
-        set({ status: 'idle', backend: null, info: null, error: null });
+        set({ status: 'idle', backend: null, info: null, error: null, step: null });
         await backend?.close().catch(() => {});
     },
 

@@ -67,3 +67,16 @@ Users can't tell which one to click to upload, build or import. Both have the ac
 - SD: click SD → the dialog shows whether the card is there and lets you pick it → Import / Build works with the reader.
 - Import into a new project (whole card, and choose slots) still works from its new place.
 - `npx tsc -b` and `npx eslint` pass, and the steps above have been run once in the dev server with the Spotykach on b2.
+
+## Status (Oct 18)
+
+Steps 1–7 are in the code. What went where:
+
+- `CardRouteDialog` is now `CardRouteInfoDialog`: status, Connect / Authorise / Try again / Disconnect, Copy diagnostics, Pick / Change card, the info, and the pointer to Import / Build.
+- The info text lives in `CardRouteInfo.tsx` (`UsbRouteInfo`, `ReaderRouteInfo`). The dialog, the modal's "?" panel (now on both routes) and the Mangler's card dialog all use it.
+- "Into a new project" (Whole card, Choose slots…) is on the modal's Import tab.
+- Import / Build opens on Import with "Merge into project" when the project is empty. The no-review "whole card into this empty project" is gone: that preset plus Apply does the same.
+- A failed connect also says which step it stopped at (`UsbState.step`).
+- The firmware links point to b2 (`USB_FIRMWARE`).
+
+Still to do: the dev-server run with the Spotykach on b2. The USB-off SD dialog (first open question) is not part of this change.

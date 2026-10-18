@@ -3,6 +3,7 @@ import { AlertTriangle, Check, HelpCircle, Loader, Plug, Unplug, Usb } from 'luc
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import type { UsbState } from '../lib/usb/usbSession';
 import { UsbDiagnosticsButton } from './UsbDiagnosticsButton';
+import { ReaderRouteInfo, UsbRouteInfo } from './CardRouteInfo';
 
 export type CardSource = 'reader' | 'usb';
 
@@ -109,7 +110,7 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
         </>;
     } else {
         status = usb.error
-            ? <span className="flex items-start gap-1.5 text-red-400"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> {usb.error}</span>
+            ? <span className="flex items-start gap-1.5 text-red-400"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> <span>{usb.error}{usb.step && <span className="text-gray-500"> · stopped at: {usb.step}</span>}</span></span>
             : <span className="text-gray-500">Connect Spotykach to this computer through its rear USB-C port.</span>;
         action = <>
             {usb.error && <UsbDiagnosticsButton />}
@@ -127,31 +128,18 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
                 <div className="text-[11px] min-w-0 flex-1">{status}</div>
                 <div className="flex items-center gap-2">
                     {action}
-                    {source === 'usb' && (
-                        <button
-                            type="button"
-                            onClick={() => setShowHelp(v => !v)}
-                            aria-expanded={showHelp}
-                            title="USB transfer help"
-                            className={`p-1.5 rounded-lg transition-colors ${showHelp ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}
-                        >
-                            <HelpCircle size={14} />
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        onClick={() => setShowHelp(v => !v)}
+                        aria-expanded={showHelp}
+                        title={source === 'usb' ? 'USB transfer help' : 'Card reader help'}
+                        className={`p-1.5 rounded-lg transition-colors ${showHelp ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}
+                    >
+                        <HelpCircle size={14} />
+                    </button>
                 </div>
             </div>
-            {source === 'usb' && showHelp && (
-                <ul className="text-[11px] text-gray-400 leading-relaxed list-disc pl-5 flex flex-col gap-0.5">
-                    <li>Needs firmware with USB transfer, and Chrome, Edge or another Chromium browser on a computer.</li>
-                    <li>Connect Spotykach straight to a USB-A port on the computer with a good data cable. Avoid hubs, even powered ones: transfers there stalled and dropped off. Front USB-C ports can run at half speed.</li>
-                    <li>Connect sends Spotykach into transfer mode: its rings light up and its audio is muted. Disconnect, or Play A or Play B on the device, brings it back.</li>
-                    <li>The first time, the browser asks which port to use: select Spotykach. If that window was closed while the rings are lit, click Authorise port.</li>
-                    <li>Windows: close apps that hold the Spotykach MIDI port (your DAW) before connecting.</li>
-                    <li>Linux: your user needs to be in the <code>dialout</code> group for the serial port.</li>
-                    <li>USB reaches the 36 slot files only. config.txt, the project copy on the card and Snapshot card to project need the card reader.</li>
-                    <li>A full slot takes about 35 s each way (477 KB/s). For a full rebuild the card reader is much faster.</li>
-                </ul>
-            )}
+            {showHelp && (source === 'usb' ? <UsbRouteInfo compact /> : <ReaderRouteInfo compact />)}
             {cardNote && (
                 <p className={`text-[11px] flex items-start gap-1.5 ${cardNoteIsWarning ? 'text-amber-400' : 'text-gray-400'}`}>
                     <AlertTriangle size={12} className="shrink-0 mt-0.5" />

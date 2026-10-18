@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Download, HardDrive, Loader, Upload, Usb, X } from 'lucide-react';
+import { Check, Download, HardDrive, HelpCircle, Loader, Upload, Usb, X } from 'lucide-react';
 import { toSlotFile } from '../../lib/audio/slotFile';
 import type { CardBackend, SlotDescriptor } from '../../lib/card/cardBackend';
 import { FolderBackend } from '../../lib/card/folderBackend';
 import { usbTransferSupported, useUsbTransferEnabled } from '../../lib/usb/flag';
 import { usbSession, useUsbSession } from '../../lib/usb/usbSession';
 import { UsbDiagnosticsButton } from '../../components/UsbDiagnosticsButton';
+import { ReaderRouteInfo, UsbRouteInfo } from '../../components/CardRouteInfo';
 import { useEscapeLayer } from '../../shell/escapeStack';
 import { TAPE_COLORS, type TapeColor } from '../../types';
 import { canPickFolder, ensureWorkspacePermission } from '../../utils/newProject';
@@ -67,6 +68,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({ mode, items = [], onClos
     const [progress, setProgress] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState<string | null>(null);
+    const [showHelp, setShowHelp] = useState(false);
 
     const close = () => { if (route === 'usb') void usbSession.disconnect(); onClose(); };
     useEscapeLayer(true, () => { if (progress === null) close(); return true; });
@@ -195,6 +197,23 @@ export const CardDialog: React.FC<CardDialogProps> = ({ mode, items = [], onClos
                         </div>
                     )}
 
+                    {route && (
+                        <div className="flex justify-end -mt-2">
+                            <button onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp}
+                                className={`flex items-center gap-1 text-[11px] ${showHelp ? 'text-white' : 'text-gray-500 hover:text-white'}`}>
+                                <HelpCircle size={12} /> {route === 'usb' ? 'About USB' : 'About the card reader'}
+                            </button>
+                        </div>
+                    )}
+                    {showHelp && route === 'usb' && <UsbRouteInfo compact className="rounded-lg border border-white/10 bg-black/20 p-3" />}
+                    {showHelp && route === 'sd' && <ReaderRouteInfo compact className="rounded-lg border border-white/10 bg-black/20 p-3" />}
+
+                    {route === 'usb' && usb.status === 'connected' && (
+                        <p className="flex items-center gap-1.5 text-[12px] text-synthux-green">
+                            <Check size={13} /> {usb.info?.label ?? 'Spotykach'} is connected. Its audio is muted until you close this.
+                        </p>
+                    )}
+
                     {route === 'usb' && usb.status !== 'connected' && (
                         <>
                             <p className="text-[12px] text-gray-400">
@@ -202,17 +221,28 @@ export const CardDialog: React.FC<CardDialogProps> = ({ mode, items = [], onClos
                                 when you close this.
                             </p>
                             {usb.status === 'needs-authorization' ? (
-                                <button onClick={() => void usbSession.authorize()}
-                                    className="w-full px-4 py-2 rounded-lg font-bold border border-synthux-orange/40 bg-synthux-orange/10 text-synthux-orange hover:bg-synthux-orange/20">
-                                    Authorise port
-                                </button>
+                                <div className="flex gap-2">
+                                    <button onClick={() => void usbSession.authorize()}
+                                        className="flex-1 px-4 py-2 rounded-lg font-bold border border-synthux-orange/40 bg-synthux-orange/10 text-synthux-orange hover:bg-synthux-orange/20">
+                                        Authorise port
+                                    </button>
+                                    <button onClick={() => void usbSession.connect()}
+                                        className="px-4 py-2 rounded-lg font-bold border border-white/10 text-gray-300 hover:bg-white/5">
+                                        Try again
+                                    </button>
+                                </div>
                             ) : (
                                 <button onClick={() => void usbSession.connect()} disabled={usb.status === 'connecting'}
                                     className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold border border-synthux-orange/40 bg-synthux-orange/10 text-synthux-orange hover:bg-synthux-orange/20 disabled:opacity-50">
                                     {usb.status === 'connecting' ? <Loader size={14} className="animate-spin" /> : <Usb size={14} />} Connect
                                 </button>
                             )}
-                            {usb.error && <p className="text-[12px] text-synthux-red">{usb.error}</p>}
+                            {usb.error && (
+                                <p className={`text-[12px] ${usb.status === 'needs-authorization' ? 'text-synthux-yellow' : 'text-synthux-red'}`}>
+                                    {usb.error}
+                                    {usb.step && usb.status !== 'needs-authorization' && <span className="block text-gray-500">Stopped at: {usb.step}</span>}
+                                </p>
+                            )}
                             {usb.error && <UsbDiagnosticsButton />}
                         </>
                     )}

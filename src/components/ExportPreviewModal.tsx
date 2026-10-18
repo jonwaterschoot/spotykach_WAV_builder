@@ -80,6 +80,11 @@ interface ExportPreviewModalProps {
     usbMode?: boolean;
     /** Why nothing can be applied right now (USB not connected). */
     blockedReason?: string;
+    /**
+     * Import tab: the card into a clean project instead, every slot in its place
+     * (`whole`, no review) or reviewed slot by slot.
+     */
+    onImportIntoNewProject?: (whole: boolean) => void;
 }
 
 /** Measured on Windows, uploader firmware: 460–481 KB/s up, 470 KB/s down. */
@@ -538,7 +543,7 @@ const CardLossPanel: React.FC<{
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     isOpen, onClose, onConfirm, diff: cardDiff, projectName, defaultMode = 'push', defaultPreset,
     onRefresh, isRefreshing, onChangeSDCard, cardMissing = false,
-    sourceBar, usbMode = false, blockedReason,
+    sourceBar, usbMode = false, blockedReason, onImportIntoNewProject,
 }) => {
     // USB can't reach config.txt: leave it out of the decisions, show it as locked.
     const diff = useMemo(() => usbMode ? { ...cardDiff, config: undefined } : cardDiff, [cardDiff, usbMode]);
@@ -1080,6 +1085,32 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 onClick={() => applyPreset(preset)}
                             />
                         ))}
+                        {mode === 'import' && onImportIntoNewProject && (
+                            <div className="w-[210px] flex flex-col gap-1.5 px-4 py-2.5 rounded-xl border border-dashed border-white/10 text-left">
+                                <span className="text-[11px] font-black uppercase tracking-widest text-gray-400">Into a new project</span>
+                                <span className="text-[10px] leading-snug font-medium text-gray-600">
+                                    A clean project with every card slot in the same slot.{usbMode && ' Over USB a full slot takes about 35 s.'}
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                    <button
+                                        onClick={() => onImportIntoNewProject(true)}
+                                        disabled={!!blockedReason || cardMissing}
+                                        title="Every slot, without a review"
+                                        className="px-2 py-1 rounded-md border border-white/10 text-[10px] font-bold text-gray-300 hover:text-white hover:border-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Whole card
+                                    </button>
+                                    <button
+                                        onClick={() => onImportIntoNewProject(false)}
+                                        disabled={!!blockedReason || cardMissing}
+                                        title="Review every slot first"
+                                        className="px-2 py-1 rounded-md border border-white/10 text-[10px] font-bold text-gray-300 hover:text-white hover:border-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Choose slots…
+                                    </button>
+                                </span>
+                            </div>
+                        )}
                     </div>
                     {isAdvanced && (
                         <div className="flex items-center gap-4 ml-auto">

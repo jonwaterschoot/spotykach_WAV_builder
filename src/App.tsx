@@ -75,7 +75,7 @@ import { useUsbTransferEnabled } from './lib/usb/flag';
 import { preloadUsb, usbSession, useUsbSession } from './lib/usb/usbSession';
 import { CardSourceBar, type CardSource } from './components/CardSourceBar';
 import { TransferProgressModal } from './components/TransferProgressModal';
-import { CardRouteDialog, type ReaderCheck } from './components/CardRouteDialog';
+import { CardRouteInfoDialog, type ReaderCheck } from './components/CardRouteInfoDialog';
 import { useTransferJob } from './session/transferJob';
 import { describeSnapshotCheck, importedSnapshotSlot } from './lib/card/cardSnapshot';
 import type { CardBackend } from './lib/card/cardBackend';
@@ -149,6 +149,8 @@ function App({ onExitToHub }: AppProps) {
   // Modals & UI State
   const [showAboutHelp, setShowAboutHelp] = useState(false);
   const [aboutHelpTab, setAboutHelpTab] = useState<'about' | 'help'>('about');
+  /** The Help section to open on, once (the route dialog's formatting link). */
+  const [aboutHelpSection, setAboutHelpSection] = useState<string | undefined>(undefined);
   const [showProjectNotes, setShowProjectNotes] = useState(false);
   const [isProjectNotesMinimized, setIsProjectNotesMinimized] = useState(false);
 
@@ -325,7 +327,7 @@ function App({ onExitToHub }: AppProps) {
   }, [usbEnabled]);
   /** The running (or just finished) sync, for the transfer window. */
   const transfer = useTransferJob();
-  /** The header's SD | USB toggle: gets the route ready and asks what to do with the card. */
+  /** The header's SD | USB toggle: picks the route, gets it ready and says what it reaches. */
   const [routeDialog, setRouteDialog] = useState<CardSource | null>(null);
   const [readerCheck, setReaderCheck] = useState<ReaderCheck>({ status: 'checking' });
   const [usbSlots, setUsbSlots] = useState<number | null>(null);
@@ -1400,28 +1402,22 @@ function App({ onExitToHub }: AppProps) {
     if (route === 'usb' && !backend?.connected && status !== 'connecting') void usbSession.connect();
   };
 
-  const startFromCardRoute = (mode: 'push' | 'import') => {
-    const source = routeDialog ?? cardSource;
-    setRouteDialog(null);
-    // Into an empty project, every card slot goes to its own place.
-    void handleOpenSyncModal(mode, { source, preset: mode === 'import' && projectIsEmpty ? 'import_merge_project' : undefined });
-  };
-
-  /** The open project, when it is empty: the whole card can go straight in. */
-  const importWholeCardHere = () => {
-    const source = routeDialog ?? cardSource;
-    setRouteDialog(null);
-    if (!currentProjectName) { importCardIntoNewProject(true); return; }
-    void importWholeCard(source, state, currentProjectName);
+  /**
+   * Import / Build in the header. An empty project opens on Import, with every
+   * card slot going to its own place: there is nothing to build.
+   */
+  const openImportBuild = () => {
+    void handleOpenSyncModal(projectIsEmpty ? 'import' : 'push', { preset: projectIsEmpty ? 'import_merge_project' : undefined });
   };
 
   /**
-   * A clean project, then the card into it: `whole` copies every slot into its
-   * place straight away, otherwise the import opens to choose slots.
+   * Import tab ▸ Into a new project: a clean project, then the card into it.
+   * `whole` copies every slot into its place straight away, otherwise the import
+   * opens again to choose slots.
    */
   const importCardIntoNewProject = (whole: boolean) => {
-    const source = routeDialog ?? cardSource;
-    setRouteDialog(null);
+    const source = cardSource;
+    setSyncModalState(null);
     if (!workHandle) { handleSetWorkFolder(); return; }
     checkUnsavedChanges(() => {
       setProjectNameModal({
@@ -5138,7 +5134,7 @@ function App({ onExitToHub }: AppProps) {
                       </button>
                     </div>
                     <button
-                      onClick={() => handleOpenSyncModal('push')}
+                      onClick={openImportBuild}
                       className="flex items-center gap-1.5 px-3 border-l border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 transition-all text-[11px] font-bold uppercase tracking-wider"
                       title={cardSource === 'usb' ? 'Import / Build over USB' : 'Import / Build with the card reader'}
                     >
@@ -5148,7 +5144,7 @@ function App({ onExitToHub }: AppProps) {
                   </div>
                 ) : sdHandle && (
                   <button
-                    onClick={() => handleOpenSyncModal('push')}
+                    onClick={openImportBuild}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 hover:text-white hover:bg-orange-500/15 hover:border-orange-500/50 transition-all text-[11px] font-bold uppercase tracking-wider"
                     title="Sync with SD Card (Import/Build)"
                   >
@@ -5667,7 +5663,7 @@ function App({ onExitToHub }: AppProps) {
 
 
 
-            {showAboutHelp && <AboutHelpModal initialTab={aboutHelpTab} onClose={() => setShowAboutHelp(false)} onReset={handleReset} />}
+            {showAboutHelp && <AboutHelpModal initialTab={aboutHelpTab} initialSection={aboutHelpSection} onClose={() => { setShowAboutHelp(false); setAboutHelpSection(undefined); }} onReset={handleReset} />}
             {showNews && <NewsModal onClose={() => setShowNews(false)} />}
             <SettingsModal
               isOpen={showSettings}
@@ -5955,6 +5951,7 @@ function App({ onExitToHub }: AppProps) {
                     />
                   );
                 })() : undefined}
+                onImportIntoNewProject={importCardIntoNewProject}
                 onClose={() => setSyncModalState(null)}
                 onConfirm={(decisions, options: ExportOptions, importDecisions) => {
                   const { projectName, diff } = syncModalState;
@@ -6391,21 +6388,17 @@ function App({ onExitToHub }: AppProps) {
       }
 
       {routeDialog && (
-        <CardRouteDialog
+        <CardRouteInfoDialog
           route={routeDialog}
           usb={usb}
           usbSlots={usbSlots}
           reader={readerCheck}
-          projectName={currentProjectName || undefined}
           onConnect={() => { void usbSession.connect(); }}
           onAuthorize={() => { void usbSession.authorize(); }}
+          onDisconnect={() => { void usbSession.disconnect(); }}
           onPickFolder={handleSetSDFolder}
-          onBuild={() => startFromCardRoute('push')}
-          projectEmpty={projectIsEmpty}
-          onImportHere={() => startFromCardRoute('import')}
-          onImportWholeHere={importWholeCardHere}
-          onImportWholeNew={() => importCardIntoNewProject(true)}
-          onChooseSlotsNew={() => importCardIntoNewProject(false)}
+          onOpenFormatting={() => { setRouteDialog(null); setAboutHelpTab('help'); setAboutHelpSection('formatting'); setShowAboutHelp(true); }}
+          onOpenImportBuild={() => { setRouteDialog(null); openImportBuild(); }}
           onClose={() => setRouteDialog(null)}
         />
       )}
