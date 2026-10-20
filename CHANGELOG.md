@@ -8,6 +8,9 @@
   Export menu, and in the Kept and Selected menus (as a zip), writes a 16-bit WAV with a cue
   point per slice (up to 128) and no Spotykach metadata, the layout the M8 sampler reads. On the
   M8, set SLICE to 01 FILE. The download button and the Spotykach files are unchanged.
+- **USB diagnostics: late MIDI access and copy time.** When the browser gives (or refuses)
+  access to MIDI after the time limit, the diagnostics say how late it came. They now end with the moment
+  they were copied, so a step with no answer by then shows as still waiting.
 
 ---
 

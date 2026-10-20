@@ -39,14 +39,17 @@ class StepTimeout extends Error {
     }
 }
 
-/** Rejects after `ms`; `onLate` gets a result that arrives after that. */
-const within = <T>(promise: Promise<T>, ms: number, message: string, onLate?: (value: T) => void): Promise<T> =>
+/** Rejects after `ms`; `onLate` and `onLateError` get a result or error that arrives after that. */
+const within = <T>(
+    promise: Promise<T>, ms: number, message: string,
+    onLate?: (value: T) => void, onLateError?: (error: unknown) => void,
+): Promise<T> =>
     new Promise((resolve, reject) => {
         let late = false;
         const timer = setTimeout(() => { late = true; reject(new StepTimeout(message)); }, ms);
         promise.then(
             value => { if (late) onLate?.(value); else { clearTimeout(timer); resolve(value); } },
-            error => { if (!late) { clearTimeout(timer); reject(error); } },
+            error => { if (late) onLateError?.(error); else { clearTimeout(timer); reject(error); } },
         );
     });
 
@@ -133,12 +136,17 @@ export async function tracedConnect(trace: Trace): Promise<Connection> {
         const permission = await midiPermission();
         trace(`MIDI SysEx permission: ${permission}`);
         try {
+            const asked = performance.now();
+            const after = () => `after ${((performance.now() - asked) / 1000).toFixed(1)} s`;
             const request = navigator.requestMIDIAccess({ sysex: true });
             // A permission prompt waits on the user, so no time limit then
             access = permission === 'prompt'
                 ? await request
                 : await within(request, MIDI_ACCESS_MS,
-                    `The browser didn't give access to MIDI within ${MIDI_ACCESS_MS / 1000} s. Close other apps and tabs that use MIDI, then try again.` + REPORT);
+                    `The browser didn't give access to MIDI within ${MIDI_ACCESS_MS / 1000} s. Close other apps and tabs that use MIDI, then try again.` + REPORT,
+                    // Tells a slow MIDI access from one that never comes
+                    late => trace(`MIDI access came late, ${after()}: ${midiPortsText(late)}`),
+                    error => trace(`MIDI access failed late, ${after()}: ${error instanceof Error ? `${error.name}: ${error.message}` : error}`));
             trace(`MIDI ports: ${midiPortsText(access)}`);
             access.addEventListener('statechange', onMidi);
         } catch (e) {

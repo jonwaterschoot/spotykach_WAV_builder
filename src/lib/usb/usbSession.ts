@@ -53,6 +53,8 @@ export const preloadUsb = () => {
 /** The steps of the last connect attempt, for "Copy diagnostics". */
 let trace: string[] = [];
 let traceStart = 0;
+/** Counts attempts, so a late line from an earlier one stays out of the trace. */
+let attempt = 0;
 /** The step the last attempt reached, named for the UI. */
 let currentStep: string | null = null;
 
@@ -66,16 +68,20 @@ const STEPS: [RegExp, string][] = [
     [/^opening serial port/, 'Opening the serial port (HELLO)'],
 ];
 
-const startTrace = (what: string) => {
+/** Starts a new trace; the returned function logs to it, and only while it's the latest. */
+const startTrace = (what: string): ((line: string) => void) => {
     trace = [];
     traceStart = performance.now();
     currentStep = null;
+    const id = ++attempt;
     log(`${what} · ${new Date().toISOString()}`);
+    return line => { if (id === attempt) log(line); };
 };
 
+const elapsed = () => `+${((performance.now() - traceStart) / 1000).toFixed(2)}s`;
+
 const log = (line: string) => {
-    const seconds = ((performance.now() - traceStart) / 1000).toFixed(2);
-    trace.push(`+${seconds}s ${line}`);
+    trace.push(`${elapsed()} ${line}`);
     const step = STEPS.find(([pattern]) => pattern.test(line));
     if (step) currentStep = step[1];
     console.info(`[usb] ${line}`);
@@ -116,10 +122,10 @@ export const usbSession = {
         if (state.backend?.connected) return state.backend;
         if (state.status === 'connecting') return null;
         set({ status: 'connecting', error: null, step: null });
-        startTrace('connect');
+        const attemptLog = startTrace('connect');
         const [link, { tracedConnect }] = await Promise.all([loadLink(), loadTraced()]);
         try {
-            const backend = await adopt(await tracedConnect(log));
+            const backend = await adopt(await tracedConnect(attemptLog));
             endTrace(null);
             return backend;
         } catch (e) {
@@ -134,10 +140,10 @@ export const usbSession = {
     /** The browser's port picker. Must run straight from a click. */
     async authorize(): Promise<UsbBackend | null> {
         set({ status: 'connecting', error: null, step: null });
-        startTrace('authorise port');
+        const attemptLog = startTrace('authorise port');
         const { tracedAuthorize } = await loadTraced();
         try {
-            const backend = await adopt(await tracedAuthorize(log));
+            const backend = await adopt(await tracedAuthorize(attemptLog));
             endTrace(null);
             return backend;
         } catch (e) {
@@ -162,7 +168,8 @@ export const usbSession = {
             navigator.userAgent,
             `status: ${state.status}${state.error ? ` (${state.error})` : ''}`,
             '',
-            ...(trace.length ? trace : ['No connect attempt yet.']),
+            // When it was copied: a step that hasn't answered by then still hadn't
+            ...(trace.length ? [...trace, `${elapsed()} diagnostics copied`] : ['No connect attempt yet.']),
         ].join('\n');
     },
 
