@@ -2,7 +2,7 @@
 
 Oct 18, 2026 · Jon · Bay Mud's report on Discord (night of Oct 15–16).
 
-**Status:** WAV Builder 4.2.2 (live) records every connect step and can copy them. Next: send Bay Mud the retest message below, then compare the results with the reference.
+**Status (Oct 20):** round 1 is in: Chrome's `requestMIDIAccess()` never returns on Bay Mud's PC, so the Spotykach is never asked to switch (see [Results](#results)). Next: send the [round 2 message](#round-2-the-message-to-send), then pick a fix from [Possible fixes](#possible-fixes).
 
 ## The report
 
@@ -13,7 +13,7 @@ Oct 18, 2026 · Jon · Bay Mud's report on Discord (night of Oct 15–16).
 
 ## What we know
 
-- **If it stayed on "Switching" for more than about 8 s, Web MIDI hung.** In `@synthuxacademy/spotykach-transfer` (and WAV Builder before 4.2.2), the reply wait gives up after 5 s with an error, and a missing port ends in the port picker or "Authorise port" 2.5 s later. Only `requestMIDIAccess()` and the MIDI ports' `open()` have no time limit, and a hang there leaves the console clean. Not confirmed yet: the diagnostics prove it if a time limit fires at "MIDI access" or "Switching".
+- **If it stayed on "Switching" for more than about 8 s, Web MIDI hung.** In `@synthuxacademy/spotykach-transfer` (and WAV Builder before 4.2.2), the reply wait gives up after 5 s with an error, and a missing port ends in the port picker or "Authorise port" 2.5 s later. Only `requestMIDIAccess()` and the MIDI ports' `open()` have no time limit, and a hang there leaves the console clean. Confirmed on Oct 20: the time limit fired at "MIDI access" (round 1).
 - **The Spotykach is one Windows device that changes driver.** MIDI mode and transfer mode use the same `0483:5740` and serial number, so on every switch Windows swaps `usbaudio` for `usbser` on the same device entry (see the reference below). A machine where that swap fails would end at the serial step (an empty port picker, "Authorise port" or an error), not on "Switching".
 - **Zadig is harmless when it's only on the bootloader** (`PID_DF11`). On `PID_5740` it would take the serial port away from `usbser`.
 - **b1 and b2 are the same firmware.** `v1.4.0.b2` only corrects the version string (PR #14): b1 reports `1.3.1` in HELLO, b2 reports `1.4.0.b2`.
@@ -24,10 +24,10 @@ Oct 18, 2026 · Jon · Bay Mud's report on Discord (night of Oct 15–16).
 - `src/lib/usb/tracedConnect.ts` runs the package's connect steps itself, with time limits where they could hang: MIDI access 8 s (none while a permission prompt is open), switching 10 s, port open + HELLO 15 s. A failure names its step.
 - Each step is logged as `[usb] …` in the console with its timing, including the MIDI permission, the Spotykach MIDI ports, the granted serial ports and serial connect events.
 - *Copy diagnostics* (in the USB window, and wherever a USB error shows) copies the app version, browser and the timed steps. In the console: `skUsb.diagnostics()`.
-- Next release: the trace also records how a connection ended (Disconnect in the app, or the device or cable).
+- Next release: the trace also records how a connection ended (Disconnect in the app, or the device or cable), a MIDI access that comes or fails after the time limit ("MIDI access came late, after N s" / "failed late"), and when the diagnostics were copied. A late line from an earlier attempt stays out of a newer trace.
 - **Keep in step with the package:** `tracedConnect.ts` follows `connect()` and `authorizePort()` of `@synthuxacademy/spotykach-transfer` 1.0.1. When the package is updated, compare its connect steps and update ours to match.
 
-## The message to send
+## The message to send (round 1)
 
 Written for Bay Mud (Oct 18). It also works as it is for anyone else with the same problem.
 
@@ -67,7 +67,14 @@ Notes on the message:
 
 ## Reading the results
 
-A machine where it works (my PC, Oct 18, firmware b2): Windows 11 Home build 26300, Windows MIDI Service running, Zadig drivers only for `PID_DF11`. The snippet's Spotykach rows:
+A machine where it works (my PC, Oct 18, firmware b2): Windows 11 Home 26H2 build 26300, Windows MIDI Service running, Zadig drivers only for `PID_DF11`. Chrome and Edge both connect (Edge checked Oct 20).
+
+My MIDI setup is not a plain Windows install, so it can differ from a tester's:
+
+- **Windows MIDI Services App SDK Runtime and Tools 1.0.14-rc.1**, installed by hand on Mar 30, 2026 (Runtime, App SDK Runtime, Console, Settings app, PowerShell). Only the service (`midisrv`) is part of Windows: Microsoft has been switching it on in phases for 24H2 and 25H2 since Feb 2026. The SDK Runtime and Tools are a separate download. Chrome's Web MIDI uses the older Windows MIDI APIs, which go through the service, so it shouldn't need the SDK. That isn't verified.
+- **Other MIDI software:** loopMIDI / teVirtualMIDI (with `loopMIDIBlockLegacy` and `rtpMIDIBlockLegacy`), the Midihub CDC driver and editor, and the GM DLS extension.
+
+The snippet's Spotykach rows:
 
 MIDI mode (before Connect):
 
@@ -96,23 +103,135 @@ The test doesn't fix anything by itself. It tells us which of these cases we're 
 | What the results show | Most likely cause | What we'd do |
 |---|---|---|
 | **It connects normally** | Something temporary: a stuck MIDI state, cleared by the replug or a restart | Nothing. If it ever stalls again, the time limits make it stop with a named step instead of staying on "Switching". |
-| **Diagnostics stop at "MIDI access" or "Switching to transfer mode"**, the rings stay dark | Chrome can't reach the Spotykach's MIDI port: Windows MIDI Services, or another app holding the port | Close MIDI apps; restart the Windows MIDI Service (`Restart-Service midisrv` in an admin terminal) or the PC; try Edge. If only Chrome fails, report it to Chromium with the trace. |
+| **Diagnostics stop at "MIDI access" or "Switching to transfer mode"**, the rings stay dark | Chrome can't reach the Spotykach's MIDI port: Windows MIDI Services, or another app holding the port | Find out whether it's Chrome, the Spotykach or the PC's MIDI setup: Edge, Chrome with the Spotykach unplugged, a list of MIDI software (round 2). Then see [Possible fixes](#possible-fixes). |
 | **Rings light and the MIDI port goes, but no serial port.** The after snapshot still shows `MEDIA`/`usbaudio`, or `Ports` with a problem code such as `CM_PROB_FAILED_START` (Code 10) | Windows doesn't swap the driver properly on the Spotykach's one device entry | Remove the Spotykach's device entries (`pnputil /remove-device <id>` in an admin terminal, or Device Manager ▸ Uninstall device) and plug it back in. |
 | **`5740` with `WinUSB` or `libusbK`, or `PID_5740` under "Zadig drivers"** | Zadig took the serial port | In Device Manager, uninstall that device with "Delete the driver" ticked and plug it back in, or use Zadig to put "USB Serial (CDC)" back on it. |
 | **The serial port opens but HELLO fails** (the trace stops after "opening serial port") | Firmware or protocol | Report to Synthux with the trace. |
 | **No `MEDIA` row in MIDI mode, or "Windows MIDI Service: not installed"** | A different MIDI setup from mine | Not a fault by itself; it helps explain the second row. |
 
-### Fixes beyond one machine
-
-These depend on what the results show:
-
-- **Time limits in `spotykach-transfer` itself,** so the official page can't get stuck either: a small bug-fix PR to Synthux, once the diagnostics confirm a step hung (second row). WAV Builder's `tracedConnect.ts` shows what it would look like.
-- **Hints in WAV Builder's errors for each step** (for example "MIDI access timed out: close other MIDI apps, restart the Windows MIDI Service"), plus a short troubleshooting part in the USB window. Once we know which rows actually happen.
-- **A separate USB identity for transfer mode** in the firmware (its own product ID or serial number), so Windows keeps two device entries and stops swapping drivers on one. That's a firmware change for Synthux, worth asking for only if the third row shows up, ideally on more than one machine.
-
 ## Results
 
-Not in yet. When Bay Mud replies: paste the diagnostics and both snapshots here (or a link to them), note whether the rings lit, then pick the row in "Possible outcomes" and record the fix sent and whether it worked.
+### Round 1 (Bay Mud, Oct 20)
+
+Windows 11 Home 25H2 build 26200, Chrome 155, WAV Builder 4.2.2. The rings stayed orange (normal reel mode) the whole time.
+
+```
++0.00s connect
++0.34s serial ports granted to this site: none
++0.34s MIDI SysEx permission: granted
++8.35s MIDI access timed out
+```
+
+The before and after snapshots are identical. The Spotykach rows (IDs shortened) match my MIDI mode:
+
+```
+OK      CM_PROB_NONE    MidiEndpoint   Spotykach                            SWD\MIDISRV\MIDIU_KSA_…
+OK      CM_PROB_NONE    MEDIA          Spotykach                   usbaudio USB\VID_0483&PID_5740\336F…
+OK      CM_PROB_NONE    SoftwareDevice Spotykach                            SWD\MMDEVAPI\MIDIU_KSA_…_0_0
+OK      CM_PROB_NONE    SoftwareDevice Spotykach                            SWD\MMDEVAPI\MIDIU_KSA_…_1_0
+```
+
+Phantom rows: the Daisy Bootloader and the STM32 DFU (flashing), a `COM16` (`usbser`) from another `5740` device with a different serial number, an older `5740` "USB Audio Device", and an unrelated `0483:A4D9` "RECODER". Zadig is only on `PID_DF11`.
+
+What this tells us:
+
+- **Second row of "Possible outcomes".** `requestMIDIAccess()` didn't settle within 8 s, with the permission already granted, so no prompt was waiting. No SysEx was sent, so the rings couldn't change. The original "stuck on Switching" was this same call: the package and the official page have no time limit on it, and their status says "Switching to transfer mode…" from the click on.
+- **Windows sees the Spotykach as a working MIDI device.** So the problem lies between the browser and the Windows MIDI stack, not in the USB or driver layer.
+- **Ruled out:** Zadig, the driver swap, HELLO and the firmware (none of them were reached), and `usbser` on that PC (COM16 worked once).
+- **It has probably never worked on that PC:** his Spotykach's serial number has no phantom `Ports` row.
+- **Not known yet:** whether it is Chrome or the whole PC, whether it needs the Spotykach plugged in, and whether MIDI access is slow or never comes. His MIDI setup may also differ from mine: a different Windows release, and maybe no SDK Runtime or virtual MIDI drivers.
+
+## Round 2: the message to send
+
+Written for Bay Mud (Oct 20). The three checks split the cases in [Possible fixes](#possible-fixes): Edge separates Chrome from the PC, unplugging separates the Spotykach from the PC's other MIDI devices, and the list shows what else is in the MIDI stack.
+
+---
+
+Thanks, that's exactly what we needed! It narrows it down a lot. Chrome never gets access to MIDI, so the Spotykach is never even asked to switch, which is why the rings stay orange. Your USB drivers and Zadig look fine. My setup (where it works) has some extra MIDI software that yours may not have, so here are three short checks to find out whether it's Chrome, the Spotykach or something else on the PC:
+
+**1. Edge, Spotykach plugged in.** Open https://jonwaterschoot.github.io/spotykach_WAV_builder/#/studio?usb=1 in **Microsoft Edge**, click **USB** and allow MIDI when Edge asks. Click **Copy diagnostics** and paste it here. If it connects, you can use Edge for transfers for now. Close the window afterwards, and power-cycle the Spotykach if the rings stay lit.
+
+**2. Chrome, Spotykach unplugged.** Unplug the Spotykach, open the same page in Chrome and click **USB**. Either a port picker opens (just close it) or the MIDI error comes back. Copy the diagnostics either way.
+
+If you get the MIDI error in either check, wait about 30 seconds before you click **Copy diagnostics**. It then also shows whether MIDI access came late or never came.
+
+**3. MIDI software.** In the terminal like last time, paste this one line and copy what it prints. It only reads: it lists installed programs with "MIDI" in their name and the names of your audio and MIDI devices, nothing else.
+```powershell
+"MIDI software:"; Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*, HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match 'MIDI' } | Sort-Object DisplayName -Unique | Format-Table DisplayName, DisplayVersion -AutoSize | Out-String -Width 200; "MIDI and audio devices:"; Get-PnpDevice -PresentOnly -Class MEDIA, MidiEndpoint -ErrorAction SilentlyContinue | Sort-Object Class, FriendlyName | Format-Table Class, Status, FriendlyName -AutoSize | Out-String -Width 200
+```
+
+So you know what you're sharing: the diagnostics hold the WAV Builder version, your browser version and the names of the MIDI ports the browser sees. Nothing needs admin rights, and there are no settings to change.
+
+Thanks again!
+
+---
+
+Notes on the message:
+
+- **Left out on purpose:** console code to paste (it's a habit people shouldn't learn, and the app's diagnostics already cover it), admin commands, driver changes, Chrome flags, and restarting the MIDI service or the PC (he already restarted the PC before round 1). All of that waits until a row below calls for it.
+- **With the Spotykach unplugged,** a working MIDI access lists the browser's MIDI ports. The connect then finds no Spotykach port and opens the port picker, because the click still counts.
+- **Send it once the late-MIDI logging is live.** Before that, the 30 s wait shows nothing new.
+- **Snippet 3** shows names and versions only: no device IDs or serial numbers, no user or computer names. Tested on my PC (Oct 20).
+
+## Possible fixes
+
+### By outcome of round 2
+
+| Edge | Chrome, unplugged | Most likely | On his side | On ours |
+|---|---|---|---|---|
+| Connects | (any) | Chrome only: his Chrome install or version | Use Edge for transfers for now. Update Chrome; try a new Chrome profile. | Add "try Edge" to the MIDI error. If it keeps happening, report to Chromium with both traces. |
+| Times out | Times out too | The PC's MIDI stack: a MIDI driver or program from snippet 3, or Windows MIDI Services on 25H2 | Quit, then uninstall, the suspect MIDI software one at a time; run Windows Update. | Compare snippet 3 with my list. If it points at the in-box service, report it to the Windows MIDI Services GitHub with both traces. |
+| Times out | Picker opens (MIDI works) | The Spotykach's own MIDI entry on his PC | Remove the Spotykach's device entries (Device Manager ▸ Uninstall device, or `pnputil /remove-device` as admin), then plug it back in. | None needed. |
+| Connects | Picker opens | Something temporary, gone now | Nothing. | None needed. |
+
+### WAV Builder
+
+- **Hints in the MIDI access error:** "try Edge" and "close MIDI apps", plus whatever round 2 shows works. Also a short troubleshooting part in the USB window.
+- **Record a late MIDI access:** done (Oct 20, next release). A `requestMIDIAccess()` that settles after the 8 s limit adds "MIDI access came late, after N s" to the trace. The copied diagnostics end with "diagnostics copied", so no late line before it means nothing had come by then.
+- **A switch that keeps going after its time limit:** `within()` stops waiting, but the package's `enterTransferMode()` keeps running. If its MIDI access comes late, it still sends the SysEx, and the Spotykach goes into transfer mode with nobody waiting (rings lit for up to a minute). Seen in a local test with an artificial 12 s MIDI delay (Oct 20). Harmless when MIDI access never comes, as on Bay Mud's PC. A fix would need a way to cancel in the package, so it's one more point for Vlad if it ever matters.
+- **Keep `tracedConnect.ts` in step with the package** (see above).
+
+### Vlad's package and page (`web/` on the Synthux `uploader` branch)
+
+- **Bug fix, now confirmed:** time limits on `requestMIDIAccess()` (none while the permission prompt is open) and on the MIDI ports' `open()` in `enterTransferMode()`. The fix throws the package's `TimeoutError`, so `index.html` shows an error instead of "Switching to transfer mode…" forever.
+- **Feature:** the connect diagnostics.
+
+Both are in the proposal [below](#for-vlad-connect-diagnostics). No PR: Vlad gets a link to that section and decides.
+- **Not needed now:** a separate USB identity for transfer mode in the firmware. That was only for the third row of "Possible outcomes", which didn't happen.
+
+## For Vlad: connect diagnostics
+
+Written for Vlad (Synthux). It can go into an issue as it is.
+
+---
+
+**Problem.** When `connect()` stalls, `web/index.html` shows "Switching to transfer mode…" and the console stays clean, so neither the user nor we can tell which step stopped. One Windows user was stuck there on the official page, in WAV Builder and in Mangler.
+
+**What WAV Builder does since 4.2.2** ([tracedConnect.ts](../../src/lib/usb/tracedConnect.ts)). It runs the package's `connect()` steps in the same order with three additions. The first round of diagnostics showed the hang was in `requestMIDIAccess()`, before any SysEx was sent.
+
+1. **Time limits** on the browser calls that have none of their own:
+   - MIDI access: 8 s, with no limit while the permission prompt is open.
+   - Switching (MIDI `open()` plus the reply): 10 s.
+   - Serial port open plus HELLO: 15 s.
+
+   A timeout names its step ("The browser didn't give access to MIDI within 8 s").
+2. **One line per step,** timed from the click:
+   - the serial ports already granted (VID:PID)
+   - the MIDI permission state
+   - the MIDI ports found (name, state)
+   - SysEx sent, then the reply or the MIDI port disappearing
+   - serial `connect`/`disconnect` events, the port wait and the picker
+   - port open and HELLO (firmware, protocol)
+   - how the connection ended: a Disconnect click, or the device or cable
+
+   Each line also goes to the console with a prefix (`[usb]` for us; `[spotykach]` would match the package's own warnings).
+3. **A "Copy diagnostics" button** next to the error. It copies the app version, the user agent and the lines.
+
+**Suggested shape for the package.** An optional callback, e.g. `connect({ onStep: line => … })` and `authorizePort({ onStep })`, that changes nothing for callers who don't pass it. The time limits belong in the package. The log and the button belong in the page.
+
+**Privacy.** Port names and VID:PID only: Web Serial doesn't expose serial numbers, and no file names are included. Nothing is sent anywhere; the user copies the text and pastes it into a report.
+
+---
 
 ## Side issue: Simple Touch on my laptop
 
