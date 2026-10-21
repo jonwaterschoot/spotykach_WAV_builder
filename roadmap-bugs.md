@@ -1,32 +1,30 @@
 # Roadmap and bug tracking
 
-> **The live list.** What is still open, then the roadmap beyond v4. Nothing closed is kept here — it
-> goes to [CHANGELOG.md](CHANGELOG.md) if it shipped, or to `docs/archive/` if it is reasoning worth
-> keeping.
+> **The live list.** [Now](#now) is the short checklist of what is in flight; each line links to the
+> doc that has the detail, and a line goes once it is done. Below it: the loose ends v4 shipped with,
+> then the roadmap. Nothing closed is kept here — it goes to [CHANGELOG.md](CHANGELOG.md) if it
+> shipped, or to `docs/archive/` if it is reasoning worth keeping.
 >
-> **v4 "Pervak" is done.** Eleven test rounds, 38 findings, all built and walked — the full record is
-> [docs/archive/v4-test-rounds.md](docs/archive/v4-test-rounds.md). The plan (`V4_PERVAK.md`) and the
-> intent behind it (`UX_Overhaul.md`) moved to `docs/archive/` with the release. What v4 changed is in
-> the [changelog](CHANGELOG.md).
->
-> **The deployed site has been walked.** The two things a local `dist` could never answer — texture 8 on
-> the Pages build, and the phone layout on an actual phone — were checked on the live site on
-> 2026-08-19: the texture plays, and on the phone the hub, the Sample Browser, the sources drawer and
-> the full-screen pool sheet all behave as they do on a desktop. Both left the open list.
->
-> **`optimize` is in flight.** A branch for code health rather than features — nine commits so far,
-> including fifteen genuine `rules-of-hooks` bugs in the editor overlays, five unused dependencies,
-> and the last third-party request needed to render the page. What is left is ranked in
-> [docs/optimization-plan.md](docs/optimization-plan.md); the summary lives under
-> [Roadmap ▸ Code health](#code-health--the-optimize-branch).
->
-> **The submission tool is in flight.** A sixth door, `#/submit`, on the `submission-tool` branch:
-> a guided form that collects a whole sample pack or preset submission, checks it, and hands back a
-> ZIP to send — replacing the step-by-step half of the submission guide, which is now a signpost. The
-> plan and the decisions behind it are
-> [docs/presets-samples/submission-tool-plan.md](docs/presets-samples/submission-tool-plan.md).
->
-> *Last reconciled against the code: 2026-08-23.*
+> *Last reconciled: 2026-10-21 (Now and this intro; the sections below were last checked 2026-08-23).*
+
+---
+
+## Now
+
+**USB transfer and Synthux**
+- [ ] Synthux PRs [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (MIDI time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (connect diagnostics): waiting on Vlad. Try both on the device when it's back. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
+- [ ] Bay Mud's round 2 results, then a fix from the table. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#possible-fixes)
+- [ ] Once a package release has #16 and #17: update the dependency and replace most of `tracedConnect.ts` with `connect({ onStep })`.
+- [ ] Synthux [#15](https://github.com/Synthux-Academy/Spotykach/issues/15): a stalled resend ends the USB session (firmware idle timeout). → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
+- [ ] Firmware 1.4.0 released: point `USB_FIRMWARE` at it and remove the `?usb=1` flag. → [usb-transfer-plan.md](docs/usbuploader/usb-transfer-plan.md#implementation-plan)
+- [ ] The damaged SD card from the device tests: not reproduced, cause unknown. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
+- [ ] Idea: sync `.txt`, `.json` and `.md` files over USB too, so a USB sync matches a card-reader sync. Needs new protocol commands and firmware support; no plan yet.
+
+**Sample Mangler**
+- [ ] The "Later" items and the real-phone checks (hold time, pinch). → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
+
+**Code health**
+- [ ] The rest of the optimize plan, one item per session. → [Code health](#code-health) below and [optimization-plan.md](docs/optimization-plan.md)
 
 ---
 
@@ -64,9 +62,9 @@ call, not a bug fix.
 
 ## Roadmap — beyond v4
 
-### Code health — the `optimize` branch
+### Code health
 
-Active work, not speculation: the branch exists and carries nine commits. Each item below has its
+What is left of the `optimize` work (its first commits are merged). Each item below has its
 survey already done in [docs/optimization-plan.md](docs/optimization-plan.md) — measurements, file
 and line references, and the reason it is shaped the way it is. Ranked by payoff against risk.
 **Take one per session**; the plan says explicitly which ones cannot be batched.

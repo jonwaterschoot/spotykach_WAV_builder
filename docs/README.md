@@ -15,7 +15,7 @@ These two are the ones to keep up to date. Everything else is reference material
 
 | File | Status | What it is |
 |---|---|---|
-| [../roadmap-bugs.md](../roadmap-bugs.md) | 🟢 | Active roadmap, feature requests and bugs. Opens with **Open** — the loose ends v4 shipped with — then the roadmap beyond v4, then a short "settled, don't reopen" list and pointers to where closed work went. Rewritten 2026-08-19 when v4 shipped; nothing closed is kept in it. |
+| [../roadmap-bugs.md](../roadmap-bugs.md) | 🟢 | Active roadmap, feature requests and bugs. Opens with **Now**, the checklist of work in flight with a link per line to its doc (added 2026-10-21), then **Open** — the loose ends v4 shipped with — then the roadmap beyond v4, then a short "settled, don't reopen" list and pointers to where closed work went. Rewritten 2026-08-19 when v4 shipped; nothing closed is kept in it. |
 | [../CHANGELOG.md](../CHANGELOG.md) | 🟢 | Released work, newest first. The 4.0.0 entry is the summary of what v4 changed. |
 
 **Which file holds what, now:** these two are the only live documents. `roadmap-bugs.md` is the only

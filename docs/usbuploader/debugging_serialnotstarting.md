@@ -2,7 +2,7 @@
 
 Oct 18, 2026 · Jon · Bay Mud's report on Discord (night of Oct 15–16).
 
-**Status (Oct 20):** round 1 is in: Chrome's `requestMIDIAccess()` never returns on Bay Mud's PC, so the Spotykach is never asked to switch (see [Results](#results)). Next: send the [round 2 message](#round-2-the-message-to-send), then pick a fix from [Possible fixes](#possible-fixes).
+**Status (Oct 21):** round 1 is in: Chrome's `requestMIDIAccess()` never returns on Bay Mud's PC, so the Spotykach is never asked to switch (see [Results](#results)). Round 2 is sent, results pending. The package fixes are open as PRs on Synthux's `uploader` branch: [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (diagnostics), see [Vlad's package and page](#vlads-package-and-page-web-on-the-synthux-uploader-branch).
 
 ## The report
 
@@ -24,7 +24,7 @@ Oct 18, 2026 · Jon · Bay Mud's report on Discord (night of Oct 15–16).
 - `src/lib/usb/tracedConnect.ts` runs the package's connect steps itself, with time limits where they could hang: MIDI access 8 s (none while a permission prompt is open), switching 10 s, port open + HELLO 15 s. A failure names its step.
 - Each step is logged as `[usb] …` in the console with its timing, including the MIDI permission, the Spotykach MIDI ports, the granted serial ports and serial connect events.
 - *Copy diagnostics* (in the USB window, and wherever a USB error shows) copies the app version, browser and the timed steps. In the console: `skUsb.diagnostics()`.
-- Next release: the trace also records how a connection ended (Disconnect in the app, or the device or cable), a MIDI access that comes or fails after the time limit ("MIDI access came late, after N s" / "failed late"), and when the diagnostics were copied. A late line from an earlier attempt stays out of a newer trace.
+- Since 4.2.3, the trace also records how a connection ended (Disconnect in the app, or the device or cable), a MIDI access that comes or fails after the time limit ("MIDI access came late, after N s" / "failed late"), and when the diagnostics were copied. A late line from an earlier attempt stays out of a newer trace.
 - **Keep in step with the package:** `tracedConnect.ts` follows `connect()` and `authorizePort()` of `@synthuxacademy/spotykach-transfer` 1.0.1. When the package is updated, compare its connect steps and update ours to match.
 
 ## The message to send (round 1)
@@ -187,21 +187,21 @@ Notes on the message:
 ### WAV Builder
 
 - **Hints in the MIDI access error:** "try Edge" and "close MIDI apps", plus whatever round 2 shows works. Also a short troubleshooting part in the USB window.
-- **Record a late MIDI access:** done (Oct 20, next release). A `requestMIDIAccess()` that settles after the 8 s limit adds "MIDI access came late, after N s" to the trace. The copied diagnostics end with "diagnostics copied", so no late line before it means nothing had come by then.
-- **A switch that keeps going after its time limit:** `within()` stops waiting, but the package's `enterTransferMode()` keeps running. If its MIDI access comes late, it still sends the SysEx, and the Spotykach goes into transfer mode with nobody waiting (rings lit for up to a minute). Seen in a local test with an artificial 12 s MIDI delay (Oct 20). Harmless when MIDI access never comes, as on Bay Mud's PC. A fix would need a way to cancel in the package, so it's one more point for Vlad if it ever matters.
-- **Keep `tracedConnect.ts` in step with the package** (see above).
+- **Record a late MIDI access:** done (Oct 20, in 4.2.3). A `requestMIDIAccess()` that settles after the 8 s limit adds "MIDI access came late, after N s" to the trace. The copied diagnostics end with "diagnostics copied", so no late line before it means nothing had come by then.
+- **A switch that keeps going after its time limit:** `within()` stops waiting, but the package's `enterTransferMode()` keeps running. If its MIDI access comes late, it still sends the SysEx, and the Spotykach goes into transfer mode with nobody waiting (rings lit for up to a minute). Seen in a local test with an artificial 12 s MIDI delay (Oct 20). Harmless when MIDI access never comes, as on Bay Mud's PC. Fixed by #16: with the time limit inside the package, a late MIDI access sends nothing.
+- **Once the package release has #16 and #17:** replace most of `tracedConnect.ts` with `connect({ onStep })` and `authorizePort({ onStep })`. Keep only what the package leaves out: the serial connect events and how a connection ended. Until then, keep `tracedConnect.ts` in step with the package (see above).
 
 ### Vlad's package and page (`web/` on the Synthux `uploader` branch)
 
-- **Bug fix, now confirmed:** time limits on `requestMIDIAccess()` (none while the permission prompt is open) and on the MIDI ports' `open()` in `enterTransferMode()`. The fix throws the package's `TimeoutError`, so `index.html` shows an error instead of "Switching to transfer mode…" forever.
-- **Feature:** the connect diagnostics.
+Vlad read the proposal [below](#for-vlad-connect-diagnostics) and asked for PRs (Oct 21). Both target `uploader`, are tested in Node with a fake Web MIDI, and are not yet tried on the device:
 
-Both are in the proposal [below](#for-vlad-connect-diagnostics). No PR: Vlad gets a link to that section and decides.
+- **[#16](https://github.com/Synthux-Academy/Spotykach/pull/16), the bug fix:** in `enterTransferMode()`, MIDI access gives up after 8 s (not while the permission prompt is open) and opening the MIDI ports after 5 s, each with an error that names the step. `index.html` then shows an error instead of "Switching to transfer mode…" forever.
+- **[#17](https://github.com/Synthux-Academy/Spotykach/pull/17), the diagnostics** (builds on #16): an optional `onStep` on `connect()`, `authorizePort()`, `enterTransferMode()` and `handshake()`, with the step lines only, plus `[spotykach]` console lines and "Copy diagnostics" on the page's connect error.
 - **Not needed now:** a separate USB identity for transfer mode in the firmware. That was only for the third row of "Possible outcomes", which didn't happen.
 
 ## For Vlad: connect diagnostics
 
-Written for Vlad (Synthux). It can go into an issue as it is.
+Written for Vlad (Oct 20). Kept as the reasoning behind #16 and #17.
 
 ---
 
