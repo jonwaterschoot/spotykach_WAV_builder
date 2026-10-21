@@ -1,6 +1,11 @@
 import type JSZip from 'jszip';
-import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from '../types';
+import { TAPE_COLORS } from '../types';
 import type { AppState, AudioVersion, CardSnapshot, FileRecord, ProjectConfig, WavMetadata } from '../types';
+import { completeProjectConfig, generateConfigText } from './configText';
+
+// The config.txt format lives in its own small module so the editor can show the
+// file live without loading this one; re-exported for the existing importers.
+export { KNOWN_CONFIG_KEYS, completeProjectConfig, generateConfigText, parseConfigText } from './configText';
 import sdCardInstructions from '../../docs/how_to_copy_to_SDcard.md?raw';
 import { collapseVersionHistoryOnSave } from './versionHistory';
 import { hashBlob } from './assetUtils';
@@ -58,47 +63,6 @@ export interface SlotWriteEvent {
     /** With `done` and `skipped`: the version was longer than the device holds and was cut. */
     cut?: { fromFrames: number; toFrames: number };
 }
-
-/**
- * The keys this build understands. Also the filter that decides what counts as an
- * *unknown* pair on the way in — matched case-insensitively by prefix, because the
- * format pads every key to 8 characters.
- */
-export const KNOWN_CONFIG_KEYS = [
-    'MID_CH_A', 'MID_CH_B', 'MID_PS_A', 'MID_PS_B', 'PRE_LOAD', 'SLC_MN_A', 'SLC_MN_B',
-] as const;
-
-const isKnownConfigKey = (key: string): boolean =>
-    KNOWN_CONFIG_KEYS.some(known => key.trim().toUpperCase().startsWith(known));
-
-export const generateConfigText = (config: ProjectConfig): string => {
-    const lines: string[] = [];
-    const appendSetting = (key: string, value: any) => {
-        lines.push(key.padEnd(8, ' ').substring(0, 8));
-        let valStr = '0';
-        if (value === true || value === '1' || value === 1) valStr = '1';
-        else if (value === false || value === '0' || value === 0) valStr = '0';
-        else if (value !== undefined && value !== null) valStr = value.toString();
-        lines.push(valStr);
-        lines.push(''); // Empty line separator
-    };
-    // Use defaults if missing (for older projects). Order follows the manual's table.
-    appendSetting('mid_ch_a', config?.mid_ch_a ?? DEFAULT_PROJECT_CONFIG.mid_ch_a);
-    appendSetting('mid_ch_b', config?.mid_ch_b ?? DEFAULT_PROJECT_CONFIG.mid_ch_b);
-    appendSetting('mid_ps_a', config?.mid_ps_a ?? DEFAULT_PROJECT_CONFIG.mid_ps_a);
-    appendSetting('mid_ps_b', config?.mid_ps_b ?? DEFAULT_PROJECT_CONFIG.mid_ps_b);
-    appendSetting('pre_load', config?.pre_load ?? DEFAULT_PROJECT_CONFIG.pre_load);
-    appendSetting('slc_mn_a', config?.slc_mn_a ?? DEFAULT_PROJECT_CONFIG.slc_mn_a);
-    appendSetting('slc_mn_b', config?.slc_mn_b ?? DEFAULT_PROJECT_CONFIG.slc_mn_b);
-    // Pairs a previous read didn't recognise, written back verbatim after the known
-    // ones. A key that has since *become* known is dropped rather than emitted
-    // twice — the field above is the current truth for it.
-    for (const setting of config?.unknown ?? []) {
-        if (!setting?.key || isKnownConfigKey(setting.key)) continue;
-        appendSetting(setting.key.trim(), setting.value);
-    }
-    return lines.join('\n');
-};
 
 export const verifyProjectBlobs = async (state: AppState): Promise<Array<{ fileId: string; fileName: string; versionId: string; blobRef: string; reason: string }>> => {
     const unreadableFiles: Array<{ fileId: string; fileName: string; versionId: string; blobRef: string; reason: string }> = [];
@@ -1302,10 +1266,7 @@ export const scanForProjects = async (rootHandle: FileSystemDirectoryHandle): Pr
                                 files: json.files || {},
                                 tapes: json.tapes || {},
                                 projectNotes: json.projectNotes,
-                                projectConfig: {
-                                    ...DEFAULT_PROJECT_CONFIG,
-                                    ...(json.projectConfig || {})
-                                }
+                                projectConfig: completeProjectConfig(json.projectConfig)
                             } : undefined,
                         });
                     } catch (e) {
@@ -1563,10 +1524,7 @@ export const loadProjectFromDirectory = async (projectName: string, rootHandle: 
             state = JSON.parse(text);
 
             // Ensure projectConfig is complete with defaults for backward compatibility
-            state.projectConfig = {
-                ...DEFAULT_PROJECT_CONFIG,
-                ...(state.projectConfig || {})
-            } as ProjectConfig;
+            state.projectConfig = completeProjectConfig(state.projectConfig);
         }
 
         const missingAssets: NonNullable<AppState['loadIssues']>['missingAssets'] = state.loadIssues?.missingAssets || [];
@@ -1740,36 +1698,3 @@ export const renameProject = async (rootHandle: FileSystemDirectoryHandle, oldNa
     await projectsHandle.removeEntry(oldName, { recursive: true });
 };
 
-export const parseConfigText = (text: string): ProjectConfig | null => {
-    try {
-        const config: ProjectConfig = { ...DEFAULT_PROJECT_CONFIG };
-        // Strictly positional: blank lines drop out and what remains is walked as
-        // key/value pairs. An unknown key is still a *pair*, so it consumes two
-        // lines like any other — skipping it silently would shift everything after
-        // it. That is also why it can be carried through rather than dropped.
-        const unknown: import('../types').UnknownConfigSetting[] = [];
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
-        for (let i = 0; i < lines.length; i += 2) {
-            const rawKey = lines[i];
-            const val = lines[i + 1];
-            if (!rawKey || val === undefined) continue;
-
-            const key = rawKey.toUpperCase();
-            if (key.startsWith('MID_CH_A')) config.mid_ch_a = parseInt(val) || 1;
-            else if (key.startsWith('MID_CH_B')) config.mid_ch_b = parseInt(val) || 2;
-            else if (key.startsWith('MID_PS_A')) config.mid_ps_a = val === '1';
-            else if (key.startsWith('MID_PS_B')) config.mid_ps_b = val === '1';
-            else if (key.startsWith('PRE_LOAD')) config.pre_load = val === '1';
-            else if (key.startsWith('SLC_MN_A')) config.slc_mn_a = val === '1';
-            else if (key.startsWith('SLC_MN_B')) config.slc_mn_b = val === '1';
-            else unknown.push({ key: rawKey, value: val });
-        }
-        // Left absent when there are none, so existing projects serialize and
-        // compare exactly as they did before.
-        if (unknown.length > 0) config.unknown = unknown;
-        return config;
-    } catch (e) {
-        console.warn("Failed to parse config.txt", e);
-        return null;
-    }
-};

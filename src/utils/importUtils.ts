@@ -639,12 +639,17 @@ export const calculateSyncDiff = async (
     // 0. Compare Config
     const localConfig = projectState.projectConfig;
     const remoteConfigText = cardConfig?.text;
-    const { generateConfigText } = await import('./exportUtils');
+    const { generateConfigText, parseConfigText } = await import('./configText');
 
     let configStatus: SyncStatus = 'EMPTY';
     if (localConfig && remoteConfigText) {
         const localConfigText = generateConfigText(localConfig);
-        configStatus = localConfigText.trim() === remoteConfigText.trim() ? 'MATCH' : 'CONFLICT';
+        // Compared by what the settings are, not how the file spells them: a card
+        // written before a key existed leaves it out, and the device then runs the
+        // same default this app would write — that is not a conflict.
+        const remoteParsed = parseConfigText(remoteConfigText);
+        const remoteText = remoteParsed ? generateConfigText(remoteParsed) : remoteConfigText;
+        configStatus = localConfigText.trim() === remoteText.trim() ? 'MATCH' : 'CONFLICT';
     } else if (localConfig && !remoteConfigText) {
         configStatus = 'LOCAL_ONLY';
     } else if (!localConfig && remoteConfigText) {

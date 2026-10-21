@@ -139,7 +139,7 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-        <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6 space-y-5">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 space-y-5">
 
           {/* Where the settings come from and go */}
           <div className="rounded-xl border border-white/10 bg-synthux-panel/80 p-4 sm:p-5 space-y-4">

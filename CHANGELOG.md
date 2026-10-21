@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **config.txt: grit mix, and cue points to test.** The config editor now sets where each deck's grit
+  mix starts at power-on (`grt_mx_a`/`grt_mx_b`, firmware 1.4.0 and later), and, marked
+  untested, how each deck uses a sample's own cue points (`cue_sm_a`/`cue_sm_b`: ignore, snap
+  or free). The cue point lines are only written when switched on, so they can be tried. A card whose
+  `config.txt` predates these settings no longer shows up as a config conflict, and a value
+  an earlier version kept as an unknown setting is picked up as its new control.
+
 ---
 
 ## [4.2.3] - 2026-10-20

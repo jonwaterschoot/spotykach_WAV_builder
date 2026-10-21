@@ -122,6 +122,15 @@ export interface UnknownConfigSetting {
     value: string;
 }
 
+/**
+ * `cue_sm_*`, as the firmware's `Config::CueSizeMode` numbers it. Only matters for a
+ * sample with more than one cue point.
+ * - 0 ignore: cue points play no part; the deck slices as it would without them.
+ * - 1 snap: start snaps to a cue point, size snaps to cue points too (ALT frees it).
+ * - 2 free: start snaps to a cue point, size is free (ALT snaps it).
+ */
+export type CueSizeMode = 0 | 1 | 2;
+
 export interface ProjectConfig {
     mid_ch_a: number; // 1-16
     mid_ch_b: number; // 1-16
@@ -130,6 +139,15 @@ export interface ProjectConfig {
     pre_load: boolean; // Enable/disable pre-loading
     slc_mn_a: boolean; // Disable polyphony in Slice mode, deck A
     slc_mn_b: boolean; // Disable polyphony in Slice mode, deck B
+    /**
+     * How a sample's own cue points steer start and size, per deck. Untested, so
+     * opt-in: absent means the line is left out of config.txt and the device runs
+     * its own default (ignore). Present, even as 0, means it is written.
+     */
+    cue_sm_a?: CueSizeMode;
+    cue_sm_b?: CueSizeMode;
+    grt_mx_a: number; // Grit mix at power-on, 0-10 (tenths), deck A. Firmware 1.4.0+
+    grt_mx_b: number; // Same, deck B
     /**
      * Pairs read from a `config.txt` that this build doesn't recognise — newer
      * firmware settings, most likely. Carried through untouched and written back
@@ -155,6 +173,8 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
     pre_load: true,
     slc_mn_a: false,
     slc_mn_b: false,
+    grt_mx_a: 3,
+    grt_mx_b: 3,
 };
 
 // Normalized State

@@ -15,6 +15,15 @@ The file name is `config.txt`, located on the root of the `SK` directory.
 | `mid_ch_b` | `1...16` | MIDI Channel for Deck B (Default: 2) |
 | `mid_ps_a` | `0/1` | Enable MIDI Start/Stop for Deck A (Default: 0) |
 | `mid_ps_b` | `0/1` | Enable MIDI Start/Stop for Deck B (Default: 0) |
+| `pre_load` | `0/1` | Pre-load the last loaded/saved sample at power-on (Default: 1) |
+| `slc_mn_a` | `0/1` | Slice mode, Deck A: 1 disables polyphony, one slice at a time (Default: 0) |
+| `slc_mn_b` | `0/1` | Slice mode, Deck B: same as above (Default: 0) |
+| `cue_sm_a` | `0/1/2` | Cue points, Deck A, for samples with more than one cue point. 0 ignore: cue points play no part. 1 snap: start and size snap to cue points, ALT frees the size. 2 free: start snaps, size is free, ALT snaps it. (Default: 0) **Untested:** read since firmware 1.3.0 but not confirmed on hardware, so the builder only writes it when switched on in the editor. |
+| `cue_sm_b` | `0/1/2` | Cue points, Deck B: same as above (Default: 0) |
+| `grt_mx_a` | `0...10` | Grit mix at power-on, Deck A, in tenths (3 = 30%). Firmware 1.4.0+ (Default: 3) |
+| `grt_mx_b` | `0...10` | Grit mix at power-on, Deck B: same as above (Default: 3) |
+
+Values must be whole numbers: the firmware treats a line with anything other than digits (and a leading `-`) as a setting name, so `0.5` would break the pairing for every line after it.
 
 #### UI Integration
 The WAV Builder includes a dedicated **config.txt** modal accessible from the main header (Tape icon).

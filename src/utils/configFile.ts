@@ -71,7 +71,7 @@ export const ensureWritable = async (handle: FileSystemDirectoryHandle): Promise
 export const readConfigFromCard = async (
     handle: FileSystemDirectoryHandle,
 ): Promise<ReadConfigResult | null> => {
-    const { parseConfigText } = await import('./exportUtils');
+    const { parseConfigText } = await import('./configText');
 
     const readFrom = async (
         dir: FileSystemDirectoryHandle,
@@ -119,7 +119,7 @@ export const downloadConfig = async (config: ProjectConfig): Promise<void> => {
 
 /** The permission-free way in: a `config.txt` the user hands over from a file input. */
 export const readConfigFromFile = async (file: File): Promise<ProjectConfig | null> => {
-    const { parseConfigText } = await import('./exportUtils');
+    const { parseConfigText } = await import('./configText');
     return parseConfigText(await file.text());
 };
 

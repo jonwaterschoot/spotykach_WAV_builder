@@ -33,7 +33,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     workHandle,
     sdHandle
 }) => {
-    const [pos, setPos] = useState({ x: window.innerWidth / 2 - 250, y: 100 });
+    const [pos, setPos] = useState({ x: Math.max(8, window.innerWidth / 2 - 390), y: 80 });
     const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
     useEffect(() => {
@@ -105,7 +105,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             className="z-[80] !fixed"
             enableResizing={false}
         >
-            <div className="w-[500px] max-h-[85vh] flex flex-col border border-gray-700/80 rounded-xl bg-[#0f0f11] shadow-2xl overflow-hidden">
+            <div className="w-[min(780px,96vw)] max-h-[85vh] flex flex-col border border-gray-700/80 rounded-xl bg-[#0f0f11] shadow-2xl overflow-hidden">
                 {/* Header */}
                 <div className="config-drag-handle flex items-center justify-between px-4 py-3 bg-black border-b border-gray-800 cursor-move shrink-0">
                     <div className="flex items-center gap-2">
@@ -118,7 +118,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 p-6 overflow-y-auto custom-scrollbar scroll-smooth">
+                <div className="flex-1 p-5 overflow-y-auto custom-scrollbar scroll-smooth">
                     <ConfigForm
                         config={config}
                         onChange={onChange}
