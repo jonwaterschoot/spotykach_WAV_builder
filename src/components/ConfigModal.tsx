@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Disc, Check, Download, HardDrive, FileDown } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { ConfigForm } from './ConfigForm';
+import { UsbConfigBar } from './UsbConfigBar';
 import { downloadConfig, ensureWritable, readConfigFromCard, writeConfigToCard } from '../utils/configFile';
 import type { ProjectConfig, ProjectSummary } from '../types';
 
@@ -157,6 +158,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                             <FileDown size={14} /> Read from card
                         </button>
                     )}
+
+                    <UsbConfigBar config={config} onRead={onChange} onDone={setSaveStatus} />
 
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">

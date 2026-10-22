@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { ChevronLeft, Download, FileDown, FolderOpen, HardDrive, Upload } from 'lucide-react';
 import { ConfigForm } from '../components/ConfigForm';
+import { UsbConfigBar } from '../components/UsbConfigBar';
 import {
   canPickCard, defaultProjectConfig, downloadConfig, ensureWritable, pickCard,
   readConfigFromCard, readConfigFromFile, writeConfigToCard, type ConfigLocation,
@@ -211,6 +212,12 @@ export const ConfigMode: React.FC<ConfigModeProps> = ({ onExitToHub }) => {
                 <Download size={14} /> Download config.txt
               </button>
             </div>
+
+            <UsbConfigBar
+              config={config}
+              onRead={read => { setConfig(read); setReadFrom(null); }}
+              onDone={text => say(text)}
+            />
 
             <input
               ref={fileInputRef}
