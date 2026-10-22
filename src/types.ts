@@ -218,6 +218,8 @@ export interface VisualFilters {
     brightness: number;
     textureOpacity: number;
     fontSize: number;
+    /** Multiplier on every corner radius; 0 is square, 1 is the stock look. Absent in older saves. */
+    cornerRadius?: number;
     textureImage: string;
     textureSize: string;
     texturePosition?: string;

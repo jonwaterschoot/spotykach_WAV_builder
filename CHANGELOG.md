@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Look: corner radius.** A *Corner Radius* slider in Settings ▸ Look scales every rounded
+  corner in the app together, from square at 0% to twice the stock rounding at 200%. Big
+  corners and small ones keep their proportion; dots, knobs and toggles stay round. Like UI
+  Font Size, the presets and Random leave it where it is.
+
 ### Changed
 
 - **Sync screen: the card's other files are listed.** Advanced always lists `config.txt`,

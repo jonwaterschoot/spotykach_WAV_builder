@@ -1974,7 +1974,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 {/* Final Confirmation Modal */}
                 {showFinalConfirmation && (
                     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
-                        <div className="bg-[#151515] border border-white/10 rounded-[2rem] shadow-[0_32px_120px_rgba(0,0,0,0.8)] max-w-md w-full max-h-full flex flex-col overflow-hidden animate-in fade-in zoom-in duration-500">
+                        <div className="bg-[#151515] border border-white/10 rounded-4xl shadow-[0_32px_120px_rgba(0,0,0,0.8)] max-w-md w-full max-h-full flex flex-col overflow-hidden animate-in fade-in zoom-in duration-500">
                             {/* Header and footer stay put; the list scrolls so the button is always reachable */}
                             <div className="p-6 pb-4 flex items-center gap-4 shrink-0">
                                 <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shrink-0">

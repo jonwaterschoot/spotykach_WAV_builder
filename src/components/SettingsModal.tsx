@@ -73,6 +73,7 @@ const DEFAULT_FILTERS: VisualFilters = {
     brightness: 1,
     textureOpacity: 0.05,
     fontSize: 1,
+    cornerRadius: 1,
     textureImage: 'highrestexture_tapenoisevhs_whitetrans.png',
     textureSize: 'cover',
     texturePosition: 'center'
@@ -94,6 +95,7 @@ const FILTER_RANGES = {
     contrast: { min: 0.5, max: 3, step: 0.01 },
     brightness: { min: 0.5, max: 3, step: 0.01 },
     fontSize: { min: 0.75, max: 1.5, step: 0.01 },
+    cornerRadius: { min: 0, max: 2, step: 0.05 },
     textureOpacity: { min: 0, max: 0.5, step: 0.01 },
 } as const;
 
@@ -102,7 +104,7 @@ type FilterKey = keyof typeof FILTER_RANGES;
 const clampTo = (key: FilterKey, value: number) =>
     Math.max(FILTER_RANGES[key].min, Math.min(FILTER_RANGES[key].max, value));
 
-/** Everything a preset carries. Font size is deliberately not one of them. */
+/** Everything a preset carries. Font size and corner radius are deliberately not among them. */
 const PRESET_KEYS: Array<keyof VisualFilters> = [
     'invert', 'grayscale', 'contrast', 'brightness', 'textureOpacity',
     'textureImage', 'textureSize', 'texturePosition'
@@ -376,6 +378,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 contrast: start.contrast + (target.contrast - start.contrast) * easeProgress,
                 brightness: start.brightness + (target.brightness - start.brightness) * easeProgress,
                 fontSize: start.fontSize + (target.fontSize - start.fontSize) * easeProgress,
+                cornerRadius: (start.cornerRadius ?? 1) + ((target.cornerRadius ?? 1) - (start.cornerRadius ?? 1)) * easeProgress,
                 textureOpacity: start.textureOpacity + (target.textureOpacity - start.textureOpacity) * easeProgress,
                 textureSize: target.textureSize || start.textureSize || 'cover',
                 texturePosition: target.texturePosition || start.texturePosition || 'center'
@@ -411,10 +414,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateVisualFilters({ ...visualFilters, [key]: finalValue });
     };
 
-    /** What a preset resolves to: the defaults, the preset on top, font size left alone. */
+    /** What a preset resolves to: the defaults, the preset on top, font size and corners left alone. */
     const resolvePreset = (preset: Partial<VisualFilters>): VisualFilters => ({
         ...DEFAULT_FILTERS,
         fontSize: visualFilters.fontSize,
+        cornerRadius: visualFilters.cornerRadius ?? 1,
         ...preset
     });
 
@@ -437,6 +441,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             brightness: 0.5 + Math.random() * 1.5,
             textureOpacity: Math.random() * 0.5,
             fontSize: visualFilters.fontSize,
+            cornerRadius: visualFilters.cornerRadius ?? 1,
             textureImage: TEXTURES[Math.floor(Math.random() * TEXTURES.length)],
             textureSize: 'cover',
             texturePosition: 'center'
@@ -580,7 +585,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     /** A slider already at its default has nothing to reset, and its button says so. */
-    const isAtDefault = (key: FilterKey) => nearly(visualFilters[key] as number, DEFAULT_FILTERS[key] as number);
+    const isAtDefault = (key: FilterKey) => nearly((visualFilters[key] ?? DEFAULT_FILTERS[key]) as number, DEFAULT_FILTERS[key] as number);
 
     /**
      * S1-11 - which chip is live. The exact match is derived from the filters rather than
@@ -888,6 +893,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 isDefault={isAtDefault('fontSize')}
                                 onChange={(v) => handleFilterChange('fontSize', v)}
                                 onReset={() => resetValue('fontSize')}
+                            />
+
+                            <FilterSlider
+                                label="Corner Radius"
+                                value={visualFilters.cornerRadius ?? 1}
+                                range={FILTER_RANGES.cornerRadius}
+                                display={(visualFilters.cornerRadius ?? 1) === 0 ? 'Square' : `${Math.round((visualFilters.cornerRadius ?? 1) * 100)}%`}
+                                accent="accent-indigo-400"
+                                isDefault={isAtDefault('cornerRadius')}
+                                onChange={(v) => handleFilterChange('cornerRadius', v)}
+                                onReset={() => resetValue('cornerRadius')}
                             />
 
                             {/* Texture Settings */}

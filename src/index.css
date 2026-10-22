@@ -85,6 +85,7 @@ img {
     --master-filter: none;
     --master-texture-opacity: 0.05;
     --master-font-size: 16px;
+    --master-radius-scale: 1;
     --master-texture-image: url('/img/highrestexture_tapenoisevhs_whitetrans.png');
     --master-texture-size: cover;
     --master-texture-position: center;
@@ -132,6 +133,24 @@ select optgroup {
     --font-body: var(--font-body);
 
     --texture-noise: var(--master-texture-image);
+
+    /*
+     * Corner radius, scaled as a whole by Settings ▸ Look. Tailwind's own values, each
+     * times one multiplier, so a modal's big corner and a chip's small one keep their
+     * proportion at any setting and 0 squares everything. `--radius` is what bare
+     * `rounded` reads; Tailwind's default theme inlines it as a literal, and declaring
+     * it here makes it a variable like the rest. `rounded-full` is left alone: dots,
+     * knobs and toggles stay round.
+     */
+    --radius: calc(0.25rem * var(--master-radius-scale));
+    --radius-xs: calc(0.125rem * var(--master-radius-scale));
+    --radius-sm: calc(0.25rem * var(--master-radius-scale));
+    --radius-md: calc(0.375rem * var(--master-radius-scale));
+    --radius-lg: calc(0.5rem * var(--master-radius-scale));
+    --radius-xl: calc(0.75rem * var(--master-radius-scale));
+    --radius-2xl: calc(1rem * var(--master-radius-scale));
+    --radius-3xl: calc(1.5rem * var(--master-radius-scale));
+    --radius-4xl: calc(2rem * var(--master-radius-scale));
 
     /*
      * One breakpoint below Tailwind's `sm` (40rem). Phones in portrait sit under

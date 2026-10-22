@@ -646,6 +646,7 @@ function App({ onExitToHub }: AppProps) {
       brightness: 1,
       textureOpacity: 0.05,
       fontSize: 1,
+      cornerRadius: 1,
       textureImage: 'highrestexture_tapenoisevhs_whitetrans.png',
       textureSize: 'cover',
       texturePosition: 'center'
@@ -676,6 +677,7 @@ function App({ onExitToHub }: AppProps) {
     );
     root.style.setProperty('--master-texture-opacity', String(visualFilters.textureOpacity));
     root.style.setProperty('--master-font-size', `${visualFilters.fontSize * 16}px`);
+    root.style.setProperty('--master-radius-scale', String(visualFilters.cornerRadius ?? 1));
     const imgDir = visualFilters.textureImage.endsWith('.mp4') || visualFilters.textureImage.endsWith('.gif') ? '/vid/' : '/img/';
     root.style.setProperty('--master-texture-image', `url('${resolveAssetPath(`${imgDir}${visualFilters.textureImage}`)}')`);
     root.style.setProperty('--master-texture-size', visualFilters.textureSize || 'cover');
@@ -686,7 +688,7 @@ function App({ onExitToHub }: AppProps) {
   // defaults from index.css; left in place, the hub's grain took Studio's texture size.
   useEffect(() => () => {
     const root = document.documentElement;
-    ['--master-filter', '--master-texture-opacity', '--master-font-size', '--master-texture-image',
+    ['--master-filter', '--master-texture-opacity', '--master-font-size', '--master-radius-scale', '--master-texture-image',
       '--master-texture-size', '--master-texture-position'].forEach(name => root.style.removeProperty(name));
   }, []);
 
