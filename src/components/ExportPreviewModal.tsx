@@ -236,13 +236,23 @@ function cardFate(r: SlotRow, moves: Record<string, string[]>): CardFate | null 
     return r.toPool ? 'pooled' : 'destroyed';
 }
 
-function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset, rescueBeforeClean = false): boolean {
+/**
+ * README.md and SK/project.json only go to the card: where a slot would be pulled
+ * or deleted, the notes are left alone.
+ */
+function notesDefault(status: SlotRow['status'] | undefined, preset: QuickPreset): SKPrimaryDecision {
+    if (!status) return 'skip';
+    return defaultPrimary(status, preset) === 'push_to_sk' ? 'push_to_sk' : 'skip';
+}
+
+function syncMatchPreset(rows: SlotRow[], configStatus: SlotRow['status'] | undefined, configDecision: SKPrimaryDecision, preset: QuickPreset, rescueBeforeClean = false, notesStatus?: SlotRow['status'], notesDecision: SKPrimaryDecision = 'skip'): boolean {
     const slotsMatch = rows.every(r =>
         r.primary === defaultPrimary(r.status, preset, 'push', r.staleHeader) &&
         r.toPool === defaultToPool(r.status, preset, 'push', rescueBeforeClean, r.ownOlderVersion));
-    if (!configStatus) return slotsMatch;
+    const notesMatch = notesDecision === notesDefault(notesStatus, preset);
+    if (!configStatus) return slotsMatch && notesMatch;
     const configMatch = configDecision === defaultPrimary(configStatus, preset);
-    return slotsMatch && configMatch;
+    return slotsMatch && configMatch && notesMatch;
 }
 
 interface PresetMeta {
@@ -699,6 +709,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         if (!diff.config) return 'skip';
         return defaultPrimary(diff.config.status as any, initialPreset, mode);
     });
+    const [notesDecision, setNotesDecision] = useState<SKPrimaryDecision>(() =>
+        notesDefault(diff.notes?.status as SlotRow['status'] | undefined, initialPreset));
 
     // A rescan (Refresh, another source, a USB connect) brings a new diff: start
     // over from it, keeping the mode.
@@ -711,6 +723,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         const preset: QuickPreset = mode === 'import' ? 'import_pool_only' : 'push_sync';
         setRows(buildRows(preset, mode));
         setConfigDecision(diff.config ? defaultPrimary(diff.config.status as SlotRow['status'], preset, mode) : 'skip');
+        setNotesDecision(notesDefault(diff.notes?.status as SlotRow['status'] | undefined, preset));
     }, [diff, buildRows, mode]);
 
     const handleModeToggle = (m: 'import' | 'push') => {
@@ -733,6 +746,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         if (preset === 'custom') {
             setRows(prev => prev.map(r => ({ ...r, primary: 'skip' as const, toPool: false })));
             setConfigDecision('skip');
+            setNotesDecision('skip');
             return;
         }
         setRows(prev => prev.map(r => ({
@@ -743,20 +757,23 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         if (diff.config) {
             setConfigDecision(defaultPrimary(diff.config.status as any, preset, mode));
         }
-    }, [diff.config, mode]);
+        setNotesDecision(notesDefault(diff.notes?.status as SlotRow['status'] | undefined, preset));
+    }, [diff.config, diff.notes, mode]);
 
     const currentPreset: QuickPreset = useMemo(() => {
         if (isCustomOverride) return 'custom';
         const presets: QuickPreset[] = mode === 'import' 
             ? ['import_pool_only', 'import_merge_project', 'import_sync_merge']
             : ['push_sync', 'push_clean'];
-        return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p, rescueBeforeClean)) ?? 'custom';
-    }, [rows, configDecision, diff.config, mode, isCustomOverride, rescueBeforeClean]);
+        return presets.find(p => syncMatchPreset(rows, diff.config?.status as any, configDecision, p, rescueBeforeClean,
+            diff.notes?.status as SlotRow['status'] | undefined, notesDecision)) ?? 'custom';
+    }, [rows, configDecision, notesDecision, diff.config, diff.notes, mode, isCustomOverride, rescueBeforeClean]);
 
     const visibleRows = showAll ? rows : rows.filter(r => r.status !== 'MATCH' && r.status !== 'EMPTY');
 
     const configActionPending = configDecision !== 'skip';
-    const actionCount = rows.filter(r => r.primary !== 'skip' || r.toPool).length + (configActionPending ? 1 : 0);
+    const notesActionPending = notesDecision === 'push_to_sk';
+    const actionCount = rows.filter(r => r.primary !== 'skip' || r.toPool).length + (configActionPending ? 1 : 0) + (notesActionPending ? 1 : 0);
 
     // Push/push counts for Simple view summary
     const pushCount = rows.filter(r => r.primary === 'push_to_sk').length;
@@ -875,10 +892,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 };
             }
         });
-        // Always include config decision
-        if (configActionPending) {
-            legacyDecisions['config'] = configDecision === 'push_to_sk' ? 'export' : 'skip';
-        }
+        // Always include the config decision: without one, a build writes config.txt anyway.
+        if (diff.config) legacyDecisions['config'] = configDecision === 'push_to_sk' ? 'export' : 'skip';
+        // Not a slot: every build writes README.md and SK/project.json. This makes a
+        // notes-only change a build of its own.
+        if (notesActionPending) legacyDecisions['notes'] = 'export';
         onConfirm(legacyDecisions, {
             preset: currentPreset,
             moveDisplacedToPool: rows.some(r => r.toPool),
@@ -1270,6 +1288,63 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             />
                         </div>
 
+                        {/* The card's other files, one small line each under the grids */}
+                        {(diff.config || configLocked || diff.notes || filesLocked) && (
+                        <div className="-mt-5 flex flex-col gap-1">
+                        {(diff.config || configLocked) && (
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                <Archive size={11} className="text-orange-400/70 shrink-0" />
+                                <span className="text-gray-300 font-bold">config.txt</span>
+                                {configLocked ? (
+                                    <span>needs firmware {USB_FIRMWARE.version} or later over USB</span>
+                                ) : diff.config!.status === 'MATCH' ? (
+                                    <span className="text-green-500 flex items-center gap-1"><Check size={9} /> settings in sync</span>
+                                ) : diff.config!.status === 'EMPTY' ? (
+                                    <span>none on either side</span>
+                                ) : (
+                                    <>
+                                        <span className="text-orange-400">
+                                            {diff.config!.status === 'LOCAL_ONLY' ? 'not on the card yet' : diff.config!.status === 'REMOTE_ONLY' ? 'only on the card' : 'settings differ'}
+                                        </span>
+                                        {diff.config!.status !== 'REMOTE_ONLY' && (
+                                            <button onClick={() => { setIsCustomOverride(false); setConfigDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk'); }}
+                                                className={['flex items-center gap-1 px-1.5 py-0.5 rounded transition-all font-bold', configDecision === 'push_to_sk' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
+                                                <ArrowRight size={9} /> to card
+                                            </button>
+                                        )}
+                                        {diff.config!.status !== 'LOCAL_ONLY' && (
+                                            <button onClick={() => { setIsCustomOverride(false); setConfigDecision(prev => prev === 'pull_to_slot' ? 'skip' : 'pull_to_slot'); }}
+                                                className={['flex items-center gap-1 px-1.5 py-0.5 rounded transition-all font-bold', configDecision === 'pull_to_slot' ? 'bg-teal-600 text-white' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
+                                                <ArrowLeft size={9} /> into project
+                                            </button>
+                                        )}
+                                        {configDecision === 'skip' && <span className="italic">skipped</span>}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        {(diff.notes || filesLocked) && (
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                <Archive size={11} className="text-orange-400/70 shrink-0" />
+                                <span className="text-gray-300 font-bold">README.md, SK/project.json</span>
+                                {filesLocked ? (
+                                    <span>need firmware {USB_FIRMWARE.version} or later over USB</span>
+                                ) : diff.notes!.status === 'MATCH' ? (
+                                    <span className="text-green-500 flex items-center gap-1"><Check size={9} /> notes in sync</span>
+                                ) : (
+                                    <>
+                                        <span className="text-orange-400">{diff.notes!.status === 'LOCAL_ONLY' ? 'not on the card yet' : 'notes differ'}</span>
+                                        <button onClick={() => { setIsCustomOverride(false); setNotesDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk'); }}
+                                            className={['flex items-center gap-1 px-1.5 py-0.5 rounded transition-all font-bold', notesDecision === 'push_to_sk' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
+                                            <ArrowRight size={9} /> {notesDecision === 'push_to_sk' ? 'will be written' : 'skipped'}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        </div>
+                        )}
+
                         {/* AFTER SYNC (Collapsible) */}
                         {showFuture && (
                             <div className="flex flex-col gap-3 border-t border-white/5 pt-6 mt-2">
@@ -1458,7 +1533,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                             </div>
 
-                            {visibleRows.length === 0 && (diff.config?.status === 'MATCH' || !diff.config) && (
+                            {visibleRows.length === 0 && (diff.config?.status === 'MATCH' || !diff.config) && (diff.notes?.status === 'MATCH' || !diff.notes) && (
                                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
                                     <Check size={32} className="text-green-500" />
                                     <p className="font-medium text-gray-300">Hardware matches project</p>
@@ -1466,7 +1541,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                             )}
 
-                            {configLocked && (cardDiff.config?.localConfig || showAll) && (
+                            {configLocked && (
                                 <div className="grid grid-cols-[40px_1fr] gap-0 border-b border-white/5 opacity-60">
                                     <div className="flex items-center justify-center py-3 border-r border-white/5">
                                         <Archive size={14} className="text-gray-500" />
@@ -1478,7 +1553,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                             )}
 
-                            {filesLocked && mode === 'push' && (
+                            {filesLocked && (
                                 <div className="grid grid-cols-[40px_1fr] gap-0 border-b border-white/5 opacity-60">
                                     <div className="flex items-center justify-center py-3 border-r border-white/5">
                                         <Archive size={14} className="text-gray-500" />
@@ -1490,8 +1565,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                             )}
 
-                            {/* Config Row — always visible (no includeConfig toggle) */}
-                            {diff.config && (showAll || diff.config.status !== 'MATCH') && (
+                            {/* Config Row — always listed, like the card's other files */}
+                            {diff.config && (
                                 <div className="grid grid-cols-[40px_1fr_80px_150px_1fr] gap-0 border-b border-white/5 bg-orange-500/5 hover:bg-orange-500/10 transition-colors">
                                     <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-white/5">
                                         <Archive size={14} className="text-orange-400" />
@@ -1507,10 +1582,13 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         {diff.config.status === 'CONFLICT' && <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Conflict</span>}
                                         {diff.config.status === 'LOCAL_ONLY' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
                                         {diff.config.status === 'REMOTE_ONLY' && <span className="text-[8px] text-orange-300 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowLeft size={7} /> SD only</span>}
+                                        {diff.config.status === 'EMPTY' && <span className="text-[8px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded-full font-bold">None</span>}
                                     </div>
                                     <div className="flex flex-col items-center justify-center gap-1 p-2 border-r border-white/5">
                                         {diff.config.status === 'MATCH' ? (
                                             <span className="text-[9px] text-green-500 font-bold flex items-center gap-1"><Check size={9} /> In sync</span>
+                                        ) : diff.config.status === 'EMPTY' ? (
+                                            <span className="text-[9px] text-gray-600">—</span>
                                         ) : (
                                             <div className="flex items-center gap-0.5">
                                                 <button onClick={() => { setIsCustomOverride(false); setConfigDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk'); }}
@@ -1537,6 +1615,40 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                 )}
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* README.md + SK/project.json: compared by the notes they carry */}
+                            {diff.notes && (
+                                <div className="grid grid-cols-[40px_1fr_80px_150px_1fr] gap-0 border-b border-white/5 bg-orange-500/5 hover:bg-orange-500/10 transition-colors">
+                                    <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-white/5">
+                                        <Archive size={14} className="text-orange-400" />
+                                    </div>
+                                    <div className="p-3 flex items-center gap-2 border-r border-white/5 min-w-0">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-white font-bold truncate">README.md, SK/project.json</p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5">Project and tape notes</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-center p-2 border-r border-white/5">
+                                        {diff.notes.status === 'MATCH' && <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Check size={7} /> Sync</span>}
+                                        {diff.notes.status === 'CONFLICT' && <span className="text-[8px] text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><AlertTriangle size={7} /> Differs</span>}
+                                        {diff.notes.status === 'LOCAL_ONLY' && <span className="text-[8px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><ArrowRight size={7} /> Local</span>}
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center gap-1 p-2 border-r border-white/5">
+                                        {diff.notes.status === 'MATCH' ? (
+                                            <span className="text-[9px] text-green-500 font-bold flex items-center gap-1"><Check size={9} /> In sync</span>
+                                        ) : (
+                                            <button onClick={() => { setIsCustomOverride(false); setNotesDecision(prev => prev === 'push_to_sk' ? 'skip' : 'push_to_sk'); }}
+                                                title="Write the project's notes to the card"
+                                                className={['p-1.5 rounded transition-all', notesDecision === 'push_to_sk' ? 'bg-indigo-600 text-white shadow-sm scale-110' : 'text-gray-500 hover:text-gray-200 hover:bg-white/10'].join(' ')}>
+                                                <ArrowRight size={12} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="p-3 flex items-center min-w-0">
+                                        <p className="text-[10px] text-gray-500 text-right w-full">Written with every build</p>
                                     </div>
                                 </div>
                             )}
@@ -1761,7 +1873,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             <span className="text-[10px] font-bold text-indigo-300">Project will be saved before sync</span>
                         </div>
                         {actionCount > 0
-                            ? <>{actionCount} slot{actionCount !== 1 ? 's' : ''} will be updated</>
+                            ? <>{actionCount} item{actionCount !== 1 ? 's' : ''} will be updated</>
                             : <span className="italic">No changes selected</span>}
                     </div>
                     <div className="flex items-center gap-3 ml-auto">

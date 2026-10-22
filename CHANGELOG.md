@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Sync screen: the card's other files are listed.** Advanced always lists `config.txt`,
+  in sync or not, and a new row for `README.md` and `SK/project.json`. Simple view shows
+  both as a small line under the slot grids, with the same choices.
+- **Sync screen: notes count as a change.** The sync compares the project and tape notes
+  with the ones in the card's `SK/project.json`. A notes-only edit now shows as a change and
+  can be built, where before the screen said nothing would change.
+
+### Fixed
+
+- **A skipped config.txt stays skipped.** A build that pushed slots wrote the project's
+  `config.txt` even when its row was set to skip.
+
 ---
 
 ## [4.2.5] - 2026-10-22

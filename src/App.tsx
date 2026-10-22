@@ -4694,7 +4694,7 @@ function App({ onExitToHub }: AppProps) {
         slot, direction: 'down' as const, name: cardName(slot),
         bytes: syncDiff?.slots[slot]?.remote?.size ?? dec.file?.size ?? 0,
       })),
-      ...Object.entries(decisions).filter(([slot, d]) => slot !== 'config' && d !== 'skip').map(([slot, d]) => ({
+      ...Object.entries(decisions).filter(([slot, d]) => slot !== 'config' && slot !== 'notes' && d !== 'skip').map(([slot, d]) => ({
         slot, direction: d === 'delete' ? 'delete' as const : 'up' as const,
         name: d === 'delete' ? cardName(slot) : localName(slot),
         bytes: d === 'delete' ? 0 : localSize(slot),

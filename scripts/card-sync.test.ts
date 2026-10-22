@@ -369,6 +369,17 @@ const run = async () => {
         await exportSDStructure({ ...project(), cardSnapshot: undefined }, { ...opts, card: refusing.backend });
         check(refusing.files.size === 3 && refusing.texts.size === 0, 'a device that refuses the files still gets the slots', `${refusing.files.size} slots`);
 
+        const noted = { ...project(), cardSnapshot: undefined, projectNotes: 'first take' };
+        const fresh = device({ protoMinor: 2 });
+        check((await calculateSyncDiff(noted, fresh.backend)).notes?.status === 'LOCAL_ONLY', 'no SK/project.json yet: the notes are local only');
+        await exportSDStructure(noted, { ...opts, card: fresh.backend });
+        check((await calculateSyncDiff(noted, fresh.backend)).notes?.status === 'MATCH', 'after a build the notes match');
+        const edited = { ...noted, projectNotes: 'second take' };
+        check((await calculateSyncDiff(edited, fresh.backend)).notes?.status === 'CONFLICT', 'changed project notes differ from the card');
+        const tapeEdited = { ...noted, tapes: { ...noted.tapes, Blue: { ...noted.tapes.Blue, notes: 'loops' } } };
+        check((await calculateSyncDiff(tapeEdited, fresh.backend)).notes?.status === 'CONFLICT', 'so do changed tape notes');
+        check((await calculateSyncDiff(noted, old.backend)).notes === undefined, 'protocol 1.1: no notes comparison');
+
         dev.calls.download = 0;
         const changes = await scanDeviceChanges(dev.backend, { snapshot: snap, projectName: 'demo' });
         check(!!changes && dev.calls.download === 0, 'device changes over USB still come from the snapshot, no downloads', String(dev.calls.download));

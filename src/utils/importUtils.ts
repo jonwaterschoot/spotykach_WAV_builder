@@ -2,7 +2,7 @@ import type { AppState, CardSnapshot, CardSnapshotSlot, TapeColor, FileRecord, A
 import { TAPE_COLORS } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { hashBlob } from './assetUtils';
-import type { CardBackend, SlotDescriptor } from '../lib/card/cardBackend';
+import type { CardBackend, CardFileStore, SlotDescriptor } from '../lib/card/cardBackend';
 import { readCardSlots, slotFile, slotKey } from '../lib/card/cardBackend';
 import { checkCardSnapshot, listedFingerprint, slotMatchesSnapshot } from '../lib/card/cardSnapshot';
 import { audioHashOf, DEVICE_MAX_CUES, DEVICE_MAX_FRAMES, sameFingerprint } from '../lib/audio/slotFile';
@@ -524,6 +524,12 @@ export interface SyncDiff {
         remoteConfigText?: string;
         location?: 'root' | 'sk';
     };
+    /**
+     * `README.md` and `SK/project.json`, compared by the notes they carry (project
+     * and tape notes): every other part of them follows the slots. Absent when the
+     * route can't reach those files (USB before firmware 1.4.0 beta 5).
+     */
+    notes?: { status: SyncStatus };
     duplicates: DuplicateGroup[];
     /** The card against the project's card snapshot: same card, changed since, or another card. */
     cardCheck?: SnapshotCheck;
@@ -581,6 +587,31 @@ export const detectCueChunk = async (file: File): Promise<boolean> => {
 };
 
 
+
+/** Project and tape notes, as one comparable string. Empty notes count as none. */
+const notesKey = (projectNotes: unknown, tapes: unknown): string => {
+    const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+    const byTape = (tapes ?? {}) as Record<string, { notes?: unknown } | undefined>;
+    return JSON.stringify([text(projectNotes), ...TAPE_COLORS.map(c => text(byTape[c]?.notes))]);
+};
+
+/**
+ * The project's notes against the ones in the card's `SK/project.json`, which a
+ * build writes together with `README.md`. No `project.json` (or one that doesn't
+ * parse) is LOCAL_ONLY: a build writes both files.
+ */
+const compareNotes = async (projectState: AppState, files: CardFileStore): Promise<SyncStatus> => {
+    let identity: { projectNotes?: unknown; tapes?: unknown } | null = null;
+    try {
+        const file = await files.read('SK/project.json');
+        if (file) identity = JSON.parse(await file.text());
+    } catch (e) {
+        console.warn('[calculateSyncDiff] SK/project.json not read:', e);
+    }
+    if (!identity) return 'LOCAL_ONLY';
+    return notesKey(projectState.projectNotes, projectState.tapes) === notesKey(identity.projectNotes, identity.tapes)
+        ? 'MATCH' : 'CONFLICT';
+};
 
 // 1. Calculate Diff
 /**
@@ -667,6 +698,8 @@ export const calculateSyncDiff = async (
     else if (configStatus === 'CONFLICT') diff.summary.conflicts++;
     else if (configStatus === 'LOCAL_ONLY') diff.summary.localOnly++;
     else if (configStatus === 'REMOTE_ONLY') diff.summary.remoteOnly++;
+
+    if (card.files) diff.notes = { status: await compareNotes(projectState, card.files) };
 
     for (const color of TAPE_COLORS) {
         const tape = projectState.tapes[color];
