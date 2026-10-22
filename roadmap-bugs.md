@@ -5,19 +5,18 @@
 > then the roadmap. Nothing closed is kept here — it goes to [CHANGELOG.md](CHANGELOG.md) if it
 > shipped, or to `docs/archive/` if it is reasoning worth keeping.
 >
-> *Last reconciled: 2026-10-22 (Now and this intro; the sections below were last checked 2026-08-23).*
+> *Last reconciled: 2026-10-22 (Now, plus the numbers and the second preset below; the rest of the sections were last checked 2026-08-23).*
 
 ---
 
 ## Now
 
 **USB transfer and Synthux**
-- [ ] Synthux PRs [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (MIDI time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (connect diagnostics): merged into `uploader`, in firmware 1.4.0.b4 and package 1.2.0 (on `main` since 2026-10-22). Try both on the device when it's back, along with `config.txt` over USB (firmware 1.4.0.b5). → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
+- [ ] Device test when it's back (firmware 1.4.0.b5, package 1.2.0, all in 4.2.5): the connect time limits and diagnostics (Synthux [#16](https://github.com/Synthux-Academy/Spotykach/pull/16), [#17](https://github.com/Synthux-Academy/Spotykach/pull/17)), `config.txt` over USB, and a USB build's `README.md` and `SK/project.json` checked afterwards in the card reader. On b4: the sync screen says those two need b5. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
 - [ ] Bay Mud's round 2 results, then a fix from the table. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#possible-fixes)
 - [ ] Synthux [#15](https://github.com/Synthux-Academy/Spotykach/issues/15): a stalled resend ends the USB session (firmware idle timeout). → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 - [ ] Firmware 1.4.0 released: point `USB_FIRMWARE` at it and remove the `?usb=1` flag. → [usb-transfer-plan.md](docs/usbuploader/usb-transfer-plan.md#implementation-plan)
 - [ ] The damaged SD card from the device tests: not reproduced, cause unknown. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
-- [ ] `SK/project.json` (read and write) and `README.md` (write) over USB, so switching between card reader and USB keeps the card's project identity. Synthux [#18](https://github.com/Synthux-Academy/Spotykach/pull/18) (protocol 1.2: `readFile`/`writeFile`, `.txt`/`.md`/`.json` at the root or in `SK/`, one 32 KB frame each) is merged, in package 1.2.0 and firmware 1.4.0.b5. Shipped in 4.2.5 (a `files` store limited to those two paths, compact and trimmed to fit one frame; the sync screen now sends `config.txt` over USB too). Still to test on the device: b5, and b4 (no files: the sync screen says so). The opt-in project copy stays card reader only, on purpose: a USB build skips it.
 
 **News and docs**
 - [ ] A fuller news item on the cue point settings (Ignore / Snap / Free), with a demo: a sliced sample played on Spotykach in each mode, ideally a short video. Follows the short v4.2.4 note ([4.2.4-config-cue-points.md](public/news/4.2.4-config-cue-points.md)).
@@ -71,7 +70,7 @@ survey already done in [docs/optimization-plan.md](docs/optimization-plan.md) �
 and line references, and the reason it is shaped the way it is. Ranked by payoff against risk.
 **Take one per session**; the plan says explicitly which ones cannot be batched.
 
-**One `useEscapeKey` hook.** Eighteen components hand-roll the same keydown effect — check
+**One `useEscapeKey` hook.** 23 files hand-roll the same keydown effect — check
 `e.key === 'Escape'`, call `onClose`, remove the listener. About 100 lines, but the point is that
 the pattern stops being re-implemented; three of the copies already carry lint findings. Best
 payoff-to-risk on the list, and the failure mode (Escape stops closing a modal) is obvious the
@@ -101,16 +100,16 @@ are the same component with different decision vocabularies, but they have genui
 240 diff lines across 343. Extract the shared audio-preview logic and row layout rather than
 attempting a generic merge. Low priority.
 
-**`exportUtils.ts`, then `App.tsx`.** [App.tsx](src/App.tsx) is 5,805 lines and
-[WaveformEditor.tsx](src/components/WaveformEditor.tsx) 5,058 — a quarter of `src/` between them,
+**`exportUtils.ts`, then `App.tsx`.** [App.tsx](src/App.tsx) is 6,452 lines and
+[WaveformEditor.tsx](src/components/WaveformEditor.tsx) 5,412 — a quarter of `src/` between them,
 and about half of all lint findings. **Do not attempt either in one pass.** Start with
 [exportUtils.ts](src/utils/exportUtils.ts): pure functions, no JSX, a third the size, and its 27
 exports have obvious pairs (`exportSDStructure` / `exportFilesOnly`, `exportSingleTape` /
 `exportSingleFile`) where a shared directory-walk core probably hides.
 
-**Make lint mean something again.** 339 problems, 303 of them errors — at that volume a new
+**Make lint mean something again.** 327 problems, 291 of them errors — at that volume a new
 violation is invisible, which is how fifteen hook bugs accumulated unnoticed. Demote
-`no-explicit-any` (172), `no-unused-vars` (50) and `ban-ts-comment` (47) to warnings so `error`
+`no-explicit-any` (168), `no-unused-vars` (45) and `ban-ts-comment` (44) to warnings so `error`
 means "something is broken". Five React findings survive triage as code-health rather than bugs
 and are listed individually in the plan; the genuine one is
 [SmartTagInput.tsx:49](src/components/SmartTagInput.tsx#L49), deriving suggestions in an effect
@@ -199,9 +198,6 @@ point is a curated set you reuse on the Spotykach.
 
 **A welcome screen after "start new setup"**, saying what the wizard is about to do. When creating a
 first project, offer a blank project **or** a preset.
-
-**A second preset.** One ships today (Hainbach, all 36 slots full). A second that mixes several packs and
-deliberately leaves slots free would show that a project is yours to change.
 
 **An interactive walkthrough** — not a video. Step through the app and explain the features.
 

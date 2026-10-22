@@ -2,7 +2,7 @@
 
 Oct 18, 2026 · Jon · Bay Mud's report on Discord (night of Oct 15–16).
 
-**Status (Oct 21):** round 1 is in: Chrome's `requestMIDIAccess()` never returns on Bay Mud's PC, so the Spotykach is never asked to switch (see [Results](#results)). Round 2 is sent, results pending. The package fixes are open as PRs on Synthux's `uploader` branch: [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (diagnostics), see [Vlad's package and page](#vlads-package-and-page-web-on-the-synthux-uploader-branch).
+**Status (Oct 22):** round 1 is in: Chrome's `requestMIDIAccess()` never returns on Bay Mud's PC, so the Spotykach is never asked to switch (see [Results](#results)). Round 2 is sent, results pending. The package fixes, [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (diagnostics), are merged and published in package 1.2.0, which WAV Builder uses since 4.2.5 (Oct 22). See [Vlad's package and page](#vlads-package-and-page-web-on-the-synthux-uploader-branch).
 
 ## The report
 
