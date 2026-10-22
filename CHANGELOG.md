@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.6] - 2026-10-23
+
 ### Added
 
 - **Look: corner radius.** A *Corner Radius* slider in Settings ▸ Look scales every rounded
