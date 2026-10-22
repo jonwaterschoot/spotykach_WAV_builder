@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.5] - 2026-10-22
+
 ### Fixed
 
 - **Confirm Sync Actions fits small windows.** The list of actions scrolls between a fixed
