@@ -30,6 +30,7 @@ export interface ExportSDOptions {
      * Copy the project source (project.json + Assets) onto the card alongside the
      * build. Off unless explicitly enabled — the card is a build target, not a
      * backup. Replaces `backupSKToProject`, which was declared here but never read.
+     * Card reader only: a USB build skips it, whatever the card route can reach.
      */
     mirrorProjectToSD?: boolean;
     workHandle?: FileSystemDirectoryHandle | null;
@@ -952,8 +953,9 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 await cardFiles.write('SK/project.json', new Blob([JSON.stringify(projectIdentity, null, 2)], { type: 'application/json' }), 'always');
             }
 
-            // 5. Project source mirror — opt-in only (locked decision 6).
-            if (cardFiles && options.mirrorProjectToSD && options.workHandle && options.projectName) {
+            // 5. Project source mirror — opt-in only (locked decision 6), and card reader
+            // only by choice: over USB, copying Assets/ would take longer than the build.
+            if (cardFiles && card.kind !== 'usb' && options.mirrorProjectToSD && options.workHandle && options.projectName) {
                 onProgress?.("Mirroring Project Source to card...", 85);
                 try {
                     const target = `WAV_Builder/Projects/${options.projectName}`;

@@ -1093,7 +1093,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 key: 'mirrorProjectsToSD' as const,
                                 title: 'Keep project copies on SD',
                                 detail: 'Mirror project.json and Assets/ onto the card, next to the build.',
-                                more: 'Reading existing copies off a card always works, with or without this – it only decides whether a build puts fresh ones there.',
+                                more: 'Card reader builds only: a build over USB skips it, because copying Assets/ over USB would take longer than the build itself. Reading existing copies off a card always works, with or without this – it only decides whether a build puts fresh ones there.',
                             },
                         ]).map(({ key, title, detail, more }) => (
                             <div

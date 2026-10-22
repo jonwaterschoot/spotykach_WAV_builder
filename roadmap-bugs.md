@@ -18,7 +18,7 @@
 - [ ] Synthux [#15](https://github.com/Synthux-Academy/Spotykach/issues/15): a stalled resend ends the USB session (firmware idle timeout). → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 - [ ] Firmware 1.4.0 released: point `USB_FIRMWARE` at it and remove the `?usb=1` flag. → [usb-transfer-plan.md](docs/usbuploader/usb-transfer-plan.md#implementation-plan)
 - [ ] The damaged SD card from the device tests: not reproduced, cause unknown. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
-- [ ] Idea: sync `.json` and `.md` files over USB too, so a USB sync matches a card-reader sync. `config.txt` has its own commands since protocol 1.1; the rest needs new protocol commands and firmware support; no plan yet.
+- [ ] `SK/project.json` (read and write) and `README.md` (write) over USB, so switching between card reader and USB keeps the card's project identity. Needs firmware: Vlad's `CONFIG_READ`/`CONFIG_WRITE` widened to a short fixed list of files, one 32 KB frame each (the largest `SK/project.json` here is 16 KB). The opt-in project copy stays card reader only, on purpose: a USB build skips it.
 
 **Sample Mangler**
 - [ ] The "Later" items and the real-phone checks (hold time, pinch). → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
