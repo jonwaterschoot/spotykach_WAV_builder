@@ -30,7 +30,7 @@ The app opens on a hub, grouped by what you came to do:
 ## Features
 
 -   **SD card build and sync**: build the `SK/` folder straight onto the card (File System Access API, Chrome/Edge), or import a card into a project. The preview shows every slot's fate before anything is written, and recognises what the project wrote before.
--   **USB transfer (beta)**: with the [1.4.0 beta firmware](https://github.com/Synthux-Academy/Spotykach/releases/tag/v.1.4.0.b1), reach the card while it stays in the Spotykach, through its rear USB port. Turn it on in Settings ▸ System. The card reader is faster (about 35 s per full slot over USB); connect directly to a USB-A port, not through a hub.
+-   **USB transfer (beta)**: with the [1.4.0 beta firmware](https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.0.b5), reach the card while it stays in the Spotykach, through its rear USB port: the slots, `config.txt`, the card's README and `SK/project.json` (one file is at most 32 KB over USB; a project of more than about 115 samples gets a shorter `project.json`). Turn it on in Settings ▸ System. The card reader is faster (about 35 s per full slot over USB) and still the only route for the project copy and the SK backup; connect directly to a USB-A port, not through a hub.
 -   **Audio Processing**: drag and drop any audio format, with automatic conversion to 48 kHz stereo 32-bit float WAV.
 -   **Tape-Based Organization**: 6 color-coded tapes with 6 slots each, mirroring the hardware, with notes per tape and per project in `project.json`.
 -   **Device settings**: `config.txt` is kept in the project and written to the card with it.

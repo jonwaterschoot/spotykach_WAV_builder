@@ -21,8 +21,11 @@
 - **USB: README.md and SK/project.json over USB.** With firmware 1.4.0.b5 or later, a build
   over USB writes the card's notes and project file too, so a card says the same whichever
   way it was built. On older firmware the sync screen says they keep the ones from the last
-  card-reader build. A project file too big for USB (a library of a few hundred files) lists
-  only the files in slots. The project copy and the SK backup stay card reader only.
+  card-reader build. The project copy and the SK backup stay card reader only.
+- **USB: the project file's size limit.** USB takes at most 32 KB per file, so `project.json`
+  is written compact: it fits about 115 samples with notes like the Hainbach pack, 130
+  without notes. Beyond that it lists only the samples in slots; nothing reads the rest back.
+  Only notes over about 20,000 characters leave it out, with a warning. Card reader unchanged.
 - **USB: the connect steps come from the transfer package (1.2.0).** Its time limits and step
   lines replace WAV Builder's own copy of the connect steps. *Copy diagnostics* keeps the
   serial port events and how a connection ended.
