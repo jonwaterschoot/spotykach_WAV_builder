@@ -16,7 +16,13 @@
   slot grids more room. The choice is remembered.
 - **USB: config.txt over USB.** With firmware 1.4.0.b4 or later, building to Spotykach over
   USB writes `config.txt` too, and the sync compares it like on a card reader. Older firmware
-  is unchanged: settings still go through a card reader.
+  is unchanged: settings still go through a card reader. *Import ▸ Into a new project* over
+  USB takes the device's `config.txt` too.
+- **USB: README.md and SK/project.json over USB.** With firmware 1.4.0.b5 or later, a build
+  over USB writes the card's notes and project file too, so a card says the same whichever
+  way it was built. On older firmware the sync screen says they keep the ones from the last
+  card-reader build. A project file too big for USB (a library of a few hundred files) lists
+  only the files in slots. The project copy and the SK backup stay card reader only.
 - **USB: the connect steps come from the transfer package (1.2.0).** Its time limits and step
   lines replace WAV Builder's own copy of the connect steps. *Copy diagnostics* keeps the
   serial port events and how a connection ended.

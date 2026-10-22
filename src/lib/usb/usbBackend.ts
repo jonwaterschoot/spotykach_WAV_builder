@@ -1,7 +1,8 @@
 /**
  * The USB route: a Spotykach in transfer mode on its rear USB port. Reaches the
- * 36 slot files, and `SK/config.txt` on firmware with protocol 1.1 (1.4.0.b4 and
- * later). No `project.json`, no other files.
+ * 36 slot files, `SK/config.txt` on firmware with protocol 1.1 (1.4.0.b4 and
+ * later), and `README.md` and `SK/project.json` on protocol 1.2 (1.4.0.b5 and
+ * later). The project copy and the SK backup stay card reader only.
  *
  * Reading is split in two tiers. `listSlots()` is one LIST (names, lengths, cue
  * counts, no audio). `readHeader()` reads the first 4 KB plus the chunks after
@@ -12,12 +13,12 @@ import { TAPE_COLORS } from '../../types';
 import type { TapeColor } from '../../types';
 import { readWavHeaderInfo } from '../audio/wavHeader';
 import type { WavHeaderInfo } from '../audio/wavHeader';
-import type { CardBackend, CardConfig, CardInfo, PlannedWrite, SlotDescriptor, SpaceCheck, WriteSlotOptions } from '../card/cardBackend';
+import type { CardBackend, CardConfig, CardFileStore, CardInfo, PlannedWrite, SlotDescriptor, SpaceCheck, WriteSlotOptions } from '../card/cardBackend';
 import type { WriteCompare } from '../../utils/exportUtils';
 import { slotKey } from '../card/cardBackend';
 import { snapshotFingerprint } from '../card/cardSnapshot';
 import { sameFingerprint, type SlotFingerprint } from '../audio/slotFile';
-import { CMD, SLOT_LOADABLE, SLOT_OCCUPIED, checkUploadable } from '@synthuxacademy/spotykach-transfer';
+import { CMD, MAX_FILE_SIZE, SLOT_LOADABLE, SLOT_OCCUPIED, checkUploadable } from '@synthuxacademy/spotykach-transfer';
 import type { Connection, DeviceInfo, SkLink, SlotEntry } from '@synthuxacademy/spotykach-transfer';
 
 /** The device's own LIST read: covers our `LIST` chunk (about 300 bytes) with room to spare. */
@@ -30,6 +31,12 @@ const MAX_TAIL_READ = 65536;
 const SPACE_MARGIN_KIB = 64;
 
 const SAMPLE_RATE = 48000;
+
+/**
+ * The files outside the slots a build writes over USB. The device takes any small
+ * text file at the root or in `SK/`; these two are the ones WAV Builder owns.
+ */
+const USB_FILES = new Set(['README.md', 'SK/project.json']);
 
 const slotFileName = (slot: number): string => `${slot}.wav`;
 
@@ -47,6 +54,8 @@ export class UsbBackend implements CardBackend {
      */
     readConfig?: () => Promise<CardConfig | null>;
     writeConfig?: (text: string, compare?: WriteCompare) => Promise<boolean>;
+    /** Only on firmware with the file commands (protocol 1.2): `USB_FILES`. */
+    files?: CardFileStore;
 
     /** The last LIST, by `slotKey`, empty slots included. */
     private entries = new Map<string, SlotEntry>();
@@ -70,15 +79,25 @@ export class UsbBackend implements CardBackend {
                 const text = await link.readConfig();
                 return text === null ? null : { text, location: 'sk' };
             };
-            this.writeConfig = async (text, compare = 'content') => {
-                // The file is a few hundred bytes, so reading it back is cheap. Same
-                // rule as the folder route: unchanged text is not written again.
-                if (compare !== 'always') {
-                    const current = await link.readConfig();
-                    if (current !== null && (compare === 'size' ? current.length === text.length : current === text)) return false;
-                }
-                await link.writeConfig(text);
-                return true;
+            this.writeConfig = (text, compare = 'content') =>
+                writeText(() => link.readConfig(), () => link.writeConfig(text), text, compare);
+        }
+        if (link.hasFiles()) {
+            const reachable = (path: string) => {
+                if (!USB_FILES.has(path)) throw new Error(`${path} needs the card reader.`);
+            };
+            this.files = {
+                maxSize: MAX_FILE_SIZE,
+                read: async (path) => {
+                    reachable(path);
+                    const text = await link.readFile(path);
+                    return text === null ? null : new File([text], path.slice(path.lastIndexOf('/') + 1));
+                },
+                write: async (path, blob, compare = 'content') => {
+                    reachable(path);
+                    const text = await blob.text();
+                    return writeText(() => link.readFile(path), () => link.writeFile(path, text), text, compare);
+                },
             };
         }
     }
@@ -351,6 +370,21 @@ export class UsbBackend implements CardBackend {
             && theirs.frames === info.frames
             && JSON.stringify(theirs.processing ?? []) === JSON.stringify(ours.processing ?? []);
     }
+}
+
+/**
+ * The folder route's rule for a text file: unchanged text is not written again.
+ * These files are a few KB at most, so reading them back is cheap.
+ */
+async function writeText(
+    read: () => Promise<string | null>, write: () => Promise<void>, text: string, compare: WriteCompare,
+): Promise<boolean> {
+    if (compare !== 'always') {
+        const current = await read();
+        if (current !== null && (compare === 'size' ? current.length === text.length : current === text)) return false;
+    }
+    await write();
+    return true;
 }
 
 /** A fresh `ArrayBuffer` holding exactly these bytes. */

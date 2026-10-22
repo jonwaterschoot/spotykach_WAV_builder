@@ -10,6 +10,7 @@ import { RiSdCardMiniLine } from 'react-icons/ri';
 import { SlotGrid6x6, type SlotEntry, type SlotActionBadge, TAPE_LETTER } from './SlotGrid6x6';
 import type { SKPrimaryDecision, ExportOptions } from '../types';
 import { getDurabilityPrefs } from '../utils/durabilityPrefs';
+import { USB_FIRMWARE } from '../lib/usb/flag';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,10 +75,15 @@ interface ExportPreviewModalProps {
     /** Card reader / USB switch and connection, under the header. */
     sourceBar?: React.ReactNode;
     /**
-     * Over USB: only the slot files are reachable (no config.txt, no SK backup),
-     * and every slot costs an upload or a download, so the confirmation gives a time.
+     * Over USB: every slot costs an upload or a download, so the confirmation gives
+     * a time, and the SK backup needs the card reader.
      */
     usbMode?: boolean;
+    /**
+     * Over USB, what the connected firmware reaches besides the slots: `config.txt`
+     * (protocol 1.1) and README plus `SK/project.json` (protocol 1.2).
+     */
+    usbReach?: { config: boolean; files: boolean };
     /** Why nothing can be applied right now (USB not connected). */
     blockedReason?: string;
     /**
@@ -551,10 +557,13 @@ const CardLossPanel: React.FC<{
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     isOpen, onClose, onConfirm, diff: cardDiff, projectName, defaultMode = 'push', defaultPreset,
     onRefresh, isRefreshing, onChangeSDCard, cardMissing = false,
-    sourceBar, usbMode = false, blockedReason, onImportIntoNewProject,
+    sourceBar, usbMode = false, usbReach, blockedReason, onImportIntoNewProject,
 }) => {
-    // USB can't reach config.txt: leave it out of the decisions, show it as locked.
-    const diff = useMemo(() => usbMode ? { ...cardDiff, config: undefined } : cardDiff, [cardDiff, usbMode]);
+    // Firmware without the settings commands can't reach config.txt over USB: leave it
+    // out of the decisions, show it as locked.
+    const configLocked = usbMode && !usbReach?.config;
+    const filesLocked = usbMode && !!usbReach && !usbReach.files;
+    const diff = useMemo(() => configLocked ? { ...cardDiff, config: undefined } : cardDiff, [cardDiff, configLocked]);
     const [mode, setMode] = useState<'import' | 'push'>(defaultMode);
 
     useEffect(() => {
@@ -876,7 +885,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             skMode: currentPreset === 'push_clean' ? 'clean' : 'overwrite',
             configDecision,
             // Legacy fields App.tsx still reads
-            includeConfig: !usbMode,
+            includeConfig: !configLocked,
             forceOverwrite: true,
             skSnapshot: skSnapshot && !usbMode,
         } as any, importDecisions);
@@ -1457,14 +1466,26 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 </div>
                             )}
 
-                            {usbMode && (cardDiff.config?.localConfig || showAll) && (
+                            {configLocked && (cardDiff.config?.localConfig || showAll) && (
                                 <div className="grid grid-cols-[40px_1fr] gap-0 border-b border-white/5 opacity-60">
                                     <div className="flex items-center justify-center py-3 border-r border-white/5">
                                         <Archive size={14} className="text-gray-500" />
                                     </div>
                                     <div className="p-3 flex items-center gap-3 min-w-0">
                                         <p className="text-xs text-gray-300 font-bold">config.txt</p>
-                                        <p className="text-[10px] text-gray-500">Needs the card reader: USB reaches the slot files only.</p>
+                                        <p className="text-[10px] text-gray-500">Over USB this needs firmware {USB_FIRMWARE.version} or later. Use the card reader, or update the firmware.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {filesLocked && mode === 'push' && (
+                                <div className="grid grid-cols-[40px_1fr] gap-0 border-b border-white/5 opacity-60">
+                                    <div className="flex items-center justify-center py-3 border-r border-white/5">
+                                        <Archive size={14} className="text-gray-500" />
+                                    </div>
+                                    <div className="p-3 flex items-center gap-3 min-w-0">
+                                        <p className="text-xs text-gray-300 font-bold shrink-0">README.md, SK/project.json</p>
+                                        <p className="text-[10px] text-gray-500">Over USB these need firmware {USB_FIRMWARE.version} or later. The card keeps the ones from its last card-reader build.</p>
                                     </div>
                                 </div>
                             )}

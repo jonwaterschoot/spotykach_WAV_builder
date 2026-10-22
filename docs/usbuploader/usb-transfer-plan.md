@@ -110,8 +110,8 @@ The slot audio maps one to one; the files outside the slots do not. USB transfer
 | Skip unchanged slots | `safeWriteBlob(..., 'content')` compares bytes | Can't compare without downloading | Compare `ICMT.id` + `ICMT.h` + processing + frame count from the header read |
 | Delete a slot | Directory `removeEntry` | DELETE | Direct map |
 | Original filename | `FileRecord.originalName`, not in the file | `INAM` | Add `INAM` to our `LIST/INFO` |
-| `config.txt` | Read and write | Not available | Card reader only; show it as locked in USB mode |
-| `SK/project.json` | Written at export, read by `scanDeviceChanges` | Not available | Keep the identity in the project and in the WAV headers instead |
+| `config.txt` | Read and write | Protocol 1.1 (firmware 1.4.0.b4): read and write | Locked in USB mode on older firmware |
+| `SK/project.json`, `README.md` | Written at export, read by `scanDeviceChanges` | Protocol 1.2 (firmware 1.4.0.b5): written at export, compact, one 32 KB frame | The identity also lives in the project (card snapshot) and the WAV headers; USB device-change detection uses those |
 | Device-edit detection | `lastModified` > export date | No timestamps | Missing or mismatched `ICMT` = changed on the device |
 | Card size / free space | Not shown | HELLO returns total and free KiB | Show it in the USB panel |
 | Browser | Chromium (File System Access) | Chromium (Web Serial + Web MIDI SysEx) | Same requirement |

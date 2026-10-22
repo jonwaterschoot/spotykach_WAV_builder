@@ -739,6 +739,32 @@ export const slotWavMetadata = async (file: FileRecord, version: AudioVersion): 
 });
 
 /**
+ * `README.md` or `SK/project.json`, always written. A file bigger than the route
+ * takes (over USB, one frame) is left out with a warning rather than failing the build.
+ */
+const writeCardText = async (files: import('../lib/card/cardBackend').CardFileStore, path: string, text: string, type: string): Promise<boolean> => {
+    const blob = new Blob([text], { type });
+    if (files.maxSize !== undefined && blob.size > files.maxSize) {
+        console.warn(`[exportSDStructure] ${path} is ${blob.size} bytes, more than the ${files.maxSize} USB takes: not written.`);
+        return false;
+    }
+    return files.write(path, blob, 'always');
+};
+
+/**
+ * `SK/project.json`. With a size limit (USB) it is written compact, and if that is
+ * still too big, with only the files in slots: nothing reads the rest back.
+ */
+const identityText = (identity: { files: Record<string, unknown> }, state: AppState, maxSize?: number): string => {
+    if (maxSize === undefined) return JSON.stringify(identity, null, 2);
+    const compact = JSON.stringify(identity);
+    if (new Blob([compact]).size <= maxSize) return compact;
+    const inSlots = new Set(Object.values(state.tapes).flatMap(t => t.slots.map(s => s.fileId)));
+    const files = Object.fromEntries(Object.entries(identity.files).filter(([id]) => inSlots.has(id)));
+    return JSON.stringify({ ...identity, files });
+};
+
+/**
  * Writes the SK structure. On a direct write, returns the card snapshot: what
  * every slot now holds, for the caller to keep in the project (`cardSnapshot`).
  */
@@ -772,10 +798,10 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
 
             await card.ensureLayout?.();
 
-            // 1. Write Readme (folder route only, like everything outside the slots)
+            // 1. Write Readme (card reader, and USB on firmware with the file commands)
             if (card.files) {
                 onProgress?.("Writing README.md...", 15);
-                await card.files.write('README.md', new Blob([generateReadme(state)], { type: 'text/markdown' }), 'always');
+                await writeCardText(card.files, 'README.md', generateReadme(state), 'text/markdown');
             }
 
             // 2. Config.txt Generation
@@ -923,7 +949,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 }
             }
 
-            // 4. Project Identity (folder route only: USB reaches the slots alone)
+            // 4. Project Identity (card reader, and USB on firmware with the file commands)
             const cardFiles = card.files;
             if (cardFiles) onProgress?.("Writing project identity...", 80);
             const projectIdentity = {
@@ -950,7 +976,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                 }, {} as Record<string, any>)
             };
             if (cardFiles) {
-                await cardFiles.write('SK/project.json', new Blob([JSON.stringify(projectIdentity, null, 2)], { type: 'application/json' }), 'always');
+                await writeCardText(cardFiles, 'SK/project.json', identityText(projectIdentity, state, cardFiles.maxSize), 'application/json');
             }
 
             // 5. Project source mirror — opt-in only (locked decision 6), and card reader

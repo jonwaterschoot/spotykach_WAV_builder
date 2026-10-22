@@ -4956,7 +4956,8 @@ function App({ onExitToHub }: AppProps) {
       showToast('The card has no slots in use.', 'neutral');
       return;
     }
-    const takeConfig = source === 'reader' && diff.config?.status === 'REMOTE_ONLY';
+    // Over USB the diff only has a card config.txt when the firmware reaches it.
+    const takeConfig = diff.config?.status === 'REMOTE_ONLY';
     const options: ExportOptions = {
       preset: 'merge',
       moveDisplacedToPool: false,
@@ -5928,6 +5929,7 @@ function App({ onExitToHub }: AppProps) {
                 // With USB on, the source bar says the card is missing and leaves the switch reachable.
                 cardMissing={!usbEnabled && sdCardMissing}
                 usbMode={cardSource === 'usb'}
+                usbReach={usb.backend ? { config: !!usb.backend.writeConfig, files: !!usb.backend.files } : undefined}
                 blockedReason={cardSource === 'usb'
                   ? (usb.backend ? undefined : 'Connect Spotykach first')
                   : (sdCardMissing ? 'SD card not found' : undefined)}

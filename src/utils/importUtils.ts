@@ -1028,14 +1028,15 @@ export interface DeviceDiff {
 
 /**
  * What changed on the card since the last export. The card reader reads
- * `SK/project.json` and compares file dates. USB reaches neither, so with
- * `fromSnapshot` it compares the header reads with the project's card snapshot.
+ * `SK/project.json` and compares file dates. USB has no file dates (and older
+ * firmware no `project.json`), so with `fromSnapshot` it compares the header reads
+ * with the project's card snapshot.
  */
 export const scanDeviceChanges = async (
     card: CardBackend,
     fromSnapshot?: { snapshot?: CardSnapshot; projectName: string },
 ): Promise<DeviceDiff | null> => {
-    if (!card.files) {
+    if (card.kind === 'usb' || !card.files) {
         if (!fromSnapshot?.snapshot) return null;
         try {
             const cardSlots = await readCardSlots(card);
@@ -1064,7 +1065,7 @@ export const scanDeviceChanges = async (
         }
     }
     try {
-        // 1. Read Project Manifest (folder route only: USB can't reach project.json)
+        // 1. Read Project Manifest (card reader only)
         let projectIdentity: any = null;
         try {
             const file = await card.files?.read('SK/project.json');

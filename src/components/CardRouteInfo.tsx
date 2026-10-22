@@ -17,7 +17,7 @@ const code = (text: string) => <code className="bg-white/5 px-1 rounded text-gra
 const USB_SECTIONS: InfoSection[] = [
     {
         title: 'What USB reaches',
-        body: <>The 36 slot files only. {code('config.txt')}, the notes ({code('README.md')}), {code('SK/project.json')}, the project copy and the SK backup need the card reader. A preset&apos;s {code('config.txt')} settings don&apos;t reach the device over USB.</>,
+        body: <>The 36 slot files, {code('config.txt')}, the notes ({code('README.md')}) and {code('SK/project.json')}, with firmware {USB_FIRMWARE.version} or later. Older firmware reaches the slot files only. The project copy and the SK backup need the card reader, and a preset&apos;s {code('config.txt')} settings don&apos;t reach the device over USB.</>,
     },
     {
         title: 'Needs',

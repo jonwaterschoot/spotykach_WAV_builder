@@ -4,8 +4,9 @@
  *
  * - `FolderBackend` — the card reader, through the File System Access API. Reaches
  *   everything: slot WAVs, `config.txt`, `project.json`, README.
- * - `UsbBackend` (`feat/usb-transfer`) — the Spotykach's rear USB. Reaches the 36
- *   slot files only, so every folder-only member is optional.
+ * - `UsbBackend` — the Spotykach's rear USB. Reaches the 36 slot files, and on
+ *   newer firmware `config.txt`, `README.md` and `SK/project.json`, so every member
+ *   it may lack is optional.
  *
  * Slots are addressed by tape colour and slot number; the backend owns the
  * `SK/<T>/<N>.WAV` layout.
@@ -86,9 +87,12 @@ export interface WriteSlotOptions {
 
 /**
  * Files outside the slots, by `/`-separated path from the card root
- * (`README.md`, `SK/project.json`, `WAV_Builder/Projects/...`). Folder route only.
+ * (`README.md`, `SK/project.json`, `WAV_Builder/Projects/...`). Over USB (protocol
+ * 1.2) only `README.md` and `SK/project.json`.
  */
 export interface CardFileStore {
+    /** USB only: the largest file the device takes, in bytes. */
+    maxSize?: number;
     /** Null when the file is missing or unreadable. */
     read(path: string): Promise<File | null>;
     /** Creates folders on the way. True when it wrote, false when `compare` skipped it. */

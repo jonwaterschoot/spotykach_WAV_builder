@@ -11,11 +11,11 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkUploadable, inspectWav, SLOT_LOADABLE, SLOT_OCCUPIED } from '@synthuxacademy/spotykach-transfer';
+import { checkUploadable, inspectWav, isFileName, MAX_FILE_SIZE, SLOT_LOADABLE, SLOT_OCCUPIED } from '@synthuxacademy/spotykach-transfer';
 import { UsbBackend } from '../src/lib/usb/usbBackend';
 import { FolderBackend } from '../src/lib/card/folderBackend';
 import { exportSDStructure } from '../src/utils/exportUtils';
-import { calculateSyncDiff } from '../src/utils/importUtils';
+import { calculateSyncDiff, scanDeviceChanges } from '../src/utils/importUtils';
 import { importedSnapshotSlot } from '../src/lib/card/cardSnapshot';
 import { getInitialState } from '../src/utils/initialState';
 import { assembleWav } from '../src/lib/audio/wavHeader';
@@ -63,17 +63,29 @@ const info = {
     protoMajor: 1, protoMinor: 0, tapes: 6, slots: 6, tapeNames: 'BGPRTY', maxChunk: 4096,
     maxFrames: 2016000, maxCues: 255, totalKiB: 16_000_000, freeKiB: 15_000_000, firmware: '1.3.1',
 };
-/** `protoMinor: 1` is firmware with the settings commands (1.4.0.b4 and later). */
+/**
+ * `protoMinor: 1` is firmware with the settings commands (1.4.0.b4 and later), `2`
+ * with the small-file commands (1.4.0.b5 and later).
+ */
 const device = ({ protoMinor = 0 } = {}) => {
     const files = new Map<string, Uint8Array>();
-    const calls = { upload: 0, readSlot: 0, download: 0, configWrite: 0 };
+    const calls = { upload: 0, readSlot: 0, download: 0, configWrite: 0, fileWrite: 0 };
     const config = { text: null as string | null };
+    const texts = new Map<string, string>();
     const link: any = {
         closed: false, onclose: null, info: { ...info, protoMinor },
         async hello() { return this.info; },
         hasConfig() { return protoMinor >= 1; },
         async readConfig() { return config.text; },
         async writeConfig(text: string) { calls.configWrite++; config.text = text; },
+        hasFiles() { return protoMinor >= 2; },
+        async readFile(name: string) { return texts.get(name) ?? null; },
+        async writeFile(name: string, text: string) {
+            if (!isFileName(name)) throw new Error(`bad name ${name}`);
+            if (new TextEncoder().encode(text).length > MAX_FILE_SIZE) throw new Error(`${name} too big`);
+            calls.fileWrite++;
+            texts.set(name, text);
+        },
         async list() {
             const out = [];
             for (let t = 0; t < 6; t++) for (let s = 0; s < 6; s++) {
@@ -100,7 +112,7 @@ const device = ({ protoMinor = 0 } = {}) => {
         async request() { return new Uint8Array([0]); },
         async exit() {},
     };
-    return { files, calls, config, backend: new UsbBackend({ link, info: link.info } as any) };
+    return { files, calls, config, texts, backend: new UsbBackend({ link, info: link.info } as any) };
 };
 
 const build = async (state: AppState, card: any, events: any[] = []) =>
@@ -323,6 +335,38 @@ const run = async () => {
         check(configDiff.config?.status === 'MATCH' && configDiff.config.location === 'sk', 'the diff reads it back: MATCH', `${configDiff.config?.status}`);
         dev.config.text = 'mid_ch_a\n3\n';
         check((await calculateSyncDiff(settings, dev.backend)).config?.status === 'CONFLICT', 'a different config.txt on the device is a conflict');
+    }
+
+    console.log('\nUSB: README.md and SK/project.json');
+    {
+        const opts = { directWrite: true, skMode: 'overwrite', includeConfig: false, projectName: 'demo' } as const;
+
+        const old = device({ protoMinor: 1 });
+        check(!old.backend.files, 'protocol 1.1 firmware: no files store');
+        await exportSDStructure({ ...project(), cardSnapshot: undefined }, { ...opts, card: old.backend });
+        check(old.calls.fileWrite === 0 && old.files.size === 3, 'and a build still writes the slots, no README or project.json', `${old.calls.fileWrite} files, ${old.files.size} slots`);
+
+        const dev = device({ protoMinor: 2 });
+        const snap = (await exportSDStructure({ ...project(), cardSnapshot: undefined }, { ...opts, card: dev.backend }))!;
+        check(dev.texts.has('README.md'), 'protocol 1.2: a build writes README.md');
+        const identity = JSON.parse(dev.texts.get('SK/project.json') ?? 'null');
+        check(identity?.metadata?.projectName === 'demo' && identity.tapes.Blue.slots[0].fileId === 'kick', 'and SK/project.json, with the tapes');
+        check(!dev.texts.get('SK/project.json')!.includes('\n'), 'written compact over USB');
+        check(!!(await dev.backend.files!.read('SK/project.json')), 'read back through the files store');
+        let refused = '';
+        try { await dev.backend.files!.write('WAV_Builder/Projects/demo/project.json', new Blob(['{}'])); } catch (e) { refused = (e as Error).message; }
+        check(/card reader/.test(refused), 'other paths are refused (the project copy stays card reader only)', refused);
+
+        // A big library: 400 files, three in slots.
+        const big = { ...project(), cardSnapshot: undefined };
+        for (let i = 0; i < 400; i++) big.files[`extra-${i}`] = { ...big.files.pad, id: `extra-${i}`, name: `a fairly long sample name number ${i}.wav`, originalName: `a fairly long sample name number ${i}.wav` };
+        await exportSDStructure(big, { ...opts, card: dev.backend });
+        const trimmed = JSON.parse(dev.texts.get('SK/project.json')!);
+        check(Object.keys(trimmed.files).sort().join() === 'kick,long,pad', 'too big for one frame: only the files in slots', `${Object.keys(trimmed.files).length} files`);
+
+        dev.calls.download = 0;
+        const changes = await scanDeviceChanges(dev.backend, { snapshot: snap, projectName: 'demo' });
+        check(!!changes && dev.calls.download === 0, 'device changes over USB still come from the snapshot, no downloads', String(dev.calls.download));
     }
 
     console.log('\nUSB: a slot file from before 4.2');
