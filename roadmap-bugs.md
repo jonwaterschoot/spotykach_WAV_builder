@@ -18,7 +18,10 @@
 - [ ] Synthux [#15](https://github.com/Synthux-Academy/Spotykach/issues/15): a stalled resend ends the USB session (firmware idle timeout). → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 - [ ] Firmware 1.4.0 released: point `USB_FIRMWARE` at it and remove the `?usb=1` flag. → [usb-transfer-plan.md](docs/usbuploader/usb-transfer-plan.md#implementation-plan)
 - [ ] The damaged SD card from the device tests: not reproduced, cause unknown. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
-- [ ] `SK/project.json` (read and write) and `README.md` (write) over USB, so switching between card reader and USB keeps the card's project identity. Needs firmware: Vlad's `CONFIG_READ`/`CONFIG_WRITE` widened to a short fixed list of files, one 32 KB frame each (the largest `SK/project.json` here is 16 KB). The opt-in project copy stays card reader only, on purpose: a USB build skips it.
+- [ ] `SK/project.json` (read and write) and `README.md` (write) over USB, so switching between card reader and USB keeps the card's project identity. Synthux [#18](https://github.com/Synthux-Academy/Spotykach/pull/18) proposes generic small-file commands (protocol 1.2: `FILE_READ`/`FILE_WRITE`, `.txt`/`.md`/`.json` at the root or in `SK/`, one 32 KB frame each); it also restores the protocol tests in CI. Once merged and published: give the USB backend a `files` store limited to those two paths. The opt-in project copy stays card reader only, on purpose: a USB build skips it.
+
+**News and docs**
+- [ ] A fuller news item on the cue point settings (Ignore / Snap / Free), with a demo: a sliced sample played on Spotykach in each mode, ideally a short video. Follows the short v4.2.4 note ([4.2.4-config-cue-points.md](public/news/4.2.4-config-cue-points.md)).
 
 **Sample Mangler**
 - [ ] The "Later" items and the real-phone checks (hold time, pinch). → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)

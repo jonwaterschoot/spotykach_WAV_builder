@@ -1,5 +1,13 @@
 [
   {
+    "id": "424",
+    "title": "config.txt: cue points and grit mix (v4.2.4)",
+    "date": "2026-10-22",
+    "file": "4.2.4-config-cue-points.md",
+    "image": "images/Slice_cuepointsBeta.png",
+    "category": "Update"
+  },
+  {
     "id": "usb-beta",
     "title": "USB transfer, in beta",
     "date": "2026-10-13",
