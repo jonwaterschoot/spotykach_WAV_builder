@@ -12,6 +12,10 @@ Spotykach SD card, from the sample packs or your own files, in the right format 
 Say it's an overview, not a manual. Link: [app URL].
 -->
 
+WAV.builder today is an app to help organise samples, allowing to bring sounds, whether your own or those from the Synthux Sample Packs, to the Spotykach SD card. And in the other direction allowing you to easily import what you wrote to the SD card on the device while you were playing it.
+This article is an overview and not a manual. 
+
+
 ## [2. Where it came from]
 
 <!--
@@ -19,6 +23,11 @@ The origin story in your words: why you started it, what problem it solved for y
 (first commit 6 Feb 2026, v1.0.0 on 9 Feb). How it grew: projects, tapes, the editor, sample packs,
 Studio. How it ended up connected to Synthux.
 -->
+
+I built WAV.builder as an easy tool to get sounds onto the Spotykach SD card, formatted in the correct way. Really it was originally meant to write all caps .WAV files in the correct wav formatting. As that was a requirement for the device to read them. We now actually can use lower caps .wav as well, but the frustrations of not being able to easily save an all caps 1.WAV in Windows is the origin story.
+Along the way I kept thinking it'd be nice if I could x y z ... Many months later it's quite a capable tool with many functions, I'm still in doubt on many things, from UI to UX to design, it's all on the table to me still; but I use it myself and do find it usefull in my day to day use of Spotykach. I hope it can be for you too.
+
+It's all open source, so if you want to contribute or rip it apart to build your own tool. You're free to consider my app as a use case study.
 
 ## [3. Trying to film it all]
 
