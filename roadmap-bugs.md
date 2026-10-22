@@ -5,7 +5,7 @@
 > then the roadmap. Nothing closed is kept here — it goes to [CHANGELOG.md](CHANGELOG.md) if it
 > shipped, or to `docs/archive/` if it is reasoning worth keeping.
 >
-> *Last reconciled: 2026-10-22 (Now, plus the numbers and the second preset below; the rest of the sections were last checked 2026-08-23).*
+> *Last reconciled: 2026-10-22, every section checked against the code and the changelog.*
 
 ---
 
@@ -84,26 +84,29 @@ once, the log/progress listeners are registered inside `load()` and would accumu
 progress state has to fan out to every mounted subscriber. Keep the hook's returned API identical
 so neither call site changes.
 
-**Four byte formatters that disagree** — `B/kB/MB/GB/TB` at one decimal, `B/KB/MB/GB` at two, and
-always-MB twice over (byte-identical, in the two comparison tables). Same story for
+**Twelve byte formatters that disagree** (four when this was surveyed; the USB, Browse and
+submission work added eight) — `formatSize`, `formatFileSize` and `formatBytes` across 12 files,
+in `B/kB/MB/GB/TB` at one decimal, `B/KB/MB/GB` at two, KiB input in the two card-route views, and
+always-MB twice over (byte-identical, in the two comparison tables). `workspaceBackup.ts` already
+exports one; the plan's survey predates the rest. Same story for
 `formatDuration` / `formatTime`, where one formats a timestamp and the other a duration under
 near-identical names. ⚠️ **A decision, not a refactor:** standardising changes what users see
 (`1.50 MB` → `1.5 MB`, and small files stop reading as `0.00 MB`).
 
-**Three `sanitize*` functions**, two differing only in capitalisation — `sanitizeFilename`,
-`sanitizeFileName`, `sanitizeProjectName`. ⚠️ These decide names written to the user's disk and SD
+**Four `sanitize*` name functions**, two differing only in capitalisation — `sanitizeFilename`,
+`sanitizeFileName`, `sanitizeProjectName`, and since the submission tool `sanitizeSlotName`. ⚠️ These decide names written to the user's disk and SD
 card, so diff the bodies before merging; the right fix may be better names rather than one
 function.
 
-**The two ComparisonTables.** `ExportComparisonTable` (200 lines) and `SyncComparisonTable` (143)
+**The two ComparisonTables.** `ExportComparisonTable` (200 lines) and `SyncComparisonTable` (145)
 are the same component with different decision vocabularies, but they have genuinely diverged —
-240 diff lines across 343. Extract the shared audio-preview logic and row layout rather than
+240 diff lines across 345 when last measured. Extract the shared audio-preview logic and row layout rather than
 attempting a generic merge. Low priority.
 
 **`exportUtils.ts`, then `App.tsx`.** [App.tsx](src/App.tsx) is 6,452 lines and
 [WaveformEditor.tsx](src/components/WaveformEditor.tsx) 5,412 — a quarter of `src/` between them,
 and about half of all lint findings. **Do not attempt either in one pass.** Start with
-[exportUtils.ts](src/utils/exportUtils.ts): pure functions, no JSX, a third the size, and its 27
+[exportUtils.ts](src/utils/exportUtils.ts): pure functions, no JSX, a third the size, and its 29
 exports have obvious pairs (`exportSDStructure` / `exportFilesOnly`, `exportSingleTape` /
 `exportSingleFile`) where a shared directory-walk core probably hides.
 
@@ -129,8 +132,8 @@ change the wording until the feature changes.*
 
 **Finish the unsaved-changes guard.** Two paths still don't offer the "save first" third button that the
 new-project path has: **loading a different project** and **leaving for the hub**. The zip-import guard at
-[App.tsx:400](src/App.tsx#L400) is still a bare `window.confirm` that proceeds whichever way it is
-answered.
+[App.tsx:443](src/App.tsx#L443) is still a bare `window.confirm` ("Save before importing?") that
+imports whichever way it is answered, with no way to back out.
 
 **Decide what ASSIGN TO TAPE bakes** — see [Open ▸ 2](#2-assign-to-tape-bakes-the-wrong-thing).
 
@@ -138,18 +141,15 @@ answered.
 
 **Import new files only.** An import that adds to the pool and touches nothing already there.
 
-**Split Build from Import.** One button does both. Separate them visually. *(Each preset already carries
-its own line and a "Writes to card" badge — that was the wording half.)*
-
 **More than one project per card** (`SK1/`, `SK2/`, …). **Firmware question first** — nothing in the app
 can make the device read `SK2/`, so the next step is a conversation with @Vlad, not code: does a boot-time
 folder scan and a picker fit, and what is the ceiling?
 
 If the answer is yes, the app owns numbering and naming, a per-project `config.txt`, and reading a card
-back (`scanSKStructure` finds exactly one structure today). **The wrinkle:** boot options — including
+back (every reader today opens exactly one `SK/`). **The wrinkle:** boot options — including
 "is the picker on at all" — must live where the device reads them *before* it knows which project you
 want, so the model is a root `config.txt` plus an optional per-project override, and Config mode has to
-say which one it is writing. **Prerequisite:** `'SK'` is hardcoded in 15 places across 6 files and has to
+say which one it is writing. **Prerequisite:** `'SK'` is hardcoded in 13 places across 8 files and has to
 become a parameter first, as one commit.
 
 **Does the device tolerate an unknown key/value pair?** Blocked on the hardware developer. Unknown keys
@@ -160,10 +160,6 @@ line would break the file.
 **Prepare an empty card.** Erase a card: warn first, show which project is on it, confirm it's safe.
 *(Formatting from the browser is not possible — the Windows 32 GB limit can't be bypassed from here.)*
 
-**The App ↔ SD compare view.** The per-slot comparison from the deleted `SyncDashboard`
-(`git show 72c2893:src/components/SyncDashboard.tsx` — still the best version of that view the repo has
-ever had). The Project Manager's import button covers the case for now. **Only worth building when SD
-import gets real use.**
 
 ### Settings, backup and project management
 
@@ -199,10 +195,8 @@ point is a curated set you reuse on the Spotykach.
 **A welcome screen after "start new setup"**, saying what the wizard is about to do. When creating a
 first project, offer a blank project **or** a preset.
 
-**An interactive walkthrough** — not a video. Step through the app and explain the features.
-
-**Embed the projects and sample packs guide** in the app, as a tab in the existing help/info modal, and
-link it from the info section.
+**An interactive walkthrough** — not a video. Step through Studio and explain the features. The Sample
+Mangler has one ([ManglerTour.tsx](src/mangler/ui/ManglerTour.tsx)); its shape is the starting point.
 
 ### Under consideration
 
@@ -229,9 +223,9 @@ link it from the info section.
 
 - **Desktop app** — Electron/PWA wrapper for native open/save dialogs and fully offline use.
 - **Cloud sync** — Google Drive / Dropbox?
-- **Mobile optimisation** — better tablet/phone layout. *(Not a priority given the interface's
-  complexity.)* Touch needs larger targets and more testing, and there are Firefox drag-and-drop issues
-  on Windows and Android.
+- **Mobile optimisation for Studio.** The editor, the Sample Mangler and Browse fit a phone since 4.2.1;
+  Studio's grid does not. *(Not a priority given its complexity.)* Touch needs larger targets and more
+  testing, and there are Firefox drag-and-drop issues on Windows and Android.
 
 ---
 
