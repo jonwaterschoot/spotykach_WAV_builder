@@ -22,7 +22,7 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
-    "@synthuxacademy/spotykach-transfer": "^1.0.1",
+    "@synthuxacademy/spotykach-transfer": "^1.1.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",

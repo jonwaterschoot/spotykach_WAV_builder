@@ -41,12 +41,10 @@ const set = (next: Partial<UsbState>) => {
 };
 
 const loadLink = () => import('@synthuxacademy/spotykach-transfer');
-const loadTraced = () => import('./tracedConnect');
 
 /** Starts loading the protocol code, so a later Authorise click doesn't wait on it. */
 export const preloadUsb = () => {
     void loadLink();
-    void loadTraced();
     void import('./usbBackend');
 };
 
@@ -58,15 +56,41 @@ let attempt = 0;
 /** The step the last attempt reached, named for the UI. */
 let currentStep: string | null = null;
 
-/** The trace lines that start a step (`tracedConnect.ts`), and what to call it. */
+/** The package's `onStep` lines that start a step, and what to call it. */
 const STEPS: [RegExp, string][] = [
-    [/^serial ports granted/, 'Looking for a granted port'],
-    [/^MIDI SysEx permission|^MIDI access/, 'MIDI access'],
+    [/serial port (already )?granted/, 'Looking for a granted port'],
+    [/^MIDI (permission|access|ports)/, 'MIDI access'],
     [/^sending SysEx/, 'Switching to transfer mode'],
     [/^waiting for the serial port/, 'Waiting for the serial port'],
     [/^showing the port picker/, 'Port picker'],
-    [/^opening serial port/, 'Opening the serial port (HELLO)'],
+    [/^opening the serial port/, 'Opening the serial port (HELLO)'],
 ];
+
+type SerialEvents = {
+    addEventListener(type: string, listener: (e: Event) => void): void;
+    removeEventListener(type: string, listener: (e: Event) => void): void;
+};
+
+/**
+ * Runs `connect` with the serial port's plug and unplug events in the trace too:
+ * they show when the device switched, which the package's steps can't see.
+ */
+const withSerialEvents = async <T>(trace: (line: string) => void, connect: () => Promise<T>): Promise<T> => {
+    const serial = (navigator as unknown as { serial?: SerialEvents }).serial;
+    const onEvent = (e: Event) => {
+        const info = (e.target as unknown as { getInfo?: () => { usbVendorId?: number; usbProductId?: number } }).getInfo?.() ?? {};
+        const hex = (n?: number) => n === undefined ? '?' : n.toString(16).padStart(4, '0');
+        trace(`serial ${e.type} ${hex(info.usbVendorId)}:${hex(info.usbProductId)}`);
+    };
+    serial?.addEventListener('connect', onEvent);
+    serial?.addEventListener('disconnect', onEvent);
+    try {
+        return await connect();
+    } finally {
+        serial?.removeEventListener('connect', onEvent);
+        serial?.removeEventListener('disconnect', onEvent);
+    }
+};
 
 /** Starts a new trace; the returned function logs to it, and only while it's the latest. */
 const startTrace = (what: string): ((line: string) => void) => {
@@ -123,9 +147,9 @@ export const usbSession = {
         if (state.status === 'connecting') return null;
         set({ status: 'connecting', error: null, step: null });
         const attemptLog = startTrace('connect');
-        const [link, { tracedConnect }] = await Promise.all([loadLink(), loadTraced()]);
+        const link = await loadLink();
         try {
-            const backend = await adopt(await tracedConnect(attemptLog));
+            const backend = await adopt(await withSerialEvents(attemptLog, () => link.connect({ onStep: attemptLog })));
             endTrace(null);
             return backend;
         } catch (e) {
@@ -141,9 +165,9 @@ export const usbSession = {
     async authorize(): Promise<UsbBackend | null> {
         set({ status: 'connecting', error: null, step: null });
         const attemptLog = startTrace('authorise port');
-        const { tracedAuthorize } = await loadTraced();
+        const link = await loadLink();
         try {
-            const backend = await adopt(await tracedAuthorize(attemptLog));
+            const backend = await adopt(await withSerialEvents(attemptLog, () => link.authorizePort({ onStep: attemptLog })));
             endTrace(null);
             return backend;
         } catch (e) {

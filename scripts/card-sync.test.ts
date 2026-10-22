@@ -63,12 +63,17 @@ const info = {
     protoMajor: 1, protoMinor: 0, tapes: 6, slots: 6, tapeNames: 'BGPRTY', maxChunk: 4096,
     maxFrames: 2016000, maxCues: 255, totalKiB: 16_000_000, freeKiB: 15_000_000, firmware: '1.3.1',
 };
-const device = () => {
+/** `protoMinor: 1` is firmware with the settings commands (1.4.0.b4 and later). */
+const device = ({ protoMinor = 0 } = {}) => {
     const files = new Map<string, Uint8Array>();
-    const calls = { upload: 0, readSlot: 0, download: 0 };
+    const calls = { upload: 0, readSlot: 0, download: 0, configWrite: 0 };
+    const config = { text: null as string | null };
     const link: any = {
-        closed: false, onclose: null, info,
-        async hello() { return info; },
+        closed: false, onclose: null, info: { ...info, protoMinor },
+        async hello() { return this.info; },
+        hasConfig() { return protoMinor >= 1; },
+        async readConfig() { return config.text; },
+        async writeConfig(text: string) { calls.configWrite++; config.text = text; },
         async list() {
             const out = [];
             for (let t = 0; t < 6; t++) for (let s = 0; s < 6; s++) {
@@ -95,7 +100,7 @@ const device = () => {
         async request() { return new Uint8Array([0]); },
         async exit() {},
     };
-    return { files, calls, backend: new UsbBackend({ link, info } as any) };
+    return { files, calls, config, backend: new UsbBackend({ link, info: link.info } as any) };
 };
 
 const build = async (state: AppState, card: any, events: any[] = []) =>
@@ -297,6 +302,27 @@ const run = async () => {
         await exportSDStructure({ ...project(), cardSnapshot: undefined }, { card: dev.backend, directWrite: true, skMode: 'overwrite', includeProject: false, includeConfig: false });
         check(dev.files.get('2:0') === own, 'Pink 1, not in the preset, is untouched');
         check(dev.files.get('0:0') !== own && dev.files.size === 4, 'Blue 1 is replaced, nothing else removed', String(dev.files.size));
+    }
+
+    console.log('\nUSB: config.txt');
+    {
+        const settings = { ...project(), cardSnapshot: undefined, projectConfig: { ...project().projectConfig!, mid_ch_a: 7 } };
+        const opts = { directWrite: true, skMode: 'overwrite', includeProject: false, includeConfig: true } as const;
+
+        const old = device();
+        check(!old.backend.readConfig && !old.backend.writeConfig, 'protocol 1.0 firmware: no config over USB, as before');
+        await exportSDStructure(settings, { ...opts, card: old.backend });
+        check(old.calls.configWrite === 0, 'and a build writes no config.txt there');
+
+        const dev = device({ protoMinor: 1 });
+        await exportSDStructure(settings, { ...opts, card: dev.backend });
+        check(dev.calls.configWrite === 1 && /mid_ch_a\n7/.test(dev.config.text ?? ''), 'protocol 1.1: a build writes config.txt', dev.config.text ?? 'none');
+        await exportSDStructure(settings, { ...opts, card: dev.backend });
+        check(dev.calls.configWrite === 1, 'an unchanged config.txt is not written again', String(dev.calls.configWrite));
+        const configDiff = await calculateSyncDiff(settings, dev.backend);
+        check(configDiff.config?.status === 'MATCH' && configDiff.config.location === 'sk', 'the diff reads it back: MATCH', `${configDiff.config?.status}`);
+        dev.config.text = 'mid_ch_a\n3\n';
+        check((await calculateSyncDiff(settings, dev.backend)).config?.status === 'CONFLICT', 'a different config.txt on the device is a conflict');
     }
 
     console.log('\nUSB: a slot file from before 4.2');

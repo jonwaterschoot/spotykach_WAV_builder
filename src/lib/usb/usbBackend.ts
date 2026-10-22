@@ -1,6 +1,7 @@
 /**
  * The USB route: a Spotykach in transfer mode on its rear USB port. Reaches the
- * 36 slot files only (no `config.txt`, no `project.json`).
+ * 36 slot files, and `SK/config.txt` on firmware with protocol 1.1 (1.4.0.b4 and
+ * later). No `project.json`, no other files.
  *
  * Reading is split in two tiers. `listSlots()` is one LIST (names, lengths, cue
  * counts, no audio). `readHeader()` reads the first 4 KB plus the chunks after
@@ -11,7 +12,8 @@ import { TAPE_COLORS } from '../../types';
 import type { TapeColor } from '../../types';
 import { readWavHeaderInfo } from '../audio/wavHeader';
 import type { WavHeaderInfo } from '../audio/wavHeader';
-import type { CardBackend, CardInfo, PlannedWrite, SlotDescriptor, SpaceCheck, WriteSlotOptions } from '../card/cardBackend';
+import type { CardBackend, CardConfig, CardInfo, PlannedWrite, SlotDescriptor, SpaceCheck, WriteSlotOptions } from '../card/cardBackend';
+import type { WriteCompare } from '../../utils/exportUtils';
 import { slotKey } from '../card/cardBackend';
 import { snapshotFingerprint } from '../card/cardSnapshot';
 import { sameFingerprint, type SlotFingerprint } from '../audio/slotFile';
@@ -38,6 +40,13 @@ export class UsbBackend implements CardBackend {
     hello: DeviceInfo;
     /** Called once when the device goes away (unplugged, left transfer mode). */
     ondisconnect: ((error: Error) => void) | null = null;
+    /**
+     * Only on firmware that has the settings commands (protocol 1.1). Absent on
+     * older firmware, so callers that check for them skip `config.txt` there, as
+     * they always have over USB.
+     */
+    readConfig?: () => Promise<CardConfig | null>;
+    writeConfig?: (text: string, compare?: WriteCompare) => Promise<boolean>;
 
     /** The last LIST, by `slotKey`, empty slots included. */
     private entries = new Map<string, SlotEntry>();
@@ -56,6 +65,22 @@ export class UsbBackend implements CardBackend {
             this.ondisconnect?.(error);
         };
         window.addEventListener('beforeunload', this.onBeforeUnload);
+        if (link.hasConfig()) {
+            this.readConfig = async () => {
+                const text = await link.readConfig();
+                return text === null ? null : { text, location: 'sk' };
+            };
+            this.writeConfig = async (text, compare = 'content') => {
+                // The file is a few hundred bytes, so reading it back is cheap. Same
+                // rule as the folder route: unchanged text is not written again.
+                if (compare !== 'always') {
+                    const current = await link.readConfig();
+                    if (current !== null && (compare === 'size' ? current.length === text.length : current === text)) return false;
+                }
+                await link.writeConfig(text);
+                return true;
+            };
+        }
     }
 
     get connected(): boolean {
@@ -185,7 +210,7 @@ export class UsbBackend implements CardBackend {
     async readFile(tape: TapeColor, slot: number, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<File> {
         signal?.throwIfAborted();
         if (!(await this.entry(tape, slot))) throw new Error(`${tape} ${slot} is empty on the card.`);
-        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), { onProgress, signal }).catch(unmask);
+        const bytes = await this.link.download(this.tapeIndex(tape), this.deviceSlot(slot), { onProgress, signal });
         return new File([toBuffer(bytes)], slotFileName(slot), { type: 'audio/wav' });
     }
 
@@ -197,7 +222,7 @@ export class UsbBackend implements CardBackend {
                 pieces.push(offset < size ? await read(offset, Math.min(length, size - offset)) : new Uint8Array(0));
             }
             return pieces;
-        }).catch(unmask);
+        });
     }
 
     async writeSlot(tape: TapeColor, slot: number, blob: Blob, options: WriteSlotOptions = {}): Promise<boolean> {
@@ -216,7 +241,7 @@ export class UsbBackend implements CardBackend {
 
         const bytes = new Uint8Array(await blob.arrayBuffer());
         this.validate(tape, slot, bytes, info);
-        await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, { onProgress, signal }).catch(unmask);
+        await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, { onProgress, signal });
 
         // What LIST would now say, without paying for a LIST.
         this.headers.delete(slotKey(tape, slot));
@@ -327,19 +352,6 @@ export class UsbBackend implements CardBackend {
             && JSON.stringify(theirs.processing ?? []) === JSON.stringify(ours.processing ?? []);
     }
 }
-
-/**
- * The transfer package (1.0.1) appends its detail with `e.message += …`. When the
- * browser's serial port itself fails, `e` is a DOMException whose `message` can't be
- * set, and what comes out is a TypeError about a getter. The real error is in the
- * console (`[spotykach] upload at byte …`); say what it means instead.
- */
-const unmask = (e: unknown): never => {
-    if (e instanceof TypeError && /getter/.test(e.message)) {
-        throw new Error('The USB connection to Spotykach failed (the serial port reported an error). Reconnect to continue.', { cause: e });
-    }
-    throw e;
-};
 
 /** A fresh `ArrayBuffer` holding exactly these bytes. */
 const toBuffer = (bytes: Uint8Array): ArrayBuffer =>

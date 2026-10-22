@@ -14,6 +14,12 @@
 - **Sync screen: compact layout.** A collapse button on the presets bar shrinks the presets
   to their names (the description moves to the tooltip) and slims the footer, giving the
   slot grids more room. The choice is remembered.
+- **USB: config.txt over USB.** With firmware 1.4.0.b4 or later, building to Spotykach over
+  USB writes `config.txt` too, and the sync compares it like on a card reader. Older firmware
+  is unchanged: settings still go through a card reader.
+- **USB: the connect steps come from the transfer package (1.1.0).** Its time limits and step
+  lines replace WAV Builder's own copy of the connect steps. *Copy diagnostics* keeps the
+  serial port events and how a connection ended.
 
 ---
 
