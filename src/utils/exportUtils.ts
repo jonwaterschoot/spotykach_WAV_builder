@@ -739,16 +739,23 @@ export const slotWavMetadata = async (file: FileRecord, version: AudioVersion): 
 });
 
 /**
- * `README.md` or `SK/project.json`, always written. A file bigger than the route
- * takes (over USB, one frame) is left out with a warning rather than failing the build.
+ * `README.md` or `SK/project.json`, always written. Over USB neither is worth failing
+ * the build for: a file bigger than one frame, or one the device refuses, is left
+ * out with a warning and the slots still go.
  */
 const writeCardText = async (files: import('../lib/card/cardBackend').CardFileStore, path: string, text: string, type: string): Promise<boolean> => {
     const blob = new Blob([text], { type });
-    if (files.maxSize !== undefined && blob.size > files.maxSize) {
+    if (files.maxSize === undefined) return files.write(path, blob, 'always');
+    if (blob.size > files.maxSize) {
         console.warn(`[exportSDStructure] ${path} is ${blob.size} bytes, more than the ${files.maxSize} USB takes: not written.`);
         return false;
     }
-    return files.write(path, blob, 'always');
+    try {
+        return await files.write(path, blob, 'always');
+    } catch (e) {
+        console.warn(`[exportSDStructure] ${path} not written over USB:`, e);
+        return false;
+    }
 };
 
 /**

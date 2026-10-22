@@ -364,6 +364,11 @@ const run = async () => {
         const trimmed = JSON.parse(dev.texts.get('SK/project.json')!);
         check(Object.keys(trimmed.files).sort().join() === 'kick,long,pad', 'too big for one frame: only the files in slots', `${Object.keys(trimmed.files).length} files`);
 
+        const refusing = device({ protoMinor: 2 });
+        refusing.backend.link.writeFile = async () => { throw new Error('unknown command'); };
+        await exportSDStructure({ ...project(), cardSnapshot: undefined }, { ...opts, card: refusing.backend });
+        check(refusing.files.size === 3 && refusing.texts.size === 0, 'a device that refuses the files still gets the slots', `${refusing.files.size} slots`);
+
         dev.calls.download = 0;
         const changes = await scanDeviceChanges(dev.backend, { snapshot: snap, projectName: 'demo' });
         check(!!changes && dev.calls.download === 0, 'device changes over USB still come from the snapshot, no downloads', String(dev.calls.download));
