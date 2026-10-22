@@ -2,11 +2,21 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.4] - 2026-10-22
+
 ### Changed
 
+- **Config editor: compact, with the file beside it.** One row per setting with Deck A and
+  Deck B side by side, the explanations behind an info button, and a live view of the
+  `config.txt` that will be written: changed values flash, values that differ from the default
+  file are lit, and *Copy* takes the text. On a phone the file sits below the settings.
 - **Slicer: cue points are a beta feature, not unsupported.** The firmware plays a sample's
   own cue points when *Cue points* is set to Snap or Free in config.txt. The Slicer's "not
   implemented on Spotykach" card is now a small Beta label that says how to turn it on.
+- **USB help points at firmware 1.4.0 beta 4**, which fixes the grit mix at power-on. The
+  project copy on SD is a card-reader-only option, and Settings now says so.
 
 ### Added
 
