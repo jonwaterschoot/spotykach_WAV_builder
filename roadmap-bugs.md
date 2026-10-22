@@ -5,20 +5,19 @@
 > then the roadmap. Nothing closed is kept here — it goes to [CHANGELOG.md](CHANGELOG.md) if it
 > shipped, or to `docs/archive/` if it is reasoning worth keeping.
 >
-> *Last reconciled: 2026-10-21 (Now and this intro; the sections below were last checked 2026-08-23).*
+> *Last reconciled: 2026-10-22 (Now and this intro; the sections below were last checked 2026-08-23).*
 
 ---
 
 ## Now
 
 **USB transfer and Synthux**
-- [ ] Synthux PRs [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (MIDI time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (connect diagnostics): merged into `uploader`, in firmware 1.4.0.b4 and package 1.1.0. Try both on the device when it's back. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
+- [ ] Synthux PRs [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (MIDI time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (connect diagnostics): merged into `uploader`, in firmware 1.4.0.b4 and package 1.2.0 (on `main` since 2026-10-22). Try both on the device when it's back, along with `config.txt` over USB (firmware 1.4.0.b5). → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
 - [ ] Bay Mud's round 2 results, then a fix from the table. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#possible-fixes)
-- [ ] Package 1.1.0 on npm (not published yet, 2026-10-22): then `npm install @synthuxacademy/spotykach-transfer@1.1.0` on branch `feat/transfer-1.1` and merge it. The branch uses `connect({ onStep })` in place of `tracedConnect.ts` and syncs `config.txt` over USB (protocol 1.1, firmware 1.4.0.b4).
 - [ ] Synthux [#15](https://github.com/Synthux-Academy/Spotykach/issues/15): a stalled resend ends the USB session (firmware idle timeout). → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 - [ ] Firmware 1.4.0 released: point `USB_FIRMWARE` at it and remove the `?usb=1` flag. → [usb-transfer-plan.md](docs/usbuploader/usb-transfer-plan.md#implementation-plan)
 - [ ] The damaged SD card from the device tests: not reproduced, cause unknown. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
-- [ ] `SK/project.json` (read and write) and `README.md` (write) over USB, so switching between card reader and USB keeps the card's project identity. Synthux [#18](https://github.com/Synthux-Academy/Spotykach/pull/18) proposes generic small-file commands (protocol 1.2: `FILE_READ`/`FILE_WRITE`, `.txt`/`.md`/`.json` at the root or in `SK/`, one 32 KB frame each); it also restores the protocol tests in CI. Once merged and published: give the USB backend a `files` store limited to those two paths. The opt-in project copy stays card reader only, on purpose: a USB build skips it.
+- [ ] `SK/project.json` (read and write) and `README.md` (write) over USB, so switching between card reader and USB keeps the card's project identity. Synthux [#18](https://github.com/Synthux-Academy/Spotykach/pull/18) (protocol 1.2: `readFile`/`writeFile`, `.txt`/`.md`/`.json` at the root or in `SK/`, one 32 KB frame each) is merged, in package 1.2.0 and firmware 1.4.0.b5. Next: give the USB backend a `files` store limited to those two paths. The opt-in project copy stays card reader only, on purpose: a USB build skips it.
 
 **News and docs**
 - [ ] A fuller news item on the cue point settings (Ignore / Snap / Free), with a demo: a sliced sample played on Spotykach in each mode, ideally a short video. Follows the short v4.2.4 note ([4.2.4-config-cue-points.md](public/news/4.2.4-config-cue-points.md)).
