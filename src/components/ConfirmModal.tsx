@@ -43,7 +43,7 @@ export const ConfirmModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-200">
-            <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-md max-h-full overflow-y-auto shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
 
                 {/* Header */}
                 <div className="flex justify-between items-center p-6 border-b border-gray-800 bg-black/20">

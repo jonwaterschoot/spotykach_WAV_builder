@@ -44,7 +44,7 @@ export const WorkspaceChoiceModal: React.FC<WorkspaceChoiceModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-200">
-      <div className="bg-synthux-panel border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+      <div className="bg-synthux-panel border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-full overflow-y-auto">
 
         <div className="p-6 pb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2.5">

@@ -42,7 +42,7 @@ export const ProjectDialog: React.FC<ProjectDialogProps> = ({
 
     return (
         <div className="fixed inset-0 z-[95] bg-black/75 flex items-center justify-center p-4" onClick={() => !busy && onClose()}>
-            <div className="w-full max-w-lg rounded-xl border border-white/10 bg-synthux-panel shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-lg max-h-full overflow-y-auto rounded-xl border border-white/10 bg-synthux-panel shadow-2xl" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                     <div className="min-w-0 flex-1">
                         <div className="text-[11px] font-bold uppercase tracking-widest text-synthux-red">Mangler project</div>

@@ -23,7 +23,7 @@ export const ExportProgressModal = ({ isOpen, onClose, logs, isComplete, error, 
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-            <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-synthux-panel border border-gray-800 rounded-2xl w-full max-w-lg max-h-full overflow-y-auto shadow-2xl flex flex-col animate-in fade-in zoom-in duration-200">
 
                 {/* Header */}
                 <div className="flex justify-between items-center p-6 border-b border-gray-800 bg-black/20">

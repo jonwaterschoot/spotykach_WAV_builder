@@ -55,7 +55,7 @@ export function UsbTransferSetting({ Explainer }: { Explainer: React.FC<Explaine
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="usb-experimental-title"
-                        className="w-full max-w-[420px] bg-[#161616] border border-orange-500/30 rounded-xl shadow-2xl p-5 space-y-4"
+                        className="w-full max-w-[420px] max-h-full overflow-y-auto bg-[#161616] border border-orange-500/30 rounded-xl shadow-2xl p-5 space-y-4"
                         onClick={e => e.stopPropagation()}
                     >
                         <h2 id="usb-experimental-title" className="text-sm font-bold text-white flex items-center gap-2">

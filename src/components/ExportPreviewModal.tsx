@@ -4,7 +4,7 @@ import {
     Check, X, Play, AlertTriangle,
     ArrowRight, ArrowLeft, Trash2, Archive, Loader,
     RefreshCw, Settings2, Copy,
-    Save, Shield, Layers, ArrowDown, HardDrive
+    Save, Shield, Layers, ArrowDown, HardDrive, ChevronsUp, ChevronsDown
 } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 import { SlotGrid6x6, type SlotEntry, type SlotActionBadge, TAPE_LETTER } from './SlotGrid6x6';
@@ -280,6 +280,8 @@ const PRESET_META: Record<QuickPreset, PresetMeta> = {
     },
 };
 
+const COMPACT_KEY = 'exportPreview.compact';
+
 const ACTIVE_ACCENT: Record<'indigo' | 'orange' | 'gray', string> = {
     indigo: 'bg-indigo-600 text-white border-transparent shadow-lg',
     orange: 'bg-orange-600 text-white border-transparent shadow-lg',
@@ -292,14 +294,18 @@ const PresetButton: React.FC<{
     accent: 'indigo' | 'orange' | 'gray';
     /** Only set in import mode, where writing to the card is the surprise. */
     warnCardWrite?: boolean;
+    /** Label only; the description moves to the tooltip. */
+    compact?: boolean;
     onClick: () => void;
-}> = ({ preset, active, accent, warnCardWrite, onClick }) => {
+}> = ({ preset, active, accent, warnCardWrite, compact, onClick }) => {
     const meta = PRESET_META[preset];
     return (
         <button
             onClick={onClick}
+            title={compact ? meta.line : undefined}
             className={[
-                'group w-[210px] flex flex-col gap-1 px-4 py-2.5 rounded-xl border text-left transition-all',
+                'group flex flex-col gap-1 border text-left transition-all',
+                compact ? 'px-3 py-1.5 rounded-lg' : 'w-[210px] px-4 py-2.5 rounded-xl',
                 active ? ACTIVE_ACCENT[accent] : 'border-white/5 text-gray-500 hover:border-white/20',
             ].join(' ')}
         >
@@ -316,9 +322,11 @@ const PresetButton: React.FC<{
                     </span>
                 )}
             </span>
-            <span className={`text-[10px] leading-snug font-medium ${active ? 'text-white/70' : 'text-gray-600 group-hover:text-gray-400'}`}>
-                {meta.line}
-            </span>
+            {!compact && (
+                <span className={`text-[10px] leading-snug font-medium ${active ? 'text-white/70' : 'text-gray-600 group-hover:text-gray-400'}`}>
+                    {meta.line}
+                </span>
+            )}
         </button>
     );
 };
@@ -602,6 +610,14 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const [highlightedSlot, setHighlightedSlot] = useState<string | null>(null);
     const [hoveredSlotKey, setHoveredSlotKey] = useState<string | null>(null);
     const [showFuture, setShowFuture] = useState(false);
+    // Slims the presets bar and footer so the slot grids get the height. Remembered.
+    const [compact, setCompact] = useState(() => {
+        try { return localStorage.getItem(COMPACT_KEY) === '1'; } catch { return false; }
+    });
+    const toggleCompact = () => setCompact(v => {
+        try { localStorage.setItem(COMPACT_KEY, v ? '0' : '1'); } catch { /* not critical */ }
+        return !v;
+    });
     // The pool-first offer on Clean Mirror. Held as preset state rather than as a
     // hand edit so that taking it does not knock the preset down to Custom —
     // which would turn `skMode` back to 'overwrite' and stop it being a mirror.
@@ -1070,7 +1086,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 </div>
                 {sourceBar}
                 {/* ════ SHARED PRESETS HEADER ══════════════════════════════════ */}
-                <div className="px-6 py-4 bg-[#111] border-b border-white/5 flex items-start justify-between gap-4 flex-wrap shrink-0">
+                <div className={`px-6 ${compact ? 'py-2' : 'py-4'} bg-[#111] border-b border-white/5 flex items-start justify-between gap-4 flex-wrap shrink-0`}>
                     <div className="flex items-stretch gap-2 flex-wrap">
                         {(mode === 'import'
                             ? (['import_pool_only', 'import_merge_project', 'import_sync_merge', 'custom'] as QuickPreset[])
@@ -1082,15 +1098,20 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 active={currentPreset === preset}
                                 accent={preset === 'custom' ? 'gray' : mode === 'import' ? 'indigo' : 'orange'}
                                 warnCardWrite={mode === 'import'}
+                                compact={compact}
                                 onClick={() => applyPreset(preset)}
                             />
                         ))}
                         {mode === 'import' && onImportIntoNewProject && (
-                            <div className="w-[210px] flex flex-col gap-1.5 px-4 py-2.5 rounded-xl border border-dashed border-white/10 text-left">
+                            <div className={compact
+                                ? 'flex items-center gap-2 px-3 py-1 rounded-lg border border-dashed border-white/10'
+                                : 'w-[210px] flex flex-col gap-1.5 px-4 py-2.5 rounded-xl border border-dashed border-white/10 text-left'}>
                                 <span className="text-[11px] font-black uppercase tracking-widest text-gray-400">Into a new project</span>
-                                <span className="text-[10px] leading-snug font-medium text-gray-600">
-                                    A clean project with every card slot in the same slot.{usbMode && ' Over USB a full slot takes about 35 s.'}
-                                </span>
+                                {!compact && (
+                                    <span className="text-[10px] leading-snug font-medium text-gray-600">
+                                        A clean project with every card slot in the same slot.{usbMode && ' Over USB a full slot takes about 35 s.'}
+                                    </span>
+                                )}
                                 <span className="flex items-center gap-1.5">
                                     <button
                                         onClick={() => onImportIntoNewProject(true)}
@@ -1112,8 +1133,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             </div>
                         )}
                     </div>
-                    {isAdvanced && (
-                        <div className="flex items-center gap-4 ml-auto">
+                    <div className="flex items-center gap-4 ml-auto self-center">
+                        {isAdvanced && (
                             <label className="flex items-center gap-1.5 cursor-pointer select-none group">
                                 <input
                                     type="checkbox"
@@ -1123,8 +1144,17 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 />
                                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none group-hover:text-white transition-colors">Show all slots</span>
                             </label>
-                        </div>
-                    )}
+                        )}
+                        <button
+                            onClick={toggleCompact}
+                            title={compact ? 'Show the full presets and footer' : 'Make the presets and footer smaller'}
+                            aria-label={compact ? 'Expand presets' : 'Collapse presets'}
+                            aria-pressed={compact}
+                            className="p-1.5 rounded-lg border border-white/10 text-gray-500 hover:text-white hover:border-white/20 transition-colors"
+                        >
+                            {compact ? <ChevronsDown size={14} /> : <ChevronsUp size={14} />}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Scrollable Content Wrapper */}
@@ -1703,7 +1733,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 )}
 
                 {/* Footer */}
-                <div className="p-5 border-t border-white/10 bg-[#1a1a1a] flex items-center justify-between gap-4 shrink-0 flex-wrap">
+                <div className={`${compact ? 'px-5 py-2' : 'p-5'} border-t border-white/10 bg-[#1a1a1a] flex items-center justify-between gap-4 shrink-0 flex-wrap`}>
                     <div className="text-xs text-gray-500 hidden sm:flex items-center gap-4">
                         <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-md border border-white/5">
                             <Save size={12} className="text-indigo-400" />
@@ -1722,7 +1752,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             onClick={handleConfirm}
                             disabled={isApplying || actionCount === 0 || cardMissing || !!blockedReason}
                             title={cardMissing ? 'SD card not found' : blockedReason}
-                            className={`px-8 py-3 ${mode === 'push' ? 'bg-orange-600 hover:bg-orange-500 shadow-[0_8px_24px_rgba(249,115,22,0.3)]' : 'bg-indigo-600 hover:bg-indigo-500 shadow-[0_8px_24px_rgba(79,70,229,0.3)]'} disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl flex items-center gap-3 transition-all transform hover:-translate-y-0.5`}
+                            className={`${compact ? 'px-5 py-2' : 'px-8 py-3'} ${mode === 'push' ? 'bg-orange-600 hover:bg-orange-500 shadow-[0_8px_24px_rgba(249,115,22,0.3)]' : 'bg-indigo-600 hover:bg-indigo-500 shadow-[0_8px_24px_rgba(79,70,229,0.3)]'} disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl flex items-center gap-3 transition-all transform hover:-translate-y-0.5`}
                         >
                             {isApplying ? <Loader size={20} className="animate-spin" /> : 
                              (mode === 'push' ? <ArrowRight size={20} /> : <ArrowDown size={20} />)}
@@ -1736,7 +1766,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                 : PRESET_META[currentPreset].label
                                     )}
                                 </span>
-                                {!isApplying && (
+                                {!isApplying && !compact && (
                                     <span className="text-[10px] opacity-70 font-bold uppercase italic">
                                         {currentPreset === 'custom' ? 'Apply Custom Changes' : 'Confirm Actions'}
                                     </span>
@@ -1749,7 +1779,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 {cardMissing && (
                     <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
                         <div role="alertdialog" aria-labelledby="card-missing-title"
-                            className="bg-[#1a1a1a] border border-red-500/40 rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col gap-6 text-center animate-in fade-in zoom-in duration-200">
+                            className="bg-[#1a1a1a] border border-red-500/40 rounded-2xl shadow-2xl max-w-md w-full max-h-full overflow-y-auto p-8 flex flex-col gap-6 text-center animate-in fade-in zoom-in duration-200">
                             <div className="mx-auto w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center">
                                 <AlertTriangle size={28} className="text-red-400" />
                             </div>
@@ -1781,7 +1811,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 {/* Conflict Summary Modal (Simple View Only) */}
                 {showConflictSummary && (
                     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
-                        <div className="bg-[#1a1a1a] border border-orange-500/40 rounded-3xl shadow-2xl max-w-lg w-full p-10 flex flex-col gap-8 animate-in fade-in zoom-in duration-300 text-center">
+                        <div className="bg-[#1a1a1a] border border-orange-500/40 rounded-3xl shadow-2xl max-w-lg w-full max-h-full overflow-y-auto p-8 flex flex-col gap-6 animate-in fade-in zoom-in duration-300 text-center">
                             <div className="flex flex-col items-center gap-4 text-orange-400">
                                 <AlertTriangle size={48} />
                                 <div>
@@ -1811,37 +1841,38 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                 {/* Final Confirmation Modal */}
                 {showFinalConfirmation && (
                     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
-                        <div className="bg-[#151515] border border-white/10 rounded-[2rem] shadow-[0_32px_120px_rgba(0,0,0,0.8)] max-w-md w-full p-10 flex flex-col gap-10 animate-in fade-in zoom-in duration-500">
-                            <div className="text-center flex flex-col items-center gap-6">
-                                <div className="p-6 bg-indigo-500/10 rounded-[1.5rem] border border-indigo-500/20 text-indigo-400">
-                                    <Shield size={42} />
+                        <div className="bg-[#151515] border border-white/10 rounded-[2rem] shadow-[0_32px_120px_rgba(0,0,0,0.8)] max-w-md w-full max-h-full flex flex-col overflow-hidden animate-in fade-in zoom-in duration-500">
+                            {/* Header and footer stay put; the list scrolls so the button is always reachable */}
+                            <div className="p-6 pb-4 flex items-center gap-4 shrink-0">
+                                <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400 shrink-0">
+                                    <Shield size={24} />
                                 </div>
                                 <div>
-                                    <h3 className="text-2xl font-black text-white tracking-tight">Confirm Sync Actions</h3>
-                                    <p className="text-gray-400 text-sm mt-3 leading-relaxed">
+                                    <h3 className="text-xl font-black text-white tracking-tight">Confirm Sync Actions</h3>
+                                    <p className="text-gray-400 text-xs mt-1 leading-relaxed">
                                         You are about to modify your {projectName || 'Project'} and SD card.
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="flex flex-col gap-3">
-                                <div className="p-5 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center justify-between group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-2.5 bg-indigo-500/20 rounded-xl text-indigo-400">
-                                            <HardDrive size={18} />
+                            <div className="px-6 pb-4 flex flex-col gap-2 overflow-y-auto min-h-0">
+                                <div className="p-3.5 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center justify-between group">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-500/20 rounded-xl text-indigo-400">
+                                            <HardDrive size={16} />
                                         </div>
                                         <div>
                                             <p className="text-white text-[13px] font-bold">Push to SD</p>
                                             <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider font-medium">Slots to overwrite</p>
                                         </div>
                                     </div>
-                                    <span className="text-2xl font-black text-white group-hover:text-indigo-400 transition-colors">{pushCount}</span>
+                                    <span className="text-xl font-black text-white group-hover:text-indigo-400 transition-colors">{pushCount}</span>
                                 </div>
 
-                                <div className="p-5 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center justify-between group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-2.5 bg-teal-500/20 rounded-xl text-teal-400">
-                                            <Layers size={18} />
+                                <div className="p-3.5 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center justify-between group">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-teal-500/20 rounded-xl text-teal-400">
+                                            <Layers size={16} />
                                         </div>
                                         <div>
                                             <p className="text-white text-[13px] font-bold">Import to Pool</p>
@@ -1860,17 +1891,17 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                             )}
                                         </div>
                                     </div>
-                                    <span className="text-2xl font-black text-white group-hover:text-teal-400 transition-colors">
+                                    <span className="text-xl font-black text-white group-hover:text-teal-400 transition-colors">
                                         {rows.filter(r => r.toPool).length + pullCount}
                                     </span>
                                 </div>
 
                                 {movedRemovals.length > 0 && (
-                                    <div className="p-5 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex flex-col gap-3">
+                                    <div className="p-3.5 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex flex-col gap-3">
                                         <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-400">
-                                                    <ArrowRight size={18} />
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-amber-500/20 rounded-xl text-amber-400">
+                                                    <ArrowRight size={16} />
                                                 </div>
                                                 <div>
                                                     <p className="text-white text-[13px] font-bold">
@@ -1881,9 +1912,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="text-2xl font-black text-amber-400">{movedRemovals.length}</span>
+                                            <span className="text-xl font-black text-amber-400">{movedRemovals.length}</span>
                                         </div>
-                                        <ul className="flex flex-col gap-1 pl-[3.75rem] -mt-1">
+                                        <ul className="flex flex-col gap-1 pl-[2.75rem] -mt-1">
                                             {movedRemovals.map(r => (
                                                 <li key={r.id} className="text-[11px] text-amber-200/80 font-medium flex items-center gap-2 min-w-0">
                                                     <span className="text-amber-500/50 font-black shrink-0">{r.slot}</span>
@@ -1898,11 +1929,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 )}
 
                                 {destroyedRemovals.length > 0 && (
-                                    <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/20 flex flex-col gap-3">
+                                    <div className="p-3.5 bg-red-500/5 rounded-2xl border border-red-500/20 flex flex-col gap-3">
                                         <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-2.5 bg-red-500/20 rounded-xl text-red-500">
-                                                    <Trash2 size={18} />
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-red-500/20 rounded-xl text-red-500">
+                                                    <Trash2 size={16} />
                                                 </div>
                                                 <div>
                                                     <p className="text-white text-[13px] font-bold">
@@ -1913,9 +1944,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="text-2xl font-black text-red-500">{destroyedRemovals.length}</span>
+                                            <span className="text-xl font-black text-red-500">{destroyedRemovals.length}</span>
                                         </div>
-                                        <ul className="flex flex-col gap-1 pl-[3.75rem] -mt-1">
+                                        <ul className="flex flex-col gap-1 pl-[2.75rem] -mt-1">
                                             {destroyedRemovals.map(r => (
                                                 <li key={r.id} className="text-[11px] text-red-200/80 font-medium flex items-center gap-2 min-w-0">
                                                     <span className="text-red-500/50 font-black shrink-0">{r.slot}</span>
@@ -1925,7 +1956,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         </ul>
                                         <button
                                             onClick={rescueDoomedToPool}
-                                            className="ml-[3.75rem] w-fit flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-lg hover:-translate-y-0.5"
+                                            className="ml-[2.75rem] w-fit flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-lg hover:-translate-y-0.5"
                                         >
                                             <Archive size={12} /> Import them to the pool first
                                         </button>
@@ -1933,17 +1964,17 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 )}
 
                                 {localDeleteCount > 0 && (
-                                    <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/10 flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="p-2.5 bg-red-500/20 rounded-xl text-red-500">
-                                                <Trash2 size={18} />
+                                    <div className="p-3.5 bg-red-500/5 rounded-2xl border border-red-500/10 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-red-500/20 rounded-xl text-red-500">
+                                                <Trash2 size={16} />
                                             </div>
                                             <div>
                                                 <p className="text-white text-[13px] font-bold">Removed from the project</p>
                                                 <p className="text-[10px] text-red-500/70 mt-0.5 uppercase tracking-wider font-medium">Slots to be cleared</p>
                                             </div>
                                         </div>
-                                        <span className="text-2xl font-black text-red-500">{localDeleteCount}</span>
+                                        <span className="text-xl font-black text-red-500">{localDeleteCount}</span>
                                     </div>
                                 )}
 
@@ -1954,9 +1985,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         + (r.primary === 'push_to_sk' ? r.size : 0)
                                         + (r.primary === 'pull_to_slot' || r.toPool ? r.remoteSize : 0), 0);
                                     return (
-                                        <div className="p-5 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex items-center gap-4">
-                                            <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-400">
-                                                <Loader size={18} />
+                                        <div className="p-3.5 bg-amber-500/5 rounded-2xl border border-amber-500/20 flex items-center gap-3">
+                                            <div className="p-2 bg-amber-500/20 rounded-xl text-amber-400">
+                                                <Loader size={16} />
                                             </div>
                                             <div>
                                                 <p className="text-white text-[13px] font-bold">About {formatDuration(bytes / USB_BYTES_PER_SECOND)} over USB</p>
@@ -1969,9 +2000,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 })()}
 
                                 {usbMode ? (
-                                    <div className="p-5 rounded-2xl border border-white/5 flex items-center gap-4 opacity-60">
-                                        <div className="p-2.5 rounded-xl bg-white/5 text-gray-600">
-                                            <Shield size={18} />
+                                    <div className="p-3.5 rounded-2xl border border-white/5 flex items-center gap-3 opacity-60">
+                                        <div className="p-2 rounded-xl bg-white/5 text-gray-600">
+                                            <Shield size={16} />
                                         </div>
                                         <div>
                                             <p className="text-white text-[13px] font-bold">Snapshot card to project</p>
@@ -1982,14 +2013,14 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => setSkSnapshot(v => !v)}
-                                    className={`p-5 rounded-2xl border flex items-center justify-between gap-4 text-left transition-all ${skSnapshot
+                                    className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-left transition-all ${skSnapshot
                                         ? 'bg-white/[0.03] border-amber-500/30'
                                         : 'bg-transparent border-white/5 hover:border-white/10'
                                         }`}
                                 >
-                                    <div className="flex items-center gap-4">
-                                        <div className={`p-2.5 rounded-xl transition-colors ${skSnapshot ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-gray-600'}`}>
-                                            <Shield size={18} />
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-xl transition-colors ${skSnapshot ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-gray-600'}`}>
+                                            <Shield size={16} />
                                         </div>
                                         <div>
                                             <p className="text-white text-[13px] font-bold">Snapshot card to project</p>
@@ -2005,10 +2036,10 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                 )}
                             </div>
 
-                        <div className="flex flex-col gap-4">
-                            <button 
+                        <div className="p-6 pt-4 border-t border-white/5 flex flex-col gap-2 shrink-0">
+                            <button
                                 onClick={proceedWithConfirm}
-                                className="w-full py-6 bg-white text-black hover:bg-indigo-50 hover:text-indigo-600 rounded-3xl font-black shadow-[0_12px_48px_rgba(255,255,255,0.15)] transition-all transform hover:-translate-y-1 active:translate-y-0 uppercase tracking-[0.2em] text-[12px]"
+                                className="w-full py-4 bg-white text-black hover:bg-indigo-50 hover:text-indigo-600 rounded-2xl font-black shadow-[0_12px_48px_rgba(255,255,255,0.15)] transition-all transform hover:-translate-y-0.5 active:translate-y-0 uppercase tracking-[0.2em] text-[12px]"
                             >
                                 Proceed & Build
                             </button>

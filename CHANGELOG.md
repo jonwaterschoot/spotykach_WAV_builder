@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Confirm Sync Actions fits small windows.** The list of actions scrolls between a fixed
+  title and a fixed *Proceed & Build* button, so a long list of warnings no longer pushes
+  the button off screen. The dialog is also more compact. Other small dialogs that clipped
+  their content on a short window now scroll too.
+
+### Changed
+
+- **Sync screen: compact layout.** A collapse button on the presets bar shrinks the presets
+  to their names (the description moves to the tooltip) and slims the footer, giving the
+  slot grids more room. The choice is remembered.
+
 ---
 
 ## [4.2.4] - 2026-10-22

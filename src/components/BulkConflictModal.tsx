@@ -10,7 +10,7 @@ interface BulkConflictModalProps {
 export const BulkConflictModal = ({ count, onOverwrite, onFillEmpty, onCancel }: BulkConflictModalProps) => {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-[#1a1a1a] border border-orange-500/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-md max-h-full overflow-y-auto bg-[#1a1a1a] border border-orange-500/30 rounded-2xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
 
                 {/* Header */}
                 <div className="p-6 bg-gradient-to-b from-orange-500/10 to-transparent border-b border-white/5">

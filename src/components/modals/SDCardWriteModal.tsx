@@ -63,7 +63,7 @@ export const SDCardWriteModal: React.FC<SDCardWriteModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[110] p-6 animate-in fade-in duration-200">
-      <div className="bg-synthux-panel border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-synthux-panel border border-white/10 rounded-2xl shadow-2xl w-full max-w-md max-h-full overflow-y-auto">
 
         {stage === 'existing' ? (
           <>

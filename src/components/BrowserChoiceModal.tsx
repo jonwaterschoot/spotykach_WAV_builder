@@ -18,7 +18,7 @@ const BrowserChoiceModal = ({ isOpen, onClose, onChoice, onMangler, onSynth }: B
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-synthux-panel border border-white/10 rounded-lg p-6 w-full max-w-md shadow-2xl relative">
+            <div className="bg-synthux-panel border border-white/10 rounded-lg p-6 w-full max-w-md max-h-full overflow-y-auto shadow-2xl relative">
                 <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
