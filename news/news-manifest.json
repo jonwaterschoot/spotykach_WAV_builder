@@ -1,5 +1,12 @@
 [
   {
+    "id": "usb-files",
+    "title": "USB: settings, notes and project file (v4.2.5)",
+    "date": "2026-10-22",
+    "file": "usb-files.md",
+    "category": "Update"
+  },
+  {
     "id": "424",
     "title": "config.txt: cue points and grit mix (v4.2.4)",
     "date": "2026-10-22",
