@@ -9,8 +9,8 @@ const KEY = 'wavbuilder.usbTransfer';
 
 /** The firmware release that has USB transfer. */
 export const USB_FIRMWARE = {
-    version: '1.4.0 beta 4',
-    url: 'https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.0.b4',
+    version: '1.4.0 beta 5',
+    url: 'https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.0.b5',
 };
 
 /** Web Serial: Chrome, Edge and Opera on desktop. */
