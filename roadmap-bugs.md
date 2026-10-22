@@ -12,13 +12,13 @@
 ## Now
 
 **USB transfer and Synthux**
-- [ ] Synthux PRs [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (MIDI time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (connect diagnostics): waiting on Vlad. Try both on the device when it's back. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
+- [ ] Synthux PRs [#16](https://github.com/Synthux-Academy/Spotykach/pull/16) (MIDI time limits) and [#17](https://github.com/Synthux-Academy/Spotykach/pull/17) (connect diagnostics): merged into `uploader`, in firmware 1.4.0.b4 and package 1.1.0. Try both on the device when it's back. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#vlads-package-and-page-web-on-the-synthux-uploader-branch)
 - [ ] Bay Mud's round 2 results, then a fix from the table. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#possible-fixes)
-- [ ] Once a package release has #16 and #17: update the dependency and replace most of `tracedConnect.ts` with `connect({ onStep })`.
+- [ ] Package 1.1.0 on npm (not published yet, 2026-10-22): then `npm install @synthuxacademy/spotykach-transfer@1.1.0` on branch `feat/transfer-1.1` and merge it. The branch uses `connect({ onStep })` in place of `tracedConnect.ts` and syncs `config.txt` over USB (protocol 1.1, firmware 1.4.0.b4).
 - [ ] Synthux [#15](https://github.com/Synthux-Academy/Spotykach/issues/15): a stalled resend ends the USB session (firmware idle timeout). → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 - [ ] Firmware 1.4.0 released: point `USB_FIRMWARE` at it and remove the `?usb=1` flag. → [usb-transfer-plan.md](docs/usbuploader/usb-transfer-plan.md#implementation-plan)
 - [ ] The damaged SD card from the device tests: not reproduced, cause unknown. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
-- [ ] Idea: sync `.txt`, `.json` and `.md` files over USB too, so a USB sync matches a card-reader sync. Needs new protocol commands and firmware support; no plan yet.
+- [ ] Idea: sync `.json` and `.md` files over USB too, so a USB sync matches a card-reader sync. `config.txt` has its own commands since protocol 1.1; the rest needs new protocol commands and firmware support; no plan yet.
 
 **Sample Mangler**
 - [ ] The "Later" items and the real-phone checks (hold time, pinch). → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)

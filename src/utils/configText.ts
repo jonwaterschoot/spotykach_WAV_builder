@@ -40,7 +40,7 @@ export const generateConfigText = (config: ProjectConfig): string => {
     appendSetting('pre_load', config?.pre_load ?? DEFAULT_PROJECT_CONFIG.pre_load);
     appendSetting('slc_mn_a', config?.slc_mn_a ?? DEFAULT_PROJECT_CONFIG.slc_mn_a);
     appendSetting('slc_mn_b', config?.slc_mn_b ?? DEFAULT_PROJECT_CONFIG.slc_mn_b);
-    // Opt-in (untested on hardware): written only when set, never filled from a default.
+    // Opt-in (beta): written only when set, never filled from a default.
     if (config?.cue_sm_a !== undefined) appendSetting('cue_sm_a', config.cue_sm_a);
     if (config?.cue_sm_b !== undefined) appendSetting('cue_sm_b', config.cue_sm_b);
     appendSetting('grt_mx_a', config?.grt_mx_a ?? DEFAULT_PROJECT_CONFIG.grt_mx_a);

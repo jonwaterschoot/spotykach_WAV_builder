@@ -140,7 +140,7 @@ export interface ProjectConfig {
     slc_mn_a: boolean; // Disable polyphony in Slice mode, deck A
     slc_mn_b: boolean; // Disable polyphony in Slice mode, deck B
     /**
-     * How a sample's own cue points steer start and size, per deck. Untested, so
+     * How a sample's own cue points steer start and size, per deck. Beta, so
      * opt-in: absent means the line is left out of config.txt and the device runs
      * its own default (ignore). Present, even as 0, means it is written.
      */

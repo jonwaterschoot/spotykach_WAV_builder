@@ -2,12 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Slicer: cue points are a beta feature, not unsupported.** The firmware plays a sample's
+  own cue points when *Cue points* is set to Snap or Free in config.txt. The Slicer's "not
+  implemented on Spotykach" card is now a small Beta label that says how to turn it on.
+
 ### Added
 
-- **config.txt: grit mix, and cue points to test.** The config editor now sets where each deck's grit
-  mix starts at power-on (`grt_mx_a`/`grt_mx_b`, firmware 1.4.0 and later), and, marked
-  untested, how each deck uses a sample's own cue points (`cue_sm_a`/`cue_sm_b`: ignore, snap
-  or free). The cue point lines are only written when switched on, so they can be tried. A card whose
+- **config.txt: grit mix, and cue points in beta.** The config editor now sets where each deck's
+  grit mix starts at power-on (`grt_mx_a`/`grt_mx_b`, firmware 1.4.0 and later), and, marked
+  beta, how each deck uses a sample's own cue points (`cue_sm_a`/`cue_sm_b`: ignore, snap or
+  free). The cue point lines are only written when switched on. A card whose
   `config.txt` predates these settings no longer shows up as a config conflict, and a value
   an earlier version kept as an unknown setting is picked up as its new control.
 

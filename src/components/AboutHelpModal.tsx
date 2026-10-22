@@ -669,7 +669,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                                     <ol className="list-decimal list-inside space-y-2">
                                         <li>
                                             <strong className="text-white">Flash firmware {USB_FIRMWARE.version}</strong> from Synthux's GitHub:{' '}
-                                            <a href={USB_FIRMWARE.url} target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">Spotykach v1.4.0.b2</a>.
+                                            <a href={USB_FIRMWARE.url} target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">Spotykach {USB_FIRMWARE.version}</a>.
                                         </li>
                                         <li><strong className="text-white">Switch it on</strong> in Studio's <em>Settings ▸ System ▸ USB transfer</em>. It needs Chrome or Edge on a computer.</li>
                                         <li><strong className="text-white">Connect directly:</strong> a good data cable into a USB-A port on the computer, as in the table above.</li>

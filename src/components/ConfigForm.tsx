@@ -206,15 +206,15 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                         <Row
                             label="Cue points"
                             info={<>
-                                <b className="text-synthux-orange">Untested.</b> The firmware reads this since 1.3.0, but it has not been
-                                confirmed on hardware. Off, the lines are left out of config.txt and the device ignores cue points;
-                                on, both lines are written so the setting can be tried.
+                                <b className="text-synthux-orange">Beta.</b> Read by the firmware since 1.3.0 and part of the 1.4.0 beta
+                                settings. Off, the lines are left out of config.txt and the device ignores cue points;
+                                on, both lines are written.
                                 <span className="block mt-1">For samples with their own cue points (slice markers); others are not affected.</span>
                                 {CUE_SIZE_MODES.map(m => <span key={m.value} className="block mt-1"><b className="text-gray-300">{m.label}:</b> {m.hint}</span>)}
                             </>}
                             infoKey="cue_sm" openInfo={openInfo} onInfo={toggleInfo}
                             labelExtra={<>
-                                <span className="px-1 rounded border border-synthux-orange/40 text-[8px] font-bold uppercase tracking-wider text-synthux-orange">Untested</span>
+                                <span className="px-1 rounded border border-synthux-orange/40 text-[8px] font-bold uppercase tracking-wider text-synthux-orange">Beta</span>
                                 <Switch on={cueOn} label="Write cue point settings to config.txt" onToggle={toggleCue} />
                             </>}
                             wide={!cueOn}

@@ -33,7 +33,6 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragIdx, setDragIdx] = useState<number | null>(null);
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-    const [bannerDismissed, setBannerDismissed] = useState(false);
     const wasDragging = useRef(false);
     const grab = isCoarsePointer() ? 32 : 16;
 
@@ -271,84 +270,19 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                 {sorted.length}/{maxSlices}
             </text>
 
-            {/* Slicer Not Implemented Banner */}
+            {/* Beta: the device plays these markers once Cue points is on in config.txt. */}
             {active && (
                 <foreignObject x={0} y={0} width={width} height={height} className="pointer-events-none">
-                    <div className="w-full h-full flex flex-col items-center justify-center p-4">
-                        {!bannerDismissed ? (
-                            <div className="bg-red-950/90 border border-red-500/50 backdrop-blur-md px-8 py-4 phone:px-8 phone:py-1.5 phone:gap-0.5 rounded-2xl shadow-2xl shadow-red-900/40 flex flex-col items-center gap-2 pointer-events-auto relative group">
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setBannerDismissed(true); }}
-                                    className="absolute top-2 right-2 p-1 phone:top-0 phone:right-0 phone:p-2 text-red-500/50 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-all"
-                                    title="Dismiss"
-                                >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                </button>
-                                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30 phone:hidden">
-                                    <svg
-                                        width="20"
-                                        height="20"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        className="text-red-400 rotate-90"
-                                    >
-                                        <circle cx="6" cy="6" r="3" />
-                                        <circle cx="6" cy="18" r="3" />
-                                        <line x1="20" y1="4" x2="8.12" y2="15.88" />
-                                        <line x1="14.47" y1="14.48" x2="20" y2="20" />
-                                        <line x1="8.12" y1="8.12" x2="12" y2="12" />
-                                    </svg>
-                                </div>
-                                <span className="text-red-400 font-black uppercase tracking-[0.2em] text-sm phone:text-[10px] phone:tracking-widest text-center">
-                                    not implemented on Spotykach yet
-                                </span>
-                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
-                                    <svg
-                                        width="10"
-                                        height="10"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        className="text-red-400"
-                                    >
-                                        <circle cx="12" cy="12" r="10" />
-                                        <line x1="12" y1="8" x2="12" y2="12" />
-                                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                                    </svg>
-                                    <span className="text-red-400/80 font-bold text-[9px] uppercase tracking-wider">
-                                        Marker editing only
-                                    </span>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="mt-auto mb-2 flex items-center gap-1.5 px-2 py-1 rounded bg-red-950/40 border border-red-500/20 backdrop-blur-sm shadow-lg pointer-events-auto cursor-help group" title="Slices are currently for marker visualization and export only. They do not yet affect playback on the hardware.">
-                                <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    className="text-red-400"
-                                >
-                                    <circle cx="12" cy="12" r="10" />
-                                    <line x1="12" y1="8" x2="12" y2="12" />
-                                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                                </svg>
-                                <span className="text-red-400/60 font-black text-[8px] uppercase tracking-widest group-hover:text-red-400 transition-colors">
-                                    Not implemented on Spotykach
-                                </span>
-                            </div>
-                        )}
+                    <div className="w-full h-full flex items-end justify-center p-2">
+                        <div
+                            className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-synthux-orange/40 backdrop-blur-sm pointer-events-auto cursor-help"
+                            title="Beta: Spotykach plays these cue points when Cue points is set to Snap or Free for the deck in config.txt (firmware 1.3.0 and later). With the default, Ignore, the device slices as if there were none."
+                        >
+                            <span className="px-1 rounded border border-synthux-orange/50 text-synthux-orange font-black text-[8px] uppercase tracking-wider">Beta</span>
+                            <span className="text-gray-300 font-bold text-[9px] uppercase tracking-wider phone:hidden">
+                                Plays with Cue points on in config.txt
+                            </span>
+                        </div>
                     </div>
                 </foreignObject>
             )}
