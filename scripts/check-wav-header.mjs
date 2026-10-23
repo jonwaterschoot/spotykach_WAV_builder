@@ -700,7 +700,7 @@ report('wavEncoder.ts: metadata of the Oct 11 card file whose audio started at b
 }
 
 report('wavEncoder.ts: mono source', await encoded(24000, 1, { id: ICMT.id, slicePoints: [0.1] }),
-    { encoder: true, frames: 24000, cues: 1, listCues: 1, icmt: { id: ICMT.id } });
+    { encoder: true, frames: 24000, cues: 2, listCues: 2, icmt: { id: ICMT.id } }); // 0 added before the 0.1 s marker
 
 report('wavEncoder.ts: no metadata', await encoded(4800, 2, undefined),
     { encoder: true, frames: 4800, cues: 0, listCues: 0, name: '' });

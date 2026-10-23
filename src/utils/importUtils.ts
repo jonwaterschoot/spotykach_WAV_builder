@@ -5,7 +5,7 @@ import { hashBlob } from './assetUtils';
 import type { CardBackend, CardFileStore, SlotDescriptor } from '../lib/card/cardBackend';
 import { readCardSlots, slotFile, slotKey } from '../lib/card/cardBackend';
 import { checkCardSnapshot, listedFingerprint, slotMatchesSnapshot } from '../lib/card/cardSnapshot';
-import { audioHashOf, DEVICE_MAX_CUES, DEVICE_MAX_FRAMES, sameFingerprint } from '../lib/audio/slotFile';
+import { audioHashOf, DEVICE_MAX_FRAMES, sameFingerprint } from '../lib/audio/slotFile';
 import type { SlotFile } from '../lib/audio/slotFile';
 import type { SnapshotCheck } from '../lib/card/cardSnapshot';
 
@@ -415,9 +415,9 @@ const localFrames = async (blob: Blob): Promise<number | undefined> => {
 const slotFileMeta = async (file: FileRecord, version: AudioVersion, frames: number): Promise<{ name: string; cues: number }> => {
     const { versionSlices } = await import('./exportUtils');
     const slices = (await versionSlices(file, version)).slicePoints ?? [];
-    const cues = new Set(slices.map(s => Math.round(s * 48000)).filter(f => f >= 0 && f < frames)).size;
+    const cues = cueFramesOf(slices, 48000, frames).length;
     const name = new TextDecoder().decode(utf8Truncate(file.name || file.originalName, MAX_INAM_BYTES));
-    return { name, cues: Math.min(cues, DEVICE_MAX_CUES) };
+    return { name, cues };
 };
 
 /** Pieces of audio `predictedSlot` compares, spread evenly from the first frame to the last. */
@@ -543,7 +543,7 @@ export interface SyncDiff {
 
 
 import type { WavMetadata } from '../types';
-import { MAX_INAM_BYTES, readWavHeaderInfo, utf8Truncate } from '../lib/audio/wavHeader';
+import { cueFramesOf, MAX_INAM_BYTES, readWavHeaderInfo, utf8Truncate } from '../lib/audio/wavHeader';
 
 /**
  * Our metadata from a WAV: `ICMT` (id, hash, processing, tempo), `INAM` (name),

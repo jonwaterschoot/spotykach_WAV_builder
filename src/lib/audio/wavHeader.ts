@@ -108,9 +108,24 @@ export function buildInfoChunk(metadata?: WavMetadata): Uint8Array {
     return out;
 }
 
+/** The firmware's `kMaxFileCuePoints`: cue points it reads from a file. */
+export const MAX_FILE_CUES = 255;
+
+/**
+ * Slice points in seconds as the cue frames a file carries: sorted, no repeats,
+ * inside the audio, and starting at 0. The firmware plays from cue to cue, so
+ * without a cue at 0 the audio before the first marker is never played (the M8
+ * writes one at 0 too). No slice points, no cues.
+ */
+export function cueFramesOf(slicePoints: readonly number[] | undefined, sampleRate: number, frames: number): number[] {
+    const inside = (slicePoints ?? []).map(s => Math.round(s * sampleRate)).filter(f => f >= 0 && f < frames);
+    if (inside.length === 0) return [];
+    return [...new Set([0, ...inside])].sort((a, b) => a - b).slice(0, MAX_FILE_CUES);
+}
+
 /** The `cue ` chunk for slice points in seconds, or an empty array when there are none. */
-export function buildCueChunk(slicePoints: number[] | undefined, sampleRate = SAMPLE_RATE): Uint8Array {
-    const points = slicePoints ?? [];
+export function buildCueChunk(slicePoints: number[] | undefined, sampleRate: number, frames: number): Uint8Array {
+    const points = cueFramesOf(slicePoints, sampleRate, frames);
     if (points.length === 0) return new Uint8Array(0);
 
     const bodySize = 4 + points.length * 24;
@@ -127,7 +142,7 @@ export function buildCueChunk(slicePoints: number[] | undefined, sampleRate = SA
         ascii(view, o + 8, 'data'); // fccChunk
         view.setUint32(o + 12, 0, true); // dwChunkStart
         view.setUint32(o + 16, 0, true); // dwBlockStart
-        view.setUint32(o + 20, Math.round(point * sampleRate), true); // dwSampleOffset
+        view.setUint32(o + 20, point, true); // dwSampleOffset
     });
     return out;
 }
@@ -181,9 +196,10 @@ export function buildWavHeader(metadata: WavMetadata | undefined, options: WavHe
  * passed through as a Blob part, not copied into a new buffer.
  */
 export function assembleWav(pcm: BlobPart & { byteLength: number }, metadata?: WavMetadata, sampleRate = SAMPLE_RATE): Blob {
-    const cue = buildCueChunk(metadata?.slicePoints, sampleRate);
+    const frames = Math.floor(pcm.byteLength / BLOCK_ALIGN);
+    const cue = buildCueChunk(metadata?.slicePoints, sampleRate, frames);
     const header = buildWavHeader(metadata, {
-        frames: Math.floor(pcm.byteLength / BLOCK_ALIGN),
+        frames,
         sampleRate,
         trailingBytes: cue.length,
     });

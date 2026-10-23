@@ -26,10 +26,11 @@ function ascii(view: DataView, offset: number, text: string) {
     for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
 }
 
-/** Sorted, whole, inside the audio, no repeats, at most 128. */
+/** Sorted, whole, inside the audio, no repeats, from 0 (as the M8 saves them), at most 128. */
 export function m8CueFrames(cueFrames: number[], frames: number): number[] {
     const inside = cueFrames.map(Math.round).filter(f => f >= 0 && f < frames);
-    return [...new Set(inside)].sort((a, b) => a - b).slice(0, M8_MAX_CUES);
+    if (inside.length === 0) return [];
+    return [...new Set([0, ...inside])].sort((a, b) => a - b).slice(0, M8_MAX_CUES);
 }
 
 function m8CueChunk(points: number[]): Uint8Array {

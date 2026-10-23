@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The first slice plays on Spotykach.** The device plays from cue to cue, so the audio
+  before the first marker was never reached. Every WAV, slot file and M8 export with slice
+  points now starts its cues at 0 (the M8 saves its own files that way too). The editor
+  doesn't show that cue as a marker. Card slots written before this have one cue fewer, so
+  the next sync rewrites them.
+
 ---
 
 ## [4.2.6] - 2026-10-23

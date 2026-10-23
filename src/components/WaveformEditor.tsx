@@ -1428,7 +1428,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     // Sync slices and tempo from metadata when tool opened or version changed
     useEffect(() => {
         if (activeTool === 'slicer' || activeVersionId) {
-            const metaSlices = (internalMetadata || metadata)?.slicePoints || [];
+            // Markers are the cuts between slices: the file's cue at 0 is the start, not a marker.
+            const metaSlices = ((internalMetadata || metadata)?.slicePoints || []).filter(p => p > 0);
             const metaTempo = (internalMetadata || metadata)?.tempo || null;
 
             setSlicePoints([...metaSlices]);

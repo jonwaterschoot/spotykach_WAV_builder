@@ -16,7 +16,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspectWav, checkUploadable } from '@synthuxacademy/spotykach-transfer';
-import { assembleWav } from '../src/lib/audio/wavHeader.ts';
+import { assembleWav, readWavHeaderInfo } from '../src/lib/audio/wavHeader.ts';
 import { toSlotFile, audioHashOf, sameFingerprint, DEVICE_MAX_FRAMES } from '../src/lib/audio/slotFile.ts';
 
 let failures = 0;
@@ -60,6 +60,15 @@ const renamed = await toSlotFile(version, { name: 'other.wav', slicePoints: [] }
 check(await audioHashOf(renamed.blob) === hVersion && !sameFingerprint(renamed.fingerprint, slot.fingerprint), 'renamed or re-sliced: same audio hash, different fingerprint');
 const other = assembleWav(pcm(2, 330), meta);
 check(await audioHashOf(other) !== hVersion, 'different audio: different hash');
+
+console.log('\nA cue at 0');
+const noZero = { ...meta, slicePoints: [1.5, 0.5] };
+const fromZero = inspectWav(await bytesOf((await toSlotFile(version, { slicePoints: noZero.slicePoints })).blob));
+check(JSON.stringify(fromZero?.cues) === JSON.stringify([0, 24000, 72000]), 'a slot file starts its cues at 0, so the first slice plays', JSON.stringify(fromZero?.cues));
+const ownZero = (await readWavHeaderInfo(assembleWav(pcm(2), noZero))).metadata?.slicePoints;
+check(JSON.stringify(ownZero) === JSON.stringify([0, 0.5, 1.5]), 'so does our own WAV', JSON.stringify(ownZero));
+const unsliced = inspectWav(await bytesOf((await toSlotFile(version, { slicePoints: [] })).blob));
+check(unsliced?.cues.length === 0, 'no slice points, no cues (not a lone 0)');
 
 console.log('\nThe 42 s limit');
 const long = assembleWav(pcm(43.5), { ...meta, slicePoints: [0, 10, 41.9, 42.5, 43] });

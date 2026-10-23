@@ -12,12 +12,12 @@
  * Plan: docs/usbuploader/usb-transfer-plan.md, "Card identity without ICMT".
  */
 import { encodeWav, inspectWav } from '@synthuxacademy/spotykach-transfer';
-import { readWavHeaderInfo } from './wavHeader.ts';
+import { cueFramesOf, MAX_FILE_CUES, readWavHeaderInfo } from './wavHeader.ts';
 
 /** 42 s at 48 kHz: what the device's deck holds. Over USB, HELLO's `maxFrames` is the real figure. */
 export const DEVICE_MAX_FRAMES = 2016000;
 /** The device reads at most this many cue points from a file. */
-export const DEVICE_MAX_CUES = 255;
+export const DEVICE_MAX_CUES = MAX_FILE_CUES;
 const SAMPLE_RATE = 48000;
 const BLOCK = 8; // stereo float32
 
@@ -90,10 +90,7 @@ export const toSlotFile = async (
         right[i] = interleaved[i * 2 + 1];
     }
 
-    const cues = [...new Set(slicePoints.map(s => Math.round(s * SAMPLE_RATE)))]
-        .filter(f => f >= 0 && f < pcm.frames)
-        .sort((a, b) => a - b)
-        .slice(0, DEVICE_MAX_CUES);
+    const cues = cueFramesOf(slicePoints, SAMPLE_RATE, pcm.frames);
 
     const bytes = encodeWav({ left, right, cues, name });
     const written = inspectWav(bytes);
