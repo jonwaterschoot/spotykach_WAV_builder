@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.7] - 2026-10-23
+
 ### Fixed
 
 - **The first slice plays on Spotykach.** The device plays from cue to cue, so the audio
