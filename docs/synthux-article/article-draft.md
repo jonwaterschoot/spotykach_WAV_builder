@@ -92,6 +92,8 @@ I'd sketched this concept a while back, but a friend pushed me to build it: whil
 
 That's what it makes. Feed it sources (the packs or your own files), pick or tweak a preset, and it spits out one scrambled collage of up to 42 s, with a cue point at every snippet so slice mode can jump between them. For that, set the deck's Cue points to Snap in Device Config; the default, Ignore, slices as if they weren't there. It can also generate drum hits and arrange them in its step sequencer. Export, re-mangle. Mangle, rinse, repeat. Every batch is a surprise, and it works on a phone. Try recording your own voice on your phone and mangling that: quick and fun.
 
+![The Mangler has a dedicated phone layout and quality toggle to handle large memory usage](media/mangler_phone.png)
+
 The sequencer speaks MIDI too: send clock and notes to Spotykach or other gear, add LFOs and automation. Things you'd normally do in a DAW, but I'm a mini DAW too ;-)
 
 Send the result out as a WAV, to the Browse pool, to your Studio library or into a new Studio project. The Mangler also lives inside Studio's editor, under Tools.
