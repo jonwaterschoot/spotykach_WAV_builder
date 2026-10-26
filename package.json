@@ -4,7 +4,9 @@
   "version": "4.2.7",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/fetch-news-thumbnails.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/fetch-news-thumbnails.mjs",
     "build": "tsc -b && vite build",
     "build:local": "tsc -b && vite build --base=/",
     "lint": "eslint .",

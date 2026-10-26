@@ -2,7 +2,10 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import type { Element } from 'hast';
 import { resolveAssetPath } from '../utils/assetUtils';
+import { parseYouTubeUrl } from '../utils/youtube';
+import { YouTubeEmbed } from './YouTubeEmbed';
 
 /** Article bodies reference their assets relative to `/news/`. */
 const resolveNewsSrc = (src?: string) => {
@@ -20,6 +23,30 @@ const stripNode = <T extends object>(props: T): Omit<T, 'node'> => {
     const rest = { ...props } as Record<string, unknown>;
     delete rest.node;
     return rest as Omit<T, 'node'>;
+};
+
+/**
+ * A paragraph that is nothing but a YouTube link becomes a player.
+ *
+ * Only a link alone on its line: one mid-sentence is part of the prose and stays
+ * a link. A link wrapping an image uses that image as the player's still, which
+ * is also how the markdown reads on GitHub — a thumbnail that goes to the video.
+ */
+const videoFromParagraph = (node?: Element) => {
+    const children = (node?.children || []).filter(c => !(c.type === 'text' && !c.value.trim()));
+    const link = children[0];
+    if (children.length !== 1 || link.type !== 'element' || link.tagName !== 'a') return null;
+
+    const href = String(link.properties.href || '');
+    const video = parseYouTubeUrl(href);
+    if (!video) return null;
+
+    const img = link.children.find((c): c is Element => c.type === 'element' && c.tagName === 'img');
+    if (img) {
+        return { ...video, thumbnail: resolveNewsSrc(String(img.properties.src || '')), title: String(img.properties.alt || '') || undefined };
+    }
+    const text = link.children.map(c => (c.type === 'text' ? c.value : '')).join('').trim();
+    return { ...video, title: text && text !== href ? text : undefined };
 };
 
 interface NewsArticleProps {
@@ -51,6 +78,10 @@ export const NewsArticle: React.FC<NewsArticleProps> = ({ markdown }) => (
                 video: (props) => <video {...stripNode(props)} src={resolveNewsSrc(props.src)} />,
                 img: (props) => <img {...stripNode(props)} src={resolveNewsSrc(props.src)} />,
                 a: (props) => <a {...stripNode(props)} target="_blank" rel="noreferrer" />,
+                p: (props) => {
+                    const video = videoFromParagraph(props.node);
+                    return video ? <YouTubeEmbed {...video} /> : <p {...stripNode(props)} />;
+                },
             }}
         >
             {markdown}
