@@ -32,6 +32,10 @@ export const HubNews: React.FC = () => {
   const [content, setContent] = useState<Record<string, string>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
+  // Set when an arriving link asked for a post; consumed once the section renders.
+  const scrollPending = useRef(false);
+
+  const scrollToSection = () => sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   /** Point the address bar at the post on screen, without a history entry. */
   const writeHash = (item: NewsItem) => {
@@ -57,9 +61,7 @@ export const HubNews: React.FC = () => {
         setSelectedId(landing.id);
         if (requested) {
           writeHash(landing);
-          // After paint: the article is what should be in view, and it does not
-          // exist yet at this point in the same tick.
-          requestAnimationFrame(() => sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+          scrollPending.current = true;
         }
       })
       .catch(error => console.error('Failed to fetch news:', error));
@@ -71,10 +73,22 @@ export const HubNews: React.FC = () => {
   useEffect(() => {
     const onHashChange = () => {
       const item = newsItemFromParam(news, paramsFromHash(window.location.hash).get('news'));
-      if (item) setSelectedId(item.id);
+      if (!item) return;
+      setSelectedId(item.id);
+      // The section is already on the page here; the feed has loaded.
+      scrollToSection();
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, [news]);
+
+  // The scroll waits for the commit, not a frame. Updates made inside the fetch's
+  // promise are rendered on a later task, so a requestAnimationFrame queued there
+  // could fire while the section was still `null` and scroll nowhere.
+  useEffect(() => {
+    if (!scrollPending.current || !sectionRef.current) return;
+    scrollPending.current = false;
+    scrollToSection();
   }, [news]);
 
   const handleSelect = (id: string) => {
