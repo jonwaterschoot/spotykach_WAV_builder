@@ -21,12 +21,9 @@ Synthux readers: Spotykach owners and people thinking about buying one. Most hav
 2. **Where it came from**: the origin story
 3. **Trying to film it all**: the outtakes video, which sets up the rebuild
 4. **From one app to a hub with doors**: the v4 rebuild and why
-5. **The doors**: a short tour, grouped the way the hub groups them
-6. **How the doors connect**: what you can pass from one door to another
-7. **A few words I use**: workspace, project, tape, pool, card
-8. **Spotlight: the Sample Mangler**: the newest door, with the videos
-9. **What this isn't, and where to go next**: help, news, Discord, submit a pack
-10. **Thanks**: Synthux, contributors, pack makers
+5. **The doors**: a short tour, grouped the way the hub groups them. What each door hands to the others is told in its own description, and the Sample Mangler is covered as a door with its video, not in a spotlight of its own
+6. **Where to go next**: help, news, Discord, submit a pack
+7. **Thanks**: Synthux, contributors, pack makers
 
 The outtakes video goes in section 3 on purpose: trying to cover everything in one take shows how much there was to take in at once, and that leads into why the app became a hub. If you'd rather keep it light, it also works as a closer just before *Thanks*.
 
@@ -34,34 +31,32 @@ The outtakes video goes in section 3 on purpose: trying to cover everything in o
 
 ### Writing
 
-- [ ] 1. Intro
-- [ ] 2. Where it came from
-- [ ] 3. Trying to film it all (+ the outtakes video)
-- [ ] 4. From one app to a hub with doors
-- [ ] 5. The doors: Get sounds onto your Spotykach (Browse Samples, Preset to SD Card)
-- [ ] 5. The doors: Make your own set (Studio, Edit One File)
-- [ ] 5. The doors: Tools & extras (Device Config, Sample Mangler, Submit a pack)
-- [ ] 6. How the doors connect
-- [ ] 7. A few words I use
-- [ ] 8. Spotlight: the Sample Mangler (+ videos)
-- [ ] 9. What this isn't, and where to go next
-- [ ] 10. Thanks
-- [ ] Title and a one-line teaser (Synthux will probably want both)
+- [x] 1. Intro
+- [x] 2. Where it came from
+- [x] 3. Trying to film it all (+ the outtakes video)
+- [x] 4. From one app to a hub with doors
+- [x] 5. The doors: Get sounds onto your Spotykach (Browse Samples, Preset to SD Card)
+- [x] 5. The doors: Make your own set (Studio, Edit One File)
+- [x] 5. The doors: Tools & extras (Device Config, Sample Mangler, Submit a pack)
+- [x] 6. Where to go next
+- [x] 7. Thanks
+- [x] Title and a one-line teaser (Synthux will probably want both)
 - [ ] Read through the whole thing once: cut repetition, check it doesn't turn into a guide
 
 ### Media
 
-- [ ] Hub screenshot (the full hub, all six doors)
-- [ ] Browse Samples: screenshot with the temporary pool open
-- [ ] Preset to SD Card: screenshot
-- [ ] Studio: screenshot of a project with tapes and the waveform editor
-- [ ] Edit One File: screenshot
-- [ ] Device Config: screenshot (the new compact editor with the live config.txt)
-- [ ] Sample Mangler: screenshot (or let the video stand in)
-- [ ] Mangler video(s): drop into `media/`, decide YouTube embed or file
-- [ ] Outtakes video: drop into `media/`, decide YouTube embed or file
-- [ ] Optional: a small diagram of how the doors connect (section 6)
-- [ ] Check every screenshot is from the current version and shows nothing private (folder names, file paths, emails)
+Save each screenshot in `media/` under the name the draft already uses:
+
+- [x] `hub.png`: the full hub, all six doors
+- [x] `browse.png`: Browse Samples with the temporary pool open
+- [x] `presets.png`: Preset to SD Card
+- [x] `studio.png`: a Studio project with tapes and the waveform editor
+- [x] `editor.png`: Edit One File
+- [x] `config.png`: Device Config (the compact editor with the live config.txt)
+- [x] Sample Mangler: no screenshot, the video stands in
+- [x] Mangler video: YouTube embed (link is in the draft)
+- [x] Outtakes video: YouTube embed (link is in the draft)
+- [x] Check every screenshot is from the current version and shows nothing private (folder names, file paths, emails)
 
 Screenshots that already exist and may still be current:
 `public/news/images/WAVbuilder_v4Pervak.png` (hub, but only five doors, so take a new one),
@@ -71,9 +66,9 @@ Screenshots that already exist and may still be current:
 ### Publishing
 
 - [ ] Send the text and media to Synthux in whatever format they use
-- [ ] In-app news: copy to `public/news/<slug>.md`
-- [ ] In-app news: copy images to `public/news/images/`, and fix the image paths
-- [ ] In-app news: add an entry to `public/news/news-manifest.json` (id, title, date, file, image, category). Decide whether it takes `pinned` from the Mangler post
+- [x] In-app news: copy to `public/news/<slug>.md`
+- [x] In-app news: copy images to `public/news/images/`, and fix the image paths
+- [x] In-app news: add an entry to `public/news/news-manifest.json` (id, title, date, file, image, category). Decide whether it takes `pinned` from the Mangler post
 - [ ] In-app news: link to the Synthux post once it's up, or the other way round
 - [ ] `npm run deploy` (pushing to main doesn't publish)
 

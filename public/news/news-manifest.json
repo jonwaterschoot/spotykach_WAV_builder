@@ -1,5 +1,14 @@
 [
   {
+    "id": "meet",
+    "title": "Meet WAV.builder: getting sounds onto your Spotykach",
+    "date": "2026-10-26",
+    "file": "meet-wav-builder.md",
+    "image": "images/overview_hub.jpg",
+    "category": "News",
+    "pinned": true
+  },
+  {
     "id": "usb-files",
     "title": "USB: settings, notes and project file (v4.2.5)",
     "date": "2026-10-22",
@@ -36,8 +45,7 @@
     "date": "2026-10-12",
     "file": "sample-mangler.md",
     "category": "Feature",
-    "image": "images/samplemangler_standalone.jpg",
-    "pinned": true
+    "image": "images/samplemangler_standalone.jpg"
   },
   {
     "id": "413",

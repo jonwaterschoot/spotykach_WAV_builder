@@ -1,127 +1,120 @@
-# [Title: e.g. "Meet WAV.builder" / "WAV.builder: getting sounds onto your Spotykach"]
+# Meet WAV.builder: getting sounds onto your Spotykach
 
-*[Teaser: one line for the blog listing]*
+*Organise your Spotykach samples, sync the SD card both ways, edit and build new files, or browse sample packs from the community and guest artists.*
 
-<!-- Each section: the brief in the comment says what it's for. Write underneath, delete the comment when done. -->
+WAV.builder is a free browser app for organising your Spotykach samples. It gets sounds onto the SD card, your own or from the Synthux sample packs, and brings back what you recorded to the card while playing. It ranges from a full Studio to a small editor for Spotykach's config.txt.
 
-## [1. Intro]
+This is an overview, not a manual. [Open WAV.builder](https://jonwaterschoot.github.io/spotykach_WAV_builder/)
 
-<!--
-What WAV.builder is in two or three sentences: a free browser app for getting sounds onto the
-Spotykach SD card, from the sample packs or your own files, in the right format and folder layout.
-Say it's an overview, not a manual. Link: [app URL].
--->
+## Where it came from
 
-WAV.builder today is an app to help organise samples, allowing to bring sounds, whether your own or those from the Synthux Sample Packs, to the Spotykach SD card. And in the other direction allowing you to easily import what you wrote to the SD card on the device while you were playing it.
-This article is an overview and not a manual. 
+I started WAV.builder as a one-job converter: take audio files and write them as all-caps `.WAV` files in the exact format Spotykach needed. Saving a file called `1.WAV` on Windows is surprisingly fiddly, and that frustration is the whole origin story. (Spotykach reads lowercase `.wav` now too.)
 
+Then I kept thinking "it'd be nice if it could also…". Eight months on, it does a lot. I'm still unsure about plenty, from UI to UX to design, it's all still on the table, but I use it every time I play Spotykach and find it genuinely useful. I hope you will too.
 
-## [2. Where it came from]
+It's all open source, and contributions are welcome.
 
-<!--
-The origin story in your words: why you started it, what problem it solved for you, first version
-(first commit 6 Feb 2026, v1.0.0 on 9 Feb). How it grew: projects, tapes, the editor, sample packs,
-Studio. How it ended up connected to Synthux.
--->
+## Trying to film it all
 
-I built WAV.builder as an easy tool to get sounds onto the Spotykach SD card, formatted in the correct way. Really it was originally meant to write all caps .WAV files in the correct wav formatting. As that was a requirement for the device to read them. We now actually can use lower caps .wav as well, but the frustrations of not being able to easily save an all caps 1.WAV in Windows is the origin story.
-Along the way I kept thinking it'd be nice if I could x y z ... Many months later it's quite a capable tool with many functions, I'm still in doubt on many things, from UI to UX to design, it's all on the table to me still; but I use it myself and do find it usefull in my day to day use of Spotykach. I hope it can be for you too.
+I've tried several times to record a video tour. My mistake was thinking I could cover everything in one 20-minute take. Over a few months, every attempt ended the same way: I'd hit a bug I wanted to fix first, stumble over my words and drift off topic, or my chronic pain would break the flow, and it was back to take one.
 
-It's all open source, so if you want to contribute or rip it apart to build your own tool. You're free to consider my app as a use case study.
+Here's the proof :P
 
-## [3. Trying to film it all]
+[VIDEO: outtakes https://youtu.be/DM7hVPvqovQ]
 
-<!--
-You tried to film one tutorial covering every feature. It didn't work out, and here's the edit.
-Keep it short and light. Use it as the bridge: there was too much to show in one go, and that's
-part of why the app was rebuilt.
--->
+There's simply too much to show in one go, which is also part of why the app got split up.
 
-[VIDEO: outtakes edit]
+## From one app to a hub with doors
 
-## [4. From one app to a hub with doors]
+Up to v3, everything lived in one app: what's now the Studio door. Before you saw anything, a setup wizard asked for a work folder, an SD card and a project name, even if you only came to hear a sample.
 
-<!--
-v4 "Pervak" (19 Aug 2026). Before: one app with a setup wizard asking for a work folder, an SD card
-and a project name before you saw anything, even if you only came to listen to a sample.
-After: a hub. Each door does one job, has its own link you can bookmark or share, and nothing asks
-for a folder until something is actually written. Most doors need no setup at all.
--->
+v4 "Pervak" (August 2026) turned it into a hub with doors. Each door does one job and has its own link, so you can bookmark or share it. That made the sample packs easy to share, and it means you can drop a single sample into the editor, trim, normalise or EQ it, and download just that file to put in the right SK folder yourself. Most doors need no setup at all.
 
-![The hub](media/hub.png)
+![The hub with all six doors](media/hub.png)
 
-## [5. The doors]
+## The doors
 
-<!--
-A short tour, one or two sentences per door, grouped the way the hub groups them. Describe what
-each is *for*, not how to use it. One screenshot per group, or per door where it adds something.
--->
+The hub groups its six doors in three rows.
 
 ### Get sounds onto your Spotykach
 
-<!-- Browse Samples: listen, collect, download as a ready card (6×6) or loose files, works on a phone.
-     Preset to SD Card: a ready-made card from a curated set, written straight to the SD card. -->
+#### Browse Samples
 
-![Browse Samples](media/browse.png)
+Listen through the packs, collect what you like and download it as a ready card (6×6) or as loose files. Works on a phone.
+
+Grab single files, or collect them into the **pool**. There you can arrange them into tape slots, open them in the editor and download the lot as an SK folder, or hand the whole pool to a new Studio project in one click. It's a trimmed-down Studio without the workspace or projects: the session lives in your browser, so treat it as temporary.
+
+![Browse Samples with the pool open](media/browse.png)
+
+#### Preset to SD Card
+
+A ready-made card from a curated set, written straight to your SD card.
+
+Take the Hainbach tapes: from the 36 samples Hainbach gave us, I made my own sorting across the 6×6 slots. Write it straight to a prepared card, or open the preset in Studio to swap files or leave a few slots free.
+
+![Preset to SD Card](media/presets.png)
 
 ### Make your own set
 
-<!-- Studio: the full workspace: projects, tapes, waveform editor, building and syncing the card.
-     Edit One File: Studio's editor for a single file: trim, fade, EQ, pitch, slice. -->
+#### Studio
 
-![Studio](media/studio.png)
+The full workspace, and where I spend most of my time. The first time, you pick a folder on your drive where it keeps your projects and settings. From there you can:
+
+- make as many projects as you like, each one a card's worth of sounds
+- rearrange slots and work on every file with the full editor
+- bring in samples from the pool, the sample browser or your drive. The browser can hold a personal collection, or point at folders on your computer so you can audition before copying anything in
+- keep notes and titles per project, handy for remembering how you played a set
+- change the look, set up locations and turn on optional backups in Settings
+
+When you're ready, **sync** writes the project to the card, in the same window you use to import from it. I've worked hard on making syncing robust: the tricky part is staying consistent while files get written and renamed to the `SK/B/1.wav` layout.
+
+![A Studio project with tapes and the waveform editor](media/studio.png)
+
+#### Edit One File
+
+Studio's editor, for a single file: trim, fade, EQ, pitch and slice, then download it or send it to the Browse pool. No project needed.
+
+These are jobs I'd normally open a DAW or Audacity for. You may still prefer your own tools, but having them in the app saves an export and re-import. Beyond trimming and normalising, things like volume automation and pitch-shifting a section are handy for taming a sample with a nasty bit in it.
+
+![Edit One File](media/editor.png)
 
 ### Tools & extras
 
-<!-- Device Config: config.txt settings (MIDI channels, preloading, transport, slice mode) without a project.
-     Sample Mangler: see section 8.
-     Submit a pack: made your own sounds? There's a door for sending them in. -->
+#### Device Config
 
-![Device Config](media/config.png)
+Spotykach reads its settings (MIDI channels, preloading, transport, cue points) from `config.txt` on the SD card. This door edits that file without opening a project; Spotykach picks up the changes at the next reboot.
 
-## [6. How the doors connect]
+![Device Config with the live config.txt](media/config.png)
 
-<!--
-The doors are separate but they hand things to each other. A few examples, not the full list:
-- Browse → Studio: one button hands the whole pool to a new project
-- Edit One File → Browse pool
-- Sample Mangler → WAV, Browse pool, Studio user library, or straight into a new Studio project
-- The Mangler also lives inside Studio's editor (Tools menu)
-- Preset to SD Card and Studio both write to the card
-Optional: a small diagram here.
--->
+#### Sample Mangler
 
-## [7. A few words I use]
+I'd sketched this concept a while back, but a friend pushed me to build it: while I was showing him Spotykach, he asked if I had a sample made of lots of short snippets.
 
-<!--
-Short glossary, maybe as a list:
-- Workspace / work folder: the folder on your drive where Studio keeps everything
-- Project: one complete card's worth of sounds
-- Tape: [your definition]
-- Pool: the temporary collection in Browse (and the Mangler's source pool)
-- Card: the SD card, and what ends up on it
-Check these match the wording in the app.
--->
+That's what it makes. Feed it sources (the packs or your own files), pick or tweak a preset, and it spits out one scrambled collage of up to 42 s, with a cue point at every snippet so slice mode can jump between them. For that, set the deck's Cue points to Snap in Device Config; the default, Ignore, slices as if they weren't there. It can also generate drum hits and arrange them in its step sequencer. Export, re-mangle. Mangle, rinse, repeat. Every batch is a surprise, and it works on a phone. Try recording your own voice on your phone and mangling that: quick and fun.
 
-## [8. Spotlight: the Sample Mangler]
+The sequencer speaks MIDI too: send clock and notes to Spotykach or other gear, add LFOs and automation. Things you'd normally do in a DAW, but I'm a mini DAW too ;-)
 
-<!--
-The newest door. Random snippets from the packs or your own files, joined into one file of up to
-42 s with a cue point at each snippet, so slice mode jumps between them. Dice, seeds, keepers.
-Hits and slices, step sequencer with MIDI. Desktop browser only. Let the videos do most of the work.
--->
+Send the result out as a WAV, to the Browse pool, to your Studio library or into a new Studio project. The Mangler also lives inside Studio's editor, under Tools.
 
-[VIDEO: mangler 1]
+Bonus: it can also export for the Dirtywave M8, which reads the same slice points.
 
-[VIDEO: mangler 2]
+[VIDEO: https://www.youtube.com/watch?v=jI-iRUhHxcw]
 
-## [9. What this isn't, and where to go next]
+#### Submit a pack
 
-<!--
-Not a guide: point to About & Help in the app, the news section on the hub, Discord (@jonwtr).
-Invite feedback and pack submissions.
--->
+Below the doors: *Made your own sounds? Submit a pack.* If you'd like to contribute one, follow that link and get in touch!
 
-## [10. Thanks]
+## Where to go next
 
-<!-- Synthux, Vlad, testers, pack makers (Hainbach, ...), anyone else. -->
+I hope this gives you an idea of what the app can do, and why it's built the way it is. For the details, About & Help is in the app, and new features land in the news on the hub.
+
+Found a bug, or something that annoys you? Reach out on Discord (@jonwtr). Would you rather have a drastically different app, for another need or style? Reuse any part of mine, or rip it apart and treat it as a case study; its licence explicitly allows that.
+
+But mostly, have fun playing Spotykach, and if my app adds to that fun, let me know. This is a passion project and an endless learning opportunity for me.
+
+## Thanks
+
+Thanks to Synthux, and Roey in particular, for building an ecosystem that embraces open source and encourages this kind of work. To Vlad, who built the firmware: I admire your work, and you're always willing to explain things and even accept a few PRs so my app can use everything Spotykach offers. And to the testers, and everyone who has submitted samples or is thinking about it.
+
+Keep on looping, we'll meet at the playground carousel,
+Jon
