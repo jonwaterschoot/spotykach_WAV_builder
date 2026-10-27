@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.2.8] - 2026-10-27
+
 ### Changed
 
 - **Firmware 1.4.0 is out: USB transfer is on by default.** Settings ▸ System has a plain
