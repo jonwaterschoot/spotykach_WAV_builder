@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Firmware 1.4.0 is out: USB transfer is on by default.** Settings ▸ System has a plain
+  *USB transfer* switch to turn it off; the warning dialog and the *experimental* tags are
+  gone. Turning it off is remembered per browser. The firmware link points to the 1.4.0
+  release on Synthux's site.
+- **Cue points lose the Beta label**, in the config editor and in the Slicer.
+
 ---
 
 ## [4.2.7] - 2026-10-23

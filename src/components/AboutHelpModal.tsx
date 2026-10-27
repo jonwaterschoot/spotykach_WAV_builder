@@ -442,7 +442,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    <span className="text-orange-300 font-semibold">Beta.</span> With the 1.4.0 beta firmware, Studio and Preset to SD Card can reach the card while it stays in the Spotykach. Slower than a card reader; see <em>USB Transfer (beta)</em> below.
+                                                    With firmware 1.4.0, Studio and Preset to SD Card can reach the card while it stays in the Spotykach. Slower than a card reader; see <em>USB Transfer</em> below.
                                                 </td>
                                             </tr>
                                             <tr>
@@ -633,14 +633,14 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                             )}
                         </div>
 
-                        {/* USB Transfer (beta) */}
+                        {/* USB Transfer */}
                         <div className="border border-gray-700 rounded-lg overflow-hidden">
-                            <SectionHeader id="usb" title="USB Transfer (beta)" icon={Usb} />
+                            <SectionHeader id="usb" title="USB Transfer" icon={Usb} />
 
                             {expandedSection === 'usb' && (
                                 <div className="p-6 bg-black/20 text-gray-300 space-y-4 font-body text-sm leading-relaxed">
                                     <p>
-                                        With beta firmware, WAV Builder reaches the SD card while it stays in the Spotykach, through the
+                                        With firmware 1.4.0, WAV Builder reaches the SD card while it stays in the Spotykach, through the
                                         rear USB port. It suits the smaller jobs: a few slots, a preset, a recording pulled off the device.
                                     </p>
                                     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
@@ -668,16 +668,16 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                                     </div>
                                     <ol className="list-decimal list-inside space-y-2">
                                         <li>
-                                            <strong className="text-white">Flash firmware {USB_FIRMWARE.version}</strong> from Synthux's GitHub:{' '}
+                                            <strong className="text-white">Flash firmware {USB_FIRMWARE.version}</strong> or later, from Synthux:{' '}
                                             <a href={USB_FIRMWARE.url} target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">Spotykach {USB_FIRMWARE.version}</a>.
                                         </li>
-                                        <li><strong className="text-white">Switch it on</strong> in Studio's <em>Settings ▸ System ▸ USB transfer</em>. It needs Chrome or Edge on a computer.</li>
+                                        <li><strong className="text-white">Use Chrome or Edge</strong> on a computer. USB transfer is on by default; <em>Settings ▸ System ▸ USB transfer</em> turns it off.</li>
                                         <li><strong className="text-white">Connect directly:</strong> a good data cable into a USB-A port on the computer, as in the table above.</li>
                                     </ol>
                                     <div className="bg-black/20 p-4 rounded-lg border border-gray-800 space-y-2">
                                         <p><strong className="text-white">Studio:</strong> click <em>USB</em> in the header. It connects and shows the status, what USB reaches and what to try if it doesn't connect (with <em>Copy diagnostics</em>). Then build or import with <em>Import / Build</em>: you review every slot first. <em>Import ▸ Into a new project</em> starts a clean project from the card.</p>
                                         <p><strong className="text-white">Preset to SD Card:</strong> <em>Write to SD card ▸ Over USB</em> shows which slots the preset fills and which files it replaces, and can save those to a ZIP first.</p>
-                                        <p><strong className="text-white">What USB reaches.</strong> The 36 slot files, and with firmware {USB_FIRMWARE.version} or later also <code className="bg-gray-800 px-1 rounded">config.txt</code>, the README and the project file (<code className="bg-gray-800 px-1 rounded">SK/project.json</code>), so the card says the same whichever way you build. Over USB one file is at most 32 KB: a project of more than about 115 samples gets a shorter project file, listing only the samples in slots. Older firmware reaches the slot files only. The project copy and the SK backup on the card need the card reader.</p>
+                                        <p><strong className="text-white">What USB reaches.</strong> The 36 slot files, <code className="bg-gray-800 px-1 rounded">config.txt</code>, the README and the project file (<code className="bg-gray-800 px-1 rounded">SK/project.json</code>), so the card says the same whichever way you build. Over USB one file is at most 32 KB: a project of more than about 115 samples gets a shorter project file, listing only the samples in slots. The project copy and the SK backup on the card need the card reader.</p>
                                         <p><strong className="text-white">Transfer mode.</strong> While connected the Spotykach is silent; it plays again when you disconnect. If the cable comes out, the slot being written keeps its old file, and <em>Continue</em> picks up where it stopped.</p>
                                         <p><strong className="text-white">Windows:</strong> close apps that hold the Spotykach's MIDI port (your DAW) before connecting.</p>
                                     </div>

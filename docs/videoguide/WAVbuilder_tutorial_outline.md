@@ -105,11 +105,11 @@ Reuse: PM 29:17–31:03 (good as is).
 - **Import / Build**: the preview shows what happens to every slot before anything is written.
 Reuse: CT 07:37–09:56, CT 11:05–12:15, CT 14:26–14:52, CT 17:20–17:51.
 
-## 9 · Round trip + USB (beta) — 2:30 · DEV + SCR
+## 9 · Round trip + USB — 2:30 · DEV + SCR
 - Pull the cold-open snippet from the device into the project. Card reader *or* USB.
-- USB: firmware 1.4.0 beta, Settings ▸ System ▸ Experimental, plug straight into a USB-A port.
+- USB: firmware 1.4.0, on by default, plug straight into a USB-A port.
   ~35 s per slot, so good for one file and slow for a full card (~10 min).
-  `config.txt` still needs the card reader.
+  `config.txt` goes over USB too.
 Reuse: CT 24:00–25:30, CT 10:36–11:05.
 
 ## 10 · Sample Mangler — 4:00 *(trim)* · SCR + DEV

@@ -9,11 +9,11 @@ import { UsbDiagnosticsButton } from './UsbDiagnosticsButton';
 
 /**
  * `config.txt` over Spotykach's rear USB, for the config editors (Config mode and
- * Studio's config window). Firmware with protocol 1.1 (1.4.0 beta 4 and later)
+ * Studio's config window). Firmware with protocol 1.1 (1.4.0 and later)
  * reads and writes the file in transfer mode; it applies from the next power-on.
  *
  * Shares the one USB session with the sync window, so a connection made there is
- * used here and the other way round. Hidden unless USB transfer is switched on.
+ * used here and the other way round. Hidden when USB transfer is switched off.
  */
 interface UsbConfigBarProps {
     config: ProjectConfig;
@@ -120,7 +120,7 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
     return (
         <div className="space-y-2 pt-3 border-t border-white/10">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                <Usb size={12} /> USB <span className="normal-case tracking-normal font-normal text-amber-400/80">experimental</span>
+                <Usb size={12} /> USB
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
                 {button(<><FileDown size={14} /> Read over USB</>, () => void start('read'))}

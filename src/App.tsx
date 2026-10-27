@@ -313,7 +313,7 @@ function App({ onExitToHub }: AppProps) {
   /** The sync modal's card can't be read (ejected); checked while the modal is open. */
   const [sdCardMissing, setSdCardMissing] = useState(false);
 
-  /** Experimental (Settings ▸ System, or ?usb=1): the sync modal can also reach the card over Spotykach's rear USB. */
+  /** Unless switched off (Settings ▸ System, or ?usb=0): the sync modal can also reach the card over Spotykach's rear USB. */
   const usbEnabled = useUsbTransferEnabled();
   /** Where the sync modal reaches the card. The last choice is remembered, not a lock. */
   const [cardSource, setCardSource] = useState<CardSource>(() =>
@@ -5128,7 +5128,7 @@ function App({ onExitToHub }: AppProps) {
                       <button
                         onClick={() => openCardRoute('usb')}
                         aria-pressed={cardSource === 'usb'}
-                        title={usb.backend ? 'USB: Spotykach connected' : 'USB: Spotykach through its rear USB port (experimental)'}
+                        title={usb.backend ? 'USB: Spotykach connected' : 'USB: Spotykach through its rear USB port'}
                         className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${cardSource === 'usb' ? 'bg-orange-500/20 text-orange-300' : 'text-gray-500 hover:text-white'}`}
                       >
                         <Usb size={13} />

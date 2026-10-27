@@ -270,16 +270,15 @@ const SlicerOverlay: React.FC<SlicerOverlayProps> = ({
                 {sorted.length}/{maxSlices}
             </text>
 
-            {/* Beta: the device plays these markers once Cue points is on in config.txt. */}
+            {/* The device plays these markers once Cue points is on in config.txt. */}
             {active && (
                 <foreignObject x={0} y={0} width={width} height={height} className="pointer-events-none">
                     <div className="w-full h-full flex items-end justify-center p-2">
                         <div
-                            className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-synthux-orange/40 backdrop-blur-sm pointer-events-auto cursor-help"
-                            title="Beta: Spotykach plays these cue points when Cue points is set to Snap or Free for the deck in config.txt (firmware 1.3.0 and later). With the default, Ignore, the device slices as if there were none."
+                            className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-synthux-orange/40 backdrop-blur-sm pointer-events-auto cursor-help phone:hidden"
+                            title="Spotykach plays these cue points when Cue points is set to Snap or Free for the deck in config.txt (firmware 1.3.0 and later). With the default, Ignore, the device slices as if there were none."
                         >
-                            <span className="px-1 rounded border border-synthux-orange/50 text-synthux-orange font-black text-[8px] uppercase tracking-wider">Beta</span>
-                            <span className="text-gray-300 font-bold text-[9px] uppercase tracking-wider phone:hidden">
+                            <span className="text-gray-300 font-bold text-[9px] uppercase tracking-wider">
                                 Plays with Cue points on in config.txt
                             </span>
                         </div>

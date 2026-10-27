@@ -55,7 +55,7 @@ interface PresetsPanelProps {
      * seconds. Nothing is run: the buttons on the card are still the only way in.
      */
     focusPresetId?: string | null;
-    /** Offer USB as a third way onto the card (experimental, Settings ▸ System). */
+    /** Offer USB as a third way onto the card (unless switched off in Settings ▸ System). */
     usbTransfer?: boolean;
 }
 

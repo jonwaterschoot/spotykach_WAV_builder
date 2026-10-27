@@ -17,11 +17,11 @@ const code = (text: string) => <code className="bg-white/5 px-1 rounded text-gra
 const USB_SECTIONS: InfoSection[] = [
     {
         title: 'What USB reaches',
-        body: <>The 36 slot files, {code('config.txt')}, the notes ({code('README.md')}) and {code('SK/project.json')}, with firmware {USB_FIRMWARE.version} or later. Older firmware reaches the slot files only. The project copy and the SK backup need the card reader, and a preset&apos;s {code('config.txt')} settings don&apos;t reach the device over USB.</>,
+        body: <>The 36 slot files, {code('config.txt')}, the notes ({code('README.md')}) and {code('SK/project.json')}. The project copy and the SK backup need the card reader, and a preset&apos;s {code('config.txt')} settings don&apos;t reach the device over USB.</>,
     },
     {
         title: 'Needs',
-        body: <>Firmware <a href={USB_FIRMWARE.url} target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">{USB_FIRMWARE.version}</a>, and Chrome, Edge or another Chromium browser on a computer. Linux: your user needs to be in the {code('dialout')} group.</>,
+        body: <>Firmware <a href={USB_FIRMWARE.url} target="_blank" rel="noreferrer" className="text-synthux-blue underline hover:text-white">{USB_FIRMWARE.version}</a> or later, and Chrome, Edge or another Chromium browser on a computer. Linux: your user needs to be in the {code('dialout')} group.</>,
     },
     {
         title: 'Cables and ports',

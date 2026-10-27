@@ -134,5 +134,5 @@ const api = {
 
 export function installUsbConsole() {
     (window as unknown as { skUsb: typeof api }).skUsb = api;
-    console.info('[usb] USB transfer is on (experimental). Try: await skUsb.connect()');
+    console.info('[usb] USB transfer is on. Try: await skUsb.connect()');
 }

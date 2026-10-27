@@ -123,7 +123,7 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
             <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1 p-0.5 bg-black/40 rounded-lg border border-white/5" role="group" aria-label="Card source">
                     {tab('reader', <><RiSdCardMiniLine size={11} /> Card reader</>)}
-                    {tab('usb', <><Usb size={11} /> USB <span className="text-[8px] text-amber-400/80 normal-case tracking-normal">experimental</span></>)}
+                    {tab('usb', <><Usb size={11} /> USB</>)}
                 </div>
                 <div className="text-[11px] min-w-0 flex-1">{status}</div>
                 <div className="flex items-center gap-2">

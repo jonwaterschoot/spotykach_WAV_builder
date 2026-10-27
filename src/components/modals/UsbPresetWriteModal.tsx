@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Circle, Clipboard, Download, FlaskConical, Loader, Usb, X } from 'lucide-react';
+import { AlertTriangle, Check, Circle, Clipboard, Download, Loader, Usb, X } from 'lucide-react';
 import type { PresetManifestEntry } from '../../data/samplePacks';
 import type { SlotDescriptor } from '../../lib/card/cardBackend';
 import { usbSession, useUsbSession } from '../../lib/usb/usbSession';
@@ -8,7 +8,7 @@ import { presetSlots, writePresetOverUsb, type PresetSlot } from '../../utils/pr
 import type { TapeColor } from '../../types';
 
 /**
- * A preset onto Spotykach over USB (experimental). The card reader route can only say
+ * A preset onto Spotykach over USB. The card reader route can only say
  * "SK/ is already on this card"; over USB the device lists its slots, so this shows
  * exactly which files the preset replaces, offers to save them first, and says how
  * long the write takes. The finished step keeps the measured times, for the record.
@@ -272,9 +272,6 @@ export const UsbPresetWriteModal: React.FC<UsbPresetWriteModalProps> = ({ entry,
                     <div>
                         <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
                             <Usb size={18} className="shrink-0 text-synthux-orange" /> Write over USB
-                            <span className="text-[9px] font-bold uppercase tracking-widest text-orange-300 bg-orange-500/15 rounded-full px-2 py-0.5 flex items-center gap-1">
-                                <FlaskConical size={9} /> Experimental
-                            </span>
                         </h3>
                         <p className="text-xs text-gray-400 mt-1"><span className="text-gray-300">{entry.name}</span> onto Spotykach, through its rear USB port.</p>
                     </div>

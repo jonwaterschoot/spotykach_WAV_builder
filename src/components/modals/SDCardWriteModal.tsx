@@ -26,7 +26,7 @@ interface SDCardWriteModalProps {
   /** The card already has `SK/` and the user wants to write into it anyway. */
   onConfirmOverwrite: () => void;
   onCancel: () => void;
-  /** Write over Spotykach's rear USB instead (experimental). Shown only when given. */
+  /** Write over Spotykach's rear USB instead. Shown only when given. */
   onUseUsb?: () => void;
   /** Set when the picker or the card itself refused. */
   error?: string | null;
@@ -154,7 +154,6 @@ export const SDCardWriteModal: React.FC<SDCardWriteModalProps> = ({
                       <Usb size={18} className="shrink-0 text-gray-400" />
                       <span className="text-sm font-bold text-gray-200">
                         Over USB, card stays in Spotykach
-                        <span className="ml-2 text-[9px] uppercase tracking-widest text-orange-300">Experimental</span>
                       </span>
                     </button>
                   )}

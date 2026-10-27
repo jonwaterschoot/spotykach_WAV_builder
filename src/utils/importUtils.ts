@@ -527,7 +527,7 @@ export interface SyncDiff {
     /**
      * `README.md` and `SK/project.json`, compared by the notes they carry (project
      * and tape notes): every other part of them follows the slots. Absent when the
-     * route can't reach those files (USB before firmware 1.4.0 beta 5).
+     * route can't reach those files (USB before firmware 1.4.0).
      */
     notes?: { status: SyncStatus };
     duplicates: DuplicateGroup[];

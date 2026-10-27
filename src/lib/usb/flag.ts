@@ -1,7 +1,7 @@
 /**
- * USB transfer is experimental until the firmware that supports it is released.
- * Turned on in Settings ▸ System, or with `?usb=1` (`?usb=0` turns it off again).
- * Remembered per browser.
+ * USB transfer, on by default since firmware 1.4.0. Turned off in Settings ▸ System,
+ * or with `?usb=0` (`?usb=1` turns it on again). Only the off choice is stored, so a
+ * browser that turned it on during the beta (stored '1') stays on.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -9,8 +9,8 @@ const KEY = 'wavbuilder.usbTransfer';
 
 /** The firmware release that has USB transfer. */
 export const USB_FIRMWARE = {
-    version: '1.4.0 beta 5',
-    url: 'https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.0.b5',
+    version: '1.4.0',
+    url: 'https://www.synthux.academy/firmware/spotykach/spotykach/v1.4.0',
 };
 
 /** Web Serial: Chrome, Edge and Opera on desktop. */
@@ -25,15 +25,15 @@ function usbParam(): string | null {
     return q < 0 ? null : new URLSearchParams(hash.slice(q + 1)).get('usb');
 }
 
-let fallback = false;
+let fallback = true;
 const listeners = new Set<() => void>();
 
 export function isUsbTransferEnabled(): boolean {
     const param = usbParam();
     try {
-        if (param === '1') localStorage.setItem(KEY, '1');
-        else if (param === '0') localStorage.removeItem(KEY);
-        return localStorage.getItem(KEY) === '1';
+        if (param === '1') localStorage.removeItem(KEY);
+        else if (param === '0') localStorage.setItem(KEY, '0');
+        return localStorage.getItem(KEY) !== '0';
     } catch {
         return param === '1' || (param === null && fallback);
     }
@@ -42,8 +42,8 @@ export function isUsbTransferEnabled(): boolean {
 export function setUsbTransferEnabled(on: boolean): void {
     fallback = on;
     try {
-        if (on) localStorage.setItem(KEY, '1');
-        else localStorage.removeItem(KEY);
+        if (on) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, '0');
     } catch { /* storage blocked: kept for this session only */ }
     // A `?usb=` still in the address would override the choice on the next read.
     const url = new URL(window.location.href);

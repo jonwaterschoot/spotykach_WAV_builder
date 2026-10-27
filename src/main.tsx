@@ -17,8 +17,8 @@ window.addEventListener("touchmove", function () { }, { passive: false });
 import { AudioPlayerProvider } from './contexts/AudioPlayerContext'
 import { isUsbTransferEnabled } from './lib/usb/flag'
 
-// Experimental: USB transfer, behind Settings ▸ System (or ?usb=1) until the firmware is released.
-// The console helper loads at startup only, so it needs a reload after turning the switch on.
+// USB transfer, on unless switched off in Settings ▸ System (or ?usb=0).
+// The console helper loads at startup only, so it needs a reload after turning the switch back on.
 if (isUsbTransferEnabled()) void import('./lib/usb/devConsole').then(m => m.installUsbConsole());
 
 createRoot(document.getElementById('root')!).render(
