@@ -9,6 +9,13 @@
     "pinned": true
   },
   {
+    "id": "fw-140",
+    "title": "Firmware 1.4.0: USB transfer is on (v4.2.8)",
+    "date": "2026-10-27",
+    "file": "firmware-1-4-0.md",
+    "category": "Update"
+  },
+  {
     "id": "usb-files",
     "title": "USB: settings, notes and project file (v4.2.5)",
     "date": "2026-10-22",
