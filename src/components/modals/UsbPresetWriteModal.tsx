@@ -4,6 +4,8 @@ import type { PresetManifestEntry } from '../../data/samplePacks';
 import type { SlotDescriptor } from '../../lib/card/cardBackend';
 import { usbSession, useUsbSession } from '../../lib/usb/usbSession';
 import { UsbDiagnosticsButton } from '../UsbDiagnosticsButton';
+import { downloadSlotsZip } from '../../lib/card/slotZip';
+import { formatSeconds, USB_BYTES_PER_SECOND } from '../../lib/usb/speed';
 import { presetSlots, writePresetOverUsb, type PresetSlot } from '../../utils/presetLoader';
 import type { TapeColor } from '../../types';
 
@@ -14,12 +16,8 @@ import type { TapeColor } from '../../types';
  * long the write takes. The finished step keeps the measured times, for the record.
  */
 
-/**
- * Measured on firmware 1.4.0.b1, Windows, Oct 13 2026: Hainbach's Spotykach Tapes,
- * 36 slots, 286.5 MB in 10 min 16 s (477 KB/s; 413–501 KB/s per slot), plus about
- * 10 s to download the audio. Downloads off the device run at the same speed.
- */
-const BYTES_PER_SECOND = 477 * 1024;
+/** The measured USB speed: see `speed.ts`. */
+const BYTES_PER_SECOND = USB_BYTES_PER_SECOND;
 /** Same run: 17 s per slot on average, for samples of mixed length. */
 const AVG_SLOT_SECONDS = 17;
 /** A full slot: 42 s of 48 kHz stereo float, about 34 s over USB. */
@@ -31,10 +29,7 @@ const TAPE_HEX: Record<TapeColor, string> = {
 const key = (tape: TapeColor, slot: number) => `${tape}${slot}`;
 const label = (tape: TapeColor, slot: number) => `${tape} ${slot}`;
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-const duration = (seconds: number) => {
-    const s = Math.max(1, Math.round(seconds));
-    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
-};
+const duration = formatSeconds;
 
 interface Plan {
     slots: PresetSlot[];
@@ -124,24 +119,12 @@ export const UsbPresetWriteModal: React.FC<UsbPresetWriteModalProps> = ({ entry,
         abort.current = controller;
         setStep({ kind: 'saving', done: 0, total: files.length, fraction: 0 });
         try {
-            const JSZip = (await import('jszip')).default;
-            const zip = new JSZip();
-            const lines = [`Spotykach slots replaced by the preset "${entry.name}", saved ${new Date().toLocaleString()}.`,
-                'Copy SK/ onto the card to put them back.', ''];
-            for (const [i, d] of files.entries()) {
-                const file = await backend.readFile(d.tape, d.slot,
-                    fraction => setStep({ kind: 'saving', done: i, total: files.length, fraction }), controller.signal);
-                zip.file(`SK/${d.tape.charAt(0)}/${d.slot}.WAV`, file);
-                lines.push(`${label(d.tape, d.slot)}: ${d.name || d.meta?.name || '(no name, recorded on the device)'}`);
-            }
-            zip.file('README.txt', lines.join('\r\n'));
-            const blob = await zip.generateAsync({ type: 'blob' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `spotykach-slots-before-${entry.id}.zip`;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            await downloadSlotsZip(backend, files, {
+                title: `Spotykach slots replaced by the preset "${entry.name}"`,
+                fileName: `spotykach-slots-before-${entry.id}.zip`,
+                onProgress: (i, fraction) => setStep({ kind: 'saving', done: i, total: files.length, fraction }),
+                signal: controller.signal,
+            });
             setSaved(true);
             setStep({ kind: 'plan' });
         } catch (e) {

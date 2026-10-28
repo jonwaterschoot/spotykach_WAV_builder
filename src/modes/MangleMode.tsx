@@ -12,7 +12,7 @@ import { canPickFolder, ensureWorkspacePermission } from '../utils/newProject';
 import { getDirectoryHandle, saveDirectoryHandle } from '../utils/storageUtils';
 import { listFolderProjects, openFromFolder, openFromZip, saveToFolder, saveToZip, type ManglerSnapshot, type ProjectInfo } from '../mangler/project';
 import { ProjectDialog } from '../mangler/ui/ProjectDialog';
-import { CardDialog, type CardItem } from '../mangler/ui/CardDialog';
+import { CardDialog, type CardItem } from '../components/CardDialog';
 import { usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
 import { runningStandalone, useFullscreen } from '../utils/useFullscreen';
 import { buildDetachedState, GRID_CAPACITY } from '../utils/detachedState';

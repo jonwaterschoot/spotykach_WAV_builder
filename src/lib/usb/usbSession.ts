@@ -197,6 +197,14 @@ export const usbSession = {
         ].join('\n');
     },
 
+    /**
+     * A line in the current trace, for what happens after the connect (a write and
+     * how it ended), so "Copy diagnostics" reports it too.
+     */
+    note(line: string): void {
+        log(line);
+    },
+
     /** EXIT: the device goes back to MIDI and plays again. */
     async disconnect(): Promise<void> {
         const backend = state.backend;

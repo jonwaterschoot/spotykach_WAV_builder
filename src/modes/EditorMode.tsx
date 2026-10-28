@@ -1,6 +1,9 @@
 import React, { Suspense, useCallback, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, Download, Library, Loader, Music, Upload } from 'lucide-react';
+import { ChevronLeft, Download, HardDrive, Library, Loader, Music, Upload, Usb } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
+import { readWavHeaderInfo } from '../lib/audio/wavHeader';
+import { usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
+import { canPickFolder } from '../utils/newProject';
 import { collapseFileVersions } from '../utils/versionHistory';
 import { useEscapeLayer } from '../shell/escapeStack';
 import { useToasts } from '../shell/useToasts';
@@ -10,6 +13,12 @@ import { loadBrowsePoolFromDB, saveBrowsePoolToDB } from '../utils/persistence';
 import type { BrowsePoolEntry } from '../utils/persistence';
 import type { AudioVersion, FileRecord, WavMetadata } from '../types';
 import type { CommitLabels } from '../components/WaveformEditor';
+import type { CardItem, SlotRef } from '../components/CardDialog';
+
+// The card, both ways: brings the transfer package's WAV encoder, so it waits for a click.
+const CardDialog = React.lazy(() =>
+  import('../components/CardDialog').then(m => ({ default: m.CardDialog }))
+);
 
 const WaveformEditor = React.lazy(() =>
   import('../components/WaveformEditor').then(m => ({ default: m.WaveformEditor }))
@@ -69,6 +78,8 @@ export interface LooseFile {
    */
   originalBlob?: Blob;
   originalDuration?: number;
+  /** The Spotykach slot it was opened from, so sending it back offers that slot first. */
+  cardSlot?: SlotRef;
 }
 
 const recordFromLooseFile = (file: LooseFile): FileRecord => {
@@ -163,6 +174,8 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
    * the button's own wording is the visible half of knowing this.
    */
   const [pooledId, setPooledId] = useState<string | null>(null);
+  /** The committed version on its way to the card, while the card dialog is open. */
+  const [cardItem, setCardItem] = useState<CardItem | null>(null);
 
   const { toasts, showToast, removeToast } = useToasts();
 
@@ -242,6 +255,18 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
     });
     showToast('Downloaded', 'success');
   }, [record, showToast]);
+
+  /**
+   * Exit 1b — onto the Spotykach, by the card reader or USB.
+   *
+   * The slices live in the blob's cue chunk (the slicer writes them there), and the
+   * slot file is re-encoded, so they are read back out and handed over with it.
+   */
+  const openSend = useCallback(async () => {
+    const blob = active.blob!;
+    const cues = (await readWavHeaderInfo(blob).catch(() => null))?.metadata?.slicePoints ?? [];
+    setCardItem({ name: record.name, blob, cues });
+  }, [active, record.name]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Exit 2 — the file joins Browse's pool
@@ -335,6 +360,18 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
         >
           <Download size={16} /> <span className="phone:hidden">DOWNLOAD</span>
         </button>
+        {/* A host pool has its own way to the card; the standalone editor needs one here. */}
+        {!onEdited && (
+          <button
+            onClick={openSend}
+            aria-label="Send to Spotykach"
+            className="flex items-center justify-center gap-2 px-6 h-12 phone:w-10 phone:shrink-0 phone:px-0 phone:h-10 rounded-full text-sm font-bold transition-all hover:scale-105
+              active:scale-95 shadow-lg border border-synthux-orange/50 bg-synthux-orange/15 text-synthux-orange hover:bg-synthux-orange/25"
+            title={`Write this file onto the Spotykach's card, by the card reader or USB${stale}`}
+          >
+            <Usb size={16} /> <span className="phone:hidden">SEND</span>
+          </button>
+        )}
         {!onEdited && (
           <button
             onClick={addToPool}
@@ -391,6 +428,19 @@ export const LooseFileEditor: React.FC<LooseFileEditorProps> = ({ file, onClose,
             <Loader size={16} className="animate-spin text-synthux-yellow" /> {busy}
           </div>
         </div>
+      )}
+
+      {cardItem && (
+        <Suspense fallback={null}>
+          <CardDialog
+            mode="send"
+            items={[cardItem]}
+            startAt={file.cardSlot ? [file.cardSlot] : undefined}
+            onClose={() => setCardItem(null)}
+            // On the card now, so leaving the editor no longer loses it.
+            onSent={where => { setHasEdited(false); showToast(`Sent to ${where.join(', ')} on the Spotykach`, 'success'); }}
+          />
+        </Suspense>
       )}
 
       <ConfirmModal
@@ -452,19 +502,22 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterBrow
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const usbOn = useUsbTransferEnabled() && usbTransferSupported();
+  const canReachCard = usbOn || canPickFolder();
 
   /**
    * Everything goes through `loadAndProcessAudio` on the way in, so the editor always
    * has the 48 kHz stereo float WAV the hardware reads — and an MP3 or a 44.1 kHz WAV
    * is converted once here rather than at every export.
    */
-  const open = useCallback(async (picked: File) => {
+  const open = useCallback(async (picked: File, from?: Partial<LooseFile>) => {
     setLoading(true);
     setError(null);
     try {
       const { buffer, blob } = await audioEngine.loadAndProcessAudio(picked);
-      setFile({ name: picked.name, blob, duration: buffer.duration, origin: 'Local file' });
+      setFile({ name: picked.name, blob, duration: buffer.duration, origin: 'Local file', ...from });
     } catch (e) {
       console.error(e);
       setError(e instanceof Error ? e.message : 'That file could not be decoded.');
@@ -473,7 +526,20 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterBrow
     }
   }, []);
 
-  useEscapeLayer(!file, () => {
+  /** A slot off the card. Slot files are named by number; the sample's own name is in its INAM. */
+  const openFromCard = useCallback(async (files: { file: File; tape: SlotRef['tape']; slot: number }[]) => {
+    const [first] = files;
+    if (!first) return;
+    const { file: slotFile, tape, slot } = first;
+    const name = (await readWavHeaderInfo(slotFile).catch(() => null))?.metadata?.name?.trim() || `${tape} ${slot}`;
+    setCardOpen(false);
+    await open(new File([slotFile], `${name}.wav`, { type: 'audio/wav' }), {
+      origin: `Spotykach card · ${tape} ${slot}`,
+      cardSlot: { tape, slot },
+    });
+  }, [open]);
+
+  useEscapeLayer(!file && !cardOpen, () => {
     onExitToHub();
     return true;
   });
@@ -482,7 +548,9 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterBrow
     return (
       <LooseFileEditor
         file={file}
-        subtitle={`Editing ${file.name}. Nothing is written to your drive until you download it.`}
+        subtitle={file.cardSlot
+          ? `Editing ${file.name}, from ${file.cardSlot.tape} ${file.cardSlot.slot} on the Spotykach. The card keeps its copy until you send this back.`
+          : `Editing ${file.name}. Nothing is written to your drive until you download it.`}
         onClose={() => setFile(null)}
         onEnterBrowse={onEnterBrowse}
       />
@@ -553,6 +621,17 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterBrow
             )}
           </label>
 
+          {canReachCard && (
+            <button
+              onClick={() => setCardOpen(true)}
+              disabled={loading}
+              className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-synthux-orange/40
+                bg-synthux-orange/10 text-synthux-orange text-sm font-bold hover:bg-synthux-orange/20 transition-colors disabled:opacity-40"
+            >
+              {usbOn ? <Usb size={15} /> : <HardDrive size={15} />} Open a slot from the Spotykach
+            </button>
+          )}
+
           {error && (
             <p className="mt-4 text-xs text-red-400 text-center">{error}</p>
           )}
@@ -560,10 +639,22 @@ export const EditorMode: React.FC<EditorModeProps> = ({ onExitToHub, onEnterBrow
           <p className="mt-6 flex items-start gap-2 text-[11px] text-gray-600 leading-relaxed">
             <Music size={13} className="shrink-0 mt-0.5" />
             Nothing is uploaded and nothing is written to your drive. When you are done, download the
-            file, or add it to the pool in Browse Samples and build a card from a whole set.
+            file, send it to the Spotykach, or add it to the pool in Browse Samples and build a card from a whole set.
           </p>
         </div>
       </div>
+
+      {cardOpen && (
+        <Suspense fallback={null}>
+          <CardDialog
+            mode="import"
+            single
+            importInto="the editor"
+            onImport={openFromCard}
+            onClose={() => setCardOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

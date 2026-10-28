@@ -1,7 +1,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioWaveform, Check, ChevronDown, ChevronLeft, ChevronUp, Database, Download, FilePlus,
-  FileStack, FolderPlus, GripVertical, HardDrive, Layers, Loader, Pause, Play, Send, Trash2, Upload, X,
+  FileStack, FolderPlus, GripVertical, HardDrive, Layers, Loader, Pause, Play, Send, Trash2, Upload, Usb, X,
 } from 'lucide-react';
 import { audioEngine } from '../lib/audio/audioEngine';
 import {
@@ -29,6 +29,11 @@ import type { AppState, UserLibrary } from '../types';
 
 const SampleBrowser = React.lazy(() =>
   import('../components/SampleBrowser').then(m => ({ default: m.SampleBrowser }))
+);
+
+// Sending to the card brings the transfer package's WAV encoder, so it waits for the click too.
+const CardDialog = React.lazy(() =>
+  import('../components/CardDialog').then(m => ({ default: m.CardDialog }))
 );
 
 // The editor is the heaviest thing Browse can open — wavesurfer, the processor, the
@@ -163,10 +168,11 @@ you want, and rename each one to its slot number. Recent firmware accepts both
 
 ${sortedIntoTapes
       ? 'This ZIP is already grouped into tape folders (B/G/P/R/T/Y, plus POOL for\nanything past the 36 slots). The names inside them still need changing to\n1.WAV … 6.WAV.'
-      : 'This ZIP is a flat list, with no tape folders. Tick "Sort this ZIP into tape\nfolders", under the "Download the files" button in Browse, if you would rather\nhave the grouping done for you.'}
+      : 'This ZIP is a flat list, with no tape folders. Tick "Sort the files ZIP into\ntape folders", under the "Files ZIP" button in Browse, if you would rather\nhave the grouping done for you.'}
 
-Want none of this by hand? Use **Download SD card 6×6** in Browse, which builds
-the whole \`SK/\` folder ready to copy, or open Studio for a full project.
+Want none of this by hand? Use **Send to Spotykach** in Browse, which writes
+straight onto the card (card reader or USB), or **SD card ZIP**, which builds the
+whole \`SK/\` folder ready to copy. Open Studio for a full project.
 
 ## Files
 ${credits}
@@ -215,6 +221,8 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [createdProject, setCreatedProject] = useState<string | null>(null);
+  /** The card dialog, sending the pool straight onto the Spotykach. */
+  const [sendOpen, setSendOpen] = useState(false);
 
   // The workspace step between the name and the picker — round 4. `pendingName` is
   // the project waiting on that answer; `knownWorkspace` is the folder the app has
@@ -1207,8 +1215,8 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               {pool.length === 0 ? (
                 <p className="p-4 text-xs text-gray-500 leading-relaxed">
                   Add samples from the browser — the button on a row, or <span className="text-synthux-green font-bold">drag the rows
-                  over here</span>, a whole selection at once — and they collect here, ready to download or turn
-                  into a project. Files from your computer land here too: use <span className="text-synthux-green font-bold">Add files</span> above,
+                  over here</span>, a whole selection at once — and they collect here, ready to send to the
+                  Spotykach, download or turn into a project. Files from your computer land here too: use <span className="text-synthux-green font-bold">Add files</span> above,
                   or drop them anywhere on this column. The first 36 spread across the
                   6&nbsp;×&nbsp;6 grid in this order, and you can drag to rearrange.
                 </p>
@@ -1322,10 +1330,10 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
                 onClick={toggleExports}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 text-[10px] font-bold
                   uppercase tracking-widest text-gray-500 hover:text-gray-200 hover:bg-white/5 transition-colors"
-                title={exportsOpen ? 'Fold this away and give the list the room' : 'Show the downloads and the project exit'}
+                title={exportsOpen ? 'Fold this away and give the list the room' : 'Show Send to Spotykach, the downloads and the project exit'}
               >
                 <span className="flex items-center gap-2">
-                  <Download size={12} /> Downloads &amp; export
+                  <Upload size={12} /> Send &amp; export
                 </span>
                 <span className="flex items-center gap-2">
                   {!exportsOpen && pool.length > 0 && (
@@ -1338,112 +1346,98 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
 
             {exportsOpen && (
             <div className="shrink-0 p-3 pt-0 space-y-2">
+              {/*
+                * The main way out: onto the card itself, by the card reader or USB.
+                * The downloads below do the same job by hand, so they stay, smaller.
+                */}
               <button
-                onClick={downloadSDStructure}
+                onClick={() => setSendOpen(true)}
                 disabled={pool.length === 0 || isExporting}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-green/40 bg-synthux-green/10
                   text-synthux-green text-left transition-all hover:bg-synthux-green/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <HardDrive size={16} className="shrink-0" />
+                <span className="shrink-0 flex items-center gap-1"><HardDrive size={16} /><Usb size={14} /></span>
                 <span className="min-w-0">
-                  <span className="block text-xs font-bold">Download SD card 6×6</span>
+                  <span className="block text-xs font-bold">Send to Spotykach</span>
                   <span className="block text-[10px] opacity-70">
-                    Full <span className="font-mono">SK/</span> folder, renamed to slots, ready to copy and play
+                    Straight onto the SD card, in a card reader or over USB. You pick the slots; it overwrites what they hold.
                   </span>
                 </span>
               </button>
 
               {overflowCount > 0 && (
                 <p className="text-[10px] text-synthux-yellow/80 leading-relaxed pl-1">
-                  The card build takes the first 36, so {overflowCount} more {overflowCount === 1 ? 'is' : 'are'} in
-                  the loose download below.
+                  The card takes 36, so {overflowCount} more {overflowCount === 1 ? 'stays' : 'stay'} behind.
+                  The files ZIP has them all.
                 </p>
               )}
 
-              {/*
-                * Button and checkbox share one bordered block: the grouping option is the
-                * loose download's alone, and sitting loose underneath both buttons it read
-                * as if it also applied to the SD build, which it never did.
-                */}
-              <div className="rounded-lg border border-synthux-blue/40 bg-synthux-blue/10 overflow-hidden">
+              {/* Downloads and the project, minified: each one line, the detail in its title. */}
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   onClick={downloadLooseFiles}
                   disabled={pool.length === 0 || isExporting}
-                  className="w-full flex items-center gap-3 px-3 py-2.5
-                    text-synthux-blue text-left transition-all hover:bg-synthux-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={`All ${pool.length || ''} files, original names, SK-ready WAV, to your downloads folder`}
+                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-white/10 bg-black/30
+                    text-[11px] font-bold text-gray-300 hover:text-synthux-blue hover:border-synthux-blue/40 transition-colors
+                    disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <FileStack size={16} className="shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold">Download the files</span>
-                    <span className="block text-[10px] opacity-70">
-                      All {pool.length || ''} of them, original names, SK-ready WAV
-                    </span>
-                  </span>
+                  <FileStack size={12} /> Files ZIP
                 </button>
-
-                <label className="flex items-center gap-2 px-3 py-2 border-t border-synthux-blue/20 cursor-pointer group select-none">
-                  <span className={`w-3.5 h-3.5 shrink-0 rounded-[3px] border flex items-center justify-center transition-colors ${
-                    sortLooseIntoTapes
-                      ? 'bg-synthux-blue border-synthux-blue'
-                      : 'bg-black/40 border-gray-700 group-hover:border-gray-500'
-                  }`}>
-                    {sortLooseIntoTapes && <Check size={9} className="text-black stroke-[4]" />}
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={sortLooseIntoTapes}
-                    onChange={(e) => setSortLooseIntoTapes(e.target.checked)}
-                    className="sr-only"
-                  />
-                  <span className="text-[10px] text-gray-500 group-hover:text-gray-300 transition-colors">
-                    Sort this ZIP into tape folders ({TAPE_COLORS.map(c => c.charAt(0)).join('/')})
-                  </span>
-                </label>
+                <button
+                  onClick={downloadSDStructure}
+                  disabled={pool.length === 0 || isExporting}
+                  title="The SK/ folder for the first 36, renamed to slots, to copy onto the card yourself"
+                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-white/10 bg-black/30
+                    text-[11px] font-bold text-gray-300 hover:text-synthux-green hover:border-synthux-green/40 transition-colors
+                    disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Download size={12} /> SD card ZIP
+                </button>
               </div>
 
-              <p className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed pt-1">
-                <Download size={11} className="shrink-0 mt-0.5" />
-                Both go to your browser's downloads folder. No permission, nothing written to your drive.
-              </p>
+              <label className="flex items-center gap-2 px-1 cursor-pointer group select-none">
+                <span className={`w-3 h-3 shrink-0 rounded-[3px] border flex items-center justify-center transition-colors ${
+                  sortLooseIntoTapes
+                    ? 'bg-synthux-blue border-synthux-blue'
+                    : 'bg-black/40 border-gray-700 group-hover:border-gray-500'
+                }`}>
+                  {sortLooseIntoTapes && <Check size={8} className="text-black stroke-[4]" />}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={sortLooseIntoTapes}
+                  onChange={(e) => setSortLooseIntoTapes(e.target.checked)}
+                  className="sr-only"
+                />
+                <span className="text-[10px] text-gray-600 group-hover:text-gray-300 transition-colors">
+                  Sort the files ZIP into tape folders ({TAPE_COLORS.map(c => c.charAt(0)).join('/')})
+                </span>
+              </label>
 
               {canPickFolder() && (
-                <>
-                  <div className="h-px bg-white/10 my-1" />
-                  <button
-                    onClick={() => setNameModalOpen(true)}
-                    disabled={pool.length === 0 || isExporting}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-yellow/40 bg-synthux-yellow/10
-                      text-synthux-yellow text-left transition-all hover:bg-synthux-yellow/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <FolderPlus size={16} className="shrink-0" />
-                    <span className="min-w-0">
-                      <span className="block text-xs font-bold">Import into a project</span>
-                      <span className="block text-[10px] opacity-70">
-                        The whole pool, layout kept, on a folder you pick, then carry on in Studio
-                      </span>
-                    </span>
-                  </button>
-                </>
+                <button
+                  onClick={() => setNameModalOpen(true)}
+                  disabled={pool.length === 0 || isExporting}
+                  title="The whole pool, layout kept, on a folder you pick, then carry on in Studio"
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-white/10 bg-black/30
+                    text-[11px] font-bold text-gray-300 hover:text-synthux-yellow hover:border-synthux-yellow/40 transition-colors
+                    disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <FolderPlus size={12} /> Build a Studio project
+                </button>
               )}
 
               {onEnterSubmit && (
-                <>
-                  <div className="h-px bg-white/10 my-1" />
-                  <button
-                    onClick={sendPoolToSubmission}
-                    disabled={pool.length === 0 || isExporting}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-synthux-turquoise/40 bg-synthux-turquoise/10
-                      text-synthux-turquoise text-left transition-all hover:bg-synthux-turquoise/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Send size={16} className="shrink-0" />
-                    <span className="min-w-0">
-                      <span className="block text-xs font-bold">Send to the submission tool</span>
-                      <span className="block text-[10px] opacity-70">
-                        Turn this pool into a sample pack others can browse. The pool stays here.
-                      </span>
-                    </span>
-                  </button>
-                </>
+                <button
+                  onClick={sendPoolToSubmission}
+                  disabled={pool.length === 0 || isExporting}
+                  title="Turn this pool into a sample pack others can browse. The pool stays here."
+                  className="flex items-center gap-1.5 px-1 text-[10px] text-gray-500 hover:text-synthux-turquoise hover:underline
+                    disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  <Send size={10} /> Share it as a sample pack (submission tool)
+                </button>
               )}
 
               {/*
@@ -1514,7 +1508,7 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
               originalBlob: editingItem.originalBlob,
               originalDuration: editingItem.originalDuration,
             }}
-            subtitle={`Editing ${editingItem.name}. "Save to temporary pool" puts the edit back in the pool, where the downloads and "Import into a project" pick it up.`}
+            subtitle={`Editing ${editingItem.name}. "Save to temporary pool" puts the edit back in the pool, where Send to Spotykach, the downloads and the project build pick it up.`}
             onEdited={({ blob, duration, name }) => applyEdit(editingItem.id, blob, duration, name)}
             onClose={() => setEditingId(null)}
           />
@@ -1529,6 +1523,21 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
         error={exportError}
         progress={exportProgress !== null ? exportProgress : undefined}
       />
+
+      {sendOpen && (
+        <Suspense fallback={null}>
+          <CardDialog
+            mode="send"
+            itemNoun="files"
+            // Pool order is the order the grid numbers them, the same one its B1… labels show.
+            items={pool.map(item => ({ name: item.name, blob: item.blob, cues: [] }))}
+            onClose={() => setSendOpen(false)}
+            onSent={where => showToast(`Sent ${where.length} ${where.length === 1 ? 'file' : 'files'} to the Spotykach`, 'success')}
+            // The answer to "where do my files live": a project, not the card alone.
+            onUseStudio={canPickFolder() ? () => { setSendOpen(false); setNameModalOpen(true); } : undefined}
+          />
+        </Suspense>
+      )}
 
       <ProjectNameModal
         isOpen={nameModalOpen}
