@@ -4,6 +4,38 @@
 
 ---
 
+## [4.3.0] - 2026-10-28
+
+### Added
+
+- **Browse: Send to Spotykach.** The temporary pool goes straight onto the card, over USB
+  or through a card reader, without a project. It is the pool's main button now; *Files
+  ZIP*, *SD card ZIP* and *Build a Studio project* are smaller buttons beside it, and the
+  submission tool is a link.
+- **Editor: the card, both ways.** *Open a slot from the Spotykach* on the editor's start
+  screen reads one slot, keeping its name and slices. *Send* beside Download writes the file
+  back, to the slot it came from or any other.
+- **The whole card on one 6×6 grid** in the send window (Browse, the Editor, the Mangler),
+  every slot free or full. *Auto fill* uses free slots; when the files don't all fit, it
+  offers to overwrite full slots or skip the rest. *In order from B1* follows the pool's
+  labels, and slots can be picked by hand. Importing picks slots on the same grid.
+- **Backups before overwriting.** The slots a send replaces can be downloaded first as a
+  ZIP laid out like the card (`SK/B/1.WAV`), and *Download all files on the card* saves the
+  whole card that way.
+- **USB time.** The estimate before a send or a download, the time left while it runs, and
+  a Stop button. USB sends check the card has room first.
+
+### Changed
+
+- **Overwrites are spelled out.** The send window always says it writes straight onto the
+  card, turns slots it replaces red, and points to Studio for a card worth keeping track of.
+- **Copy diagnostics covers transfers.** USB sends and downloads from these windows are
+  added to the connect trace: each slot, its size and time, and where it stopped.
+- **The device goes back to playing** whenever the card window closes, also when the editor
+  or Browse closes it for you.
+
+---
+
 ## [4.2.8] - 2026-10-27
 
 ### Changed
