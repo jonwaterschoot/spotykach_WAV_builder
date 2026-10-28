@@ -414,7 +414,6 @@ export const CardDialog: React.FC<CardDialogProps> = ({
                                     {usb.step && usb.status !== 'needs-authorization' && <span className="block text-gray-500">Stopped at: {usb.step}</span>}
                                 </p>
                             )}
-                            {usb.error && <UsbDiagnosticsButton />}
                         </>
                     )}
 
@@ -612,7 +611,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
                     )}
                     {done && <p className="flex items-start gap-1.5 text-[12px] text-synthux-green"><Check size={13} className="shrink-0 mt-0.5" /> {done}</p>}
                     {error && <p className="text-[12px] text-synthux-red">{error}</p>}
-                    {error && route === 'usb' && <UsbDiagnosticsButton />}
+                    {route === 'usb' && <UsbDiagnosticsButton />}
                 </div>
             </div>
         </div>

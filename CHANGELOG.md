@@ -4,6 +4,17 @@
 
 ---
 
+## [4.3.2] - 2026-10-28
+
+### Changed
+
+- **USB: Copy diagnostics everywhere.** Wherever USB shows up (the USB window, the card bar,
+  Send to Spotykach, presets, config.txt), *Copy diagnostics* is there in every state, also
+  after a connect that worked. *Show* opens the same text below it, kept up to date while
+  connecting.
+
+---
+
 ## [4.3.1] - 2026-10-28
 
 ### Fixed

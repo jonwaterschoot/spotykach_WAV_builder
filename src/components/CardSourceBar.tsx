@@ -104,7 +104,6 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
     } else if (usb.status === 'needs-authorization') {
         status = <span className="flex items-start gap-1.5 text-amber-400"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> {usb.error}</span>;
         action = <>
-            <UsbDiagnosticsButton />
             {button(<><Usb size={12} /> Authorise port</>, onAuthorize, true)}
             {button('Try again', onConnect)}
         </>;
@@ -113,7 +112,6 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
             ? <span className="flex items-start gap-1.5 text-red-400"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> <span>{usb.error}{usb.step && <span className="text-gray-500"> · stopped at: {usb.step}</span>}</span></span>
             : <span className="text-gray-500">Connect Spotykach to this computer through its rear USB-C port.</span>;
         action = <>
-            {usb.error && <UsbDiagnosticsButton />}
             {button(<><Plug size={12} /> {usb.error ? 'Try again' : 'Connect'}</>, onConnect, true)}
         </>;
     }
@@ -139,6 +137,7 @@ export const CardSourceBar: React.FC<CardSourceBarProps> = ({
                     </button>
                 </div>
             </div>
+            {source === 'usb' && <UsbDiagnosticsButton />}
             {showHelp && (source === 'usb' ? <UsbRouteInfo compact /> : <ReaderRouteInfo compact />)}
             {cardNote && (
                 <p className={`text-[11px] flex items-start gap-1.5 ${cardNoteIsWarning ? 'text-amber-400' : 'text-gray-400'}`}>

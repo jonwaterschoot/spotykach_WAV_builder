@@ -129,7 +129,6 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
             <div className="flex items-start justify-between gap-2 text-[11px]">
                 <div className="min-w-0">{status}</div>
                 <div className="flex items-center gap-2 shrink-0">
-                    {(usb.error || problem) && <UsbDiagnosticsButton />}
                     {usb.status === 'needs-authorization' && !busy && button(<><Usb size={12} /> Authorise port</>, () => void authorize(), true)}
                     {usb.status === 'connected' && !busy && (
                         <button type="button" onClick={() => void usbSession.disconnect()} title="Spotykach goes back to playing"
@@ -139,6 +138,7 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
                     )}
                 </div>
             </div>
+            <UsbDiagnosticsButton />
         </div>
     );
 };

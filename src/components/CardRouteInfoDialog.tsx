@@ -66,14 +66,17 @@ export const CardRouteInfoDialog: React.FC<CardRouteInfoDialogProps> = ({
                             </span>
                         </span>
                     </p>
-                    <div className="flex items-center gap-4">
-                        <button onClick={onDisconnect} className={secondaryButton}><Unplug size={13} /> Disconnect</button>
-                        <UsbDiagnosticsButton />
-                    </div>
+                    <button onClick={onDisconnect} className={secondaryButton}><Unplug size={13} /> Disconnect</button>
+                    <UsbDiagnosticsButton />
                 </div>
             );
         } else if (usb.status === 'connecting') {
-            status = <p className="flex items-center gap-2 text-gray-300"><Loader size={16} className="animate-spin" /> Switching Spotykach to transfer mode…</p>;
+            status = (
+                <div className="flex flex-col gap-3">
+                    <p className="flex items-center gap-2 text-gray-300"><Loader size={16} className="animate-spin" /> Switching Spotykach to transfer mode…</p>
+                    <UsbDiagnosticsButton />
+                </div>
+            );
         } else if (usb.status === 'needs-authorization') {
             status = (
                 <div className="flex flex-col gap-3">
@@ -82,7 +85,7 @@ export const CardRouteInfoDialog: React.FC<CardRouteInfoDialogProps> = ({
                         <button onClick={onAuthorize} className={primaryButton}><Usb size={13} /> Authorise port</button>
                         <button onClick={onConnect} className={secondaryButton}>Try again</button>
                     </div>
-                    <UsbDiagnosticsButton className="w-fit" />
+                    <UsbDiagnosticsButton />
                 </div>
             );
         } else {
@@ -98,7 +101,7 @@ export const CardRouteInfoDialog: React.FC<CardRouteInfoDialogProps> = ({
                     <button onClick={onConnect} className={primaryButton}>
                         <Plug size={13} /> {usb.error ? 'Try again' : 'Connect'}
                     </button>
-                    {usb.error && <UsbDiagnosticsButton className="w-fit" />}
+                    <UsbDiagnosticsButton />
                 </div>
             );
         }
