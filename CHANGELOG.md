@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.3.1] - 2026-10-28
+
 ### Fixed
 
 - **USB: a first Connect that timed out.** On a Mac, connecting could end in "Spotykach
