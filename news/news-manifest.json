@@ -9,6 +9,14 @@
     "pinned": true
   },
   {
+    "id": "send-to-spotykach",
+    "title": "Send to Spotykach from Browse and the Editor (v4.3.0)",
+    "date": "2026-10-28",
+    "file": "send-to-spotykach.md",
+    "image": "images/simpleloader_usb.png",
+    "category": "Feature"
+  },
+  {
     "id": "fw-140",
     "title": "Firmware 1.4.0: USB transfer is on (v4.2.8)",
     "date": "2026-10-27",
