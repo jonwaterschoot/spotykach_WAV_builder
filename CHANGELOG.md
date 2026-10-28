@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **USB: a first Connect that timed out.** On a Mac, connecting could end in "Spotykach
+  didn't respond in time" while a second click connected. When the device doesn't answer
+  the first hello after switching, the app now asks once more by itself. *Copy diagnostics*
+  says whether the device stayed silent or its answer was cut short.
+
 ---
 
 ## [4.3.0] - 2026-10-28

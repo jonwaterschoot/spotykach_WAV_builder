@@ -111,9 +111,37 @@ const log = (line: string) => {
     console.info(`[usb] ${line}`);
 };
 
+/** A `TimeoutError`'s detail tells a silent device from a reply cut short. */
+const describe = (error: unknown) => {
+    if (!(error instanceof Error)) return String(error);
+    const detail = (error as { detail?: unknown }).detail;
+    return `${error.name}: ${error.message}${typeof detail === 'string' ? ` (${detail})` : ''}`;
+};
+
 const endTrace = (error: unknown) => {
     if (!error) log('connected');
-    else log(`failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+    else log(`failed: ${describe(error)}`);
+};
+
+type Link = typeof import('@synthuxacademy/spotykach-transfer');
+
+/**
+ * Runs `first`, and once more as a plain connect if HELLO went unanswered. On
+ * macOS the first HELLO after the switch can go unanswered, while a second one
+ * on the same port, the device still waiting, gets through.
+ */
+const withHelloRetry = async (
+    link: Link,
+    attemptLog: (line: string) => void,
+    first: () => Promise<import('@synthuxacademy/spotykach-transfer').Connection>,
+) => {
+    try {
+        return await first();
+    } catch (e) {
+        if (!(e instanceof link.TimeoutError)) throw e;
+        attemptLog(`no answer to HELLO: ${describe(e)}, trying again`);
+        return link.connect({ onStep: attemptLog });
+    }
 };
 
 const adopt = async (connection: import('@synthuxacademy/spotykach-transfer').Connection): Promise<UsbBackend> => {
@@ -149,7 +177,8 @@ export const usbSession = {
         const attemptLog = startTrace('connect');
         const link = await loadLink();
         try {
-            const backend = await adopt(await withSerialEvents(attemptLog, () => link.connect({ onStep: attemptLog })));
+            const backend = await adopt(await withSerialEvents(attemptLog,
+                () => withHelloRetry(link, attemptLog, () => link.connect({ onStep: attemptLog }))));
             endTrace(null);
             return backend;
         } catch (e) {
@@ -167,7 +196,8 @@ export const usbSession = {
         const attemptLog = startTrace('authorise port');
         const link = await loadLink();
         try {
-            const backend = await adopt(await withSerialEvents(attemptLog, () => link.authorizePort({ onStep: attemptLog })));
+            const backend = await adopt(await withSerialEvents(attemptLog,
+                () => withHelloRetry(link, attemptLog, () => link.authorizePort({ onStep: attemptLog }))));
             endTrace(null);
             return backend;
         } catch (e) {
