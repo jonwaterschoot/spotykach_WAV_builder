@@ -141,6 +141,34 @@ What this tells us:
 - **It has probably never worked on that PC:** his Spotykach's serial number has no phantom `Ports` row.
 - **Not known yet:** whether it is Chrome or the whole PC, whether it needs the Spotykach plugged in, and whether MIDI access is slow or never comes. His MIDI setup may also differ from mine: a different Windows release, and maybe no SDK Runtime or virtual MIDI drivers.
 
+### Round 3 (Bay Mud, Oct 28)
+
+Edge connects on his PC (he uses it for transfers), so this is the first row of [Possible fixes](#by-outcome-of-round-2): Chrome only. Chrome updated to 156 and WAV Builder 4.3.2 since round 1, same result:
+
+```
++0.00s no serial port granted to this site yet
++0.01s MIDI permission: granted
++8.01s failed: Error: The browser didn't give access to MIDI within 8 s. …
++10.86s diagnostics copied
+```
+
+- **A Chrome update didn't help**, so it's not one Chrome version. Left: his Chrome profile (site settings, extensions) or a setting that differs between his Chrome and his Edge.
+- **Late or never still unknown:** copied at 10.9 s, before a late MIDI access would show.
+
+Edge 156 on the same PC, five minutes later, connects in 2.2 s:
+
+```
++0.02s MIDI permission: granted
++0.02s MIDI ports: input "Spotykach" (connected), output "Spotykach" (connected)
++0.24s reply: OK
++1.84s serial connect 0483:5740
++2.22s HELLO: firmware 1.4.0, protocol 1.2
+```
+
+- **MIDI access is instant in Edge**, on the same Chromium version, PC, Windows MIDI stack and Spotykach. So it's his Chrome profile or install, not the Web MIDI code.
+- **The rest is normal:** same timings as my PC, and the serial port and HELLO work there too.
+- **Next:** a Chrome Guest window, then a 30 s wait before copying if that fails.
+
 ## Round 2: the message to send
 
 Written for Bay Mud (Oct 20). The three checks split the cases in [Possible fixes](#possible-fixes): Edge separates Chrome from the PC, unplugging separates the Spotykach from the PC's other MIDI devices, and the list shows what else is in the MIDI stack.
