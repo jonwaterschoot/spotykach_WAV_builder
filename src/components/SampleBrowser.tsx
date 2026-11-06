@@ -1210,7 +1210,7 @@ export const SampleBrowser = ({
                                 <Globe size={14} /> Search open archives
                             </button>
                             <p className="px-3 pt-1.5 text-[10px] text-gray-600 leading-relaxed">
-                                Public domain and Creative Commons sounds from Openverse, Wikimedia Commons, the Internet Archive, NASA and Freesound.
+                                Public domain and Creative Commons sounds from Openverse, Wikimedia Commons, the Internet Archive, NASA, Citizen DJ (Library of Congress) and Freesound.
                             </p>
                         </div>
 

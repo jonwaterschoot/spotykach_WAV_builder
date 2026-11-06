@@ -55,7 +55,7 @@ The app opens on a hub, grouped by what you came to do:
     -   **Mangler**: a new take from random snippets of the open file, with a cue point at each snippet.
 -   **Sample Browser**:
     -   **Curated Packs**: Browse and import community-contributed sample packs.
-    -   **Open archives**: search Openverse, Wikimedia Commons, the Internet Archive, NASA and Freesound, filtered by licence; each sound keeps its author and licence.
+    -   **Open archives**: search Openverse, Wikimedia Commons, the Internet Archive, NASA, the Library of Congress's Citizen DJ and Freesound, filtered by licence; each sound keeps its author and licence.
     -   **Library Management**: Build a persistent user library and pull samples from other local projects.
 -   **Sample Mangler**: random snippets from a pool of sources joined into one file of up to 42 s, with seeds, pitch detection and licences that follow the snippets used.
 -   **Project Portability**: Save and restore work states via Project JSON or create full backups to local storage and SD cards.
@@ -123,6 +123,8 @@ when you ask for something:
 
 -   downloading sample and preset packs, from Cloudflare R2;
 -   searching open archives: Openverse, Wikimedia Commons, the Internet Archive and NASA directly,
+    Citizen DJ's clips from its Amazon S3 bucket (its catalogue ships with the app, so a search
+    sends nothing; a clip is fetched when you play or add it),
     and Freesound through a small Cloudflare Worker that holds a shared key (or directly, with
     your own key).
 

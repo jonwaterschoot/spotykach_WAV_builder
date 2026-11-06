@@ -16,6 +16,7 @@
     "check:card": "node scripts/check-card-sync.mjs",
     "check:mangler": "node scripts/check-mangler.mjs",
     "check:online": "node scripts/check-online.mjs",
+    "fetch:citizen-dj": "node scripts/fetch-citizen-dj.mjs",
     "import:patterns": "node scripts/import-touchplaited-patterns.mjs",
     "preview": "vite preview --host",
     "predeploy": "npm run build",

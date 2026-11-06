@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, ExternalLink, FileAudio, Globe, KeyRound, Loader, Pause, Pencil, Play, Search, X } from 'lucide-react';
 import {
-    PROVIDERS, PROVIDERS_BY_ID, DEFAULT_PROVIDERS, LICENSE_FILTERS, DEFAULT_LICENSE_FILTERS,
+    PROVIDERS, PROVIDERS_BY_ID, DEFAULT_PROVIDERS, PROVIDERS_BEFORE_KNOWN, LICENSE_FILTERS, DEFAULT_LICENSE_FILTERS,
     RateLimitError, createBudget, dedupeKey,
     type LicenseFilter, type MaxLength, type OnlineHit, type OnlineProvider, type OnlineQuery, type ProviderId,
 } from '../online';
@@ -88,16 +88,26 @@ const LICENSE_TONE: Record<LicenseFilter, string> = {
     nc: 'text-synthux-yellow border-synthux-yellow/40 bg-synthux-yellow/10',
 };
 
-interface Prefs { providers: ProviderId[]; licenses: LicenseFilter[]; maxSeconds: MaxLength }
+interface Prefs {
+    providers: ProviderId[];
+    licenses: LicenseFilter[];
+    maxSeconds: MaxLength;
+    /** Every archive there was when these were saved: one added since starts switched on. */
+    known: ProviderId[];
+}
 
 const loadPrefs = (): Prefs => {
-    const fallback: Prefs = { providers: DEFAULT_PROVIDERS, licenses: DEFAULT_LICENSE_FILTERS, maxSeconds: 120 };
+    const allIds = PROVIDERS.map(p => p.id);
+    const fallback: Prefs = { providers: DEFAULT_PROVIDERS, licenses: DEFAULT_LICENSE_FILTERS, maxSeconds: 120, known: allIds };
     try {
         const p = JSON.parse(appStorage.getItem(PREFS_STORE) ?? 'null');
         if (!p) return fallback;
-        const providers = (p.providers ?? []).filter((id: string) => id in PROVIDERS_BY_ID);
+        const known: string[] = Array.isArray(p.known) ? p.known : PROVIDERS_BEFORE_KNOWN;
+        const added = DEFAULT_PROVIDERS.filter(id => !known.includes(id));
+        const providers = [...(p.providers ?? []), ...added].filter((id: string) => id in PROVIDERS_BY_ID);
         const licenses = (p.licenses ?? []).filter((id: string) => LICENSE_FILTERS.some(l => l.id === id));
         return {
+            known: allIds,
             providers: providers.length ? providers : fallback.providers,
             licenses: licenses.length ? licenses : fallback.licenses,
             maxSeconds: [30, 120, null].includes(p.maxSeconds) ? p.maxSeconds : fallback.maxSeconds,
@@ -382,6 +392,7 @@ export const OnlineBrowser = ({
         const drag = canSelect ? dragProps?.(hit) : undefined;
         const meta = [
             hit.author,
+            hit.year ? String(hit.year) : null,
             formatDuration(hit.durationSec),
             [
                 hit.format,
@@ -468,6 +479,12 @@ export const OnlineBrowser = ({
                         )}
                         {rowError?.key === hit.key && (
                             <div className="mt-1 text-[11px] text-red-400 font-body">{rowError.message}</div>
+                        )}
+                        {hit.notice && (
+                            <div className="mt-0.5 flex items-center gap-1 text-[10px] text-synthux-yellow/80 min-w-0">
+                                <AlertTriangle size={10} className="shrink-0" />
+                                <span className="truncate" title={hit.notice}>{hit.notice}</span>
+                            </div>
                         )}
                     </div>
 
@@ -817,6 +834,12 @@ export const OnlineBrowser = ({
                                     <dd className="text-gray-300">{p.quality}</dd>
                                     <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Limits</dt>
                                     <dd className="text-gray-300">{p.limitNote}</dd>
+                                    {p.notice && (
+                                        <>
+                                            <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Note</dt>
+                                            <dd className="text-gray-300">{p.notice}</dd>
+                                        </>
+                                    )}
                                     {p.needsKey && (
                                         <>
                                             <dt className="text-xs font-bold text-gray-500 uppercase tracking-widest pt-0.5">Access</dt>
@@ -959,6 +982,7 @@ export const OnlineBrowser = ({
                                 <div className="px-4 py-3 text-xs text-gray-500 italic">
                                     Nothing here with these filters.
                                     {p.id === 'nasa' && !prefs.licenses.includes('pd') && ' NASA audio is all public domain: switch on CC0 / PD.'}
+                                    {p.id === 'citizendj' && !prefs.licenses.includes('pd') && ' Almost all of Citizen DJ is public domain or free to use: switch on CC0 / PD.'}
                                 </div>
                             )}
                             <div className="divide-y divide-gray-800/50">

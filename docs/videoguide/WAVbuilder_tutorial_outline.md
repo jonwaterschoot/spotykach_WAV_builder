@@ -67,7 +67,7 @@ Show the overlap map on screen:
 - Pool → download as a card-ready 6×6 or as loose files. Works on a phone.
 - The pool lives in the browser, so treat it as temporary. Keep it by handing the whole pool
   to a new Studio project in one click.
-- Open archives: Openverse, Wikimedia, Internet Archive, NASA, Freesound; license filter;
+- Open archives: Openverse, Wikimedia, Internet Archive, NASA, Citizen DJ, Freesound; license filter;
   every sound keeps its credit. *(Skip the API-key story.)*
 Reuse: PM 26:03–27:02, PM 35:06–36:44, CT 15:38–16:13.
 

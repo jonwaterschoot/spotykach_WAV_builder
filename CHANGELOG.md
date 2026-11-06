@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Citizen DJ in the open archives.** Search open archives now includes
+  [Citizen DJ](https://citizen-dj.labs.loc.gov/), the Library of Congress's free-to-use
+  recordings cut into 4–34 s clips: Edison cylinders, the National Jukebox (pre-1923 blues,
+  jazz, opera, popular), Free Music Archive tracks, dialect and field recordings, interviews
+  and government films. About 4,000 clips, as 16-bit 48 kHz WAV. Each clip keeps its
+  performers, year, collection and the Library's suggested credit. The Joe Smith interviews
+  need a credit and show under *+ BY*; Jukebox rows carry the Library's note on historical
+  content. Switched on for everyone, also where the archive list was saved before.
+
 ---
 
 ## [4.3.2] - 2026-10-28

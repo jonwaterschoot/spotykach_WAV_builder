@@ -20,6 +20,7 @@ import { fromCcCode, fromCcUrl, fromCommons } from '../src/online/licenses.ts';
 import { PROVIDERS, licenseTextFor, dedupeKey, originFor } from '../src/online/index.ts';
 import { resultLicense } from '../src/mangler/license.ts';
 import { freesoundIdFromFileName } from '../src/online/providers/freesound.ts';
+import { citizendj, loadCitizenDj } from '../src/online/providers/citizendj.ts';
 import { aiffToWav, isAiff } from '../src/lib/audio/aiff.ts';
 import { createBudget } from '../src/online/budget.ts';
 import { parseLength } from '../src/online/providers/archive.ts';
@@ -157,6 +158,50 @@ check(freesoundIdFromFileName('kick_01.wav') === null && freesoundIdFromFileName
             && JSON.stringify(w.samples) === JSON.stringify(opts.samples), `${label} → WAV, same samples`, w ? JSON.stringify(w.samples) : 'null');
     }
     check(aiffToWav(aiff({ bits: 16, aifc: 'ima4', samples: [0, 0] })) === null, 'compressed AIFC is refused');
+}
+
+// ---------------------------------------------------------------------------
+section('Citizen DJ: snapshot and search');
+// ---------------------------------------------------------------------------
+
+{
+    const snap = await loadCitizenDj();
+    check(snap.collections.length >= 10 && snap.clips.length >= 3000, 'the snapshot has the collections and clips', `${snap.collections.length} collections, ${snap.clips.length} clips, ${snap.fetched}`);
+    const open = { licenses: ['pd', 'by'], maxSeconds: null };
+
+    const blues = await citizendj.search({ ...open, text: 'blues' }, 1);
+    check(blues.hits.length === 30 && blues.hasMore && blues.total > 30, 'a search pages by 30', `${blues.total} found`);
+    check(blues.hits.every(h => h.url?.startsWith('https://s3.amazonaws.com/citizen-dj-assets.labs.loc.gov/') && h.url.endsWith('.wav')), 'hits point at the WAV on S3');
+    check(blues.hits.every(h => h.durationSec > 3 && h.durationSec < 40 && h.pageUrl.startsWith('https://')), 'hits have a length and an https page');
+    const page2 = await citizendj.search({ ...open, text: 'blues' }, 2);
+    check(!page2.hits.some(h => blues.hits.some(b => b.key === h.key)), 'page 2 repeats nothing from page 1');
+
+    const accent = await citizendj.search({ ...open, text: 'palmee' }, 1);
+    check(accent.hits.some(h => /Palm[eé]e/.test(h.author)), 'accents are ignored ("palmee" finds Palmée)');
+    const two = await citizendj.search({ ...open, text: 'ragtime marimba' }, 1);
+    check(two.total > 0 && two.total < blues.total, 'every word must match', `${two.total}`);
+
+    // "e" matches nearly every clip, so the catalogue's few over 31.5 s are among them.
+    const any = await citizendj.search({ ...open, text: 'e' }, 1);
+    const short = await citizendj.search({ ...open, text: 'e', maxSeconds: 30 }, 1);
+    check(short.total < any.total && short.hits.every(h => h.durationSec <= 31.5), 'the 30 s filter holds longer clips back', `${any.total} → ${short.total}`);
+
+    const smith = await citizendj.search({ ...open, text: 'interview' }, 1);
+    const js = smith.hits.find(h => h.license.filter === 'by');
+    check(!!js && js.author === 'Joe Smith', 'Joe Smith interviews are "with credit", credited to Joe Smith');
+    const pdOnly = await citizendj.search({ licenses: ['pd'], maxSeconds: null, text: 'interview' }, 1);
+    check(pdOnly.hits.every(h => h.license.filter === 'pd'), 'without + BY the Joe Smith interviews are left out');
+    const jsLevel = js && classifyLicense(licenseTextFor(js));
+    check(jsLevel?.level === 'open' && jsLevel.attribution, 'Joe Smith terms read as open, with credit', JSON.stringify(jsLevel));
+
+    const free = (await citizendj.search({ ...open, text: 'tony schwartz' }, 1)).hits.find(h => h.license.label.startsWith('Free to use'));
+    const freeLevel = free && classifyLicense(licenseTextFor(free));
+    check(freeLevel?.level === 'open' && !freeLevel.attribution, '"free to use (LoC)" reads as open, no credit needed', JSON.stringify(freeLevel));
+
+    const jazz = blues.hits.find(h => h.via?.startsWith('The National Jukebox'));
+    check(!!jazz?.notice, 'Jukebox hits carry the historical-content notice');
+    check(!!jazz && /Credit: .*\(The National Jukebox: .* via Citizen DJ\).*Library of Congress, National Jukebox$/.test(licenseTextFor(jazz).split('\n')[1]),
+        'the stored credit names the collection and its own credit line', jazz ? licenseTextFor(jazz).split('\n')[1].slice(0, 160) : '');
 }
 
 // ---------------------------------------------------------------------------
