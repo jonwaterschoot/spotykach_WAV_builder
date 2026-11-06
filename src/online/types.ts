@@ -8,7 +8,7 @@ import type { LicenseFilter, OnlineLicense } from './licenses.ts';
  * Plan and API checks: docs/sample_mangler/online-sources-plan.md.
  */
 
-export type ProviderId = 'openverse' | 'commons' | 'archive' | 'nasa' | 'freesound';
+export type ProviderId = 'openverse' | 'commons' | 'archive' | 'nasa' | 'citizendj' | 'freesound';
 
 /** Longest sound the search asks for. `null` is any length. */
 export type MaxLength = 30 | 120 | null;
@@ -54,6 +54,12 @@ export interface OnlineHit {
     expandable?: boolean;
     /** The provider's own pointer for `expand`, e.g. NASA's asset list URL. */
     ref?: string;
+    /** When it was recorded or published, where the archive says. */
+    year?: number;
+    /** The credit line the archive asks for, added to the stored one (Citizen DJ's collections). */
+    credit?: string;
+    /** A word of caution for this sound, shown on its row. */
+    notice?: string;
 }
 
 export interface OriginalFile {
@@ -102,6 +108,8 @@ export interface OnlineProvider {
     quality: string;
     /** The archive's own limits, in a line. */
     limitNote: string;
+    /** Anything to know before using its sounds, beyond the license chip. */
+    notice?: string;
     /** Kept a little under the archive's own limits; see budget.ts. */
     limits: { perMinute: number; perDay: number };
     /** Through the shared proxy: this visitor's slice of one key shared by everyone. */

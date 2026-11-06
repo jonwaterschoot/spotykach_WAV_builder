@@ -9,7 +9,8 @@ export default defineConfig([
   // `public/` is static assets and vendored worker code (ffmpeg's own build
   // output), not source we author. Linting it only produced fixes to third-party
   // files.
-  globalIgnores(['dist', 'public']),
+  // src/online/data is generated (scripts/fetch-citizen-dj.mjs): one long string.
+  globalIgnores(['dist', 'public', 'src/online/data']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

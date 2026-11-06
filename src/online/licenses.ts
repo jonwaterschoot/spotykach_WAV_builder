@@ -26,6 +26,12 @@ export interface OnlineLicense {
     /** Short name for the badge, e.g. "CC BY-SA 4.0". */
     label: string;
     url?: string;
+    /**
+     * Terms that aren't a Creative Commons license, in the archive's own sense
+     * (Citizen DJ's "free to use"). Used in place of the stock sentence, so it
+     * must still read at the right level in `classifyLicense`.
+     */
+    statement?: string;
 }
 
 const PD_LABELS: Record<string, string> = {
@@ -87,6 +93,7 @@ export function fromCommons(code?: string, shortName?: string, url?: string): On
  * exists, so a pack and an online sound with the same license read the same.
  */
 export function licenseStatement(l: OnlineLicense): string {
+    if (l.statement) return l.statement;
     switch (l.filter) {
         case 'pd':
             return `${l.label}: public domain. No attribution required.`;
