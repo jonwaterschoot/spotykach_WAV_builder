@@ -9,6 +9,14 @@
     "pinned": true
   },
   {
+    "id": "citizen-dj",
+    "title": "Citizen DJ: Library of Congress clips in the sample browser (v4.4.0)",
+    "date": "2026-11-06",
+    "file": "citizen-dj.md",
+    "image": "images/citizendj_samplebrowser.jpg",
+    "category": "Feature"
+  },
+  {
     "id": "send-to-spotykach",
     "title": "Send to Spotykach from Browse and the Editor (v4.3.0)",
     "date": "2026-10-28",
