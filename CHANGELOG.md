@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+---
+
+## [4.4.0] - 2026-11-06
+
+A new archive in the sample browser, found by Fabio; the [news post](public/news/citizen-dj.md) shows it.
+
 ### Added
 
 - **Citizen DJ in the open archives.** Search open archives now includes
