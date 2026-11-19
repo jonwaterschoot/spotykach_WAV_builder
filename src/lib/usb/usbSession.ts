@@ -115,7 +115,9 @@ const log = (line: string) => {
 const describe = (error: unknown) => {
     if (!(error instanceof Error)) return String(error);
     const detail = (error as { detail?: unknown }).detail;
-    return `${error.name}: ${error.message}${typeof detail === 'string' ? ` (${detail})` : ''}`;
+    // The browser's own error (`port.open()`'s DOMException), which the package wraps.
+    const cause = error.cause instanceof Error ? ` [cause: ${error.cause.name}: ${error.cause.message}]` : '';
+    return `${error.name}: ${error.message}${typeof detail === 'string' ? ` (${detail})` : ''}${cause}`;
 };
 
 const endTrace = (error: unknown) => {

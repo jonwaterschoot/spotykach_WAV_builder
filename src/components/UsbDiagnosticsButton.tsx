@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Clipboard } from 'lucide-react';
-import { usbSession } from '../lib/usb/usbSession';
+import { usbSession, useUsbSession } from '../lib/usb/usbSession';
+import { UsbLinuxHelp } from './UsbLinuxHelp';
 
 /**
  * Copies the last USB connect attempt, step by step, for a bug report; Show
- * opens the same text below, kept current while a connect is running.
+ * opens the same text below, kept current while a connect is running. Above it,
+ * the Linux permission fix when the error asks for it: every USB error view
+ * shows this button, so they all get it.
  */
 export const UsbDiagnosticsButton: React.FC<{ className?: string }> = ({ className = '' }) => {
+    // The package adds the 'dialout' hint to "can't open the port" only on Linux.
+    const linuxPermission = useUsbSession().error?.includes('dialout') ?? false;
     const [copied, setCopied] = useState(false);
     const [open, setOpen] = useState(false);
     const [text, setText] = useState('');
@@ -28,6 +33,7 @@ export const UsbDiagnosticsButton: React.FC<{ className?: string }> = ({ classNa
     };
     return (
         <div className={`flex flex-col gap-1.5 min-w-0 ${className}`}>
+            {linuxPermission && <UsbLinuxHelp />}
             <div className="flex items-center gap-3">
                 <button type="button" onClick={copy} title="Copies what happened during the last connect attempt"
                     className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-white">
