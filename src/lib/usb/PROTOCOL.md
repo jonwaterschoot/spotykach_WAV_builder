@@ -4,11 +4,11 @@ The protocol code is the npm package [`@synthuxacademy/spotykach-transfer`](http
 
 | | |
 | --- | --- |
-| Package | `^1.0.1` in `package.json` |
+| Package | `^1.2.0` in `package.json` (1.2.0 installed; 1.3.0 is the first on `usb-transfer`) |
 | Protocol | 1.x (the package's major version follows it; `connect()` refuses another major) |
 | Firmware | `uploader` branch, first release with USB transfer |
 
-**Changing the protocol side:** don't patch it here. Fork the Spotykach repo, change `web/spotykach-transfer` (with its tests, `tests/transfer/run.sh`), and open a PR there, so firmware and web change together. Then bump the package here.
+**Changing the protocol side:** don't patch it here. Since November 2026 the transport (framing, the SysEx switch, opening the port, HELLO, retries) is a separate package, [`@synthuxacademy/usb-transfer`](https://www.npmjs.com/package/@synthuxacademy/usb-transfer) from [Synthux-Academy/usb-transfer](https://github.com/Synthux-Academy/usb-transfer), shared with other Synthux devices. `spotykach-transfer` depends on it and keeps the Spotykach commands, slot files and settings. Transport fixes go to `usb-transfer` (its `test/run.sh`); Spotykach-specific ones go to `web/spotykach-transfer` in the Spotykach repo (`tests/transfer/run.sh`). WAV Builder only imports `spotykach-transfer`: bump it here once it picks up the change.
 
 ## Files
 

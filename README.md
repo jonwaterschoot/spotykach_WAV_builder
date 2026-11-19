@@ -70,7 +70,7 @@ This project is built using:
 -   **[Vite](https://vitejs.dev/)**: Build tool and dev server.
 -   **[Tailwind CSS](https://tailwindcss.com/)**: Styling.
 -   **[WaveSurfer.js](https://wavesurfer.xyz/)**: Audio visualization and manipulation.
--   **[@synthuxacademy/spotykach-transfer](https://github.com/Synthux-Academy/Spotykach/tree/uploader/web/spotykach-transfer)**: Synthux's own package. It writes every slot file (the same encoder as the firmware's uploader page) and runs USB transfer.
+-   **[@synthuxacademy/spotykach-transfer](https://github.com/Synthux-Academy/Spotykach/tree/main/web/spotykach-transfer)**: Synthux's own package. It writes every slot file (the same encoder as the firmware's uploader page) and runs USB transfer, over the shared transport in [@synthuxacademy/usb-transfer](https://github.com/Synthux-Academy/usb-transfer).
 -   **[ffmpeg.wasm](https://ffmpegwasm.netlify.app/)**: Converting audio formats the browser can't decode, served from this origin.
 -   Written with LLM assistance: set up in Google Antigravity, continued with Claude Code.
 
