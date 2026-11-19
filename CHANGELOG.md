@@ -4,6 +4,17 @@
 
 ---
 
+## [4.4.1] - 2026-11-19
+
+### Fixed
+
+- **USB on Linux: the permission fix, ready to copy.** When the Spotykach's serial port won't
+  open on Linux, the USB views show the command that gives your user access
+  (`sudo usermod -aG dialout $USER`) with a *Copy* button, say to restart afterwards, and what
+  `sudo` changes on the system. *Copy diagnostics* now also includes the browser's own error.
+
+---
+
 ## [4.4.0] - 2026-11-06
 
 A new archive in the sample browser, found by Fabio; the [news post](public/news/citizen-dj.md) shows it.
