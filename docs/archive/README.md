@@ -15,6 +15,7 @@ change and are still the only written record of several device behaviours.
 
 | File | Archived | Why |
 |---|---|---|
+| [roadmap-2026-11.md](roadmap-2026-11.md) | 2026-11-20 | The long roadmap, before it was cut to one line per item. Has the reasoning behind each roadmap item and the full list of paths never tested. |
 | [sample_manager_planningnotes.md](sample_manager_planningnotes.md) | 2026-08-14 | Planning notes copied out of `roadmap-bugs.md` for the user sample pool and libraries. The work shipped in 2.0.1; the file says so in its own first lines. |
 | [v4-test-rounds.md](v4-test-rounds.md) | 2026-08-18 | The v4 test pass, round by round — eleven rounds over the five hub doors, 38 findings, all built and walked. Moved out of `roadmap-bugs.md` so that file could go back to being a short list; Round 5, the editor with a project behind it, was added on 2026-08-19 when it closed. Kept because several findings turned on a cause that was not where it looked: Tailwind v4's hover gate (S1-15), an expired transient activation (P1-1), a `move()` that exists but is refused (C1-1), and a transport flag whose only reset was an event that never fired (Round 5). |
 | [V4_PERVAK.md](V4_PERVAK.md) | 2026-08-19 | The v4 plan of record: phases, locked decisions, open items and the appendices behind them. Archived when v4 shipped. Kept for the reasoning — why *restructure rather than rebuild*, why history is two versions, why the SD card became a build target. Its code links are line-numbered and will drift. |
