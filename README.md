@@ -44,7 +44,7 @@ The app opens on a hub, grouped by what you came to do:
     -   **Main Controls**: Global playback, waveform display, and file management.
     -   **Trim / Fade**: Set start/end trim points and apply fade-in/fade-out curves. **Hardware Constraints**: Visual indicators for the strictly enforced 42-second hardware buffer limit.
     -   **Automation**: Draw volume automation envelopes over time (ramps, dips, custom shapes).
-    -   **Loop**: Define loop regions with configurable crossfading for seamless, gapless loops.
+    -   **Loop**: Seamless loops, sample-accurate in playback. *Free* takes any selection and folds a crossfade over the seam. *BPM Sync* makes the loop a whole number of bars at a BPM (read from the file's name or tag, or detected), with an optional fade into the downbeat and slice markers per bar or beat.
     -   **EQ**: 3-band, or 10-band equalizer for tonal shaping of the audio.
     -   **Pitch**: Pitch-shift the sample or multiple parts of the sample.
     -   **Limiter**: Ceiling limiter to prevent clipping and control peak output level.

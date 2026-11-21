@@ -4,6 +4,43 @@
 
 ---
 
+## [4.5.0] - 2026-11-21
+
+The editor's loops, in time. The [news post](public/news/4.5.0-loop-bpm.md) shows the new Loop tool.
+
+### Added
+
+- **Loop tool: BPM Sync.** A second mode beside *Free*: the selection is the loop, a whole
+  number of bars at a BPM, to the sample. *Bars* 1–16 lock its length and it follows the BPM;
+  bar counts that don't fit the file or 42 s are greyed out. A grid on the wave numbers the
+  bars and marks the loop end.
+- **Loop tool: tempo.** The BPM comes from the file's tempo tag or its name
+  (`SEQ_120BPM_…`). *Detect* finds it in the audio, *From Selection* takes the tempo that
+  makes the selection whole bars, and *÷2* / *×2* fix a double- or half-time reading.
+- **Loop tool: fade into the downbeat.** BPM Sync's fade is off by default. Set to a 1/32
+  to 1/4 note, the end of the loop blends into the audio that led into bar 1, so the loop
+  keeps its length and its first beat is untouched. It needs that much audio before the
+  loop start; at the head of a file there is none, and the panel says so.
+- **Loop tool: start and markers.** *Snap to Hit* moves the loop onto the nearest hit,
+  the arrows move it by one beat. On Apply, slice markers can be written per bar or per
+  beat, and the tempo is saved in the file.
+
+### Changed
+
+- **Editor: looped playback is sample-accurate.** With the loop button on, playback runs
+  on Web Audio and wraps on the exact sample, so the loop no longer drifts or stutters at
+  the seam. Dragging the selection moves the loop while it plays, and clicking the wave
+  plays from there and keeps looping. The Loop tool's Preview plays the file Apply will
+  write.
+
+### Fixed
+
+- **Editor: Reset Tool left the old trim in place.** After *Reset Tool* in Trim / Fade the
+  wave showed the whole file, but Apply Trim, the loop and the Loop tool still used the
+  previous selection. They use the one on screen now.
+
+---
+
 ## [4.4.1] - 2026-11-19
 
 ### Fixed
