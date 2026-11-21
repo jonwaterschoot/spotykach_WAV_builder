@@ -6,6 +6,9 @@ import { Play, Pause, RotateCcw, Check, ZoomIn, ZoomOut, ArrowLeftRight, Scissor
 import { Rnd } from 'react-rnd';
 import { audioProcessor } from '../lib/audio/audioProcessor';
 import { encodeWAV } from '../lib/audio/wavEncoder';
+import { LoopPlayer } from '../lib/audio/loopPlayer';
+import { barSeconds, beatSeconds, bpmFromLength, bpmFromName, estimateTempo, fitTempoToLength, gridMarkers, LOOP_BPM_MAX, LOOP_BPM_MIN, loopWithPreRoll, SYNC_FADES, tidyBpm } from '../lib/audio/loopTempo';
+import { detectHits } from '../mangler/hits';
 import { v4 as uuidv4 } from 'uuid';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 import { TapeIcon } from './TapeIcon';
@@ -379,6 +382,76 @@ interface LoopOverlayProps {
     active?: boolean;
     isPreview?: boolean;
 }
+
+/*
+ * Beat and bar lines over `[from, to)`: what the loop will hold at `bpm`. Bars are
+ * numbered; beats are drawn only when they are far enough apart to read. The line
+ * at `to` is the loop's end, where it wraps back to `from`.
+ */
+const BeatGrid = ({ from, to, bpm, pxPerSec, height }: { from: number, to: number, bpm: number, pxPerSec: number, height: number }) => {
+    const beat = 60 / bpm;
+    const showBeats = beat * pxPerSec >= 8;
+    const lines: React.ReactNode[] = [];
+    for (let k = 0; from + k * beat < to - 1e-6 && k < 4096; k++) {
+        const x = (from + k * beat) * pxPerSec;
+        const isBar = k % 4 === 0;
+        if (!isBar && !showBeats) continue;
+        lines.push(
+            <g key={k}>
+                <line x1={x} y1={0} x2={x} y2={height} stroke={isBar ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.15)'} strokeWidth={isBar ? 1.5 : 1} />
+                {isBar && <text x={x + 3} y={height - 6} fill="rgba(255,255,255,0.6)" fontSize="9" fontWeight="bold">{k / 4 + 1}</text>}
+            </g>
+        );
+    }
+    const endX = to * pxPerSec;
+    return (
+        <g style={{ pointerEvents: 'none' }}>
+            {lines}
+            <line x1={endX} y1={0} x2={endX} y2={height} stroke="#22c55e" strokeWidth="2" strokeDasharray="3 3" />
+            <text x={endX - 4} y={height - 6} fill="#22c55e" fontSize="9" fontWeight="bold" textAnchor="end">LOOP END</text>
+        </g>
+    );
+};
+
+/*
+ * BPM Sync on the wave: the beat grid over the loop, and the fade into the
+ * downbeat — its zone at the loop's end and, before the start, the audio it
+ * blends in. In preview the wave is the rendered loop itself, from 0.
+ */
+const SyncLoopOverlay = ({ width, height, duration, region, bpm, fade, isPreview }: {
+    width: number, height: number, duration: number, region: { start: number, end: number },
+    bpm: number | null, fade: number, isPreview: boolean,
+}) => {
+    if (duration <= 0) return null;
+    const pps = width / duration;
+    const from = isPreview ? 0 : region.start;
+    const to = isPreview ? duration : region.end;
+    const fadePx = fade * pps;
+    return (
+        <svg className="absolute top-0 left-0 pointer-events-none" style={{ width: '100%', height: '100%', zIndex: 999 }}
+            viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+            <defs>
+                <linearGradient id="syncFadeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#00A3FF" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#00A3FF" stopOpacity="0.35" />
+                </linearGradient>
+            </defs>
+            {fade > 0 && (
+                <>
+                    <rect x={to * pps - fadePx} y={0} width={fadePx} height={height} fill="url(#syncFadeGradient)" />
+                    <text x={to * pps - fadePx - 4} y={14} fill="#00A3FF" fontSize="9" fontWeight="bold" textAnchor="end">FADE INTO 1</text>
+                    {!isPreview && (
+                        <rect x={from * pps - fadePx} y={1} width={fadePx} height={height - 2} fill="rgba(0,163,255,0.08)"
+                            stroke="#00A3FF" strokeWidth="1" strokeDasharray="3 3" />
+                    )}
+                </>
+            )}
+            {bpm
+                ? <BeatGrid from={from} to={to} bpm={bpm} pxPerSec={pps} height={height} />
+                : <line x1={to * pps} y1={0} x2={to * pps} y2={height} stroke="#22c55e" strokeWidth="2" strokeDasharray="3 3" />}
+        </svg>
+    );
+};
 
 const LoopOverlay = ({ width, height, duration, region, crossfade, onCrossfadeChange, active = true, isPreview = false }: LoopOverlayProps) => {
     // Hooks first: both the guard below and the isPreview branch return early, and
@@ -808,6 +881,22 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const [loopCrossfade, setLoopCrossfade] = useState(0.2); // Default 0.2s
     const [loopFitTo42, setLoopFitTo42] = useState(false);
     const [hasLoopInteracted, setHasLoopInteracted] = useState(false);
+    /** The Loop tool's tempo, and where it came from (shown next to it). */
+    const [loopBpm, setLoopBpm] = useState<number | null>(null);
+    const [loopBpmSource, setLoopBpmSource] = useState('');
+    /** Bars the loop is locked to: the selection follows the BPM and crossfade. Null: free. */
+    const [loopBarCount, setLoopBarCount] = useState<number | null>(null);
+    /** Slice markers written on Apply: the file's own, or one per bar or beat. */
+    const [loopMarkers, setLoopMarkers] = useState<'keep' | 'bars' | 'beats'>('keep');
+    /*
+     * Free: any selection, the crossfade folds its tail over its head (the file
+     * comes out shorter by the fade). BPM Sync: the selection is the loop, whole
+     * bars, and the fade — off unless asked for — stays inside it (loopWithPreRoll).
+     * Kept for the session, not reset by Apply.
+     */
+    const [loopMode, setLoopMode] = useState<'free' | 'bpm'>('free');
+    /** BPM Sync's fade into the downbeat, in notes per beat (4 = a 1/16); 0 is off. */
+    const [syncFadePerBeat, setSyncFadePerBeat] = useState(0);
 
     const [isProcessing, setIsProcessing] = useState(false);
     const [helpText, setHelpText] = useState("");
@@ -864,14 +953,36 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
      */
     const loadPreviewBlob = async (blob: Blob) => {
         if (!wavesurfer.current) return;
+        stopLooperForLoad();
         setPreviewLoaded(true);
         await wavesurfer.current.loadBlob(blob);
     };
 
     const loadSourceBlob = async (blob: Blob) => {
         if (!wavesurfer.current) return;
+        stopLooperForLoad();
         setPreviewLoaded(false);
         await wavesurfer.current.loadBlob(blob);
+    };
+
+    /*
+     * Looped playback runs on Web Audio, not through WaveSurfer: see LoopPlayer for
+     * why. WaveSurfer still draws, and its cursor follows `looper().position()`.
+     */
+    const looperRef = useRef<LoopPlayer | null>(null);
+    const looper = () => (looperRef.current ??= new LoopPlayer());
+    /** The rendered crossfade while the loop tool previews it; null otherwise. */
+    const previewLoopBufferRef = useRef<AudioBuffer | null>(null);
+    const originalBufferRef = useRef<AudioBuffer | null>(null);
+    originalBufferRef.current = originalBuffer;
+
+    /** Whatever is under the wave is about to change: the loop playing it can't go on. */
+    const stopLooperForLoad = () => {
+        previewLoopBufferRef.current = null;
+        if (looperRef.current?.isPlaying) {
+            looperRef.current.stop();
+            setIsPlaying(false);
+        }
     };
 
     const getEditRegion = (): { start: number, end: number } => {
@@ -984,7 +1095,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     /** A stretch of the wave to mark, seconds: the snippet hovered in the Mangler's list. */
     const [waveHighlight, setWaveHighlight] = useState<[number, number] | null>(null);
     const isMangleDirty = mangleTake !== null;
-    const isLoopDirty = hasLoopInteracted && (loopCrossfade !== 0.2 || loopFitTo42 || hasTrimInteracted);
+    const isLoopDirty = hasLoopInteracted && (loopCrossfade !== 0.2 || loopFitTo42 || hasTrimInteracted || loopBarCount !== null || loopMarkers !== 'keep' || syncFadePerBeat !== 0);
     // Calculated Dirty State
     const isDirty = useMemo(() => {
         if (!originalBuffer) return false;
@@ -1052,6 +1163,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         // Auto-play loop when entering loop tool
         if (next === 'loop') {
             setIsLooping(true);
+            // A tempo to start from: the file's own, else one in its name.
+            if (loopBpm === null) {
+                const fromFile = (internalMetadata || metadata)?.tempo;
+                const fromName = bpmFromName(slot.name);
+                if (fromFile) { setLoopBpm(fromFile); setLoopBpmSource('file'); }
+                else if (fromName) { setLoopBpm(fromName); setLoopBpmSource('name'); }
+            }
             // Apply loop to region if trim tool was active
             if (regions.current) {
                 const list = regions.current.getRegions();
@@ -1059,7 +1177,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 if (trimRegion) trimRegion.setOptions({ loop: true });
             }
         } else if (activeTool === 'loop') {
-            // Turning off loop tool
+            // Turning off loop tool: stop, rather than hand the loop over to the transport.
+            if (looperRef.current?.isPlaying) {
+                looperRef.current.stop();
+                setIsPlaying(false);
+            }
             setIsLooping(false);
             if (wavesurfer.current) {
                 wavesurfer.current.pause();
@@ -1088,6 +1210,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setPreviewPitchRegions([]);
         setPreviewDuration(null);
         setPreviewLoaded(false);
+        previewLoopBufferRef.current = null;
         setMangleTake(null);
     };
 
@@ -1126,6 +1249,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 // The trim is inside the loop now, so the trim flag goes with it.
                 setLoopCrossfade(0.2);
                 setLoopFitTo42(false);
+                setLoopBarCount(null);
+                setLoopMarkers('keep');
+                setSyncFadePerBeat(0);
                 setHasLoopInteracted(false);
                 setHasTrimInteracted(false);
                 break;
@@ -1153,6 +1279,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setCutRegions([]);
         setLoopCrossfade(0.2);
         setLoopFitTo42(false);
+        setLoopBarCount(null);
+        setLoopMarkers('keep');
+        setSyncFadePerBeat(0);
         setHasLoopInteracted(false);
         if (initialSlicePoints) setSlicePoints([...initialSlicePoints]);
         
@@ -1214,6 +1343,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
      * session. Anything that destroys or replaces the instance calls this.
      */
     const resetTransportState = useCallback(() => {
+        looperRef.current?.stop(0);
         if (pauseTimeoutRef.current) {
             clearTimeout(pauseTimeoutRef.current);
             pauseTimeoutRef.current = null;
@@ -1294,6 +1424,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         setSlicePoints([]);
         setCutRegions([]);
         setAutomationPoints([]);
+        // New audio: its tempo is found again (from its tempo tag or name) on the next visit.
+        setLoopBpm(null);
+        setLoopBpmSource('');
+        setLoopBarCount(null);
         setHasTrimInteracted(false);
     }, [currentBlob, loadedVersionId, versions]);
 
@@ -1335,6 +1469,24 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             }
         }
     }, [activeTool, editorDuration, isLooping]);
+
+    /*
+     * `regionState` is the selection on screen; WaveSurfer's region is what apply,
+     * save and the looper read. Several setters (Reset Tool, Discard, the fade
+     * handles) only touched the first, so after a reset the overlay showed the
+     * whole file while the old trim was still the one that got cut and looped.
+     * Every change to `regionState` now reaches the region.
+     */
+    useEffect(() => {
+        const { start, end } = regionState;
+        if (!(end > start)) return;
+        // Under a preview the wave is a processed copy: keep the selection for when
+        // it comes back (the 'ready' handler re-hangs it), but leave the region alone.
+        editRegionRef.current = { start, end };
+        if (isPreviewLoadedRef.current) return;
+        const r = regions.current?.getRegions?.().find((reg: { id?: string }) => reg.id === 'trim-region');
+        if (r && (Math.abs(r.start - start) > 1e-6 || Math.abs(r.end - end) > 1e-6)) r.setOptions({ start, end });
+    }, [regionState]);
 
     useEffect(() => {
         // zoom() throws while a blob is loading (nothing decoded yet). The 'ready'
@@ -1611,6 +1763,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             // GAPLESS LOOPING: Trigger immediately when leaving the region
             wsRegions.on('region-out', (r: any) => {
                 // Only force loop to region start if TRIM TOOL is active
+                // The looper moves the cursor with setTime, which fires this too: leave it be.
+                if (looperRef.current?.isPlaying) return;
                 if (r.id === 'trim-region' && isLoopingRef.current && isMounted.current && activeToolRef.current === 'trim') {
                     // Force seek to start and play range for gapless loop
                     ws.play(r.start, r.end);
@@ -1627,6 +1781,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             });
             ws.on('pause', () => {
                 if (!isMounted.current) return;
+                // WaveSurfer handing the transport to the looper (loop switched on
+                // mid-play): the media 'pause' lands after the looper has started.
+                if (looperRef.current?.isPlaying) return;
                 setIsPlaying(false);
             });
             // FINISH HANDLER: Check if we need to loop (Edge case where region ends at file end)
@@ -1668,6 +1825,8 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         stopGlobalPlayer();
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            looperRef.current?.dispose();
+            looperRef.current = null;
         };
     }, []);
 
@@ -1678,6 +1837,10 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             if (isPausingRef.current) resetTransportState();
             return;
         }
+
+        // Looping: the audio runs on Web Audio, so bring the cursor to it.
+        const loop = looperRef.current;
+        if (loop?.isPlaying) wavesurfer.current.setTime(loop.position());
 
         const currentTime = wavesurfer.current.getCurrentTime();
         // Fades are relative to region start
@@ -1699,6 +1862,13 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 const t = timeLeft / fadeOut;
                 volume = 0.5 * (1 - Math.cos(t * Math.PI));
             }
+        }
+
+        if (loop?.isPlaying) {
+            // The looper ramps its own starts and stops; only the fades come from here.
+            loop.setVolume(volume);
+            if (isPlaying) rafRef.current = requestAnimationFrame(updateVolume);
+            return;
         }
 
         // Micro-Fade In (15ms) to prevent clicks
@@ -1747,6 +1917,74 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
 
 
 
+    /*
+     * What a looped play would loop: the rendered crossfade while the loop tool
+     * previews it, the selection in the trim and loop tools, the whole file
+     * otherwise. Null when another tool's preview is under the wave — that audio
+     * only exists as WaveSurfer's blob, so it loops the old way.
+     */
+    const loopSource = (): { buffer: AudioBuffer, start: number, end: number } | null => {
+        const preview = previewLoopBufferRef.current;
+        if (preview) return { buffer: preview, start: 0, end: preview.duration };
+        const buffer = originalBufferRef.current;
+        if (!buffer || isPreviewLoadedRef.current) return null;
+        const tool = activeToolRef.current;
+        if (tool === 'trim' || tool === 'loop') {
+            const { start, end } = getEditRegion();
+            return { buffer, start, end };
+        }
+        return { buffer, start: 0, end: buffer.duration };
+    };
+
+    /** Starts looped playback at `from`. False when there is nothing it can loop. */
+    const startLooper = (from: number): boolean => {
+        const src = loopSource();
+        if (!src) return false;
+        if (wavesurfer.current?.isPlaying()) wavesurfer.current.pause();
+        isPausingRef.current = false;
+        setIsPausing(false);
+        // Play from outside the selection starts at the selection, as it always has.
+        // (A click on the wave while looping goes through seekEditor and plays in.)
+        const at = from >= src.start && from < src.end ? from : src.start;
+        void looper().play(src.buffer, src.start, src.end, at);
+        setIsPlaying(true);
+        return true;
+    };
+
+    // Anything that stops the transport stops the looper.
+    useEffect(() => {
+        if (!isPlaying) looperRef.current?.stop();
+    }, [isPlaying]);
+
+    // Dragging the selection, or switching tools, moves the loop while it plays.
+    useEffect(() => {
+        const loop = looperRef.current;
+        if (!loop?.isPlaying) return;
+        const src = loopSource();
+        if (src) loop.setLoop(src.start, src.end);
+        else { loop.stop(); setIsPlaying(false); }
+        // loopSource reads refs only; these two are what move the loop.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [regionState, activeTool]);
+
+    // The loop button mid-play: hand the transport over without stopping the sound.
+    useEffect(() => {
+        const ws = wavesurfer.current;
+        if (!ws) return;
+        const loop = looperRef.current;
+        if (isLooping) {
+            if (ws.isPlaying() && !isPausingRef.current) startLooper(ws.getCurrentTime());
+        } else if (loop?.isPlaying) {
+            const at = loop.position();
+            loop.stop();
+            ws.setTime(at);
+            const r = activeToolRef.current === 'trim' ? getEditRegion() : null;
+            void ws.play(at, r && at < r.end ? r.end : undefined);
+        }
+        // Runs on the button only; the helpers read refs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLooping]);
+
     // Auto-Loop Switch Logic
     useEffect(() => {
         if (activeTool === 'loop' && !isLooping) {
@@ -1785,6 +2023,138 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             setRegionState({ start: newStart, end: newEnd });
         }
     }, [loopFitTo42, loopCrossfade, originalBuffer]);
+
+    // ----- Loop tool: tempo -----
+
+    /** Puts the selection at [start, start + length), kept inside the file. */
+    const placeSelection = (start: number, length: number) => {
+        const dur = originalBuffer?.duration ?? 0;
+        if (!dur) return;
+        const len = Math.min(length, dur);
+        let s = Math.max(0, start), e = s + len;
+        if (e > dur) { e = dur; s = Math.max(0, e - len); }
+        setRegionState({ start: s, end: e });
+        setHasTrimInteracted(true);
+    };
+
+    /*
+     * BPM Sync with bars locked: the selection is exactly N bars at the BPM, and
+     * follows it when the BPM changes. (The fade lives inside it, so it adds nothing.)
+     */
+    useEffect(() => {
+        if (activeTool !== 'loop' || loopMode !== 'bpm' || !loopBarCount || !loopBpm || !originalBuffer) return;
+        const music = loopBarCount * barSeconds(loopBpm);
+        if (music > originalBuffer.duration + 1e-6) { setLoopBarCount(null); return; }
+        const { start, end } = getEditRegion();
+        if (Math.abs(end - start - music) < 1e-6) return;
+        placeSelection(start, music);
+        // getEditRegion/placeSelection read the selection at the time; these are the inputs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTool, loopMode, loopBarCount, loopBpm, originalBuffer]);
+
+    /** The bar counts offered, and whether `n` fits the file and the device's 42 s. */
+    const LOOP_BAR_CHOICES = [1, 2, 4, 8, 16];
+    const barsFit = (n: number) => !!loopBpm && n * barSeconds(loopBpm) <= Math.min(42, originalBuffer?.duration ?? 0) + 1e-6;
+
+    const handleLoopMode = async (mode: 'free' | 'bpm') => {
+        if (mode === loopMode) return;
+        if (isPreviewingLoop && currentBlob) {
+            await loadSourceBlob(currentBlob);
+            setIsPreviewingLoop(false);
+        }
+        setLoopMode(mode);
+        setHasLoopInteracted(true);
+        if (mode === 'bpm') {
+            setLoopFitTo42(false);
+            setSyncFadePerBeat(0); // off unless asked for
+            // Lock to the bar count nearest the selection, if there is a tempo to count in.
+            if (loopBpm) {
+                const { start, end } = getEditRegion();
+                const bars = (end - start) / barSeconds(loopBpm);
+                const pick = LOOP_BAR_CHOICES.filter(barsFit)
+                    .reduce<number | null>((a, n) => (a === null || Math.abs(Math.log2(n / bars)) < Math.abs(Math.log2(a / bars)) ? n : a), null);
+                setLoopBarCount(pick);
+            }
+        } else {
+            setLoopBarCount(null);
+        }
+    };
+
+    const setLoopTempo = (bpm: number | null, source: string) => {
+        setLoopBpm(bpm === null ? null : Math.min(LOOP_BPM_MAX, Math.max(LOOP_BPM_MIN, bpm)));
+        setLoopBpmSource(source);
+        setHasLoopInteracted(true);
+    };
+
+    /** Tempo from the audio: the selection, or the whole file when the selection is under 2 s. */
+    const handleDetectTempo = () => {
+        const buf = originalBuffer;
+        if (!buf) return;
+        const { start, end } = getEditRegion();
+        const sr = buf.sampleRate;
+        const channels = Array.from({ length: Math.min(2, buf.numberOfChannels) }, (_, c) => buf.getChannelData(c));
+        let from = Math.round(start * sr), to = Math.round(end * sr);
+        if ((to - from) / sr < 2) { from = 0; to = buf.length; }
+        const est = estimateTempo(channels, sr, from, to);
+        if (!est) { showToast('Too short to find a tempo', 'error'); return; }
+        // Loops are cut to the bar: if this one is within a hair of whole bars, take that tempo.
+        const len = (to - from) / sr;
+        const fit = fitTempoToLength(est.bpm, len);
+        const bpm = tidyBpm(fit ? fit.bpm : est.bpm);
+        const sure = est.confidence >= 0.2;
+        setLoopTempo(bpm, sure ? 'detected' : 'guess');
+        // The selection was whole bars: lock to them (only when it was the selection analysed).
+        if (fit && sure && to - from === Math.round(end * sr) - Math.round(start * sr)) setLoopBarCount(fit.bars);
+        showToast(sure
+            ? `Tempo ${bpm} BPM${fit ? ` (${fit.bars} bars)` : ''}. Half or double? Use ÷2 / ×2.`
+            : `No clear beat: ${bpm} BPM is a guess`, sure ? 'success' : 'warning');
+    };
+
+    /** "My selection is a loop": the tempo that makes it whole bars, near the current BPM. */
+    const handleTempoFromSelection = () => {
+        const { start, end } = getEditRegion();
+        const r = bpmFromLength(end - start, loopBpm);
+        if (!r) { showToast('Selection too short or long for a tempo', 'error'); return; }
+        setLoopTempo(Math.round(r.bpm * 100) / 100, 'selection');
+        setLoopBarCount(Number.isInteger(r.bars) ? r.bars : null);
+        if (Number.isInteger(r.bars)) setLoopFitTo42(false);
+    };
+
+    const handleLoopBars = (bars: number) => {
+        setLoopFitTo42(false);
+        setLoopBarCount(loopBarCount === bars ? null : bars);
+        setHasLoopInteracted(true);
+    };
+
+    /** Moves the whole selection by one beat, to find the downbeat. */
+    const handleNudgeBeat = (dir: -1 | 1) => {
+        if (!loopBpm) return;
+        const { start, end } = getEditRegion();
+        placeSelection(start + dir * beatSeconds(loopBpm), end - start);
+    };
+
+    /** Moves the selection so it starts on the nearest clear hit (within half a beat). */
+    const handleSnapToHit = () => {
+        const buf = originalBuffer;
+        if (!buf) return;
+        const { start, end } = getEditRegion();
+        const sr = buf.sampleRate;
+        const reach = loopBpm ? beatSeconds(loopBpm) / 2 : 0.25;
+        const left = buf.getChannelData(0);
+        const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : left;
+        // Analyse a little wider than the reach, so a hit right at its edge still has a run-up.
+        const hits = detectHits([left, right], sr, {
+            from: Math.max(0, Math.round((start - reach - 0.1) * sr)),
+            to: Math.min(buf.length, Math.round((start + reach + 0.1) * sr)),
+            sensitivity: 0.6,
+        }).filter(h => Math.abs(h.start / sr - start) <= reach);
+        if (!hits.length) { showToast('No hit near the start', 'warning'); return; }
+        const strongest = Math.max(...hits.map(h => h.strength));
+        const best = hits
+            .filter(h => h.strength >= 0.4 * strongest)
+            .reduce((a, b) => (Math.abs(b.start / sr - start) < Math.abs(a.start / sr - start) ? b : a));
+        placeSelection(best.start / sr, end - start);
+    };
 
 
     // Keyboard shortcuts
@@ -1893,6 +2263,16 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (pauseTimeoutRef.current) {
             clearTimeout(pauseTimeoutRef.current);
             pauseTimeoutRef.current = null;
+        }
+
+        if (looperRef.current?.isPlaying) {
+            looperRef.current.stop();
+            setIsPlaying(false);
+            pauseTimeoutRef.current = setTimeout(() => {
+                pauseTimeoutRef.current = null;
+                if (callback) callback();
+            }, 20); // the looper's 10 ms fade + buffer
+            return;
         }
 
         if (!wavesurfer.current) {
@@ -2011,6 +2391,12 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     const handlePlayPause = async () => {
         if (!wavesurfer.current) return;
 
+        if (looperRef.current?.isPlaying) {
+            looperRef.current.stop();
+            setIsPlaying(false);
+            return;
+        }
+
         // Ask the instance, don't trust the flag. If the two disagree the flag is the
         // wrong one, and a stale `true` must not be allowed to swallow the click.
         const reallyPlaying = wavesurfer.current.isPlaying();
@@ -2036,6 +2422,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                 previewAudio.pause();
                 setPreviewingVersionId(null);
             }
+
+            // Looping: sample-accurate on Web Audio, from where the cursor is.
+            if (isLoopingRef.current && startLooper(wavesurfer.current.getCurrentTime())) return;
 
             // Only bind playback to trim region if the TRIM TOOL is active
             if (activeTool === 'trim' && trimRegion) {
@@ -2316,6 +2705,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             previewAudio.pause();
             setPreviewingVersionId(null);
         }
+        looperRef.current?.stop();
         wavesurfer.current.play(start, end);
     };
 
@@ -2523,6 +2913,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         const start = idx === 0 ? 0 : slicePoints[idx - 1];
         const end = idx < slicePoints.length ? slicePoints[idx] : editorDuration;
 
+        looperRef.current?.stop();
         wavesurfer.current.play(start, end);
         setIsPlaying(true);
 
@@ -2877,35 +3268,55 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
     };
 
+    /** BPM Sync's fade in seconds, and how much of it there is room for before the loop starts. */
+    const syncFadeSeconds = loopBpm && syncFadePerBeat ? beatSeconds(loopBpm) / syncFadePerBeat : 0;
+
+    /*
+     * The loop as it will be written, and the stretch of the file it came from.
+     * Free: trim, then fold the crossfade (shorter by the fade). BPM Sync: counted
+     * in frames, so N bars is N bars to the sample, with the fade inside the loop.
+     */
+    const renderLoop = async (): Promise<{ looped: AudioBuffer, start: number, end: number }> => {
+        const buf = originalBuffer!;
+        const sel = getEditRegion();
+        if (loopMode !== 'bpm') {
+            const trimmed = await audioProcessor.trim(buf, sel.start, sel.end);
+            return { looped: await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade), start: sel.start, end: sel.end };
+        }
+        const sr = buf.sampleRate;
+        const startFrame = Math.round(sel.start * sr);
+        const wanted = loopBpm && loopBarCount ? Math.round(loopBarCount * barSeconds(loopBpm) * sr) : Math.round((sel.end - sel.start) * sr);
+        const length = Math.max(1, Math.min(wanted, buf.length - startFrame));
+        const channels = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+        const out = loopWithPreRoll(channels, startFrame, length, syncFadeSeconds * sr);
+        const looped = new AudioBuffer({ length, numberOfChannels: buf.numberOfChannels, sampleRate: sr });
+        out.forEach((data, c) => looped.getChannelData(c).set(data));
+        return { looped, start: startFrame / sr, end: (startFrame + length) / sr };
+    };
+
     const handlePreviewLoop = async () => {
         if (!originalBuffer || !wavesurfer.current) return;
 
         // Toggle: If already previewing, stop and return to edit mode
         if (isPreviewingLoop) {
             if (currentBlob) await loadSourceBlob(currentBlob);
-            // Disable Loop
-            const media = wavesurfer.current.getMediaElement();
-            if (media) media.loop = false;
             setIsPreviewingLoop(false);
             return;
         }
 
         setIsProcessing(true);
         try {
-            const { start, end } = getEditRegion();
-            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
-
-            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
+            const { looped } = await renderLoop();
             const meta = { ...(metadata || {}), slicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = await audioProcessor.toWav(looped, meta);
 
             await loadPreviewBlob(newBlob);
 
-            // Enable Gapless Loop
-            const media = wavesurfer.current.getMediaElement();
-            if (media) media.loop = true;
-
-            wavesurfer.current.play();
+            // Loop the rendered buffer itself, wrapping on the sample: exactly the
+            // file Apply will write, seam included.
+            previewLoopBufferRef.current = looped;
+            void looper().play(looped, 0, looped.duration, 0);
+            setIsPlaying(true);
             if (previewingVersionId) {
                 previewAudio.pause();
                 setPreviewingVersionId(null);
@@ -2924,16 +3335,26 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (!originalBuffer || !wavesurfer.current) return;
         setIsProcessing(true);
         try {
-            const { start, end } = getEditRegion();
-            const trimmed = await audioProcessor.trim(originalBuffer, start, end);
-            const looped = await audioProcessor.applyCrossfadeLoop(trimmed, loopCrossfade);
-            
-            // Recalculate slice points for trim
-            const newSlicePoints = slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
-            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: tempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
+            const { looped, start, end } = await renderLoop();
+            const sync = loopMode === 'bpm' && !!loopBpm;
+
+            // Markers: the file's own moved with the trim, or (BPM Sync) a grid from the tempo.
+            const step = sync && loopMarkers === 'bars' ? barSeconds(loopBpm!) : sync && loopMarkers === 'beats' ? beatSeconds(loopBpm!) : 0;
+            const newSlicePoints = step
+                ? gridMarkers(looped.duration, step)
+                : slicePoints.filter(p => p >= start && p <= end).map(p => p - start);
+            const fileTempo = sync ? loopBpm : tempo;
+            const meta = { ...(metadata || {}), slicePoints: newSlicePoints, tempo: fileTempo || undefined, id: metadata?.id || slot.fileId || uuidv4(), processing: ['trimmed', 'looped'] };
             const newBlob = encodeWAV(looped, meta);
 
-            onSave(newBlob, looped.duration, `Loop (${loopCrossfade.toFixed(2)}s xfade)`, true, ['looped']);
+            let label = `Loop (${loopCrossfade.toFixed(2)}s xfade)`;
+            if (sync) {
+                const bars = looped.duration / barSeconds(loopBpm!);
+                const barsText = Math.abs(bars - Math.round(bars)) < 0.01 ? `${Math.round(bars)} bars` : `${bars.toFixed(2)} bars`;
+                const fade = SYNC_FADES.find(f => f.perBeat === syncFadePerBeat);
+                label = `Loop (${barsText} @ ${loopBpm} BPM, ${fade && syncFadeSeconds > 0 && start > 0 ? `${fade.label} fade` : 'no fade'})`;
+            }
+            onSave(newBlob, looped.duration, label, true, ['looped']);
 
             setHasNormalized(false);
             resetToolState('loop');
@@ -3197,7 +3618,17 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         if (progress < 0) progress = 0;
         if (progress > 1) progress = 1;
 
-        wavesurfer.current.seekTo(progress);
+        seekEditor(progress * wavesurfer.current.getDuration());
+    };
+
+    /**
+     * Every seek from the wave, ruler or overlays. While the looper plays, the
+     * audio is on Web Audio, so it is moved too (and keeps looping from there).
+     */
+    const seekEditor = (time: number) => {
+        if (!wavesurfer.current) return;
+        wavesurfer.current.setTime(time);
+        if (looperRef.current?.isPlaying) looperRef.current.seek(time);
     };
 
     const handleEditorScroll = () => {
@@ -3688,7 +4119,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                 tools={[
                                     { id: 'trim', group: 'Edit', label: 'Trim/Fade', icon: <Scissors size={13} />, description: 'Cut the ends, fade in and out', textColor: 'text-synthux-green', activeColor: 'bg-synthux-green', hasContent: isTrimDirty },
                                     { id: 'cutter', group: 'Edit', label: 'Cutter', icon: <Scissors size={13} />, description: 'Remove parts from the middle', textColor: 'text-amber-400', activeColor: 'bg-amber-500', hasContent: isCutterDirty },
-                                    { id: 'loop', group: 'Edit', label: 'Loop', icon: <Repeat size={13} />, description: 'Crossfade into a seamless loop', textColor: 'text-synthux-blue', activeColor: 'bg-synthux-blue', hasContent: false },
+                                    { id: 'loop', group: 'Edit', label: 'Loop', icon: <Repeat size={13} />, description: 'Seamless loops: free, or whole bars at a BPM', textColor: 'text-synthux-blue', activeColor: 'bg-synthux-blue', hasContent: false },
                                     { id: 'slicer', group: 'Edit', label: 'Slicer', icon: <Scissors size={13} className="rotate-90" />, description: 'Slice markers for the card', textColor: 'text-red-400', activeColor: 'bg-red-500', hasContent: isSlicerDirty },
                                     { id: 'stereo', group: 'Edit', label: 'Stereo', icon: <ArrowLeftRight size={13} />, description: 'Split or keep one side', textColor: 'text-purple-400', activeColor: 'bg-purple-500', hasContent: false },
                                     { id: 'automation', group: 'Level', label: 'Automation', icon: <Activity size={13} />, description: 'Draw the volume over time', textColor: 'text-orange-400', activeColor: 'bg-orange-500', hasContent: isAutomationDirty },
@@ -4020,52 +4451,94 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                     )}
 
                                     {/* Loop Settings Panel */}
-                                    {activeTool === 'loop' && (
+                                    {activeTool === 'loop' && (() => {
+                                        const chip = 'px-2 py-1 rounded text-[10px] font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed';
+                                        const idle = 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white';
+                                        const box = 'flex flex-wrap items-center gap-1 bg-black/40 p-1.5 rounded-lg border border-gray-800';
+                                        const tag = 'text-[9px] uppercase font-bold text-gray-600 mr-1';
+                                        const hint = (text: string) => ({ onMouseEnter: () => setHelpText(text), onMouseLeave: () => setHelpText("") });
+                                        const sync = loopMode === 'bpm';
+                                        const isDefault = sync
+                                            ? loopBarCount === null && loopMarkers === 'keep' && syncFadePerBeat === 0
+                                            : loopCrossfade === 0.2;
+                                        const selLen = regionState.end - regionState.start;
+                                        const bars = loopBpm ? selLen / barSeconds(loopBpm) : 0;
+                                        const onGrid = loopBpm ? Math.abs(bars - Math.round(bars)) < 0.002 && Math.round(bars) >= 1 : false;
+                                        const sourceLabel: Record<string, string> = { file: 'from file', name: 'from name', detected: 'detected', guess: 'guess', selection: 'from selection', manual: '' };
+                                        // The fade reaches back before the loop: there may be less audio there than it wants.
+                                        const preRoll = regionState.start;
+                                        const fadeShort = syncFadeSeconds > 0 && preRoll < syncFadeSeconds - 1e-4;
+
+                                        return (
+                                        <div className="flex flex-col gap-3">
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
-                                                <div className="flex flex-col gap-1 min-w-[12rem]">
-                                                    {(() => {
-                                                        const dur = regionState.end - regionState.start;
-                                                        const maxCrossfade = Math.min(10, dur / 2);
-                                                        const safeValue = Math.min(loopCrossfade, maxCrossfade);
-                                                        return (
-                                                            <>
-                                                                <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
-                                                                    <span>Loop Crossfade</span>
-                                                                    <span className="text-synthux-blue">{safeValue.toFixed(2)}s <span className="text-gray-600">/ {maxCrossfade.toFixed(2)}s</span></span>
-                                                                </div>
-                                                                <input
-                                                                    type="range" min="0" max={maxCrossfade} step="0.01" value={safeValue}
-                                                                    onChange={(e) => { setLoopCrossfade(Number(e.target.value)); handleDirtyChange(); }}
-                                                                    onDoubleClick={() => { setLoopCrossfade(0.2); handleDirtyChange(); }}
-                                                                    onMouseEnter={() => setHelpText("Set Loop Crossfade Duration (DBL-Click to Reset)")}
-                                                                    onMouseLeave={() => setHelpText("")}
-                                                                    className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
-                                                                />
-                                                            </>
-                                                        );
-                                                    })()}
-                                                </div>
+                                            {/* Mode */}
+                                            <div className="flex items-center bg-black/40 p-1 rounded-lg border border-gray-800">
+                                                {(['free', 'bpm'] as const).map(m => (
+                                                    <button key={m} onClick={() => { void handleLoopMode(m); }}
+                                                        className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-wider transition-colors ${loopMode === m ? 'bg-synthux-blue text-white' : 'text-gray-500 hover:text-white'}`}
+                                                        {...hint(m === 'free'
+                                                            ? "Free: any length; the crossfade folds the end over the start (the loop comes out shorter by the fade)"
+                                                            : "BPM Sync: the loop is whole bars at a tempo; the optional fade stays inside it")}
+                                                    >{m === 'free' ? 'Free' : 'BPM Sync'}</button>
+                                                ))}
                                             </div>
 
-                                            {originalBuffer && originalBuffer.duration > 42 && (
-                                                <>
-                                                    <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
-                                                    <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-gray-800">
-                                                        <div className="flex items-center gap-2 phone:flex-wrap">
-                                                            <input
-                                                                type="checkbox"
-                                                                id="loop-fit-42"
-                                                                checked={loopFitTo42}
-                                                                onChange={(e) => setLoopFitTo42(e.target.checked)}
-                                                                className="w-3 h-3 accent-synthux-blue"
-                                                            />
-                                                            <label htmlFor="loop-fit-42" className="text-[10px] font-bold uppercase text-gray-500 cursor-pointer select-none">
-                                                                Fit result to 42.00s
-                                                            </label>
-                                                        </div>
+                                            {!sync && (
+                                                <div className="flex items-center gap-4 phone:flex-wrap phone:gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                    <div className="flex flex-col gap-1 min-w-[12rem]">
+                                                        {(() => {
+                                                            const maxCrossfade = Math.min(10, selLen / 2);
+                                                            const safeValue = Math.min(loopCrossfade, maxCrossfade);
+                                                            return (
+                                                                <>
+                                                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-gray-500">
+                                                                        <span>Loop Crossfade</span>
+                                                                        <span className="text-synthux-blue">{safeValue.toFixed(2)}s <span className="text-gray-600">/ {maxCrossfade.toFixed(2)}s</span></span>
+                                                                    </div>
+                                                                    <input
+                                                                        type="range" min="0" max={maxCrossfade} step="0.01" value={safeValue}
+                                                                        onChange={(e) => { setLoopCrossfade(Number(e.target.value)); handleDirtyChange(); }}
+                                                                        onDoubleClick={() => { setLoopCrossfade(0.2); handleDirtyChange(); }}
+                                                                        onMouseEnter={() => setHelpText("Set Loop Crossfade Duration (DBL-Click to Reset)")}
+                                                                        onMouseLeave={() => setHelpText("")}
+                                                                        className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+                                                                    />
+                                                                </>
+                                                            );
+                                                        })()}
                                                     </div>
-                                                </>
+                                                </div>
+                                            )}
+
+                                            {!sync && originalBuffer && originalBuffer.duration > 42 && (
+                                                <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-gray-800">
+                                                    <div className="flex items-center gap-2 phone:flex-wrap">
+                                                        <input
+                                                            type="checkbox"
+                                                            id="loop-fit-42"
+                                                            checked={loopFitTo42}
+                                                            onChange={(e) => setLoopFitTo42(e.target.checked)}
+                                                            className="w-3 h-3 accent-synthux-blue"
+                                                        />
+                                                        <label htmlFor="loop-fit-42" className="text-[10px] font-bold uppercase text-gray-500 cursor-pointer select-none">
+                                                            Fit result to 42.00s
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {sync && (
+                                                <div className="flex flex-wrap items-center gap-2 bg-black/40 p-1.5 rounded-lg border border-gray-800">
+                                                    <BpmInput value={loopBpm} onChange={(v) => setLoopTempo(v, 'manual')} />
+                                                    {sourceLabel[loopBpmSource] && (
+                                                        <span className={`text-[9px] uppercase font-bold ${loopBpmSource === 'guess' ? 'text-yellow-500' : 'text-gray-500'}`}>{sourceLabel[loopBpmSource]}</span>
+                                                    )}
+                                                    <button onClick={handleDetectTempo} className={`${chip} ${idle} flex items-center gap-1`} {...hint("Find the tempo in the selection (or the whole file if the selection is short)")}><Activity size={11} /> Detect</button>
+                                                    <button onClick={handleTempoFromSelection} className={`${chip} ${idle}`} {...hint("The selection is a loop: take the tempo that makes it whole bars")}>From Selection</button>
+                                                    <button onClick={() => loopBpm && setLoopTempo(tidyBpm(loopBpm / 2), 'manual')} disabled={!loopBpm || loopBpm / 2 < LOOP_BPM_MIN} className={`${chip} ${idle}`} {...hint("Half the tempo")}>÷2</button>
+                                                    <button onClick={() => loopBpm && setLoopTempo(tidyBpm(loopBpm * 2), 'manual')} disabled={!loopBpm || loopBpm * 2 > LOOP_BPM_MAX} className={`${chip} ${idle}`} {...hint("Double the tempo")}>×2</button>
+                                                </div>
                                             )}
 
                                             <div className="h-6 w-px bg-gray-800 phone:hidden"></div>
@@ -4081,7 +4554,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                 </button>
                                                 <button onClick={handleApplyLoop}
                                                     className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-gray-800 hover:bg-green-600 text-green-400 hover:text-white border border-green-900/50 transition-colors"
-                                                    onMouseEnter={() => setHelpText("Apply Loop Crossfade")}
+                                                    onMouseEnter={() => setHelpText(sync ? "Apply the loop" : "Apply Loop Crossfade")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><Check size={12} /> Apply</button>
                                                 <button onClick={() => {
@@ -4089,17 +4562,86 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                         loadSourceBlob(currentBlob);
                                                         setIsPreviewingLoop(false);
                                                     }
-                                                    setLoopCrossfade(0.2);
+                                                    if (sync) {
+                                                        setLoopBarCount(null);
+                                                        setLoopMarkers('keep');
+                                                        setSyncFadePerBeat(0);
+                                                    } else {
+                                                        setLoopCrossfade(0.2);
+                                                    }
                                                     handleDirtyChange();
                                                 }}
-                                                    disabled={loopCrossfade === 0.2}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${loopCrossfade === 0.2 ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
+                                                    disabled={isDefault}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${isDefault ? 'opacity-50 cursor-not-allowed bg-gray-900 text-gray-600 border border-gray-800' : 'bg-gray-800 hover:bg-red-900/50 text-red-400 border border-transparent hover:border-red-900/30'}`}
                                                     onMouseEnter={() => setHelpText("Reset Loop Settings")}
                                                     onMouseLeave={() => setHelpText("")}
                                                 ><RotateCcw size={12} /> Reset Tool</button>
                                             </div>
                                         </div>
-                                    )}
+
+                                        {/* BPM Sync, row 2: length in bars, where it starts, the fade, markers */}
+                                        {sync && (
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <div className={box}>
+                                                    <span className={tag}>Bars</span>
+                                                    {LOOP_BAR_CHOICES.map(n => (
+                                                        <button key={n} onClick={() => handleLoopBars(n)} disabled={!barsFit(n)}
+                                                            className={`${chip} ${loopBarCount === n ? 'bg-synthux-blue text-white' : idle}`}
+                                                            {...hint(!loopBpm ? "Set a BPM first" : barsFit(n) ? `Lock the loop to ${n} bar${n > 1 ? 's' : ''} (${(n * barSeconds(loopBpm)).toFixed(3)}s)` : `${n} bars don't fit`)}
+                                                        >{n}</button>
+                                                    ))}
+                                                    {loopBpm && (
+                                                        <span className={`ml-2 text-[10px] font-bold ${onGrid ? 'text-green-400' : 'text-gray-500'}`}
+                                                            {...hint(onGrid ? "The loop is a whole number of bars" : "The loop is not a whole number of bars at this tempo")}>
+                                                            {bars.toFixed(2)} bars{onGrid ? ' ✓' : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className={box}>
+                                                    <span className={tag}>Start</span>
+                                                    <button onClick={() => handleNudgeBeat(-1)} disabled={!loopBpm} className={`${chip} ${idle}`} {...hint("Move the loop one beat earlier")}><ChevronLeft size={11} /></button>
+                                                    <button onClick={handleSnapToHit} className={`${chip} ${idle} flex items-center gap-1`} {...hint("Move the loop to start on the nearest hit")}><Magnet size={11} /> Snap to Hit</button>
+                                                    <button onClick={() => handleNudgeBeat(1)} disabled={!loopBpm} className={`${chip} ${idle}`} {...hint("Move the loop one beat later")}><ChevronRight size={11} /></button>
+                                                </div>
+
+                                                <div className={box}>
+                                                    <span className={tag}>Fade</span>
+                                                    <button onClick={() => { setSyncFadePerBeat(0); setHasLoopInteracted(true); }}
+                                                        className={`${chip} ${syncFadePerBeat === 0 ? 'bg-synthux-blue text-white' : idle}`}
+                                                        {...hint("No fade: a clean cut on the grid")}>Off</button>
+                                                    {SYNC_FADES.map(f => {
+                                                        const sec = loopBpm ? beatSeconds(loopBpm) / f.perBeat : 0;
+                                                        return (
+                                                            <button key={f.label} onClick={() => { setSyncFadePerBeat(f.perBeat); setHasLoopInteracted(true); }}
+                                                                disabled={!loopBpm}
+                                                                className={`${chip} ${syncFadePerBeat === f.perBeat ? 'bg-synthux-blue text-white' : idle}`}
+                                                                {...hint(`The last ${f.label} note (${sec.toFixed(3)}s) blends into what led into bar 1, so the loop runs on into its downbeat. Needs that much audio before the loop start.`)}
+                                                            >{f.label}</button>
+                                                        );
+                                                    })}
+                                                    {fadeShort && (
+                                                        <span className="ml-1 text-[9px] uppercase font-bold text-yellow-500"
+                                                            {...hint("The fade blends in the audio before the loop start, and there isn't enough of it here")}>
+                                                            {preRoll < 0.001 ? 'no room before start' : `only ${(preRoll * 1000).toFixed(0)} ms before start`}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className={box}>
+                                                    <span className={tag}>Markers</span>
+                                                    {(['keep', 'bars', 'beats'] as const).map(m => (
+                                                        <button key={m} onClick={() => { setLoopMarkers(m); setHasLoopInteracted(true); }} disabled={m !== 'keep' && !loopBpm}
+                                                            className={`${chip} uppercase ${loopMarkers === m ? 'bg-red-600 text-white' : idle}`}
+                                                            {...hint(m === 'keep' ? "Keep the file's own slice markers" : `On Apply, one slice marker per ${m === 'bars' ? 'bar' : 'beat'}`)}
+                                                        >{m === 'keep' ? 'Keep' : `Per ${m === 'bars' ? 'Bar' : 'Beat'}`}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        </div>
+                                        );
+                                    })()}
 
                                     {/* EQ Panel */}
                                     {activeTool === 'eq' && (
@@ -4905,7 +5447,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         currentTime={currentTime}
                                         points={automationPoints}
                                         onSeek={(t) => {
-                                            if (wavesurfer.current) wavesurfer.current.seekTo(t / editorDuration);
+                                            seekEditor(t);
                                         }}
                                         onPointsChange={(pts) => {
                                             setAutomationPoints(pts);
@@ -4949,9 +5491,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                                     setActiveTool('automation');
                                                 }
                                             }}
-                                            onSeek={(t) => {
-                                                if (wavesurfer.current) wavesurfer.current.setTime(t);
-                                            }}
+                                            onSeek={seekEditor}
                                             smooth={smooth}
                                             snapPoints={slicePoints}
                                             snapToSlices={snapToSlices}
@@ -5079,19 +5619,31 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                         {/* Loop Overlay */}
                                         {activeTool === 'loop' && editorDuration > 0 && (
                                             <div className="absolute inset-0 z-50 pointer-events-none" style={{ width: contentWidth, height: waveHeight }}>
-                                                <LoopOverlay
-                                                    width={contentWidth}
-                                                    height={waveHeight}
-                                                    duration={editorDuration}
-                                                    region={regionState}
-                                                    crossfade={loopCrossfade}
-                                                    onCrossfadeChange={(val) => {
-                                                        setLoopCrossfade(val);
-                                                        handleDirtyChange();
-                                                    }}
-                                                    active={activeTool === 'loop'}
-                                                    isPreview={isPreviewingLoop}
-                                                />
+                                                {loopMode === 'bpm' ? (
+                                                    <SyncLoopOverlay
+                                                        width={contentWidth}
+                                                        height={waveHeight}
+                                                        duration={editorDuration}
+                                                        region={regionState}
+                                                        bpm={loopBpm}
+                                                        fade={Math.min(syncFadeSeconds, regionState.start)}
+                                                        isPreview={isPreviewingLoop}
+                                                    />
+                                                ) : (
+                                                    <LoopOverlay
+                                                        width={contentWidth}
+                                                        height={waveHeight}
+                                                        duration={editorDuration}
+                                                        region={regionState}
+                                                        crossfade={loopCrossfade}
+                                                        onCrossfadeChange={(val) => {
+                                                            setLoopCrossfade(val);
+                                                            handleDirtyChange();
+                                                        }}
+                                                        active={activeTool === 'loop'}
+                                                        isPreview={isPreviewingLoop}
+                                                    />
+                                                )}
                                             </div>
                                         )}
 
