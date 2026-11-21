@@ -9,6 +9,14 @@
     "pinned": true
   },
   {
+    "id": "loop-bpm",
+    "title": "Loops in time: BPM Sync in the editor (v4.5.0)",
+    "date": "2026-11-21",
+    "file": "4.5.0-loop-bpm.md",
+    "image": "images/loopfadebpmupdate.jpg",
+    "category": "Feature"
+  },
+  {
     "id": "citizen-dj",
     "title": "Citizen DJ: Library of Congress clips in the sample browser (v4.4.0)",
     "date": "2026-11-06",
