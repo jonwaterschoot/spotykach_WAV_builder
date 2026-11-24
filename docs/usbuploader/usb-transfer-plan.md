@@ -192,13 +192,7 @@ The USB firmware is a separate, unreleased branch. Nothing we merge to `main` ma
 
 **Tracking upstream**
 
-> **Since Oct 13, 2026:** Synthux publishes the host side as the npm package `@synthuxacademy/spotykach-transfer`, and `skLink.ts` (our port) is gone. The package is the protocol code; changes to it would go as a PR to the Spotykach repo, and none are planned. The bullets below are the earlier approach. Current: `src/lib/usb/PROTOCOL.md`.
-
-- Pin the commit in one place: `src/lib/usb/PROTOCOL.md` (or a header comment in `skLink.ts`) holds the upstream commit and protocol version our code was ported from.
-- All protocol code lives in `src/lib/usb/skLink.ts` (frames, CRC, commands) and `src/lib/usb/usbBackend.ts` (mapping to `CardBackend`). A protocol change touches only these.
-- Check the branch before each USB work session: `git ls-remote https://github.com/Synthux-Academy/Spotykach.git refs/heads/uploader` against the pinned commit; if it moved, diff `docs/usb-transfer.md`, `src/transfer/protocol.h` and `web/index.html`.
-- Accept HELLO `proto_major == 1` only. Log `proto_minor` and `fw_version` so bug reports show which firmware was involved.
-- ~~Share our format notes with Vlad~~: obsolete, slot files will carry only what the package writes.
+Since Oct 13, 2026 the protocol code is the npm package `@synthuxacademy/spotykach-transfer` (and since November, `@synthuxacademy/usb-transfer` under it); our port `skLink.ts` is gone. Which version we pin, what each package does, the fixes we keep locally and the checks for a bump: [src/lib/usb/PROTOCOL.md](../../src/lib/usb/PROTOCOL.md).
 
 **Compatibility test checklist (run before each release that touches the header)**
 

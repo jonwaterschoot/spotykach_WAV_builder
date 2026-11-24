@@ -5,10 +5,14 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 ## Now
 
 **USB**
-- [ ] Update to `spotykach-transfer` 1.3.0 (built on [`usb-transfer`](https://github.com/Synthux-Academy/usb-transfer)) once usb-transfer [#1](https://github.com/Synthux-Academy/usb-transfer/pull/1) is published. Check that `fresh` reaches `Link.open`, our step matching and the macOS HELLO retry. Device test on Windows, macOS and Linux. → [PROTOCOL.md](src/lib/usb/PROTOCOL.md)
+- [ ] Waiting on Vlad: [Spotykach #22](https://github.com/Synthux-Academy/Spotykach/pull/22) (`SkLink.open` passes `fresh` on, for the Linux wait from usb-transfer [#1](https://github.com/Synthux-Academy/usb-transfer/pull/1)) merged and published as `spotykach-transfer` 1.3.1.
+- [ ] Then bump the pin from 1.2.0 to 1.3.1, the first version on `usb-transfer`. Follow "Bumping the package" (step names, `check:wav`, device test on Windows, macOS and Linux). → [PROTOCOL.md](src/lib/usb/PROTOCOL.md#bumping-the-package)
 - [ ] Device test on firmware 1.4.0: `config.txt` over USB, then a USB build's `README.md` and `SK/project.json` in a card reader. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 - [ ] Bay Mud: Edge connects, his Chrome never gets MIDI access. Next: a Chrome Guest window. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#round-3-bay-mud-oct-28)
-- [ ] macOS first HELLO: propose the package fix to `usb-transfer` (the app has had a workaround since 4.3.1). → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
+- [ ] After Spotykach [#21](https://github.com/Synthux-Academy/Spotykach/pull/21) is merged, one PR each (proposed to Vlad Nov 24, no answer yet):
+  - [ ] `usb-transfer`: macOS first HELLO, a ~1 s first try and a reopen in `handshake()`. Don't rename "no serial port granted…", our step pattern matches it. Remove `withHelloRetry` once published and tested on a Mac. → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
+  - [ ] `spotykach-transfer`: 4-byte alignment check in `checkUploadable`. Then ours in `usbBackend.validate` can go.
+  - [ ] Optional, `usb-transfer`: serial plug and unplug events as `onStep` lines in `connect()`.
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
 **Other**
