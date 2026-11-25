@@ -10,10 +10,14 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
   - [ ] Linux: not run, the test laptop broke. One user reports the `dialout` fix works for them. Still open if a machine turns up: first **without** `dialout` (error names it, `UsbLinuxHelp` shows, its command and restart connect), then a first connect right after the switch (the ModemManager wait).
   - macOS: not tested, assumed to work unless reported
 - [ ] Bay Mud: Edge connects, his Chrome never gets MIDI access. Next: a Chrome Guest window. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#round-3-bay-mud-oct-28)
-- [ ] Now that Spotykach [#21](https://github.com/Synthux-Academy/Spotykach/pull/21) and [#22](https://github.com/Synthux-Academy/Spotykach/pull/22) are merged, one PR each (proposed to Vlad Nov 24):
-  - [ ] `usb-transfer`: macOS first HELLO, a ~1 s first try and a reopen in `handshake()`. PR [usb-transfer #2](https://github.com/Synthux-Academy/usb-transfer/pull/2) open (Nov 25), CI passes; js 1.2.0, then `spotykach-transfer` needs a release on it. Don't rename "no serial port granted…", our step pattern matches it. Remove `withHelloRetry` once published and tested on a Mac. → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
-  - [x] `spotykach-transfer`: 4-byte alignment check in `checkUploadable`. Not proposed: firmware 1.4.0 and later play misaligned audio (`Card::_read_from`), and USB uploads need 1.4.0. Ours in `usbBackend.validate` is removed (Nov 25).
-  - [ ] Optional, `usb-transfer`: serial plug and unplug events as `onStep` lines in `connect()`.
+- [ ] Upstream PRs to `usb-transfer`, sent to Vlad Nov 26. Both bump js to 1.2.0: the second to merge takes 1.3.0.
+  - [ ] [#2](https://github.com/Synthux-Academy/usb-transfer/pull/2) macOS first HELLO: a ~1 s first try, then a reopen in `handshake()`. CI passes. → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
+  - [ ] [#3](https://github.com/Synthux-Academy/usb-transfer/pull/3) serial plug and unplug events as `onStep` lines in `connect()`. Optional. CI passes.
+  - [ ] When merged and published to npm: `spotykach-transfer` takes `usb-transfer` `^1.1.0`, so `npm update @synthuxacademy/usb-transfer` here picks it up without a new `spotykach-transfer`. Check `package-lock.json` shows the new version, then `npm run check:wav`.
+  - [ ] After #3 is in: remove `withSerialEvents` in [usbSession.ts](src/lib/usb/usbSession.ts), or every event shows twice in diagnostics.
+  - [ ] After #2 is in: ask a Mac user to connect once, first click, and send Copy diagnostics. If it connects in about 3 s with "no answer to the first HELLO … reopening the port", remove `withHelloRetry` in [usbSession.ts](src/lib/usb/usbSession.ts). Don't rename "no serial port granted…" upstream, our step pattern matches it.
+  - [ ] Ask Vlad to bump the `lib/usb-transfer` submodule in Spotykach, so the Manager page gets both too.
+  - [x] Not proposed: a 4-byte alignment check in `spotykach-transfer`'s `checkUploadable`. Firmware 1.4.0 and later play misaligned audio (`Card::_read_from`), and USB uploads need 1.4.0. Ours in `usbBackend.validate` is removed (Nov 25).
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
 **Other**
