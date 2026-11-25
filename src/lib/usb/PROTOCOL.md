@@ -41,7 +41,7 @@ The pin is exact so that a new package version comes in only through a deliberat
 | | Where it lives | Stays? |
 | --- | --- | --- |
 | macOS HELLO retry: a second plain `connect()` when the first HELLO goes unanswered (`withHelloRetry` in `usbSession.ts`) | here | No: proposed for `usb-transfer`'s `handshake()`. Remove ours once that is published and tested on a Mac. [Proposal](../../../docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package) |
-| Alignment check: `usbBackend.validate` refuses audio that doesn't start on a 4-byte boundary (misaligned audio: noise, then a dead engine) | here | No: proposed for `checkUploadable`. The package's `encodeWav` always aligns, but its check lets other files through |
+| Alignment check: removed Nov 25. Firmware 1.4.0 and later read misaligned audio safely, and USB uploads need 1.4.0. Only a card that later goes into a 1.3.x Spotykach could still hit it, with a file WAV Builder didn't export | — | Not needed |
 | `ICMT` tail read, for our id and hash in files from 4.1.3 and earlier | here | Yes: `ICMT` is WAV Builder's own |
 | Diagnostics: the trace, step names matched from `onStep` text, serial plug and unplug events, "Copy diagnostics" | here | Yes. The plug and unplug lines could also go upstream as `onStep` lines (optional) |
 

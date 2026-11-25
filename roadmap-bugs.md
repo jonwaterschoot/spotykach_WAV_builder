@@ -11,8 +11,8 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
   - macOS: not tested, assumed to work unless reported
 - [ ] Bay Mud: Edge connects, his Chrome never gets MIDI access. Next: a Chrome Guest window. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#round-3-bay-mud-oct-28)
 - [ ] Now that Spotykach [#21](https://github.com/Synthux-Academy/Spotykach/pull/21) and [#22](https://github.com/Synthux-Academy/Spotykach/pull/22) are merged, one PR each (proposed to Vlad Nov 24):
-  - [ ] `usb-transfer`: macOS first HELLO, a ~1 s first try and a reopen in `handshake()`. Don't rename "no serial port granted…", our step pattern matches it. Remove `withHelloRetry` once published and tested on a Mac. → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
-  - [ ] `spotykach-transfer`: 4-byte alignment check in `checkUploadable`. Then ours in `usbBackend.validate` can go.
+  - [ ] `usb-transfer`: macOS first HELLO, a ~1 s first try and a reopen in `handshake()`. PR [usb-transfer #2](https://github.com/Synthux-Academy/usb-transfer/pull/2) open (Nov 25), CI passes; js 1.2.0, then `spotykach-transfer` needs a release on it. Don't rename "no serial port granted…", our step pattern matches it. Remove `withHelloRetry` once published and tested on a Mac. → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
+  - [x] `spotykach-transfer`: 4-byte alignment check in `checkUploadable`. Not proposed: firmware 1.4.0 and later play misaligned audio (`Card::_read_from`), and USB uploads need 1.4.0. Ours in `usbBackend.validate` is removed (Nov 25).
   - [ ] Optional, `usb-transfer`: serial plug and unplug events as `onStep` lines in `connect()`.
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 

@@ -259,7 +259,7 @@ export class UsbBackend implements CardBackend {
         }
 
         const bytes = new Uint8Array(await blob.arrayBuffer());
-        this.validate(tape, slot, bytes, info);
+        this.validate(tape, slot, bytes);
         await this.link.upload(this.tapeIndex(tape), this.deviceSlot(slot), bytes, { onProgress, signal });
 
         // What LIST would now say, without paying for a LIST.
@@ -324,20 +324,16 @@ export class UsbBackend implements CardBackend {
     }
 
     /**
-     * What the device would reject or play wrong, with a message that says why.
-     * Format, length and cue count are the package's `checkUploadable` (the same
-     * check `upload()` runs); the alignment check is ours: our files carry `ICMT`
-     * before the audio, which the package's own `encodeWav` never writes.
+     * What the device would reject, with a message that names the slot: the
+     * package's `checkUploadable` (format, length, cue count), the same check
+     * `upload()` runs. No alignment check: firmware 1.4.0 and later, the only
+     * ones that take USB uploads, play audio that doesn't start on a 4-byte
+     * boundary (`Card::_read_from`). WAV Builder's own files are aligned anyway.
      */
-    private validate(tape: TapeColor, slot: number, bytes: Uint8Array, info: WavHeaderInfo) {
-        const where = `${tape} ${slot}`;
+    private validate(tape: TapeColor, slot: number, bytes: Uint8Array) {
         const problems = checkUploadable(bytes, this.hello);
         if (problems.length > 0) {
-            throw new Error(`${where}: ${problems.join(' ')} Export it from WAV Builder first.`);
-        }
-        if (info.dataOffset !== undefined && info.dataOffset % 4 !== 0) {
-            // The SD DMA can't read misaligned audio: noise, then a dead engine.
-            throw new Error(`${where}: the audio starts at byte ${info.dataOffset}, which Spotykach can't play. Re-export the file.`);
+            throw new Error(`${tape} ${slot}: ${problems.join(' ')} Export it from WAV Builder first.`);
         }
     }
 
