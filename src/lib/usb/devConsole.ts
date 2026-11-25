@@ -66,7 +66,7 @@ const api = {
 
     /** The last connect attempt, step by step. */
     diagnostics() {
-        const text = usbSession.diagnostics();
+        const text = usbSession.diagnostics(true);
         console.info(text);
         return text;
     },

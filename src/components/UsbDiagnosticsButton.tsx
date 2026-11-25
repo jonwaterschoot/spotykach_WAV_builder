@@ -26,7 +26,7 @@ export const UsbDiagnosticsButton: React.FC<{ className?: string }> = ({ classNa
     }, [open]);
 
     const copy = () => {
-        void navigator.clipboard?.writeText(usbSession.diagnostics()).then(() => {
+        void navigator.clipboard?.writeText(usbSession.diagnostics(true)).then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         });

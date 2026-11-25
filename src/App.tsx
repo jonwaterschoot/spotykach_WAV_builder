@@ -6110,6 +6110,7 @@ function App({ onExitToHub }: AppProps) {
           projects={foundProjects}
           currentProjectName={currentProjectName}
           workHandle={workHandle}
+          sdHandle={sdHandle}
         />
       </Suspense>
 

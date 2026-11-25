@@ -5,11 +5,12 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 ## Now
 
 **USB**
-- [ ] Waiting on Vlad: [Spotykach #22](https://github.com/Synthux-Academy/Spotykach/pull/22) (`SkLink.open` passes `fresh` on, for the Linux wait from usb-transfer [#1](https://github.com/Synthux-Academy/usb-transfer/pull/1)) merged and published as `spotykach-transfer` 1.3.1.
-- [ ] Then bump the pin from 1.2.0 to 1.3.1, the first version on `usb-transfer`. Follow "Bumping the package" (step names, `check:wav`, device test on Windows, macOS and Linux). → [PROTOCOL.md](src/lib/usb/PROTOCOL.md#bumping-the-package)
-- [ ] Device test on firmware 1.4.0: `config.txt` over USB, then a USB build's `README.md` and `SK/project.json` in a card reader. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
+- [ ] Device test round on firmware [1.4.1](https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.1) (Nov 25, the first with `usb-transfer` on the device side too), one for both: `spotykach-transfer` 1.3.1 (the first on `usb-transfer`; pinned, local checks pass) and the `config.txt` fix. Connect, upload, download, `config.txt` over USB, then a USB build's `README.md` and `SK/project.json` in a card reader. → [device-test-plan.md, round 3](docs/usbuploader/device-test-plan.md#round-3-firmware-141-and-spotykach-transfer-131)
+  - [x] Windows 11 (Nov 25): passed, `config.txt` applied on the device after a power cycle.
+  - [ ] Linux: not run, the test laptop broke. One user reports the `dialout` fix works for them. Still open if a machine turns up: first **without** `dialout` (error names it, `UsbLinuxHelp` shows, its command and restart connect), then a first connect right after the switch (the ModemManager wait).
+  - macOS: not tested, assumed to work unless reported
 - [ ] Bay Mud: Edge connects, his Chrome never gets MIDI access. Next: a Chrome Guest window. → [debugging_serialnotstarting.md](docs/usbuploader/debugging_serialnotstarting.md#round-3-bay-mud-oct-28)
-- [ ] After Spotykach [#21](https://github.com/Synthux-Academy/Spotykach/pull/21) is merged, one PR each (proposed to Vlad Nov 24, no answer yet):
+- [ ] Now that Spotykach [#21](https://github.com/Synthux-Academy/Spotykach/pull/21) and [#22](https://github.com/Synthux-Academy/Spotykach/pull/22) are merged, one PR each (proposed to Vlad Nov 24):
   - [ ] `usb-transfer`: macOS first HELLO, a ~1 s first try and a reopen in `handshake()`. Don't rename "no serial port granted…", our step pattern matches it. Remove `withHelloRetry` once published and tested on a Mac. → [debugging_mac_first_hello.md](docs/usbuploader/debugging_mac_first_hello.md#proposal-for-the-package)
   - [ ] `spotykach-transfer`: 4-byte alignment check in `checkUploadable`. Then ours in `usbBackend.validate` can go.
   - [ ] Optional, `usb-transfer`: serial plug and unplug events as `onStep` lines in `connect()`.
@@ -37,6 +38,7 @@ Details and line references: [docs/optimization-plan.md](docs/optimization-plan.
 5. `exportUtils.ts`, then `App.tsx`, never in one pass.
 6. Lint: make `no-explicit-any`, `no-unused-vars` and `ban-ts-comment` warnings, so errors mean something.
 7. The two ComparisonTables: share the preview logic and row layout. Low priority.
+8. `usbSession.ts` says the USB package loads as its own chunk on connect. It doesn't: `manualChunks` puts it in `vendor`, and `slotFile.ts` imports it anyway. Fix the comment, or split it if the size matters. Low priority.
 
 ## Ideas
 

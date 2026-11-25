@@ -217,15 +217,19 @@ export const usbSession = {
         }
     },
 
-    /** The last connect attempt, step by step, with the browser and app version. */
-    diagnostics(): string {
+    /**
+     * The last connect attempt, step by step, with the browser and app version.
+     * `copied` stamps when it was taken, for the clipboard only: the live view
+     * reads this every half second and would show a clock.
+     */
+    diagnostics(copied = false): string {
         return [
             `WAV Builder ${typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '?'}`,
             navigator.userAgent,
             `status: ${state.status}${state.error ? ` (${state.error})` : ''}`,
             '',
             // When it was copied: a step that hasn't answered by then still hadn't
-            ...(trace.length ? [...trace, `${elapsed()} diagnostics copied`] : ['No connect attempt yet.']),
+            ...(trace.length ? [...trace, ...(copied ? [`${elapsed()} diagnostics copied`] : [])] : ['No connect attempt yet.']),
         ].join('\n');
     },
 

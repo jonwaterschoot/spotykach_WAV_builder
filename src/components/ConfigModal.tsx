@@ -62,7 +62,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         try {
             const targetHandle = sdHandle || workHandle;
             if (!targetHandle) {
-                alert("No SD card / Workspace folder is currently open. Please open your SD card root first, or use the Download button.");
+                alert("No SD card or work folder is open. Open your SD card root first, or use the Download button.");
                 return;
             }
             if (!await ensureWritable(targetHandle)) {
@@ -70,7 +70,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 return;
             }
             await writeConfigToCard(targetHandle, config);
-            setSaveStatus(sdHandle ? "Saved to Hardware SD card!" : "Saved to SD (Work Folder)!");
+            setSaveStatus(sdHandle ? `Saved to ${sdHandle.name}/SK/config.txt` : "Saved to the work folder, not the card");
         } catch (e) {
             console.error("Failed to save to SD", e);
             alert("Failed to save to SD. Make sure you have granted write permissions.");
@@ -140,7 +140,9 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                             onClick={handleSaveToSD}
                             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-synthux-blue text-black font-bold rounded-lg hover:scale-[1.02] transition-all text-[11px] uppercase tracking-wider"
                         >
-                            <HardDrive size={14} strokeWidth={3} /> Save to SD Card
+                            {/* Without a card open the save lands in the work folder, which the
+                                device never reads: the label says so rather than promising the card. */}
+                            <HardDrive size={14} strokeWidth={3} /> {sdHandle ? 'Save to SD Card' : 'Save to work folder'}
                         </button>
                         <button
                             onClick={handleDownloadConfig}

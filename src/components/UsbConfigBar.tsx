@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { AlertTriangle, Check, FileDown, HardDrive, Loader, Unplug, Usb } from 'lucide-react';
+import { AlertTriangle, Check, FileDown, HardDrive, Info, Loader, Unplug, Usb } from 'lucide-react';
 import { useUsbSession, usbSession } from '../lib/usb/usbSession';
 import type { UsbBackend } from '../lib/usb/usbBackend';
 import { USB_FIRMWARE, usbTransferSupported, useUsbTransferEnabled } from '../lib/usb/flag';
 import { generateConfigText, parseConfigText } from '../utils/configText';
 import type { ProjectConfig } from '../types';
 import { UsbDiagnosticsButton } from './UsbDiagnosticsButton';
+import { logger } from '../utils/logger';
 
 /**
  * `config.txt` over Spotykach's rear USB, for the config editors (Config mode and
@@ -25,11 +26,20 @@ interface UsbConfigBarProps {
 
 type Action = 'read' | 'write';
 
+/** A finished action, in the USB diagnostics trace and the app's Logs window both. */
+const record = (line: string, level: 'info' | 'error' = 'info') => {
+    usbSession.note(line);
+    logger[level](`USB: ${line}`);
+};
+
 export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDone }) => {
     const enabled = useUsbTransferEnabled();
     const usb = useUsbSession();
     const [busy, setBusy] = useState<Action | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
+    // Stays up after a write, through Disconnect too: leaving transfer mode doesn't
+    // apply the file, only a power cycle does, and that's easy to expect otherwise.
+    const [written, setWritten] = useState(false);
     // What was clicked before the browser asked for the port, so Authorise finishes it.
     const pending = useRef<Action | null>(null);
 
@@ -46,9 +56,12 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
             if (card && !parsed) throw new Error('The config.txt on Spotykach could not be read.');
             // Nothing on the device leaves the settings on screen as they are, like the card reader does.
             if (parsed) onRead(parsed);
+            record(parsed ? 'read config.txt' : 'read config.txt: none on the device');
             onDone?.(parsed ? 'Read config.txt from Spotykach over USB.' : 'Spotykach has no config.txt yet. Write these settings to create it.');
         } else {
             await backend.writeConfig(generateConfigText(config), 'always');
+            record('wrote SK/config.txt (applies from the next power-on)');
+            setWritten(true);
             onDone?.('Written to SK/config.txt on Spotykach. It applies from the next power-on.');
         }
     };
@@ -56,6 +69,7 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
     const start = async (action: Action) => {
         setBusy(action);
         setProblem(null);
+        setWritten(false);
         try {
             const backend = usb.backend?.connected ? usb.backend : await usbSession.connect();
             if (!backend) {
@@ -66,22 +80,27 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
             pending.current = null;
             await run(action, backend);
         } catch (e) {
-            setProblem(e instanceof Error ? e.message : String(e));
+            const message = e instanceof Error ? e.message : String(e);
+            record(`config.txt ${action} failed: ${message}`, 'error');
+            setProblem(message);
         } finally {
             setBusy(null);
         }
     };
 
     const authorize = async () => {
-        setBusy(pending.current ?? 'read');
+        const action = pending.current;
+        setBusy(action ?? 'read');
         setProblem(null);
+        setWritten(false);
         try {
             const backend = await usbSession.authorize();
-            const action = pending.current;
             pending.current = null;
             if (backend && action) await run(action, backend);
         } catch (e) {
-            setProblem(e instanceof Error ? e.message : String(e));
+            const message = e instanceof Error ? e.message : String(e);
+            record(`config.txt ${action ?? 'connect'} failed: ${message}`, 'error');
+            setProblem(message);
         } finally {
             setBusy(null);
         }
@@ -138,6 +157,12 @@ export const UsbConfigBar: React.FC<UsbConfigBarProps> = ({ config, onRead, onDo
                     )}
                 </div>
             </div>
+            {written && (
+                <p className="flex items-start gap-1.5 text-[11px] text-synthux-yellow">
+                    <Info size={12} className="shrink-0 mt-0.5" />
+                    <span>Written to SK/config.txt. Spotykach reads it at power-on only: switch it off and on again to apply the new settings. Leaving USB mode doesn&apos;t apply them.</span>
+                </p>
+            )}
             <UsbDiagnosticsButton />
         </div>
     );

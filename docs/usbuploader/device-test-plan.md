@@ -2,6 +2,8 @@
 
 Round 1 tests the `feat/usb-transfer` branch after the switch to `@synthuxacademy/spotykach-transfer` (commit `e1696e7`). Write the result after each step: ok, or what happened.
 
+**Current round:** [Round 3](#round-3-firmware-141-and-spotykach-transfer-131), firmware 1.4.1 with `spotykach-transfer` 1.3.1. Rounds 1 and 2 (Oct 13, beta firmware) stay below for their results.
+
 ## Builds
 
 | What | Build | Where |
@@ -179,3 +181,94 @@ USB transfer on in Settings ▸ System. Hub ▸ Starter Presets ▸ Write to SD 
 - **B: passed.**
 - **C: passed.** C12 isn't a bug: `?usb=1` is remembered in this browser, so the controls stay until `?usb=0`. Since then the switch is in Settings ▸ System, with a confirm window that links to the firmware.
 - **D:** not run yet.
+
+## Round 3: firmware 1.4.1 and spotykach-transfer 1.3.1
+
+Both sides of the connection now run the shared `usb-transfer` code: the device since firmware 1.4.1, WAV Builder since `spotykach-transfer` 1.3.1. One round covers that and the `config.txt` fix. Windows 11 and Linux; macOS not tested, assumed to work unless reported.
+
+| What | Build | Where |
+| --- | --- | --- |
+| Firmware | `v1.4.1` | `spotykach_1.4.1.bin` on the [release page](https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.1) |
+| WAV Builder | `main` with the uncommitted 1.3.1 pin, `USB_FIRMWARE` 1.4.1 and the `config.txt` fix | `npm run dev`, `http://localhost:5173/` in Chrome or Edge |
+
+Before starting: back up the SD card's `SK` folder, close any DAW, use a direct USB-A port and a known-good cable on the rear port (the hub gave the most stalls in round 1).
+
+### F. Windows 11
+
+20. Connect. HELLO reports **1.4.1** (on the beta it said 1.3.1). Copy diagnostics: each step has its name.
+21. A1–A9 on a card with written, recorded and empty slots: list, push, push again (skipped), trim and push, download, delete, cable pulled mid-push (slot keeps its old file), disconnect (device plays again).
+22. `config.txt` over USB: read it, change a setting, write it, read it back. Then the case the `config.txt` fix is for.
+23. A build over USB writes `README.md` and `SK/project.json`. Then the card in a card reader: both are there and readable, and the slots show as in sync (B10).
+24. Preset over USB, Free the Rhythm (E16, 12 slots). Copy timings: KB/s and the stall count in the console, against round 1 (466–477 KB/s; 1–25 stalls on a direct port). The device's transport code is new, so a change either way is worth noting.
+25. The firmware texts say 1.4.1 and the link opens the 1.4.1 page: Settings ▸ System ▸ USB transfer, the card route info, Help ▸ USB Transfer.
+
+
+First connect:
+```
+WAV Builder 4.5.0
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36
+status: connected
+
++0.00s connect · 2026-11-25T14:10:48.134Z
++0.04s no serial port granted to this site yet
++0.04s MIDI permission: granted
++0.33s MIDI ports: input "Spotykach" (connected), output "Spotykach" (connected)
++0.33s sending SysEx: enter transfer mode
++0.55s reply: OK
++0.55s waiting for the serial port
++2.34s serial connect 0483:5740
++2.35s opening the serial port and sending HELLO
++2.41s HELLO: firmware 1.4.1, protocol 1.2
++2.44s connected
++5.83s diagnostics copied
+```
+
+syncing:
+```
+Log
+15:14:22 Syncing Free the Rhythm - a short selection of the existing packs: 24 slots via USB
+15:14:27 ↓ Blue 1 MASSIVE.flac 2.2 MB in 4.2 s (540 KB/s)
+15:14:32 ↓ Green 1 Uher-Tape-Beat.flac 2.4 MB in 4.7 s (529 KB/s)
+15:15:01 ↓ Green 2 NKT_Arhythmic.flac 15.4 MB in 29.4 s (535 KB/s)
+15:15:22 ↓ Green 3 drainpipeUZ.flac 11.2 MB in 21.3 s (538 KB/s)
+15:15:34 ↓ Pink 1 mangle_120bpm_8bars_20261014_2859440479 5.9 MB in 11.2 s (536 KB/s)
+15:16:01 ↓ Pink 2 mangle_20261016_1555324201-4-edit 14.2 MB in 27.2 s (536 KB/s)
+15:16:14 ↓ Pink 3 3.wav 6.9 MB in 13.2 s (536 KB/s)
+15:16:44 ↓ Pink 4 mangle_20261016_833095640 15.4 MB in 29.3 s (537 KB/s)
+15:17:13 ↓ Pink 5 mangle_20261031_748075934 15.4 MB in 29.2 s (540 KB/s)
+15:17:21 ↓ Red 1 mangle_20261016_1555324201-2-edit 4.0 MB in 7.8 s (531 KB/s)
+15:17:50 ↓ Red 2 mangle_20261018_2485805664 15.4 MB in 29.4 s (535 KB/s)
+15:18:18 ↓ Red 3 3.wav 14.5 MB in 27.7 s (535 KB/s)
+15:18:47 ↓ Red 4 mangle_20261019_2972497450 15.4 MB in 28.8 s (546 KB/s)
+15:18:54 ↓ Turquoise 1 mangle_20261023_3940864540 3.7 MB in 6.9 s (547 KB/s)
+15:19:01 ↓ Turquoise 2 mangle_20261023_766375893 3.7 MB in 6.9 s (548 KB/s)
+15:19:07 ↓ Turquoise 3 mangle_20261023_1455983751 3.7 MB in 6.8 s (549 KB/s)
+15:19:14 ↓ Turquoise 4 mangle_20261023_1620326247 3.7 MB in 6.8 s (549 KB/s)
+15:19:16 ↓ Turquoise 5 5.wav 0.9 MB in 1.8 s (540 KB/s)
+15:19:18 ↓ Turquoise 6 Turquoise_5-edit 0.9 MB in 1.8 s (541 KB/s)
+15:19:20 ↓ Yellow 1 Turquoise_5-edit 0.9 MB in 1.8 s (538 KB/s)
+15:19:28 ↑ Blue 1 MASSIVE.flac 3.7 MB in 8.1 s (470 KB/s)
+15:19:34 ↑ Green 1 Uher-Tape-Beat.flac 2.4 MB in 5.4 s (459 KB/s)
+15:20:06 ↑ Green 2 NKT_Arhythmic.flac 15.4 MB in 32.5 s (485 KB/s)
+15:20:06 Green 2: 93.3 s, cut to 42.0 s on the card (the device plays no more). The project keeps the whole file.
+15:20:30 ↑ Green 3 drainpipeUZ.flac 11.2 MB in 23.6 s (486 KB/s)
+15:20:30 Sync complete.
+```
+--
+
+
+
+### G. Linux
+
+26. **Without** `dialout` (or `uucp` on Arch): connect. After about 6 s the error names `dialout`, and the panel with the `usermod` command and Copy shows under it. Follow it as a user would: copy, paste, restart.
+27. After the restart, the first connect right after the switch: it connects. In Copy diagnostics, note how long "Opening the serial port" took (a few seconds is ModemManager's probe, waited out).
+28. A quick push and a download (A3, A6), and a disconnect (A9).
+
+### Results, round 3
+
+- **F (Windows 11, Chrome): passed**, F20–F25. HELLO reports 1.4.1. Downloads 529–549 KB/s, uploads 459–486 KB/s, up from 466–477 in round 1.
+- **F22 (`config.txt` over USB): passed on the device.** Written over USB, applied after a power cycle (deck B: MIDI start/stop off, one slice at a time on). Two findings, fixed during the round:
+  - A read or write over USB showed only a 3-second status line. Now it's also a line in Copy diagnostics and in the Logs window, failures included.
+  - Nothing on screen said the file waits for a power cycle, and leaving USB mode reads like it should apply it. After a write, a note stays under the USB status, through Disconnect, until the next USB action.
+  - Also: the open diagnostics view showed "diagnostics copied" as its last line, with the time counting up. That line is now added only when copying.
+- **G (Linux): not run**, the test laptop is broken. The `dialout` fix has one user's report that it works on their machine; that stands in for G26–G28 for now.
