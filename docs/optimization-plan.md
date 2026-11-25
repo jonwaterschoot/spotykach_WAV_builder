@@ -210,6 +210,29 @@ in [`vite-env.d.ts`](../src/vite-env.d.ts).
 
 ---
 
+## 8. The USB package's chunk
+
+Added 2026-11-25, found while bumping `spotykach-transfer` to 1.3.1.
+
+[`usbSession.ts:5`](../src/lib/usb/usbSession.ts#L5) says the package is "imported only when a
+connection is made, so it stays a separate chunk", through `loadLink()`. Two things undo that:
+
+- [`vite.config.ts:18`](../vite.config.ts#L18): `manualChunks` sends every `node_modules` id that
+  isn't jszip, wavesurfer or icons to `vendor`, which loads at startup. The 1.3.1 build has
+  `spotykach-transfer` and `usb-transfer` in `vendor-*.js`.
+- [`slotFile.ts:14`](../src/lib/audio/slotFile.ts#L14) imports `encodeWav` and `inspectWav`
+  statically for the card-reader path, so the module is needed outside USB anyway.
+  [`usbBackend.ts:21`](../src/lib/usb/usbBackend.ts#L21) imports it statically too, but is itself
+  loaded lazily.
+
+Size: about 57 KB unminified for both packages, a few KB gzipped.
+
+**Options.** Cheapest: correct the comment (the dynamic import still keeps `usbBackend.ts` out
+of startup). Or give the two packages their own chunk in `manualChunks`; it then loads with
+whatever first imports `slotFile.ts`. Measure the startup difference before choosing the second.
+
+---
+
 ## Decided against
 
 - **A GitHub Actions Pages workflow.** Every merge would publish, ~100 MB through CI per run,

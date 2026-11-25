@@ -442,7 +442,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-3 text-gray-300">
-                                                    With firmware 1.4.0, Studio and Preset to SD Card can reach the card while it stays in the Spotykach. Slower than a card reader; see <em>USB Transfer</em> below.
+                                                    With firmware {USB_FIRMWARE.version} or later, Studio and Preset to SD Card can reach the card while it stays in the Spotykach. Slower than a card reader; see <em>USB Transfer</em> below.
                                                 </td>
                                             </tr>
                                             <tr>
@@ -640,7 +640,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                             {expandedSection === 'usb' && (
                                 <div className="p-6 bg-black/20 text-gray-300 space-y-4 font-body text-sm leading-relaxed">
                                     <p>
-                                        With firmware 1.4.0, WAV Builder reaches the SD card while it stays in the Spotykach, through the
+                                        With firmware {USB_FIRMWARE.version} or later, WAV Builder reaches the SD card while it stays in the Spotykach, through the
                                         rear USB port. It suits the smaller jobs: a few slots, a preset, a recording pulled off the device.
                                     </p>
                                     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">

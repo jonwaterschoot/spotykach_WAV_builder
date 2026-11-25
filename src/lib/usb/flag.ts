@@ -7,10 +7,14 @@ import { useSyncExternalStore } from 'react';
 
 const KEY = 'wavbuilder.usbTransfer';
 
-/** The firmware release that has USB transfer. */
+/**
+ * The firmware users are sent to for USB transfer, shown as "{version} or later".
+ * 1.4.0 was the first with USB transfer; 1.4.1 runs the shared `usb-transfer`
+ * code and is more stable on Linux. Nothing compares versions against this.
+ */
 export const USB_FIRMWARE = {
-    version: '1.4.0',
-    url: 'https://www.synthux.academy/firmware/spotykach/spotykach/v1.4.0',
+    version: '1.4.1',
+    url: 'https://www.synthux.academy/firmware/spotykach/spotykach/v1.4.1',
 };
 
 /** Web Serial: Chrome, Edge and Opera on desktop. */

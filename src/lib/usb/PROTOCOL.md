@@ -4,10 +4,10 @@ The protocol code is the npm package [`@synthuxacademy/spotykach-transfer`](http
 
 | | |
 | --- | --- |
-| Package | `1.2.0`, pinned exactly in `package.json` |
-| Next | 1.3.1, once [Spotykach #22](https://github.com/Synthux-Academy/Spotykach/pull/22) is published. 1.3.0 is the first on `usb-transfer`, but it drops `fresh` (see below) |
+| Package | `1.3.1`, pinned exactly in `package.json`, with `usb-transfer` 1.1.0. The first on `usb-transfer` (1.3.0 dropped `fresh`, fixed in [Spotykach #22](https://github.com/Synthux-Academy/Spotykach/pull/22)) |
+| Tested on | Windows 11 (Nov 25, firmware 1.4.1). Linux: not tested here, one user reports the `dialout` fix works. macOS: not tested, assumed to work unless reported |
 | Protocol | 1.x (the package's major version follows it; `connect()` refuses another major) |
-| Firmware | 1.4.x. The `v141` branch ([Spotykach #21](https://github.com/Synthux-Academy/Spotykach/pull/21)) moves the firmware's transport to `usb-transfer` too |
+| Firmware | 1.4.0 or later. [1.4.1](https://github.com/Synthux-Academy/Spotykach/releases/tag/v1.4.1) (Nov 25) is the first on `usb-transfer` on the device side too ([Spotykach #21](https://github.com/Synthux-Academy/Spotykach/pull/21)) |
 
 The pin is exact so that a new package version comes in only through a deliberate bump, with the checks below. `npm update` doesn't move it.
 
