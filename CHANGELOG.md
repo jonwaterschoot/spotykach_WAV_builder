@@ -4,6 +4,31 @@
 
 ---
 
+## [4.5.1] - 2026-11-25
+
+### Changed
+
+- **USB transfer: firmware 1.4.1.** Spotykach firmware
+  [1.4.1](https://www.synthux.academy/firmware/spotykach/spotykach/v1.4.1) is now the one
+  to install for USB transfer; 1.4.0 still works. The device and WAV Builder now share the
+  same transfer code (`spotykach-transfer` 1.3.1). On Linux, the first connect after
+  Spotykach switches to transfer mode waits for the system to release the port instead of
+  failing.
+- **`config.txt` over USB: a note after writing.** The note stays on screen, after Disconnect
+  too: Spotykach reads `config.txt` only at power-on, so switch it off and on to apply the
+  new settings. Leaving USB mode doesn't apply them. Each read and write over USB is also a
+  line in *Copy diagnostics* and in the Logs window.
+
+### Fixed
+
+- **Studio's config window: Save to SD Card saved to the work folder.** With a card open,
+  it now writes `SK/config.txt` on the card and names it. With no card open, the button
+  reads *Save to work folder*, since Spotykach never sees that copy.
+- **USB diagnostics: a running clock.** With *Show* open, the last line ("diagnostics
+  copied") counted up every half second. Only a copy adds that line now.
+
+---
+
 ## [4.5.0] - 2026-11-21
 
 The editor's loops, in time. The [news post](public/news/4.5.0-loop-bpm.md) shows the new Loop tool.
