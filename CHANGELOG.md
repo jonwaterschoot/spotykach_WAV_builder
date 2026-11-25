@@ -6,6 +6,8 @@
 
 ## [4.5.1] - 2026-11-25
 
+Firmware 1.4.1 for USB transfer; the [news post](public/news/firmware-1-4-1.md) has the short version.
+
 ### Changed
 
 - **USB transfer: firmware 1.4.1.** Spotykach firmware

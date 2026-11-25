@@ -9,6 +9,13 @@
     "pinned": true
   },
   {
+    "id": "firmware-1-4-1",
+    "title": "Firmware 1.4.1 for USB transfer (v4.5.1)",
+    "date": "2026-11-25",
+    "file": "firmware-1-4-1.md",
+    "category": "Update"
+  },
+  {
     "id": "loop-bpm",
     "title": "Loops in time: BPM Sync in the editor (v4.5.0)",
     "date": "2026-11-21",
