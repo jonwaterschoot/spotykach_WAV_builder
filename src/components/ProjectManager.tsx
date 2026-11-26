@@ -50,7 +50,8 @@ interface ProjectManagerProps {
     isScanning?: boolean;
     onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
     onImportZip?: () => void;
-    onExportZip?: (projectName: string, settingsOnly?: boolean) => void;
+    /** Downloads the project file, the same as Export ▸ Project file. */
+    onExportZip?: (projectName: string) => void;
     onOpenHelp?: () => void;
 }
 
@@ -120,7 +121,6 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     const [editingProject, setEditingProject] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
     const [isSDExpanded, setIsSDExpanded] = useState(false);
-    const [exportSettingsOnly, setExportSettingsOnly] = useState(false);
 
     // Track pending creation to auto-edit
     const [pendingCreate, setPendingCreate] = useState<string | null>(null);
@@ -464,7 +464,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                 <div className="flex items-center gap-1 shrink-0">
                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         {onDuplicateProject && <button onClick={() => handleDuplicate(project.name)} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white" title="Duplicate"><Copy size={13} /></button>}
-                                        {onExportZip && <button onClick={() => onExportZip(project.name, exportSettingsOnly)} className="p-1.5 hover:bg-indigo-500/10 rounded text-gray-400 hover:text-indigo-400" title={`Export project as Zip${exportSettingsOnly ? ' (Settings Only)' : ''}`}><Download size={13} /></button>}
+                                        {onExportZip && <button onClick={() => onExportZip(project.name)} className="p-1.5 hover:bg-indigo-500/10 rounded text-gray-400 hover:text-indigo-400" title="Download project file"><Download size={13} /></button>}
                                         {onDeleteProject && <button onClick={() => onDeleteProject(project.name)} className="p-1.5 hover:bg-red-500/10 rounded text-gray-400 hover:text-red-400" title="Delete project"><Trash2 size={13} /></button>}
                                     </div>
                                     {onBuildProject && (
@@ -535,21 +535,10 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                                 <button
                                     onClick={onImportZip}
                                     className="px-3 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 font-bold rounded-lg flex items-center gap-2 transition-colors text-xs"
-                                    title="Import project from a .zip file"
+                                    title="Open a project file (.zip) as a project in this work folder"
                                 >
-                                    <Upload size={14} /> Import from Zip
+                                    <Upload size={14} /> Import project file
                                 </button>
-                            )}
-                            {onExportZip && (
-                                <label className="flex items-center gap-2 text-[10px] text-gray-400 hover:text-gray-300 cursor-pointer ml-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={exportSettingsOnly}
-                                        onChange={(e) => setExportSettingsOnly(e.target.checked)}
-                                        className="rounded border-gray-600 bg-black/40 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0 w-3 h-3"
-                                    />
-                                    Settings-Only ZIP
-                                </label>
                             )}
                         </div>
                         <div className="flex gap-3">

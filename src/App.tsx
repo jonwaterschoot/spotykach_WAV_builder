@@ -598,49 +598,59 @@ function App({ onExitToHub }: AppProps) {
     }
   };
 
-  const handleExportZip = async (projectName: string, settingsOnly?: boolean) => {
-    if (!workHandle) {
+  /**
+   * The project file: `<name>/project-descriptor.json` and every file's current
+   * version, library samples included. Without a name it is the open project, from
+   * memory, so Browser Cache Mode can export too. Another project is read from its
+   * folder.
+   */
+  const handleExportZip = async (projectName?: string) => {
+    const isOpenProject = !projectName || projectName === currentProjectName;
+    const name = projectName || currentProjectName || 'Untitled-project';
+    if (!isOpenProject && !workHandle) {
       showToast('Connect a Work Folder first.', 'error');
       return;
     }
     setIsProcessing(true);
-    setProgressMsg(`Zipping "${projectName}"${settingsOnly ? ' (Settings Only)' : ''}...`);
+    setProgressMsg(`Zipping "${name}"...`);
     try {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
       let projectState: AppState;
-      
-      if (projectName === currentProjectName) {
-        // Use active state for current project to include unsaved changes/metadata
+
+      if (isOpenProject) {
+        // The open project from memory, unsaved changes included.
         projectState = state;
       } else {
         const { loadProjectFromDirectory } = await import('./utils/exportUtils');
-        projectState = await loadProjectFromDirectory(projectName, workHandle);
+        projectState = await loadProjectFromDirectory(name, workHandle!);
       }
 
+      // Not settings-only: that left library samples as references to their
+      // originals, and an edited one lost its edit.
       const { buildDescriptorFromState } = await import('./utils/projectDescriptorUtils');
-      const { descriptor, customBlobs } = buildDescriptorFromState(projectState, { 
-        settingsOnly: !!settingsOnly, 
-        name: projectName 
+      const { descriptor, customBlobs } = buildDescriptorFromState(projectState, {
+        settingsOnly: false,
+        name,
       });
 
-      zip.file(`${projectName}/project-descriptor.json`, JSON.stringify(descriptor, null, 2));
+      zip.file(`${name}/project-descriptor.json`, JSON.stringify(descriptor, null, 2));
 
       for (const [blobRef, blob] of Object.entries(customBlobs)) {
-        zip.file(`${projectName}/${blobRef}`, await blob.arrayBuffer());
+        zip.file(`${name}/${blobRef}`, await blob.arrayBuffer());
       }
 
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${projectName}.zip`;
+      a.download = `${name}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast(`"${projectName}" exported as zip`, 'success');
+      showToast(`"${name}" exported as a project file`, 'success');
     } catch (e: any) {
       showToast('Export failed: ' + e.message, 'error');
     } finally {
@@ -3123,12 +3133,10 @@ function App({ onExitToHub }: AppProps) {
       return false;
     }
 
-    // 3. Fallback (Browser Mode) -> Prompt to Export
-    if (confirm("Download Project Backup?")) {
-      await handleExportProgress('Project Backup', async (log) => {
-        const { exportSaveState } = await import('./utils/exportUtils');
-        await exportSaveState(state, false, log);
-      });
+    // 3. Browser Cache Mode: the project file is the only copy outside the browser.
+    // The same download as Export ▸ Project file, so Import can read it back.
+    if (confirm("There's no work folder to save to. Download the project file instead?")) {
+      await handleExportZip();
     }
     return false;
   };
@@ -5762,12 +5770,9 @@ function App({ onExitToHub }: AppProps) {
                       await exportFilesOnly(state, { ...opts, onConvert: convertAudioToWav }, log);
                     });
                   }}
-                  onExportProject={async (opts) => {
-                    setShowExport(false); // Close settings modal
-                    await handleExportProgress(opts.settingsOnly ? 'Preset Export' : 'Project Export', async (log) => {
-                      const { exportSaveState } = await import('./utils/exportUtils');
-                      await exportSaveState(state, false, log, opts.settingsOnly);
-                    });
+                  onExportProject={async () => {
+                    setShowExport(false);
+                    await handleExportZip();
                   }}
                   onPrepareSubmission={async () => {
                     setShowExport(false);
