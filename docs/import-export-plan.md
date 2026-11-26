@@ -273,6 +273,22 @@ Each lands as its own commit and is click-tested on its own.
 4. **Browser Cache Mode.** The wizard's screen, the note on Save, Export and Import, and Move to
    a work folder.
    Click-test: Skip in the wizard, then Move to a work folder with unsaved work.
+
+   **Done on `feature/browser-mode`** (`77ac812`, `4203bfe`), stacked on step 3's branch, not
+   click-tested yet. Where it went past or short of the step:
+   - The note also comes up wherever a work folder gets connected without one (Project
+     Manager, New Fresh Project, Clone, Settings, a card import into a new project), with
+     Connect without it beside Move.
+   - After a move for an import, Import project file is a button of its own: the file picker
+     needs a fresh click.
+   - With nothing to keep, there's no note: Save says "Nothing to save yet", connecting just
+     connects, and Import asks for a work folder first.
+   - Save with a work folder but no project open (as after Connect without it) asks for a name
+     in the app's dialog instead of `prompt()`, and refuses a name another project has. The
+     other half of problem 7.
+   - The move saves the open project and then opens it from the folder, so what's in the studio
+     is what's on disk.
+   - No lasting "browser only" mark in the header: the note shows where it matters.
 5. **Delete the unreachable path.** ImportModal, `handleImportFiles`, `analyzeImport` and what
    only they use, `loadProjectFromZip` too: step 2's importer reads its formats without it.
 
