@@ -78,6 +78,11 @@ places.
 
 ## 2. `useEscapeKey` hook
 
+**Done 2026-11-26** on `fix/unsaved-assign-escape` (`2ca7cd5`): 18 handlers in 13 components.
+Built on the shell's escape stack (`src/shell/escapeStack.ts`) instead of a plain window
+listener, so only the topmost surface closes. `HelpModal.tsx` keeps its copy: nothing imports
+it. The survey below is from August.
+
 **Payoff: high. Risk: low. Probably the best ratio on this list.**
 
 **18 components** each hand-roll the same effect — add a `keydown` listener, check

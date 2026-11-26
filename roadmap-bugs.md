@@ -20,22 +20,31 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
   - [x] Not proposed: a 4-byte alignment check in `spotykach-transfer`'s `checkUploadable`. Firmware 1.4.0 and later play misaligned audio (`Card::_read_from`), and USB uploads need 1.4.0. Ours in `usbBackend.validate` is removed (Nov 25).
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
+**Import and export** → [import-export-plan.md](docs/import-export-plan.md), decisions taken Nov 26
+- [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu.
+- [ ] 2. One project file and one importer: every old format reads back, the name comes from inside, the import saves like any project.
+- [ ] 3. Compare on a name clash: identical, or a summary with Import as a new project and Replace.
+- [ ] 4. Browser Cache Mode: say the work lives in this browser only, offer to move it to a work folder.
+- [ ] 5. Delete the unreachable ImportModal path.
+
 **Other**
+- [ ] Click-test branch `fix/unsaved-assign-escape`, then merge: Save first on the hub arrow, opening a project and zip import; a zip of an existing project; Assign's "Apply or discard first" for each tool and a Mangler take; Escape on every modal; the unsaved-changes text.
 - [ ] News: the cue point modes (Ignore / Snap / Free) with a demo video.
 - [ ] Sample Mangler: the "Later" items and checks on a real phone. → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
 - [ ] Code health: one item per session, from the list below.
 
 ## Bugs
 
-- **ASSIGN TO TAPE** saves only the region, fades and automation. Pending EQ, limiter, pitch or cutter settings are lost and the tool stays marked unsaved. First decide what it should save.
-- **Unsaved changes:** loading another project and leaving for the hub don't offer "save first". Zip import uses a bare `window.confirm` that imports whichever button is pressed.
+- **Saves after a zip import don't stick.** The import leaves `project-descriptor.json` in the project folder, saves write `project.json`, and the loader reads the descriptor first. Fixed by step 2 of the import/export plan.
+- **Auto-save's recovery copy never comes back with a project folder connected.** Returning to Studio or restoring a session reloads the project from the folder over it, so the setting's promise ("a closed tab or a crash doesn't lose the open project") doesn't hold. Decide: offer to recover when the browser copy is newer than the folder.
+- **Import and export:** a Full Backup Bundle imports with its audio missing, settings-only exports drop edits to library samples, and imports take the zip's filename as the project name. → [What breaks](docs/import-export-plan.md#what-breaks)
 - **Never tested:** browsers without `showDirectoryPicker`, `move()` on an SD card, the backup's rollback when the disk fills, and the Project Manager with a card that already has projects. Full list in the archive.
 
 ## Code health
 
 Details and line references: [docs/optimization-plan.md](docs/optimization-plan.md). Best payoff first.
 
-1. One `useEscapeKey` hook instead of 23 copies.
+1. Delete `HelpModal.tsx`: nothing imports it, and it holds the last copied Escape listener.
 2. One ffmpeg instance instead of two. Not a straight move to module scope: one instance runs one `exec` at a time.
 3. Byte and duration formatters: 12 versions that disagree. Merging them changes what users see, so decide the format first.
 4. Four `sanitize*` functions. They name files on disk and the SD card, so compare them before merging.
@@ -61,3 +70,4 @@ Details and line references: [docs/optimization-plan.md](docs/optimization-plan.
 - **Cleanup** stays in Project ▸ Advanced, not in the editor.
 - **No auto-deploy:** pushing to main doesn't publish; `npm run deploy` does. Reasons in [deployment_guidelines.md](docs/deployment_guidelines.md) §2.
 - **`storageNamespace.ts` stays:** 41 call sites, and it keys the saved folder handles.
+- **Import and export (Nov 26):** a project file carries the original and the current version of each file, Replace on import overwrites after a confirmation, audio files stay an export choice, Browser Cache Mode warns and offers a work folder, and presets are made only through Prepare a submission. → [Decisions](docs/import-export-plan.md#decisions-2026-11-26)
