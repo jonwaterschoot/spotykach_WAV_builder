@@ -913,12 +913,10 @@ function App({ onExitToHub }: AppProps) {
       return;
     }
 
-    // With auto-save on the work is not actually lost — it is in the browser's
-    // recovery slot, just not in the project folder. Saying "these will be lost"
-    // in that case would be a lie the app can be caught in.
-    const changesLine = getDurabilityPref('autoSave')
-      ? "You have changes that haven't been saved to the project folder. They're kept in this browser and will come back, but the folder on disk won't have them."
-      : "You have unsaved changes. These will be lost.";
+    // Not softened for auto-save. Its recovery copy doesn't bring the work back:
+    // returning to Studio, or a reload, reads the project from the folder over it,
+    // and the other actions here replace the project outright.
+    const changesLine = 'Changes since the last save will be lost.';
     const canSave = !!(workHandle && currentProjectName);
     const offerSave = !!options?.offerSave && canSave;
     const proceedLabel = options?.proceedLabel || 'Continue anyway';
