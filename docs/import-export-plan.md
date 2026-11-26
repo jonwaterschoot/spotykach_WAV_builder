@@ -10,6 +10,8 @@ don't.
 
 ## What exists
 
+As surveyed on Nov 26, before step 1.
+
 ### Exports
 
 | Where | What's inside | Filename |
@@ -106,12 +108,14 @@ Project ▸ Export… opens one window with three choices.
 | **SD card folder** | The SK folder, files renamed to the slots the Spotykach reads. Copy its contents to the card's root. | `<Project>-SK_<date>.zip` |
 | **Audio files** | Chosen files as WAVs, in SK folders or one folder | `<Project>-audio_<date>.zip` |
 
-The project file has one option, **Include sample-library audio**, off by default: "Library
-samples download again when the project opens with internet. Turn this on for a computer
-without internet."
+The project file gets one option in step 2, **Include sample-library audio**, off by default:
+"Library samples download again when the project opens with internet. Turn this on for a
+computer without internet." Until then it carries all audio: leaving library audio out today
+means a reference to the library original, which loses an edit (problem 4).
 
-The SD card folder loses "Include Project Bundle Backup". Whether the project travels with it
-follows the Settings preference that mirrors projects to the card: the zip then holds
+The SD card folder loses "Include Project Bundle Backup" (step 1). From step 2, whether the
+project travels with it follows the Settings preference that mirrors projects to the card: the
+zip then holds
 `WAV_Builder/Projects/<Project>/`, where Build SD writes the mirror
 ([`exportSDStructure`](../src/utils/exportUtils.ts#L994)) and the Project Manager finds it. A
 zip and a direct write give the same card.
@@ -194,6 +198,20 @@ Each lands as its own commit and is click-tested on its own.
    choices and plain text, the Project Preset tab goes, and Prepare a submission stays as a
    line. Import and Export move into the Project menu. The Settings-Only checkbox goes.
    Click-test: every download's name, the Export window, the Project menu.
+
+   **Done on `feature/export-names-and-words`** (`ddc76fe`, `ee8fea0`, `c4e5bfc`, `70b924a`),
+   not click-tested yet. Where it went past or short of the step:
+   - The project file is the Project Manager's zip (descriptor and `custom_assets/`), now always
+     with all audio and the current version of each file. The library option and the
+     original-plus-current history come with step 2's format.
+   - From step 4: Browser Cache Mode's Save downloads the project file instead of the Full
+     Backup Bundle, so Import can read it back. Its `confirm()` stays until step 4.
+   - From step 5: `exportSaveState` (the Full Backup Bundle and the SK zip's nested backup) is
+     deleted. Nothing called it any more.
+   - The user library's zip (`Spotykach_Library_<date>.zip`) and the card dialog's backups keep
+     their names: they aren't project downloads.
+   - [public/presets/README.md](../public/presets/README.md) §6 now makes a preset from your own
+     project through Prepare a submission.
 2. **The project file and the importer.** Export writes the project file. The importer reads
    every format, takes the name from inside and saves like a project. A save removes a stale
    `project-descriptor.json`. Fixes problems 1 to 5.

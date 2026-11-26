@@ -21,7 +21,7 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
 **Import and export** → [import-export-plan.md](docs/import-export-plan.md), decisions taken Nov 26
-- [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu.
+- [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu. Done on `feature/export-names-and-words` (stacked on `fix/unsaved-assign-escape`); click-test: each download's name, the Export window, the Project menu, Save in Browser Cache Mode.
 - [ ] 2. One project file and one importer: every old format reads back, the name comes from inside, the import saves like any project.
 - [ ] 3. Compare on a name clash: identical, or a summary with Import as a new project and Replace.
 - [ ] 4. Browser Cache Mode: say the work lives in this browser only, offer to move it to a work folder.
