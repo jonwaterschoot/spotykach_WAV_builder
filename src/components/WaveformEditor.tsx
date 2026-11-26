@@ -777,7 +777,12 @@ const TOOL_LABELS: Record<string, string> = {
     cutter: 'Cutter',
     slicer: 'Slicer',
     stereo: 'Stereo',
+    mangle: 'Mangler',
 };
+
+/** The selection a newly loaded file gets: all of it, or the middle 42 s (the card's limit) of a longer one. */
+const defaultSelection = (duration: number) =>
+    duration > 42 ? { start: duration / 2 - 21, end: duration / 2 + 21 } : { start: 0, end: duration };
 
 export const TAPE_COMMIT_LABELS: CommitLabels = {
     clean: 'ASSIGNED',
@@ -1319,6 +1324,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
     // "Save copy to pool" with an unapplied trim/fade: the copy can carry it or not,
     // and the file on screen is not touched either way.
     const [showPoolCopyPrompt, setShowPoolCopyPrompt] = useState(false);
+    /** Settings the commit button can't save, listed when it was pressed. Null: no prompt. */
+    type UnappliedTool = { tool: Exclude<ToolId, null>; detail: string };
+    const [unappliedPrompt, setUnappliedPrompt] = useState<UnappliedTool[] | null>(null);
     const [isPreviewing, setIsPreviewing] = useState(false);
     const [isPreviewingLoop, setIsPreviewingLoop] = useState(false);
 
@@ -1682,15 +1690,7 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     return;
                 }
 
-                // Calculate Initial Region (Max 42s)
-                let rStart = 0;
-                let rEnd = duration;
-
-                if (duration > 42) {
-                    const mid = duration / 2;
-                    rStart = mid - 21;
-                    rEnd = mid + 21;
-                }
+                let { start: rStart, end: rEnd } = defaultSelection(duration);
 
                 // Coming back from a preview, the file has not changed — re-hang the
                 // selection the user made. `editRegionRef` is nulled by initEditor, so
@@ -3517,6 +3517,9 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
             case 'cutter': await handleApplyCut(); break;
             case 'slicer': await handleApplySlicer(); break;
             case 'loop': await handleApplyLoop(); break;
+            // Without its own case a take fell through to handleSave and the file
+            // was saved without it.
+            case 'mangle': handleApplyMangle(); break;
             // Trim is the one tool whose apply *is* handleSave.
             case 'trim':
             default:
@@ -3525,6 +3528,93 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
         }
 
         resetToolState(tool);
+    };
+
+    /*
+     * The commit button runs handleSave, which writes the trim, fades, automation
+     * and slice markers and nothing else. Only each tool's own Apply can write the
+     * settings below, so the commit stops on them instead of dropping them. A tool
+     * at its defaults has nothing to apply and stays off the list. EQ and Limiter
+     * are checked the way their Apply reads them: the 10-band EQ ignores the three
+     * knobs, and Peak ignores the ceiling. The Loop counts only while it is open,
+     * as its selection is the trim's too.
+     */
+    const listUnappliedTools = (): UnappliedTool[] => {
+        const list: UnappliedTool[] = [];
+        const signed = (v: number, unit: string) => `${v > 0 ? '+' : ''}${v} ${unit}`;
+        const span = (a: number, b: number) => `${a.toFixed(2)}–${b.toFixed(2)} s`;
+
+        const eqParts = isAdvancedEQ
+            ? ADVANCED_EQ_FREQS.flatMap((f, i) => advancedEQBands[i] !== 0
+                ? [`${f >= 1000 ? `${f / 1000} kHz` : `${f} Hz`} ${signed(advancedEQBands[i], 'dB')}`]
+                : [])
+            : ([['Low', eqLow], ['Mid', eqMid], ['High', eqHigh]] as const).flatMap(([band, v]) => v !== 0 ? [`${band} ${signed(v, 'dB')}`] : []);
+        if (eqParts.length > 0) {
+            list.push({ tool: 'eq', detail: eqParts.join(', ') + (eqNormalize ? ', then normalize' : '') });
+        }
+
+        if (limiterThreshold !== -6 || (limiterMode !== 'peak' && limiterCeiling !== -0.3)) {
+            list.push({
+                tool: 'limiter',
+                detail: limiterMode === 'peak'
+                    ? `Peak, threshold ${limiterThreshold} dB`
+                    : `Auto, threshold ${limiterThreshold} dB, ceiling ${limiterCeiling} dB`,
+            });
+        }
+
+        const shifted = pitchRegions.filter(r => r.semitones !== 0);
+        if (shifted.length > 0) {
+            list.push({ tool: 'pitch', detail: shifted.map(r => `${signed(r.semitones, 'st')} at ${span(r.start, r.end)}`).join(', ') });
+        }
+
+        if (cutRegions.length > 0) {
+            const removed = cutRegions.reduce((sum, r) => sum + (r.end - r.start), 0);
+            list.push({ tool: 'cutter', detail: `${cutRegions.length} cut${cutRegions.length === 1 ? '' : 's'}, ${removed.toFixed(2)} s removed` });
+        }
+
+        if (activeTool === 'loop' && originalBuffer) {
+            const home = defaultSelection(originalBuffer.duration);
+            const moved = Math.abs(regionState.start - home.start) > 0.01 || Math.abs(regionState.end - home.end) > 0.01;
+            if (moved || loopCrossfade !== 0.2 || loopFitTo42 || loopBarCount !== null || loopMarkers !== 'keep' || syncFadePerBeat !== 0) {
+                const fade = SYNC_FADES.find(f => f.perBeat === syncFadePerBeat);
+                const parts = loopMode === 'bpm'
+                    ? [
+                        `${loopBarCount ? `${loopBarCount} bars` : span(regionState.start, regionState.end)}${loopBpm ? ` at ${loopBpm} BPM` : ''}`,
+                        ...(fade ? [`${fade.label} fade`] : []),
+                    ]
+                    : [
+                        span(regionState.start, regionState.end),
+                        `crossfade ${loopCrossfade.toFixed(2)} s`,
+                        ...(loopFitTo42 ? ['fit to 42 s'] : []),
+                    ];
+                if (loopMarkers !== 'keep') parts.push(`a marker per ${loopMarkers === 'bars' ? 'bar' : 'beat'}`);
+                list.push({ tool: 'loop', detail: parts.join(', ') });
+            }
+        }
+
+        if (mangleTake) {
+            list.push({ tool: 'mangle', detail: `${mangleTake.description}, ${mangleTake.duration.toFixed(2)} s` });
+        }
+
+        // The open tool first: it is what Apply will do.
+        return list.sort((a, b) => Number(b.tool === activeTool) - Number(a.tool === activeTool));
+    };
+
+    /** Only the listed tools go back to their defaults. The open one closes, as after an Apply. */
+    const discardUnappliedTools = async (tools: UnappliedTool[]) => {
+        // Read before resetToolState clears it.
+        const hadPreview = isPreviewLoadedRef.current;
+        tools.forEach(({ tool }) => resetToolState(tool));
+        // The Loop's selection was on the list, so it goes back too. Left in place,
+        // the next commit would trim to it.
+        if (originalBuffer && tools.some(({ tool }) => tool === 'loop')) {
+            setRegionState(defaultSelection(originalBuffer.duration));
+        }
+        if (tools.some(({ tool }) => tool === activeTool)) executeToolSwitch(null);
+        if (hadPreview && currentBlob && wavesurfer.current) {
+            setIsPlaying(false);
+            await loadSourceBlob(currentBlob);
+        }
     };
 
     // Version Loading Logic
@@ -3818,6 +3908,43 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                     message={`You have unsaved changes${activeTool ? ` in ${TOOL_LABELS[activeTool]}` : ''}. Do you want to apply them before switching tools?`}
                     confirmLabel="Apply & Switch"
                     discardLabel="Discard"
+                />
+
+                {/* Commit stopped: settings the commit button can't save */}
+                <ConfirmModal
+                    isOpen={unappliedPrompt !== null}
+                    onClose={() => setUnappliedPrompt(null)}
+                    onConfirm={async () => {
+                        const first = unappliedPrompt?.[0];
+                        setUnappliedPrompt(null);
+                        if (first) await applyActiveTool(first.tool);
+                    }}
+                    onDiscard={async () => {
+                        const tools = unappliedPrompt ?? [];
+                        setUnappliedPrompt(null);
+                        await discardUnappliedTools(tools);
+                    }}
+                    title="Apply or discard first"
+                    message={unappliedPrompt && (
+                        <>
+                            <p>
+                                <strong className="text-white">{commitLabels.dirty}</strong> saves the trim, fades, automation and slice markers.
+                                {unappliedPrompt.length === 1 ? ' This needs its own Apply:' : ' These need their own Apply:'}
+                            </p>
+                            <ul className="space-y-1 text-sm">
+                                {unappliedPrompt.map(({ tool, detail }) => (
+                                    <li key={tool}><strong className="text-white">{TOOL_LABELS[tool]}</strong>: {detail}</li>
+                                ))}
+                            </ul>
+                            {unappliedPrompt.length > 1 && (
+                                <p className="text-sm text-gray-400">
+                                    Apply does {TOOL_LABELS[unappliedPrompt[0].tool]} now. Press {commitLabels.dirty} again for the rest.
+                                </p>
+                            )}
+                        </>
+                    )}
+                    confirmLabel={!unappliedPrompt ? 'Apply' : unappliedPrompt[0].tool === 'mangle' ? 'Apply take' : `Apply ${TOOL_LABELS[unappliedPrompt[0].tool]}`}
+                    discardLabel={unappliedPrompt && unappliedPrompt.length > 1 ? 'Discard all' : 'Discard'}
                 />
 
                 {/* Batch Delete Confirmation */}
@@ -5707,6 +5834,11 @@ export const WaveformEditor = ({ slot, versions, activeVersionId, tapeColor, onC
                                             if (!isDirty && loadedVersionId !== activeVersionId && onAssignVersion) {
                                                 onAssignVersion(loadedVersionId);
                                             } else {
+                                                const unapplied = listUnappliedTools();
+                                                if (unapplied.length > 0) {
+                                                    setUnappliedPrompt(unapplied);
+                                                    return;
+                                                }
                                                 if (wavesurfer.current && isPlaying) {
                                                     wavesurfer.current.pause();
                                                     setIsPlaying(false);
