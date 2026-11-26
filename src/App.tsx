@@ -11,9 +11,6 @@ import type { AppState, TapeColor, FileRecord, AudioVersion, ExportOptions } fro
 import { DEFAULT_PROJECT_CONFIG, TAPE_COLORS } from './types';
 import { getInitialState } from './utils/initialState';
 import { audioEngine } from './lib/audio/audioEngine';
-import type { ImportAnalysis } from './utils/importUtils';
-// dynamic utility imports
-import { ImportModal } from './components/ImportModal';
 import { AboutHelpModal } from './components/AboutHelpModal';
 // dynamic modal imports
 import { ExportProgressModal } from './components/ExportProgressModal';
@@ -227,7 +224,6 @@ function App({ onExitToHub }: AppProps) {
     wide?: boolean;
   } | null>(null);
 
-  const [importAnalysis, setImportAnalysis] = useState<ImportAnalysis | null>(null);
   const [missingFilesWarning, setMissingFilesWarning] = useState<MissingAsset[] | null>(null);
 
 
@@ -868,7 +864,6 @@ function App({ onExitToHub }: AppProps) {
   const [anchorSlot, setAnchorSlot] = useState<string | null>(null);
 
   // Refs
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const singleFileInputRef = useRef<HTMLInputElement>(null);
   const [targetSlotForUpload, setTargetSlotForUpload] = useState<number | null>(null);
   const isSlotSampleImportInFlightRef = useRef(false);
@@ -893,10 +888,6 @@ function App({ onExitToHub }: AppProps) {
     }
     if (bulkConflictState) {
       setBulkConflictState(null);
-      return true;
-    }
-    if (importAnalysis) {
-      setImportAnalysis(null);
       return true;
     }
     if (missingFilesWarning) {
@@ -2595,38 +2586,6 @@ function App({ onExitToHub }: AppProps) {
       scanProjects(workHandle, sdHandle);
     }
   }, [workHandle, sdHandle]);
-
-
-
-
-
-
-
-
-  // Restore Handler
-  const handleRestoreAndSync = async (backupFile: File, _structureMap: any) => {
-    setIsProcessing(true);
-    setProgressMsg("Restoring Backup...");
-    try {
-      const { loadProjectFromZip } = await import('./utils/importUtils');
-      const loadedState = await loadProjectFromZip(backupFile, (msg) => setProgressMsg(msg));
-
-      if (loadedState) {
-        setState(loadedState);
-        setImportAnalysis(null);
-        setViewMode('all'); // A restore replaces the whole project, so it lands like an open.
-        showToast("Project Restored Successfully", 'success');
-      } else {
-        showToast("Failed to load project from backup.", 'error');
-      }
-    } catch (e) {
-      console.error(e);
-      showToast("Restore Failed", 'error');
-    } finally {
-      setIsProcessing(false);
-      setProgressMsg('');
-    }
-  };
 
   // Rename File Handler
   const handleRenameFile = (fileId: string, newName: string) => {
@@ -4602,31 +4561,6 @@ function App({ onExitToHub }: AppProps) {
     }));
   };
 
-  const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const fileArray = Array.from(files);
-
-    setIsProcessing(true);
-    setProgressMsg("Analyzing content...");
-
-    try {
-      const { analyzeImport } = await import('./utils/importUtils');
-      const analysis = await analyzeImport(fileArray, (msg) => setProgressMsg(msg));
-      setImportAnalysis(analysis);
-    } catch (e) {
-      console.error("Import analysis failed", e);
-      showToast("Failed to analyze import", "error");
-    } finally {
-      setIsProcessing(false);
-      setProgressMsg('');
-    }
-
-    // Reset input
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   const handleSampleImport = async (url: string, name: string, origin?: string, license?: string) => {
     const slotTarget = targetSlotForUpload;
     const slotTargetTapeColor = currentTapeColor;
@@ -5342,7 +5276,6 @@ function App({ onExitToHub }: AppProps) {
               </div>
 
               {/* HIDDEN INPUTS */}
-              <input type="file" multiple {...{ webkitdirectory: "" } as any} ref={fileInputRef} onChange={handleImportFiles} className="hidden" />
               <input type="file" ref={singleFileInputRef} onChange={(e) => {
                 if (e.target.files && targetSlotForUpload !== null) {
                   handleSlotDrop(targetSlotForUpload, e.target.files, currentTapeColor);
@@ -6033,52 +5966,6 @@ function App({ onExitToHub }: AppProps) {
               error={exportError}
               progress={exportProgress !== null ? exportProgress : undefined}
             />
-
-            {
-              importAnalysis && (
-                <ImportModal
-                  analysis={importAnalysis}
-                  onClose={() => setImportAnalysis(null)}
-                  onRestoreAndSync={handleRestoreAndSync}
-                  onRestoreProject={(projectState) => {
-                    setState(projectState);
-                    setImportAnalysis(null);
-                    showToast("Project Restored Successfully", "success");
-                  }}
-                  onImportStructure={async (structureMap) => {
-                    showToast("Importing Structure...", "neutral");
-
-                    import('./utils/importUtils').then(({ processSDStructure }) => {
-                      setState(prev => {
-                        const result = processSDStructure(structureMap, prev.files, prev.tapes);
-                        return { ...prev, files: result.files, tapes: result.tapes };
-                      });
-                      setImportAnalysis(null);
-                      showToast("SD Structure Imported", "success");
-                    });
-                  }}
-                  onImportFiles={(files) => {
-                    import('./utils/importUtils').then(({ processAudioFiles }) => {
-                      const newFiles = processAudioFiles(files);
-                      const count = Object.keys(newFiles).length;
-
-                      if (count > 0) {
-                        setState(prev => ({
-                          ...prev,
-                          files: { ...prev.files, ...newFiles }
-                        }));
-                        showToast(`Imported ${count} files to Pool`, "success");
-                      }
-                      setImportAnalysis(null);
-                    });
-                  }}
-                />
-              )
-            }
-
-
-
-
 
             <Suspense fallback={null}>
               <PresetsPanel
