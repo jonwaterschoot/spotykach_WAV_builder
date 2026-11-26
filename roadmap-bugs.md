@@ -21,7 +21,7 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
 **Import and export** → [import-export-plan.md](docs/import-export-plan.md), decisions taken Nov 26
-- [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu. Done on `feature/export-names-and-words` (stacked on `fix/unsaved-assign-escape`); click-test: each download's name, the Export window, the Project menu, Save in Browser Cache Mode.
+- [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu. Done on `feature/export-names-and-words` (stacked on `fix/unsaved-assign-escape`). Tested Nov 26: the project file's and SD card folder's names, and a project file imported back with an edited library sample (the edit came back; names and history didn't, which step 2 fixes). Still to test: the audio and tape downloads, Save in Browser Cache Mode.
 - [ ] 2. One project file and one importer: every old format reads back, the name comes from inside, the import saves like any project.
 - [ ] 3. Compare on a name clash: identical, or a summary with Import as a new project and Replace.
 - [ ] 4. Browser Cache Mode: say the work lives in this browser only, offer to move it to a work folder.
@@ -55,7 +55,7 @@ Details and line references: [docs/optimization-plan.md](docs/optimization-plan.
 
 ## Ideas
 
-- **Editor:** stereo tools. Auto-save in place of Save, which needs undo and history first.
+- **Editor:** stereo tools. Auto-save in place of Save, which needs undo and history first. Where a file came from (its pack, an import, a card) in an info block, in the header or above History.
 - **SD card:** import only new files. More than one project per card: ask Vlad first, and `'SK'` is hardcoded in 8 files. Project title in `config.txt`: waiting on whether the firmware accepts unknown keys. Prepare (erase) a card.
 - **Backup and projects:** a restore path, a backup reminder, cleanup as presets, remove the library → SD sync button, rename the old mirror states, recent projects and a File menu.
 - **Library:** an intro on the Upload tab.
