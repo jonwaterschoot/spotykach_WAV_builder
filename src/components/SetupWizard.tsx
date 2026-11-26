@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { HardDrive, FolderOpen, ArrowRight, Save, ChevronLeft, ChevronRight, FolderClosed, Scissors, UploadCloud, Library } from 'lucide-react';
+import { HardDrive, FolderOpen, ArrowRight, Save, ChevronLeft, ChevronRight, FolderClosed, Scissors, UploadCloud, Library, Globe } from 'lucide-react';
 import { resolveAssetPath } from '../utils/assetUtils';
 
 const OVERLAYS = [
@@ -14,7 +14,7 @@ interface SetupWizardProps {
     onRestore?: () => void;
 }
 
-type WizardStep = 'INTRO' | 'EXPLAINER' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'PROJECT_TITLE';
+type WizardStep = 'INTRO' | 'EXPLAINER' | 'SELECT_WORK' | 'SELECT_BACKUP' | 'PROJECT_TITLE' | 'BROWSER_ONLY';
 
 interface Slide {
     icon: React.ReactNode;
@@ -250,10 +250,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 </button>
 
                 <button
-                    onClick={onSkip}
+                    onClick={() => setStep('BROWSER_ONLY')}
                     className="text-gray-500/80 hover:text-gray-400 text-[11px] py-1.5 px-3 transition-all hover:underline"
                 >
-                    Skip setup (Use Browser Cache)
+                    Skip setup, work in this browser
                 </button>
             </div>
         </div>
@@ -507,6 +507,52 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
         </div>
     );
 
+    // What skipping means, said before it's chosen: the work stays in this browser.
+    const renderBrowserOnly = () => (
+        <div className="max-w-lg w-full space-y-8 animate-in slide-in-from-right duration-300">
+            <div className="text-center space-y-4">
+                <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center mx-auto text-orange-400 ring-1 ring-orange-500/30">
+                    <Globe size={40} />
+                </div>
+                <div>
+                    <h2 className="text-3xl font-bold text-white">Only in this browser</h2>
+                    <p className="text-gray-200 mt-3">
+                        Your work lives in this browser only. Clearing browser data deletes it.
+                    </p>
+                    <p className="text-gray-400 mt-2">
+                        A work folder keeps your projects on your computer. You can still move your work into one
+                        later: Save offers it.
+                    </p>
+                </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+                <button
+                    onClick={handleSelectWork}
+                    className="w-full py-4 bg-indigo-600/60 hover:bg-indigo-500/80 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-xl hover:shadow-indigo-500/20"
+                >
+                    <FolderOpen size={20} /> Choose a work folder
+                </button>
+                <button
+                    onClick={onSkip}
+                    className="w-full py-4 text-gray-300 hover:text-white bg-black/40 backdrop-blur-sm border border-white/5 hover:border-white/20 rounded-xl transition-all"
+                >
+                    Continue in the browser
+                </button>
+            </div>
+
+            <div className="flex justify-center">
+                <button
+                    onClick={() => setStep('INTRO')}
+                    className="text-gray-400 hover:text-white text-sm py-1.5 px-3 bg-black/40 backdrop-blur-sm rounded-lg transition-all border border-white/5 hover:border-white/20 flex items-center gap-2"
+                >
+                    <ChevronLeft size={16} />
+                    Back to Start
+                </button>
+            </div>
+        </div>
+    );
+
     const overlayStyle = OVERLAYS[overlayIdx].svg
         ? { backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(OVERLAYS[overlayIdx].svg)}")` }
         : {};
@@ -530,6 +576,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onSkip, re
                 {step === 'SELECT_WORK' && renderSelectWork()}
                 {step === 'SELECT_BACKUP' && renderSelectBackup()}
                 {step === 'PROJECT_TITLE' && renderProjectTitle()}
+                {step === 'BROWSER_ONLY' && renderBrowserOnly()}
             </div>
 
             <div className="col-start-1 row-start-1 z-20 self-end justify-self-center mb-12 flex gap-4 pointer-events-auto">

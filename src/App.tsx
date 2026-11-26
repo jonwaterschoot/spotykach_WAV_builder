@@ -5141,11 +5141,8 @@ function App({ onExitToHub }: AppProps) {
               setShowProjectManager(true);
             }
           }}
-          onSkip={() => {
-            if (confirm("Browser Cache Mode is temporary. Your work will be lost if you clear browser data. Continue?")) {
-              setIsWelcomeActive(false);
-            }
-          }}
+          // The wizard said what working in the browser means on its own screen.
+          onSkip={() => setIsWelcomeActive(false)}
           restorableHandles={restorableHandles}
           onRestore={handleRestoreSession}
         />
