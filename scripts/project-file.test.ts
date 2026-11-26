@@ -11,7 +11,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import JSZip from 'jszip';
-import { buildProjectFile, findProjectInZip, folderReader, librarySamplePath, loadProject, readManifest } from '../src/utils/projectFile';
+import { buildProjectFile, findProjectInZip, folderReader, librarySamplePath, loadProject, readManifest, type ProjectReader } from '../src/utils/projectFile';
+import { compareProjects, describeDifference, isIdentical, type ProjectSide } from '../src/utils/projectCompare';
 import { duplicateProject, exportSDStructure, loadProjectFromDirectory, saveProjectToDirectory } from '../src/utils/exportUtils';
 import { externalSampleAssetBaseUrl } from '../src/utils/assetUtils';
 import { getInitialState } from '../src/utils/initialState';
@@ -64,7 +65,7 @@ const LIB_URL = `${externalSampleAssetBaseUrl}/samples/Hainbach/Magic Box.flac`;
 const LIB_EDIT_URL = `${externalSampleAssetBaseUrl}/samples/Hainbach/Multitrack Frippertronic 2.flac`;
 
 const version = (id: string, description: string, hz: number, processing?: AudioVersion['processing']): AudioVersion =>
-    ({ id, timestamp: 1, description, blob: wav(0.05, hz), duration: 0.05, processing, hash: `hash-${id}` });
+    ({ id, timestamp: 1, description, blob: wav(0.05, hz), duration: 0.05, processing });
 
 const file = (id: string, name: string, originalName: string, versions: AudioVersion[], extra: Partial<FileRecord> = {}): FileRecord =>
     ({ id, name, originalName, versions, currentVersionId: versions[versions.length - 1].id, isParked: false, ...extra });
@@ -162,7 +163,10 @@ const run = async () => {
     console.log('\nProject file, without library audio');
     let referenced: JSZip;
     {
-        referenced = await zipOf(await buildProjectFile(source, 'Serpentinelore', { libraryAudio: false }));
+        // A stored hash, which the download must not keep.
+        const hashed = project();
+        hashed.files.lib.versions[0].hash = 'hash-of-the-exporters-conversion';
+        referenced = await zipOf(await buildProjectFile(hashed, 'Serpentinelore', { libraryAudio: false }));
         check(JSON.stringify(assetNames(referenced, 'Serpentinelore/')) === JSON.stringify(['archive-v1.wav', 'libEdit-v2.wav', 'own-v1.wav', 'own-v3.wav']),
             'unedited library audio is left out; the edit and other sources are packed', assetNames(referenced, 'Serpentinelore/').join(' '));
         const json = JSON.parse(await referenced.file('Serpentinelore/project.json')!.async('string'));
@@ -307,6 +311,68 @@ const run = async () => {
         await exportSDStructure(source, { directWrite: false, skMode: 'clean', includeConfig: true, projectName: 'Serpentinelore' });
         const plain = downloads[0] && await zipOf(downloads[0].blob);
         check(!!plain && !Object.keys(plain.files).some(p => p.startsWith('WAV_Builder/')), 'without the setting, SK/ only');
+    }
+
+    console.log('\nComparing with the project in the work folder');
+    {
+        // Saved from `source` under "Project folders on disk". Reads of audio are counted,
+        // to see which comparisons needed the bytes.
+        let audioReads = 0;
+        const counted = (read: ProjectReader): ProjectReader => async (p) => { audioReads++; return read(p); };
+        const folder = async (): Promise<ProjectSide> => {
+            const read = folderReader(new DirH('x', path.join(work.p, 'Projects', 'Serpentinelore')) as any);
+            return { manifest: (await readManifest(read))!, read: counted(read) };
+        };
+        const zipped = async (state: AppState, libraryAudio = true): Promise<ProjectSide> => {
+            const found = (await findProjectInZip(await zipOf(await buildProjectFile(state, 'Serpentinelore', { libraryAudio })), 'Serpentinelore.zip'))!;
+            return { manifest: found.manifest, read: counted(found.read) };
+        };
+        const compare = async (state: AppState, libraryAudio = true) => compareProjects(await folder(), await zipped(state, libraryAudio));
+
+        audioReads = 0;
+        let d = await compare(project());
+        check(isIdentical(d) && audioReads === 0, 'the same project is identical, settled by version ids without reading audio', `${describeDifference(d) || 'identical'}, ${audioReads} reads`);
+        d = await compare(project(), false);
+        check(isIdentical(d), 'also when its library samples went by reference', describeDifference(d) || 'identical');
+
+        const edited = project();
+        edited.files.own.versions.push(version('own-v4', 'Faded', 260, ['trimmed']));
+        edited.files.own.currentVersionId = 'own-v4';
+        d = await compare(edited);
+        check(d.slots.join() === 'B1' && !d.pool && !d.notes && !d.config, 'an edit in B1 shows as B1', describeDifference(d));
+
+        const sameBytes = project();
+        sameBytes.files.own.versions.push(version('own-v9', 'Normalized again', 240, ['normalized']));
+        sameBytes.files.own.currentVersionId = 'own-v9';
+        audioReads = 0;
+        d = await compare(sameBytes);
+        check(isIdentical(d) && audioReads > 0, 'the same audio under another version id is the same, by its hash', `${describeDifference(d) || 'identical'}, ${audioReads} reads`);
+
+        const renamed = project();
+        renamed.files.lib.name = 'MAGIC-BOX-2';
+        renamed.tapes.Blue.slots[1].fileId = 'own';
+        renamed.tapes.Blue.slots[0].fileId = null;
+        d = await compare(renamed);
+        check(d.slots.join() === 'B1,B2,G1', 'a renamed file and a moved one show by slot', describeDifference(d));
+
+        const other = project();
+        other.projectNotes = 'Changed notes';
+        other.projectConfig = { ...other.projectConfig!, grt_mx_b: 7 };
+        delete other.files.archive;
+        other.files.extra = file('extra', 'EXTRA', 'extra.wav', [version('extra-v1', 'Original', 660)], { isParked: true });
+        d = await compare(other);
+        check(!d.slots.length && d.pool === 2 && d.notes && d.config, 'notes, settings and the pool', describeDifference(d));
+
+        const { descriptor, customBlobs } = oldDescriptor(source, 'Serpentinelore');
+        const old = new JSZip();
+        old.file('Serpentinelore/project-descriptor.json', JSON.stringify(descriptor));
+        for (const [ref, blob] of Object.entries(customBlobs)) old.file(`Serpentinelore/${ref}`, await blob.arrayBuffer());
+        const oldFound = (await findProjectInZip(old, 'Serpentinelore_2026-11-26.zip'))!;
+        d = await compareProjects(await folder(), oldFound);
+        check(isIdentical(d), 'an old Project Manager zip of it is identical, by hashes (it has no names or version ids to go by)', describeDifference(d) || 'identical');
+
+        check(describeDifference({ slots: ['B2', 'G5', 'P1'], pool: 0, notes: true, config: false }) === '3 slots differ: B2, G5, P1. The notes differ.', 'the summary line');
+        check(describeDifference({ slots: ['B2'], pool: 1, notes: false, config: true }) === '1 slot differs: B2. 1 pool file differs. The device settings differ.', '…in the singular');
     }
 
     fs.rmSync(work.p, { recursive: true, force: true });

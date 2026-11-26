@@ -493,7 +493,7 @@ function App({ onExitToHub }: AppProps) {
 
       // Any export this app has made: the project file, an older Project Manager zip
       // or Full Backup Bundle, an SD card folder holding the project.
-      const { findProjectInZip, loadProject } = await import('./utils/projectFile');
+      const { findProjectInZip, folderReader, loadProject, readManifest } = await import('./utils/projectFile');
       const found = await findProjectInZip(zip, file.name);
       if (!found) {
         showToast('That zip holds no WAV Builder project, so there is nothing here to import.', 'error');
@@ -501,29 +501,51 @@ function App({ onExitToHub }: AppProps) {
       }
       const zipName = sanitizeFilename(found.name) || 'Imported-project';
 
-      // Lowercased, as Windows and macOS see "Song" and "song" as one folder.
+      // By lowercased name, as Windows and macOS see "Song" and "song" as one folder.
       const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
-      const takenNames = new Set<string>();
+      const folderNames = new Map<string, string>();
       for await (const [name, entry] of projectsDir.entries()) {
-        if (entry.kind === 'directory') takenNames.add(name.toLowerCase());
+        if (entry.kind === 'directory') folderNames.set(name.toLowerCase(), name);
       }
-      const isTaken = (name: string) => takenNames.has(name.toLowerCase());
+      const isTaken = (name: string) => folderNames.has(name.toLowerCase());
+      const freeName = (base: string) => {
+        let n = 1;
+        while (isTaken(`${base}_${n}`)) n++;
+        return `${base}_${n}`;
+      };
 
       // Read into memory and saved like any project, so the folder is in the normal
       // layout whatever the zip held. Library samples left out of it download here.
-      const saveAndOpen = async (projectName: string) => {
+      // `replacing` is deleted only once the import is read in full, so a bad zip or
+      // a failed download leaves it as it was.
+      const saveAndOpen = async (projectName: string, replacing?: string) => {
         setIsProcessing(true);
         setProgressMsg(`Importing "${projectName}"...`);
         try {
           const imported = await loadProject(found.manifest, found.read, { onProgress: (msg) => setProgressMsg(msg) });
+
+          let target = projectName;
+          let notice = '';
+          if (replacing) {
+            setProgressMsg(`Replacing "${replacing}"...`);
+            try {
+              await projectsDir.removeEntry(replacing, { recursive: true });
+            } catch (e) {
+              // Part of it may be gone already. A new folder keeps the import apart from the rest.
+              target = freeName(projectName);
+              notice = `Couldn't delete all of "${replacing}" (${e instanceof Error ? e.message : String(e)}). A file in it may be open in another app. The import went in as "${target}".`;
+            }
+          }
+
           const { saveProjectToDirectory } = await import('./utils/exportUtils');
-          await saveProjectToDirectory(imported, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
+          await saveProjectToDirectory(imported, workHandle, (msg) => setProgressMsg(msg || ''), target);
 
           await scanProjects(workHandle, sdHandle);
-          showToast(`"${projectName}" imported`, 'success');
+          if (!notice) showToast(replacing ? `"${replacing}" replaced by the import` : `"${target}" imported`, 'success');
 
           // Opening it replaces the open project, which is why the import asked first.
-          await handleLoadProject(projectName);
+          await handleLoadProject(target);
+          if (notice) showToast(notice, 'error');
         } catch (e) {
           showToast('Import failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
         } finally {
@@ -538,32 +560,139 @@ function App({ onExitToHub }: AppProps) {
         proceedLabel: 'Import without saving',
       });
 
-      if (!isTaken(zipName)) {
-        importAs(zipName);
-        return;
-      }
-
-      // Saving into the existing folder would mix the two projects' files. Comparing
-      // them and replacing one is step 3 of the import/export plan.
-      let n = 1;
-      while (isTaken(`${zipName}_${n}`)) n++;
-      setProjectNameModal({
+      // A new folder, so the two projects' files never mix.
+      const askNewName = (why: React.ReactNode) => setProjectNameModal({
         isOpen: true,
         title: 'Import as a new project',
-        message: (
-          <p>
-            "{zipName}" is already in your work folder{zipName.toLowerCase() === currentProjectName?.toLowerCase() ? ' and open in the studio' : ''}.
-            The import goes into a new project, so the two don't mix.
-          </p>
-        ),
+        message: why,
         confirmLabel: 'Import',
-        initialValue: `${zipName}_${n}`,
+        initialValue: freeName(zipName),
         validate: (name) => {
           const clean = sanitizeFilename(name);
           if (!clean) return 'Use letters, digits, hyphens or underscores.';
           return isTaken(clean) ? `"${clean}" is taken too. Pick another name.` : null;
         },
         onConfirm: (name) => importAs(sanitizeFilename(name)),
+      });
+
+      if (!isTaken(zipName)) {
+        importAs(zipName);
+        return;
+      }
+
+      // The name is taken: compare first. The same project needs no import, and a
+      // changed one can replace the one in the work folder.
+      const existingName = folderNames.get(zipName.toLowerCase())!;
+      const existingDir = await projectsDir.getDirectoryHandle(existingName);
+      const isOpen = existingName.toLowerCase() === currentProjectName?.toLowerCase();
+      const { compareProjects, describeDifference, isIdentical } = await import('./utils/projectCompare');
+      setIsProcessing(true);
+      setProgressMsg(`Comparing with "${existingName}"...`);
+      let difference: Awaited<ReturnType<typeof compareProjects>> | null = null;
+      try {
+        const read = folderReader(existingDir);
+        const manifest = await readManifest(read);
+        if (manifest) difference = await compareProjects({ manifest, read }, found, (msg) => setProgressMsg(msg));
+      } catch (e) {
+        console.warn(`[Import] Couldn't compare with "${existingName}"`, e);
+      } finally {
+        setIsProcessing(false);
+        setProgressMsg('');
+      }
+
+      if (!difference) {
+        askNewName(
+          <p>"{existingName}" is already in your work folder, and couldn't be read to compare. The import goes into a new project.</p>,
+        );
+        return;
+      }
+
+      if (isIdentical(difference)) {
+        const asLastSaved = isOpen && (hasUnsavedChanges || isEditorDirty) ? ', as last saved' : '';
+        setConfirmAction({
+          title: 'Already in your work folder',
+          message: (
+            <p>
+              "{existingName}" in your work folder is this same project: the same files in every slot, and the
+              same pool, notes and device settings.{isOpen ? ` It's the project open in the studio${asLastSaved}.` : ''}
+            </p>
+          ),
+          confirmLabel: isOpen ? 'OK' : `Open "${existingName}"`,
+          showCancel: !isOpen,
+          onConfirm: () => {
+            setConfirmAction(null);
+            if (isOpen) return;
+            checkUnsavedChanges(() => handleLoadProject(existingName), {
+              offerSave: true,
+              consequence: `"${existingName}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+              proceedLabel: 'Open without saving',
+            });
+          },
+        });
+        return;
+      }
+
+      const summary = describeDifference(difference);
+
+      // Decision 2 of the import/export plan: Replace overwrites, after this says what goes.
+      const confirmReplace = async () => {
+        let snapshots = 0;
+        try {
+          for await (const [, entry] of (await existingDir.getDirectoryHandle('_sk_backups')).entries()) {
+            if (entry.kind === 'directory') snapshots++;
+          }
+        } catch { /* none */ }
+        const losesUnsaved = isOpen && (hasUnsavedChanges || isEditorDirty);
+        setConfirmAction({
+          title: `Replace "${existingName}"?`,
+          isDestructive: true,
+          message: (
+            <>
+              <p>
+                "{existingName}" is deleted from your work folder with its version history
+                {snapshots ? ` and ${snapshots} card snapshot${snapshots === 1 ? '' : 's'}` : ''}, and the imported
+                project takes its place.{losesUnsaved ? ' The unsaved changes in the studio go too.' : ''}
+              </p>
+              <p>{summary}</p>
+              <p className="text-sm text-gray-400">This can't be undone.</p>
+            </>
+          ),
+          confirmLabel: 'Replace',
+          onConfirm: () => {
+            setConfirmAction(null);
+            const run = () => saveAndOpen(zipName, existingName);
+            // The open project's own unsaved changes were named above.
+            if (isOpen) {
+              void run();
+              return;
+            }
+            checkUnsavedChanges(run, {
+              offerSave: true,
+              consequence: `The imported "${zipName}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+              proceedLabel: 'Replace without saving',
+            });
+          },
+        });
+      };
+
+      setConfirmAction({
+        title: `"${existingName}" is already in your work folder`,
+        message: (
+          <>
+            <p>The project in the file is different. {summary}</p>
+            <p className="text-sm text-gray-400">
+              Import it as a new project to keep both, or replace the one in your work folder with it.
+            </p>
+          </>
+        ),
+        // Keeping both is the safe answer, so it's the main button. Replace sits apart, in red.
+        confirmLabel: 'Import as a new project',
+        onConfirm: () => {
+          setConfirmAction(null);
+          askNewName(<p>The import goes into a new project, beside "{existingName}".</p>);
+        },
+        discardLabel: `Replace "${existingName}"…`,
+        onDiscard: () => { void confirmReplace(); },
       });
     } catch (e: any) {
       if (e.name !== 'AbortError') showToast('Import failed: ' + e.message, 'error');

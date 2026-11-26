@@ -228,7 +228,7 @@ const downloadLibrarySample = async (samplePath: string): Promise<Blob> => {
 };
 
 /** Where a version's audio can be: its `blobRef`, then `Assets/`, then a Full Backup Bundle's `blobs/`. */
-const readAsset = async (v: AudioVersion, read: ProjectReader): Promise<File | null> => {
+export const readVersionAudio = async (v: AudioVersion, read: ProjectReader): Promise<File | null> => {
     const base = v.blobRef?.split(/[\\/]/).pop();
     for (const path of new Set([v.blobRef, base && `Assets/${base}`, base && `blobs/${base}`])) {
         const file = path ? await read(path) : null;
@@ -281,7 +281,7 @@ export const loadProject = async (
     const loadVersion = async (file: FileRecord, v: AudioVersion): Promise<AudioVersion> => {
         // Nothing was stored for it.
         if (!v.blobRef && !v.samplePath) return v;
-        const asset = await readAsset(v, read);
+        const asset = await readVersionAudio(v, read);
         if (asset) return withAudio(v, asset, false);
         if (v.samplePath) {
             try {
