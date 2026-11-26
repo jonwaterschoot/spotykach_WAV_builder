@@ -14,6 +14,8 @@ interface ExportModalProps {
      * back. Without `libraryAudio`, unedited sample-library files download on import.
      */
     onExportProject: (options: { libraryAudio: boolean }) => void;
+    /** The SD card folder also carries the saved project (Settings ▸ Keep project copies on SD). */
+    projectCopyOnCard?: boolean;
     /**
      * Hand this project to the submission tool instead of downloading it.
      *
@@ -48,7 +50,7 @@ const Intro = ({ title, children }: { title: string; children: ReactNode }) => (
 
 const primaryButton = 'w-full py-3 bg-synthux-yellow hover:bg-yellow-400 text-black font-bold rounded-lg transition-colors flex items-center justify-center gap-2';
 
-export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, onPrepareSubmission }: ExportModalProps) => {
+export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, projectCopyOnCard, onPrepareSubmission }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('project');
     const [libraryAudio, setLibraryAudio] = useState(false);
 
@@ -162,6 +164,13 @@ export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExpor
                                     Spotykach reads it from (<span className="font-mono text-gray-200">SK/B/1.WAV</span> etc.).
                                     Unzip it and copy what's inside to the root of the card.
                                 </p>
+                                {projectCopyOnCard && (
+                                    <p>
+                                        It also holds the project as last saved, in{' '}
+                                        <span className="font-mono text-gray-200">WAV_Builder/Projects/</span>, because
+                                        Settings ▸ Keep project copies on SD is on.
+                                    </p>
+                                )}
                                 <p className="text-gray-400">
                                     To write to a card directly, use <strong className="text-gray-300">Import / Build SD</strong> in
                                     the header.

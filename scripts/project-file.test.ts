@@ -12,7 +12,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import JSZip from 'jszip';
 import { buildProjectFile, findProjectInZip, folderReader, librarySamplePath, loadProject, readManifest } from '../src/utils/projectFile';
-import { duplicateProject, loadProjectFromDirectory, saveProjectToDirectory } from '../src/utils/exportUtils';
+import { duplicateProject, exportSDStructure, loadProjectFromDirectory, saveProjectToDirectory } from '../src/utils/exportUtils';
 import { externalSampleAssetBaseUrl } from '../src/utils/assetUtils';
 import { getInitialState } from '../src/utils/initialState';
 import { assembleWav } from '../src/lib/audio/wavHeader';
@@ -38,6 +38,16 @@ const check = (ok: boolean, label: string, detail = '') => {
 
 // No network: a library download that isn't stubbed fails as it would offline.
 (globalThis as any).fetch = async () => { throw new Error('offline'); };
+
+// downloadBlob, for the SD card folder: keep what it would have downloaded.
+const downloads: Array<{ name: string; blob: Blob }> = [];
+let lastObjectUrl: Blob | null = null;
+(URL as any).createObjectURL = (blob: Blob) => { lastObjectUrl = blob; return 'blob:test'; };
+(URL as any).revokeObjectURL = () => {};
+(globalThis as any).document = {
+    createElement: () => ({ click(this: any) { downloads.push({ name: this.download, blob: lastObjectUrl! }); } }),
+    body: { appendChild() {}, removeChild() {} },
+};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -277,6 +287,26 @@ const run = async () => {
         loose.file('SK/B/1.WAV', 'x');
         loose.file('SK/project.json', JSON.stringify({ metadata: { projectName: 'Card' }, tapes: source.tapes, files: { own: { name: 'x' } } }));
         check(await findProjectInZip(loose, 'card.zip') === null, 'a card\'s SK/project.json alone isn\'t a project');
+    }
+
+    console.log('\nSD card folder with the project copy');
+    {
+        downloads.length = 0;
+        await exportSDStructure(source, {
+            directWrite: false, skMode: 'clean', includeConfig: true,
+            projectName: 'Serpentinelore', mirrorProjectToSD: true, workHandle: work as any,
+        });
+        const sk = downloads[0] && await zipOf(downloads[0].blob);
+        check(!!sk?.file('SK/B/1.WAV') && !!sk.file('WAV_Builder/Projects/Serpentinelore/project.json'), 'the zip holds SK/ and the project where a card keeps it', downloads[0]?.name);
+        check(!!sk && assetNames(sk, 'WAV_Builder/Projects/Serpentinelore/').length === 6, 'with the saved audio');
+        sk?.file('SK/project.json', JSON.stringify({ metadata: { projectName: 'Card' }, tapes: source.tapes, files: {} }));
+        const found = sk && await findProjectInZip(sk, downloads[0].name);
+        check(found?.name === 'Serpentinelore' && found.manifest.kind === 'project' && Object.keys(found.manifest.data.files).length === 4, 'the importer opens the project copy, not SK/project.json');
+
+        downloads.length = 0;
+        await exportSDStructure(source, { directWrite: false, skMode: 'clean', includeConfig: true, projectName: 'Serpentinelore' });
+        const plain = downloads[0] && await zipOf(downloads[0].blob);
+        check(!!plain && !Object.keys(plain.files).some(p => p.startsWith('WAV_Builder/')), 'without the setting, SK/ only');
     }
 
     fs.rmSync(work.p, { recursive: true, force: true });

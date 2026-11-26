@@ -676,6 +676,25 @@ const identityText = (identity: { files: Record<string, unknown> }, state: AppSt
     return JSON.stringify({ ...identity, files });
 };
 
+/** Where a card keeps its copy of a project, and where the Project Manager finds it. */
+const mirrorFolder = (projectName: string) => `WAV_Builder/Projects/${projectName}`;
+
+/**
+ * The saved project as the card's copy holds it: `project.json` and `Assets/`, keyed by
+ * their path in the project folder. Throws when the project was never saved.
+ */
+const savedProjectFiles = async (workHandle: FileSystemDirectoryHandle, projectName: string): Promise<Array<[string, File]>> => {
+    const projectDir = await (await workHandle.getDirectoryHandle('Projects')).getDirectoryHandle(projectName);
+    const files: Array<[string, File]> = [['project.json', await (await projectDir.getFileHandle('project.json')).getFile()]];
+    try {
+        const assets = await projectDir.getDirectoryHandle('Assets');
+        for await (const [name, entry] of assets.entries()) {
+            if (entry.kind === 'file') files.push([`Assets/${name}`, await (entry as FileSystemFileHandle).getFile()]);
+        }
+    } catch { /* a project without audio */ }
+    return files;
+};
+
 /**
  * Writes the SK structure. On a direct write, returns the card snapshot: what
  * every slot now holds, for the caller to keep in the project (`cardSnapshot`).
@@ -896,24 +915,9 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
             if (cardFiles && card.kind !== 'usb' && options.mirrorProjectToSD && options.workHandle && options.projectName) {
                 onProgress?.("Mirroring Project Source to card...", 85);
                 try {
-                    const target = `WAV_Builder/Projects/${options.projectName}`;
-                    const sourceProjectsDir = await options.workHandle.getDirectoryHandle('Projects');
-                    const sourceProjectDir = await sourceProjectsDir.getDirectoryHandle(options.projectName);
-
-                    // Copy project.json
-                    const sJson = await sourceProjectDir.getFileHandle('project.json');
-                    await cardFiles.write(`${target}/project.json`, await sJson.getFile());
-
-                    // Copy Assets
-                    try {
-                        const sAssets = await sourceProjectDir.getDirectoryHandle('Assets');
-                        for await (const [name, entry] of sAssets.entries()) {
-                            if (entry.kind === 'file') {
-                                const sf = await sAssets.getFileHandle(name);
-                                await cardFiles.write(`${target}/Assets/${name}`, await sf.getFile());
-                            }
-                        }
-                    } catch (e) { }
+                    for (const [path, file] of await savedProjectFiles(options.workHandle, options.projectName)) {
+                        await cardFiles.write(`${mirrorFolder(options.projectName)}/${path}`, file);
+                    }
                 } catch (e) {
                     console.warn("Project source mirror failed", e);
                 }
@@ -973,6 +977,19 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
                     }
                 }
             }
+        }
+    }
+
+    // The same copy of the project a card reader build mirrors, so a zip and a direct
+    // write give the same card. Project ▸ Import project file opens it from the zip.
+    if (options.mirrorProjectToSD && options.workHandle && options.projectName) {
+        onProgress?.("Adding the project...", 92);
+        try {
+            for (const [path, file] of await savedProjectFiles(options.workHandle, options.projectName)) {
+                zip.file(`${mirrorFolder(options.projectName)}/${path}`, file);
+            }
+        } catch (e) {
+            console.warn("Project copy left out of the SD card folder", e);
         }
     }
 

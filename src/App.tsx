@@ -5713,12 +5713,20 @@ function App({ onExitToHub }: AppProps) {
               <Suspense fallback={null}>
                 <ExportModal
                   files={state.files}
+                  projectCopyOnCard={!!(workHandle && currentProjectName && getDurabilityPrefs().mirrorProjectsToSD)}
                   onClose={() => setShowExport(false)}
                   onExportSD={async (opts) => {
                     setShowExport(false); // Close settings modal
                     await handleExportProgress('SD Card Export', async (log) => {
                       const { exportSDStructure } = await import('./utils/exportUtils');
-                      const cardSnapshot = await exportSDStructure(state, { ...opts, projectName: currentProjectName || 'Untitled-project', onConvert: convertAudioToWav }, log);
+                      const cardSnapshot = await exportSDStructure(state, {
+                        ...opts,
+                        projectName: currentProjectName || 'Untitled-project',
+                        onConvert: convertAudioToWav,
+                        // The saved project, as a card reader build mirrors it.
+                        mirrorProjectToSD: !!currentProjectName && getDurabilityPrefs().mirrorProjectsToSD,
+                        workHandle,
+                      }, log);
                       // Project data like any other: left unsaved so the next save keeps it.
                       if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
                     });
