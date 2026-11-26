@@ -64,3 +64,16 @@ export function useEscapeLayer(active: boolean, handler: EscapeHandler) {
     return () => removeLayer(layer);
   }, [active]);
 }
+
+/**
+ * Escape calls `onClose` while `enabled`, for a surface that always closes on it.
+ *
+ * `enabled` has to follow whether the surface is on screen: the layer consumes the
+ * key, so one left on while hidden takes Escape from everything below it.
+ */
+export function useEscapeKey(onClose: () => void, enabled = true) {
+  useEscapeLayer(enabled, () => {
+    onClose();
+    return true;
+  });
+}

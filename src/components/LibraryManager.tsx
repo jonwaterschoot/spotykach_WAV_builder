@@ -8,6 +8,7 @@ import { NotesEditor } from './NotesEditor';
 import { LocalFolderBrowser } from './LocalFolderBrowser';
 import { saveKnownTags } from '../utils/tagStore';
 import { detectCueChunk } from '../utils/importUtils';
+import { useEscapeKey } from '../shell/escapeStack';
 
 const COMMON_LICENSES = [
     { label: "Standard Copyright / All Rights Reserved", value: "", short: "ARR" },
@@ -212,22 +213,14 @@ export const LibraryManager = ({
                 onRefreshLibrary?.(); // Auto-sync with disk on open
                 hasAutoRefreshed.current = true;
             }
-
-            const handleKeyDown = (e: KeyboardEvent) => {
-                if (e.key === 'Escape') {
-                    if (pendingUploadDrafts) {
-                        handleCloseReview();
-                    } else {
-                        handleCloseManager();
-                    }
-                }
-            };
-            window.addEventListener('keydown', handleKeyDown);
-            return () => window.removeEventListener('keydown', handleKeyDown);
         } else {
             hasAutoRefreshed.current = false;
         }
-    }, [isOpen, initialTab, onRefreshLibrary, pendingUploadDrafts]);
+    }, [isOpen, initialTab, onRefreshLibrary]);
+
+    // The upload review closes first, the manager on the next Escape. The handlers
+    // are defined further down, past the early return, and only called while open.
+    useEscapeKey(() => (pendingUploadDrafts ? handleCloseReview() : handleCloseManager()), isOpen);
 
     const getLicenseAbbr = (licenseText?: string) => {
         if (!licenseText) return '';

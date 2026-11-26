@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
+import { useEscapeKey } from '../shell/escapeStack';
 
 interface ConfirmModalProps {
     isOpen: boolean;
@@ -29,15 +29,7 @@ export const ConfirmModal = ({
     isDestructive = false,
     showCancel = true
 }: ConfirmModalProps) => {
-    // Escape key listener
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    useEscapeKey(onClose, isOpen);
 
     if (!isOpen) return null;
 

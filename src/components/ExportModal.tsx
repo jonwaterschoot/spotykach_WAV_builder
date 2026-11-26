@@ -1,6 +1,7 @@
 import { X, HardDrive, FileAudio, Archive, Download, Info, Send } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { type FileRecord } from '../types';
+import { useEscapeKey } from '../shell/escapeStack';
 // dynamic utility imports
 
 interface ExportModalProps {
@@ -23,13 +24,8 @@ type ExportTab = 'sd' | 'preset' | 'files';
 export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, onPrepareSubmission }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('sd');
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onClose]);
+    // Mounted only while shown, so always enabled.
+    useEscapeKey(onClose);
 
     // SD Options
     const [sdIncludeProject, setSdIncludeProject] = useState(true);

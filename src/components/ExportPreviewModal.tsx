@@ -11,6 +11,7 @@ import { SlotGrid6x6, type SlotEntry, type SlotActionBadge, TAPE_LETTER } from '
 import type { SKPrimaryDecision, ExportOptions } from '../types';
 import { getDurabilityPrefs } from '../utils/durabilityPrefs';
 import { USB_FIRMWARE } from '../lib/usb/flag';
+import { useEscapeKey } from '../shell/escapeStack';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -576,14 +577,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const diff = useMemo(() => configLocked ? { ...cardDiff, config: undefined } : cardDiff, [cardDiff, configLocked]);
     const [mode, setMode] = useState<'import' | 'push'>(defaultMode);
 
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    useEscapeKey(onClose, isOpen);
 
     const initialPreset: QuickPreset = defaultPreset ?? (mode === 'import' ? 'import_pool_only' : 'push_sync');
 
@@ -690,20 +684,12 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         }
     };
 
-    // Clean up URLs
+    // Revoke the preview URL when it is replaced, when the modal opens or closes, and on unmount.
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-
         return () => {
             if (activePreviewUrl) URL.revokeObjectURL(activePreviewUrl);
-            window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [activePreviewUrl, isOpen, onClose]);
+    }, [activePreviewUrl, isOpen]);
 
     const [configDecision, setConfigDecision] = useState<SKPrimaryDecision>(() => {
         if (!diff.config) return 'skip';

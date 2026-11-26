@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Trash2, Download, Terminal, Info, AlertTriangle, XCircle, Search, Clock, FileText } from 'lucide-react';
 import { logger, type LogEntry, type LogLevel } from '../utils/logger';
+import { useEscapeKey } from '../shell/escapeStack';
 
 interface LogModalProps {
     isOpen: boolean;
@@ -18,18 +19,11 @@ export const LogModal = ({ isOpen, onClose }: LogModalProps) => {
             const unsubscribe = logger.subscribe((newLogs) => {
                 setLogs(newLogs);
             });
-
-            const handleKeyDown = (e: KeyboardEvent) => {
-                if (e.key === 'Escape') onClose();
-            };
-            window.addEventListener('keydown', handleKeyDown);
-
-            return () => {
-                unsubscribe();
-                window.removeEventListener('keydown', handleKeyDown);
-            };
+            return unsubscribe;
         }
-    }, [isOpen, onClose]);
+    }, [isOpen]);
+
+    useEscapeKey(onClose, isOpen);
 
     if (!isOpen) return null;
 

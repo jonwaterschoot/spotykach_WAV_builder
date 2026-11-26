@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { AlertTriangle, FolderSearch, Trash2, ArrowRight, Check } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
+import { useEscapeKey } from '../shell/escapeStack';
 
 export interface MissingAsset {
     fileId: string;
@@ -38,14 +38,8 @@ export const MissingFilesResolver = ({
     onRecoverSD,
     onRecoverAllSD
 }: MissingFilesResolverProps) => {
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onResolve('skip', missingAssets.map(a => a.fileId));
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onResolve, missingAssets]);
+    // Enabled only while shown: an empty list renders nothing.
+    useEscapeKey(() => onResolve('skip', missingAssets.map(a => a.fileId)), isOpen && missingAssets.length > 0);
 
     if (!isOpen || missingAssets.length === 0) return null;
 

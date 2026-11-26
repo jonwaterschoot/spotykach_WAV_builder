@@ -1,7 +1,8 @@
 import { X, ExternalLink, Cpu, FileAudio, Bot, AlertTriangle, Save, HardDrive, CheckCircle2, XCircle, Monitor, Command, Terminal, ChevronDown, ChevronRight, BookOpen, FolderClosed, Scissors, UploadCloud, Library, Coffee, Send, Camera, Film, Maximize2, Dices, Usb, Link2, Check } from 'lucide-react';
 import { version } from '../../package.json';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { resolveAssetPath } from '../utils/assetUtils';
+import { useEscapeKey } from '../shell/escapeStack';
 import { DISCORD_HANDLE, submissionEmail, submissionGuideLink, submissionMailto } from '../data/links';
 import { hashForMode, modeFromHash } from '../shell/useAppMode';
 import { USB_FIRMWARE } from '../lib/usb/flag';
@@ -67,24 +68,8 @@ const Shot = ({ src, alt, note, kind = 'image', pending = false }: {
 }) => {
     const [zoomed, setZoomed] = useState(false);
 
-    /*
-     * Escape closes the zoom, not the modal underneath it.
-     *
-     * The modal's own Escape listener is on `window` and was registered first, so a
-     * bubble-phase listener here would run second and close both at once. Capture
-     * runs before every bubble-phase window listener, which makes stopping it here
-     * the whole of the fix.
-     */
-    useEffect(() => {
-        if (!zoomed) return;
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key !== 'Escape') return;
-            e.stopPropagation();
-            setZoomed(false);
-        };
-        window.addEventListener('keydown', onKeyDown, true);
-        return () => window.removeEventListener('keydown', onKeyDown, true);
-    }, [zoomed]);
+    // Escape closes the zoom, not the modal under it: this layer opens above the modal's.
+    useEscapeKey(() => setZoomed(false), zoomed);
 
     if (pending) {
         const Icon = kind === 'video' ? Film : Camera;
@@ -172,13 +157,7 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
      */
     const inSubmitTool = modeFromHash(window.location.hash) === 'submit';
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onClose]);
+    useEscapeKey(onClose);
 
     const toggleSection = (id: string) => {
         setExpandedSection(prev => prev === id ? null : id);

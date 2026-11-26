@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, RefreshCw, Check, AlertTriangle, Loader, Trash2, ArrowRight, ArrowLeftRight, FolderOpen, Settings } from 'lucide-react';
 import type { UserLibrary, FileRecord } from '../types';
+import { useEscapeKey } from '../shell/escapeStack';
 // dynamic utility imports
 
 interface LibrarySyncModalProps {
@@ -42,14 +43,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
     const [syncProgress, setSyncProgress] = useState<string>('');
     const [showExitConfirmation, setShowExitConfirmation] = useState(false);
 
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    useEscapeKey(onClose, isOpen);
 
 
     const compareLibrary = useCallback(async () => {
@@ -138,16 +132,7 @@ export const LibrarySyncModal: React.FC<LibrarySyncModalProps> = ({
                 setPhase('review');
             }
         }
-
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                onClose();
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, sdHandle, compareLibrary, onClose]);
+    }, [isOpen, sdHandle, compareLibrary]);
 
     const handleSync = async () => {
         if (!sdHandle) return;

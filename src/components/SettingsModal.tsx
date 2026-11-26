@@ -6,6 +6,7 @@ import type { VisualFilters } from '../types';
 import { getDurabilityPrefs, setDurabilityPref, type DurabilityPrefs } from '../utils/durabilityPrefs';
 import { appStorage } from '../utils/storageNamespace';
 import { UsbTransferSetting } from './UsbTransferSetting';
+import { useEscapeKey } from '../shell/escapeStack';
 
 /**
  * Settings — Phase 7, step 1.
@@ -230,14 +231,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isDragging, setIsDragging] = useState(false);
     const [activeTab, setActiveTab] = useState<SettingsTab>('files');
 
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    useEscapeKey(onClose, isOpen);
 
     const [customPresets, setCustomPresets] = useState<Record<string, Partial<VisualFilters>>>(() => {
         try {
@@ -323,27 +317,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             document.body.style.userSelect = '';
         };
 
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                onClose();
-            }
-        };
-
         if (isDragging) {
             window.addEventListener('mousemove', handleMouseMove);
             window.addEventListener('mouseup', handleMouseUp);
             document.body.style.userSelect = 'none';
         }
 
-        window.addEventListener('keydown', handleKeyDown);
-
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
-            window.removeEventListener('keydown', handleKeyDown);
             document.body.style.userSelect = '';
         };
-    }, [isDragging, isOpen, onClose]);
+    }, [isDragging]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         const modal = (e.currentTarget as HTMLElement).closest('.settings-modal-card') as HTMLElement;

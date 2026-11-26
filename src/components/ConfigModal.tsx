@@ -5,6 +5,7 @@ import { ConfigForm } from './ConfigForm';
 import { UsbConfigBar } from './UsbConfigBar';
 import { downloadConfig, ensureWritable, readConfigFromCard, writeConfigToCard } from '../utils/configFile';
 import type { ProjectConfig, ProjectSummary } from '../types';
+import { useEscapeKey } from '../shell/escapeStack';
 
 interface ConfigModalProps {
     isOpen: boolean;
@@ -37,14 +38,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     const [pos, setPos] = useState({ x: Math.max(8, window.innerWidth / 2 - 390), y: 80 });
     const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    useEscapeKey(onClose, isOpen);
 
     useEffect(() => {
         if (saveStatus) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, FolderPlus } from 'lucide-react';
+import { useEscapeKey } from '../../shell/escapeStack';
 
 interface ProjectNameModalProps {
     isOpen: boolean;
@@ -34,14 +35,10 @@ export const ProjectNameModal = ({
             setName(initialValue);
             // Auto-focus after animation
             setTimeout(() => inputRef.current?.focus(), 100);
-
-            const handleKeyDown = (e: KeyboardEvent) => {
-                if (e.key === 'Escape') onClose();
-            };
-            window.addEventListener('keydown', handleKeyDown);
-            return () => window.removeEventListener('keydown', handleKeyDown);
         }
-    }, [isOpen, initialValue, onClose]);
+    }, [isOpen, initialValue]);
+
+    useEscapeKey(onClose, isOpen);
 
     if (!isOpen) return null;
 
@@ -87,9 +84,6 @@ export const ProjectNameModal = ({
                             onChange={(e) => setName(e.target.value)}
                             placeholder={placeholder}
                             className="w-full bg-black/40 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-synthux-blue focus:ring-1 focus:ring-synthux-blue transition-all font-mono"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Escape') onClose();
-                            }}
                         />
                     </div>
                     {error && <p role="alert" className="text-xs text-red-400 ml-1">{error}</p>}

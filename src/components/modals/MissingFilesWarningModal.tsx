@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, AlertTriangle } from 'lucide-react';
+import { useEscapeKey } from '../../shell/escapeStack';
 
 interface MissingFilesWarningModalProps {
     isOpen: boolean;
@@ -14,14 +15,7 @@ export const MissingFilesWarningModal: React.FC<MissingFilesWarningModalProps> =
     missingFiles,
     onSaveAnyway
 }) => {
-    React.useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    useEscapeKey(onClose, isOpen);
 
     if (!isOpen) return null;
 

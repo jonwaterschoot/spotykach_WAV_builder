@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Trash2, AlertTriangle, X, ChevronRight, Play, Pause, RotateCcw, Volume2, Info, Skull, Folder, ScrollText } from 'lucide-react';
 import type { FileRecord, TapeColor, Tape, AudioVersion } from '../types';
+import { useEscapeKey } from '../shell/escapeStack';
 
 interface CleanupModalProps {
     isOpen: boolean;
@@ -283,22 +284,8 @@ export const CleanupModal: React.FC<CleanupModalProps> = ({
         setConfirmAction(null);
     }, [isOpen]);
 
-    useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key !== 'Escape') return;
-            // App keeps a global Escape stack that would close the whole modal underneath
-            // us, so the confirmation swallows the key rather than letting it through.
-            if (confirmAction) {
-                e.stopPropagation();
-                setConfirmAction(null);
-            } else {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown, true);
-        return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [isOpen, confirmAction, onClose]);
+    // An open confirmation closes first, the modal on the next Escape.
+    useEscapeKey(() => (confirmAction ? setConfirmAction(null) : onClose()), isOpen);
 
     /**
      * What each of the three buttons would take, all three costed at once.
