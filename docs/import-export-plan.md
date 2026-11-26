@@ -251,6 +251,25 @@ Each lands as its own commit and is click-tested on its own.
 3. **Compare on a name clash.** Identical, or the summary with Import as a new project and
    Replace.
    Click-test: the same project re-imported, one with a changed slot, Replace.
+
+   **Done on `feature/import-compare`** (`edac51a`), stacked on step 2's branch, not
+   click-tested yet. In [`projectCompare.ts`](../src/utils/projectCompare.ts), with cases in
+   `npm run check:project-file`. Where it went past or short of the step:
+   - Cheapest test first, per slot: between two project files the same version id is the same
+     audio (an edit makes a new version), so an unchanged project compares without reading
+     audio. Then library originals by pack path, then stored hashes, then the audio's own
+     hash.
+   - A slot also differs when its file's name, slices or tempo differ. Names and tempo only
+     between two project files: an old Project Manager zip has library names and no tempo.
+   - The pool is compared by file id.
+   - Identical and open in the studio: the dialog says so, with OK only.
+   - Replace names the card snapshots (`_sk_backups/`) that go with the old folder, and the
+     open project's unsaved changes when it's the one replaced. It reads the import in full,
+     library downloads too, before deleting anything. If the old folder can't be deleted
+     completely (a file open in another app), the import goes in under a new name, so the two
+     still don't mix.
+   - After Replace the folder takes the import's spelling of the name: `song` replacing `Song`
+     is saved as `song`.
 4. **Browser Cache Mode.** The wizard's screen, the note on Save, Export and Import, and Move to
    a work folder.
    Click-test: Skip in the wizard, then Move to a work folder with unsaved work.
