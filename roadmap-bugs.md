@@ -22,7 +22,7 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 
 **Import and export** → [import-export-plan.md](docs/import-export-plan.md), decisions taken Nov 26
 - [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu. Done on `feature/export-names-and-words` (stacked on `fix/unsaved-assign-escape`). Tested Nov 26: the project file's and SD card folder's names, and a project file imported back with an edited library sample (the edit came back; names and history didn't, which step 2 fixes). Still to test: the audio and tape downloads, Save in Browser Cache Mode.
-- [ ] 2. One project file and one importer: every old format reads back, the name comes from inside, the import saves like any project.
+- [ ] 2. One project file and one importer: every old format reads back, the name comes from inside, the import saves like any project. Done on `feature/project-file` (stacked on step 1's branch); `npm run check:project-file` passes. Click-test: export and import back, with and without library audio, and offline without it; your Nov 26 zips (old format); an SD card folder with Keep project copies on SD on; a project imported before this that you saved afterwards (it should now open the save).
 - [ ] 3. Compare on a name clash: identical, or a summary with Import as a new project and Replace.
 - [ ] 4. Browser Cache Mode: say the work lives in this browser only, offer to move it to a work folder.
 - [ ] 5. Delete the unreachable ImportModal path.
@@ -35,9 +35,7 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 
 ## Bugs
 
-- **Saves after a zip import don't stick.** The import leaves `project-descriptor.json` in the project folder, saves write `project.json`, and the loader reads the descriptor first. Fixed by step 2 of the import/export plan.
 - **Auto-save's recovery copy never comes back with a project folder connected.** Returning to Studio or restoring a session reloads the project from the folder over it, so the setting's promise ("a closed tab or a crash doesn't lose the open project") doesn't hold. Decide: offer to recover when the browser copy is newer than the folder.
-- **Import and export:** a Full Backup Bundle imports with its audio missing, settings-only exports drop edits to library samples, and imports take the zip's filename as the project name. → [What breaks](docs/import-export-plan.md#what-breaks)
 - **Never tested:** browsers without `showDirectoryPicker`, `move()` on an SD card, the backup's rollback when the disk fills, and the Project Manager with a card that already has projects. Full list in the archive.
 
 ## Code health

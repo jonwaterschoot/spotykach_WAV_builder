@@ -157,7 +157,9 @@ Folders imported before this still hold a `project-descriptor.json`. A save remo
 ### Name clash: compare, then choose
 
 Compare slot by slot using the SHA-256 the versions already store (`hash`, `audioHash` in
-[`types.ts`](../src/types.ts#L71)), plus the notes and the config.
+[`types.ts`](../src/types.ts#L71)), plus the notes and the config. A library original that
+came as a reference is compared by its pack path: the import converted it on this computer,
+so its bytes can differ from the exporter's.
 
 - **Identical:** "Already in your workspace, identical." Open it, or Cancel.
 - **Different:** one summary line, for example "3 slots differ: B2, G5, P1. Notes differ."
@@ -218,6 +220,34 @@ Each lands as its own commit and is click-tested on its own.
    Click-test: export and import on the same computer and another one, with and without
    library audio; an old Full Backup Bundle, an old Project Manager zip, an SK zip with its
    backup; a project with an edited library sample.
+
+   **Done on `feature/project-file`** (`07773b6`, `f143b2e`, `d55b55f`, `229e73d`), stacked on
+   step 1's branch, not click-tested yet. `npm run check:project-file` runs the round trips and
+   the old formats in node. Where it went past or short of the step:
+   - Folders and zips load through one reader,
+     [`projectFile.ts`](../src/utils/projectFile.ts), and `saveProjectToDirectory` writes
+     through its `serializeProject`, so the folder and the project file can't drift apart.
+   - With both manifests in one folder, the newer one loads. A folder already saved after an
+     old import opens its save before the next save removes the descriptor. Clone copies only
+     the manifest that loads.
+   - The old import's `custom_assets/` stays after that save: the open project may still play
+     audio from it. Nothing reads it afterwards, and Clean Up doesn't remove it yet.
+   - Library references are only for the built-in packs on the sample bucket
+     ([`librarySamplePath`](../src/utils/projectFile.ts)). Archive search results, local
+     folders and other projects' files are always packed.
+   - A library sample is downloaded and converted on the importing computer, so its bytes can
+     differ from the exporter's (the decoder and the sample rate) and its stored hash is
+     dropped. A download that fails keeps the version's `samplePath`, the file is listed as
+     missing, and the next load tries again. `samplePath` can therefore be in a saved folder
+     too.
+   - The Project Manager's row download makes the project file with the default, library
+     samples by reference.
+   - The SK zip carries the project in `WAV_Builder/Projects/<Project>/` when Settings ▸ Keep
+     project copies on SD is on, as planned. The project as last saved, as the card reader
+     build copies it.
+   - From step 5: `buildDescriptorFromState` is deleted. Nothing called it after the export
+     moved to the project file.
+   - A name clash still asks for a new name. Compare and Replace are step 3.
 3. **Compare on a name clash.** Identical, or the summary with Import as a new project and
    Replace.
    Click-test: the same project re-imported, one with a changed slot, Replace.
@@ -225,7 +255,7 @@ Each lands as its own commit and is click-tested on its own.
    a work folder.
    Click-test: Skip in the wizard, then Move to a work folder with unsaved work.
 5. **Delete the unreachable path.** ImportModal, `handleImportFiles`, `analyzeImport` and what
-   only they use, once step 2 has taken what it needs from `loadProjectFromZip`.
+   only they use, `loadProjectFromZip` too: step 2's importer reads its formats without it.
 
 ---
 
