@@ -138,8 +138,9 @@ export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExpor
                         <div className="space-y-6 animate-in slide-in-from-right-4 duration-200 fade-in flex flex-col h-full">
                             <Intro title="SD card folder">
                                 <p>
-                                    The SK folder for the card: every file converted and renamed to the slot the
-                                    Spotykach reads it from. Unzip it and copy what's inside to the root of the card.
+                                    The SK folder for the card: every file converted and renamed to the slot that
+                                    Spotykach reads it from (<span className="font-mono text-gray-200">SK/B/1.WAV</span> etc.).
+                                    Unzip it and copy what's inside to the root of the card.
                                 </p>
                                 <p className="text-gray-400">
                                     To write to a card directly, use <strong className="text-gray-300">Import / Build SD</strong> in
