@@ -9,6 +9,14 @@
     "pinned": true
   },
   {
+    "id": "import-export",
+    "title": "Import and export, streamlined (v4.6.0)",
+    "date": "2026-11-26",
+    "file": "4.6.0-import-export.md",
+    "image": "images/project-menu-import-export.png",
+    "category": "Update"
+  },
+  {
     "id": "firmware-1-4-1",
     "title": "Firmware 1.4.1 for USB transfer (v4.5.1)",
     "date": "2026-11-25",

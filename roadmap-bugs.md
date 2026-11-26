@@ -20,9 +20,6 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
   - [x] Not proposed: a 4-byte alignment check in `spotykach-transfer`'s `checkUploadable`. Firmware 1.4.0 and later play misaligned audio (`Card::_read_from`), and USB uploads need 1.4.0. Ours in `usbBackend.validate` is removed (Nov 25).
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
-**Import and export** → [import-export-plan.md](docs/import-export-plan.md)
-- [x] Steps 1 to 5 and `fix/unsaved-assign-escape`, merged into `main` Nov 26 after the click-tests. Not released: the changelog entry comes with the release.
-
 **Other**
 - [ ] News: the cue point modes (Ignore / Snap / Free) with a demo video.
 - [ ] Sample Mangler: the "Later" items and checks on a real phone. → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
@@ -52,6 +49,7 @@ Details and line references: [docs/optimization-plan.md](docs/optimization-plan.
 - **SD card:** import only new files. More than one project per card: ask Vlad first, and `'SK'` is hardcoded in 8 files. Project title in `config.txt`: waiting on whether the firmware accepts unknown keys. Prepare (erase) a card.
 - **Backup and projects:** a restore path, a backup reminder, cleanup as presets, remove the library → SD sync button, rename the old mirror states, recent projects and a File menu.
 - **Library:** an intro on the Upload tab.
+- **Submit tool:** read a dropped project file. It reads only the settings-only exports from before 4.6.0, so a project goes through Prepare a submission.
 - **Onboarding:** a welcome screen before the wizard, and a walkthrough of Studio based on [ManglerTour.tsx](src/mangler/ui/ManglerTour.tsx).
 - **Maybe:** `presets[]` from `generate-manifest.mjs`, project images, trash and undo, non-destructive editing (a different data model), right-click menus on cards, offline sample packs.
 - **Long term:** desktop app, cloud sync, Studio on phones.

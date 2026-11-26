@@ -4,6 +4,87 @@
 
 ---
 
+## [4.6.0] - 2026-11-26
+
+One project file and one importer, and plain words for where each export goes. The
+[news post](public/news/4.6.0-import-export.md) has the short version.
+
+### Added
+
+- **Project menu: Import project file and Export.** Both sit next to Project Manager.
+  Export left Advanced, which keeps Clean Up Project.
+- **Import: a project already in your work folder is compared first.** When the name is
+  taken, Import compares the slots, the pool, the notes and the device settings. The same
+  project offers *Open*. A different one says what differs ("3 slots differ: B2, G5, P1.
+  The notes differ."), with *Import as a new project* or *Replace*. Replace says what goes
+  and asks once more. The import is read in full first, so a bad file deletes nothing.
+- **Export ▸ Project file: Include sample-library audio.** Off by default: library samples
+  you haven't edited go as their pack path and download again on import, which needs
+  internet. Edits are always in the file. A download that fails leaves the file listed as
+  missing, and the next load tries again.
+- **Export ▸ SD card folder: the project copy.** With Settings ▸ Keep project copies on SD
+  on, the zip also holds the saved project in `WAV_Builder/Projects/<name>/`, as a card
+  reader build writes it. Import project file opens that zip.
+- **Without a work folder: Move to a work folder.** Save, Import and Export say "Your work
+  lives in this browser only. Clearing browser data deletes it." and offer to save the open
+  project in a folder you pick. Connecting a work folder from the Project Manager, New
+  Fresh Project or Settings offers the same move first, or *Connect without it*;
+  connecting used to leave the work behind. The setup wizard's *Skip setup, work in this
+  browser* opens a screen that says the same.
+
+### Changed
+
+- **Export: three choices.** *Project file*, *SD card folder* and *Audio files*, each with a
+  line on what it's for. *Prepare a submission* stays at the bottom: it's how a preset for
+  the official library is made.
+- **The project file is the project folder, zipped:** `project.json`, `notes.md` and
+  `Assets/`, with the original and the current version of each file. Names, version labels
+  and notes come back on import.
+- **Import project file names the project from inside the file**, not after the zip, and
+  saves it as a normal project in your work folder. It reads older exports too: the
+  Project Manager's zip, the Full Backup Bundle, and an SD card folder holding the project.
+- **Downloads are named after the project and dated:** `MyProject_2026-11-26.zip` for the
+  project file, with `-SK` for the SD card folder, `-audio` for audio files and
+  `-Blue-tape` for a tape (`MyProject-SK_2026-11-26.zip`).
+- **Save without a work folder** shows the note above, with *Move to a work folder* or
+  *Download project file*, instead of the browser's confirm box. With a work folder but no
+  project open, Save asks for a name in the app's own dialog, which refuses a name another
+  project has.
+- **Leaving Studio and opening another project ask to save first**, as New Fresh Project
+  did, next to leaving without saving and Cancel.
+- **Escape closes only the topmost window.** A dialog over a window closed both, and Escape
+  in a Mangler dialog also left the Mangler for the hub.
+- **The unsaved-changes warning says the changes will be lost.** With a project folder
+  connected, the browser's copy doesn't come back.
+- **Submit tool: a preset from a project starts at Project ▸ Export ▸ Prepare a
+  submission.** The Submit tool can't read the new project file when it's dropped in.
+
+### Fixed
+
+- **Older exports import whole.** A Full Backup Bundle came in with every file missing, and
+  the SD card folder's project backup, a zip inside the zip, couldn't be imported.
+- **Saves after a zip import stick.** The import's leftover `project-descriptor.json` could
+  load instead of the save. The newer one loads now, and a save removes the old one.
+- **Zip import: Cancel imported too.** The import now asks after the file is picked, and
+  writes nothing until it's answered.
+- **Assign to tape kept only some settings.** Pending EQ, Limiter, Pitch, Cutter or Loop
+  settings, or a Mangler take, were dropped. It now stops with "Apply or discard first" and
+  lists them. *Apply & Switch* out of the Mangler saved without the pending take.
+- **Windows reset while open.** Library Sync re-ran its comparison, the project name field
+  went back to its first value, the card sync preview stopped the sound playing, and the
+  Library Manager went back to the tab it opened on.
+- **Dialogs and long project names.** The close button stays in the dialog, and the buttons
+  no longer squeeze onto several lines.
+
+### Removed
+
+- **Settings-only exports and the Full Backup Bundle.** The project file replaces both. A
+  settings-only export kept library samples as references to their originals, so an edit
+  to one was lost. The Project Manager's *Settings-Only ZIP* checkbox and the SD card
+  folder's *Include Project Bundle Backup* go with them.
+
+---
+
 ## [4.5.1] - 2026-11-25
 
 Firmware 1.4.1 for USB transfer; the [news post](public/news/firmware-1-4-1.md) has the short version.

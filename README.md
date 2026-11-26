@@ -58,7 +58,7 @@ The app opens on a hub, grouped by what you came to do:
     -   **Open archives**: search Openverse, Wikimedia Commons, the Internet Archive, NASA, the Library of Congress's Citizen DJ and Freesound, filtered by licence; each sound keeps its author and licence.
     -   **Library Management**: Build a persistent user library and pull samples from other local projects.
 -   **Sample Mangler**: random snippets from a pool of sources joined into one file of up to 42 s, with seeds, pitch detection and licences that follow the snippets used.
--   **Project Portability**: Save and restore work states via Project JSON or create full backups to local storage and SD cards.
+-   **Project Portability**: *Project ▸ Export ▸ Project file* zips a project with the original and current version of each file. *Import project file* opens it, or an older export, as a project in your work folder. With *Keep project copies on SD* in Settings, the SD card carries the project too.
 
 ![WAVbuilder_screenshot-editorCutter](public/img/screenshots/WAVbuilder_screenshot-editorCutter.png)
 
