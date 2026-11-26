@@ -259,7 +259,7 @@ export const StepKind: React.FC<StepProps> = ({ draft, update, goToStep, openGui
                         <strong>You have {own} sound{own === 1 ? '' : 's'} of your own, too few for a pack ({PACK_MINIMUM_SAMPLES} or more).</strong>
                         <span className="block mt-2">
                             Add more and send both together, or share it privately instead: in Studio,
-                            Export ▸ Project Preset ▸ <em>Full Backup Bundle (ZIP)</em> carries the audio with it.
+                            Project ▸ Export ▸ <em>Project file</em> carries the audio with it.
                         </span>
                     </Note>
                 </div>

@@ -178,7 +178,7 @@ and the cover, and push. Pages rebuilds.
 
 Gives the preset's card a **Download SD ZIP** button for people who would rather not build one.
 
-1. Load the preset in the app, then **Export ▸ Portable SK Folder ▸ Download**. (The submitting artist
+1. Load the preset in the app, then **Project ▸ Export ▸ SD card folder ▸ Download SD card folder**. (The submitting artist
    can also build this from the tool's last step, but yours is built from what you actually published.)
 2. Upload to R2 as `presets/<preset-id>-SD.zip`.
 3. Add `"sdExportUrl": "https://pub-6649b937be6b4a8c9b92904c5ac392fc.r2.dev/presets/<preset-id>-SD.zip"`
@@ -319,14 +319,10 @@ Every tape carries six slots in the real thing; two are shown above for brevity.
 
 ---
 
-## 6. Adding a preset by hand
+## 6. A preset from your own project
 
-Without a submission — your own project, straight out of Studio.
+Your own project, straight out of Studio: **Project ▸ Export ▸ Prepare a submission**. The tool collects
+the details, derives `requiredPacks` and downloads `<name>-submission.zip`; publish that with §1.
 
-1. **Export ▸ Project Preset ▸ Settings-Only Preset (JSON)**, which carries slots, config and notes.
-2. Rename it to `<preset-id>.json` and put it in `public/presets/`.
-3. Write the `presets[]` entry yourself (§5) and add it to `public/manifest.json`.
-4. Verify and commit as in §1 step 5.
-
-Studio's **Export ▸ Prepare a submission** does the same work through the tool instead, and hands back
-a complete entry with `requiredPacks` already derived — usually less effort than doing it by hand.
+Studio no longer exports a settings-only `.json` on its own. To write one by hand, follow the schema
+in §4 and the manifest entry in §5.

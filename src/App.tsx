@@ -38,7 +38,7 @@ const ConfigModal = React.lazy(() => import('./components/ConfigModal').then(m =
 const MangleMode = React.lazy(() => import('./modes/MangleMode'));
 
 // dynamic modal imports
-import { AlertTriangle, Folder, Save, Loader, Download, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2, Usb } from 'lucide-react';
+import { AlertTriangle, Folder, Save, Loader, Download, Upload, HelpCircle, FilePlus, Settings, StickyNote, ScrollText, ChevronDown, ChevronLeft, X, FileText, Package, Copy, Newspaper, Trash2, Usb } from 'lucide-react';
 import { RiSdCardMiniLine } from 'react-icons/ri';
 
 import { ProjectNameModal } from './components/modals/ProjectNameModal';
@@ -477,9 +477,8 @@ function App({ onExitToHub }: AppProps) {
                 audio step. Everything comes back: the files, the details, the licence and the preset.
               </p>
               <p className="text-gray-400 text-sm">
-                To share a <em>project</em> with someone instead, that is Export → Project Preset: the
-                settings-only <code>.json</code> if you both have the same sample packs, or the full backup{' '}
-                <code>.zip</code> if it uses audio of your own. Those are what Import reads.
+                To share a <em>project</em> with someone instead, use Project ▸ Export ▸ Project file. That
+                zip carries the audio, and Project ▸ Import project file opens it.
               </p>
             </>
           ),
@@ -5275,6 +5274,21 @@ function App({ onExitToHub }: AppProps) {
                     },
                     { type: 'divider' },
                     {
+                      // The same importer as the Project Manager's button.
+                      label: 'Import project file…',
+                      icon: <Upload size={14} />,
+                      onClick: () => {
+                        if (!workHandle) { handleSetWorkFolder(); return; }
+                        handleImportZip();
+                      }
+                    },
+                    {
+                      label: 'Export…',
+                      icon: <Download size={14} />,
+                      onClick: () => setShowExport(true)
+                    },
+                    { type: 'divider' },
+                    {
                       label: 'Presets',
                       icon: <Package size={14} />,
                       // The whole list, so no card is singled out.
@@ -5284,11 +5298,6 @@ function App({ onExitToHub }: AppProps) {
                     {
                       label: 'Advanced',
                       type: 'header'
-                    },
-                    {
-                      label: 'Export Portable & Presets',
-                      icon: <Download size={14} />,
-                      onClick: () => setShowExport(true)
                     },
                     {
                       // Cleanup's own entry point. It used to hang off the editor's

@@ -991,13 +991,13 @@ export const AboutHelpModal = ({ onClose, onReset, initialTab = 'about', initial
                                     <span className="text-lg">🎛️</span> A preset
                                 </h4>
                                 <ul className="list-disc list-inside space-y-1.5 text-sm text-gray-300 bg-black/20 p-5 rounded-lg border border-gray-800">
-                                    <li>From a Studio project: <strong className="text-white">Export ▸ Prepare a submission</strong>.</li>
+                                    <li>From a Studio project: <strong className="text-white">Project ▸ Export ▸ Prepare a submission</strong>.</li>
                                     <li>From packs in the app: pool sounds in the Sample Browser, press <strong className="text-white">Send to the submission tool</strong>, and arrange the grid there.</li>
                                     <li>Using sounds of your own? Send them as a pack with it, so the preset can find them.</li>
                                 </ul>
                                 <p className="text-xs text-gray-400">
-                                    Only sharing with a friend? Studio&apos;s <strong className="text-gray-200">Export ▸ Project Preset</strong> is enough;
-                                    they open it with <strong className="text-gray-200">Import</strong>.
+                                    Only sharing with a friend? Studio&apos;s <strong className="text-gray-200">Project ▸ Export ▸ Project file</strong> is enough;
+                                    they open it with <strong className="text-gray-200">Project ▸ Import project file</strong>.
                                 </p>
                             </div>
 
