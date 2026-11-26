@@ -16,6 +16,8 @@ interface ExportModalProps {
     onExportProject: (options: { libraryAudio: boolean }) => void;
     /** The SD card folder also carries the saved project (Settings ▸ Keep project copies on SD). */
     projectCopyOnCard?: boolean;
+    /** Browser Cache Mode with work to keep: the note and its way out show above the choices. */
+    onMoveToWorkFolder?: () => void;
     /**
      * Hand this project to the submission tool instead of downloading it.
      *
@@ -50,7 +52,7 @@ const Intro = ({ title, children }: { title: string; children: ReactNode }) => (
 
 const primaryButton = 'w-full py-3 bg-synthux-yellow hover:bg-yellow-400 text-black font-bold rounded-lg transition-colors flex items-center justify-center gap-2';
 
-export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, projectCopyOnCard, onPrepareSubmission }: ExportModalProps) => {
+export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, projectCopyOnCard, onMoveToWorkFolder, onPrepareSubmission }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('project');
     const [libraryAudio, setLibraryAudio] = useState(false);
 
@@ -102,6 +104,20 @@ export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExpor
                         </button>
                     </div>
                 </div>
+
+                {onMoveToWorkFolder && (
+                    <div className="px-6 py-3 border-b border-gray-800 bg-orange-500/10 flex flex-wrap items-center gap-x-4 gap-y-2 shrink-0">
+                        <p className="flex-1 min-w-[16rem] text-sm text-orange-200">
+                            Your work lives in this browser only. Clearing browser data deletes it.
+                        </p>
+                        <button
+                            onClick={onMoveToWorkFolder}
+                            className="whitespace-nowrap px-3 py-1.5 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 text-orange-100 font-bold text-xs transition-colors"
+                        >
+                            Move to a work folder
+                        </button>
+                    </div>
+                )}
 
                 {/* Tabs */}
                 <div className="flex border-b border-gray-800 overflow-x-auto shrink-0">

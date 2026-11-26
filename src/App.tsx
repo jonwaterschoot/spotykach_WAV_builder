@@ -434,10 +434,36 @@ function App({ onExitToHub }: AppProps) {
     }
   };
 
+  /** The project folders in a work folder, by lowercased name, as Windows and macOS compare them. */
+  const projectFolderNames = async (handle: FileSystemDirectoryHandle): Promise<Map<string, string>> => {
+    const names = new Map<string, string>();
+    try {
+      for await (const [name, entry] of (await handle.getDirectoryHandle('Projects')).entries()) {
+        if (entry.kind === 'directory') names.set(name.toLowerCase(), name);
+      }
+    } catch { /* no projects yet */ }
+    return names;
+  };
+
+  /** `base` when it's free, else the first free `base_1`, `base_2`… */
+  const freeProjectName = (base: string, taken: Map<string, string>) => {
+    let name = base;
+    for (let n = 1; taken.has(name.toLowerCase()); n++) name = `${base}_${n}`;
+    return name;
+  };
+
+  /** For the name prompts: a usable folder name that no project has yet. */
+  const newProjectNameError = (taken: Map<string, string>) => (raw: string): string | null => {
+    const clean = sanitizeFilename(raw);
+    if (!clean) return 'Use letters, digits, hyphens or underscores.';
+    return taken.has(clean.toLowerCase()) ? `"${clean}" is taken. Pick another name.` : null;
+  };
+
   // ── Zip Import / Export ───────────────────────────────────────────────────
   const handleImportZip = async () => {
+    // The import is saved as a project, which needs a work folder.
     if (!workHandle) {
-      showToast('Connect a Work Folder first.', 'error');
+      showBrowserOnlyNote('import');
       return;
     }
 
@@ -502,18 +528,9 @@ function App({ onExitToHub }: AppProps) {
       }
       const zipName = sanitizeFilename(found.name) || 'Imported-project';
 
-      // By lowercased name, as Windows and macOS see "Song" and "song" as one folder.
       const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
-      const folderNames = new Map<string, string>();
-      for await (const [name, entry] of projectsDir.entries()) {
-        if (entry.kind === 'directory') folderNames.set(name.toLowerCase(), name);
-      }
+      const folderNames = await projectFolderNames(workHandle);
       const isTaken = (name: string) => folderNames.has(name.toLowerCase());
-      const freeName = (base: string) => {
-        let n = 1;
-        while (isTaken(`${base}_${n}`)) n++;
-        return `${base}_${n}`;
-      };
 
       // Read into memory and saved like any project, so the folder is in the normal
       // layout whatever the zip held. Library samples left out of it download here.
@@ -533,7 +550,7 @@ function App({ onExitToHub }: AppProps) {
               await projectsDir.removeEntry(replacing, { recursive: true });
             } catch (e) {
               // Part of it may be gone already. A new folder keeps the import apart from the rest.
-              target = freeName(projectName);
+              target = freeProjectName(projectName, folderNames);
               notice = `Couldn't delete all of "${replacing}" (${e instanceof Error ? e.message : String(e)}). A file in it may be open in another app. The import went in as "${target}".`;
             }
           }
@@ -567,12 +584,8 @@ function App({ onExitToHub }: AppProps) {
         title: 'Import as a new project',
         message: why,
         confirmLabel: 'Import',
-        initialValue: freeName(zipName),
-        validate: (name) => {
-          const clean = sanitizeFilename(name);
-          if (!clean) return 'Use letters, digits, hyphens or underscores.';
-          return isTaken(clean) ? `"${clean}" is taken too. Pick another name.` : null;
-        },
+        initialValue: freeProjectName(zipName, folderNames),
+        validate: newProjectNameError(folderNames),
         onConfirm: (name) => importAs(sanitizeFilename(name)),
       });
 
@@ -986,6 +999,12 @@ function App({ onExitToHub }: AppProps) {
    * project name), since without those `executeSaveProject` starts prompting for
    * one, which is not what "save first" should mean here.
    */
+  /** Nothing worth keeping: no files and no notes. */
+  const nothingToKeep = () =>
+    Object.keys(state.files).length === 0 &&
+    !state.projectNotes?.trim() &&
+    !TAPE_COLORS.some(color => state.tapes[color]?.notes?.trim());
+
   const checkUnsavedChanges = (
     action: () => void,
     options?: {
@@ -996,14 +1015,8 @@ function App({ onExitToHub }: AppProps) {
       proceedLabel?: string;
     }
   ) => {
-    // Determine if the project is effectively empty
-    const hasAnyFiles = Object.keys(state.files).length > 0;
-    const hasProjectNotes = !!(state.projectNotes && state.projectNotes.trim() !== '');
-    const hasTapeNotes = TAPE_COLORS.some(color => !!(state.tapes[color]?.notes && state.tapes[color].notes!.trim() !== ''));
-    const isProjectEmpty = !hasAnyFiles && !hasProjectNotes && !hasTapeNotes;
-
     // Only warn if something changed AND the project isn't empty (we don't care about saving empty projects)
-    if (!((hasUnsavedChanges || isEditorDirty) && !isProjectEmpty)) {
+    if (!((hasUnsavedChanges || isEditorDirty) && !nothingToKeep())) {
       action();
       return;
     }
@@ -2315,41 +2328,154 @@ function App({ onExitToHub }: AppProps) {
   // STORAGE HANDLERS
   // ==========================================
 
+  /** A folder from the picker, or null when none was picked. */
+  const pickWorkFolder = async (): Promise<FileSystemDirectoryHandle | null> => {
+    if (!('showDirectoryPicker' in window)) {
+      alert("Your browser doesn't support direct file access. Please use Chrome or Edge.");
+      return null;
+    }
+    try {
+      return await window.showDirectoryPicker({ id: 'spotykach_work', mode: 'readwrite', startIn: 'documents' });
+    } catch (e) {
+      if (!(e instanceof Error && e.name === 'AbortError')) {
+        console.error("Setup failed", e);
+        showToast("Could not access folder.", 'error');
+      }
+      return null;
+    }
+  };
+
+  const adoptWorkFolder = (handle: FileSystemDirectoryHandle) => {
+    setWorkHandle(handle);
+    saveDirectoryHandle('work', handle).catch(console.error);
+  };
+
+  /**
+   * Connects a work folder and opens the Project Manager, or offers `then` instead. The
+   * open project stays as it is until another one opens.
+   */
+  const connectWorkFolder = async (then?: { label: string; run: () => void }) => {
+    const handle = await pickWorkFolder();
+    if (!handle) return;
+
+    adoptWorkFolder(handle);
+    setCurrentProjectName(undefined);
+    setHasUnsavedChanges(false);
+    showToast(`Work Folder Set: ${handle.name}`, 'success');
+    await handleSmartScan(handle);
+
+    if (then) {
+      setConfirmAction({
+        title: 'Work folder connected',
+        message: <p>"{handle.name}" is your work folder now.</p>,
+        confirmLabel: then.label,
+        onConfirm: () => { setConfirmAction(null); then.run(); },
+      });
+    } else {
+      setShowProjectManager(true);
+    }
+  };
+
   const handleSetWorkFolder = async () => {
-    checkUnsavedChanges(async () => {
-      // @ts-ignore
-      if (!('showDirectoryPicker' in window)) {
-        alert("Your browser doesn't support direct file access. Please use Chrome or Edge.");
-        return;
-      }
+    // Browser Cache Mode with work in it: connecting a folder would leave the work
+    // behind, so the note offers to move it there first.
+    if (!workHandle && !nothingToKeep()) {
+      showBrowserOnlyNote('connect');
+      return;
+    }
+    checkUnsavedChanges(() => { void connectWorkFolder(); });
+  };
 
-      try {
-        // @ts-ignore
-        const handle = await window.showDirectoryPicker({
-          mode: 'readwrite',
-          startIn: 'documents'
-        });
+  /**
+   * Browser Cache Mode to a work folder: the open project is saved in the chosen folder
+   * as a project and opens from there (step 4 of the import/export plan). `then` is
+   * offered afterwards, from a click of its own, as a file picker needs one.
+   */
+  const handleMoveToWorkFolder = async (then?: { label: string; run: () => void }) => {
+    const handle = await pickWorkFolder();
+    if (!handle) return;
 
-        if (!handle) return;
-
-        setWorkHandle(handle);
-        setCurrentProjectName(undefined);
-        setHasUnsavedChanges(false);
-        showToast(`Work Folder Set: ${handle.name}`, 'success');
-
-        // Save for persistence
-        saveDirectoryHandle('work', handle).catch(console.error);
-
-        // Auto-scan and open Project Manager
-        await handleSmartScan(handle);
-        setShowProjectManager(true);
-
-      } catch (e: any) {
-        if (e.name !== 'AbortError') {
-          console.error("Setup failed", e);
-          showToast("Could not access folder.", 'error');
+    const taken = await projectFolderNames(handle);
+    setProjectNameModal({
+      isOpen: true,
+      title: 'Move to a work folder',
+      message: <p>The project is saved in "{handle.name}" and opens from there.</p>,
+      confirmLabel: 'Move',
+      initialValue: freeProjectName(sanitizeFilename(currentProjectName || '') || 'Untitled-project', taken),
+      validate: newProjectNameError(taken),
+      onConfirm: async (raw) => {
+        const name = sanitizeFilename(raw);
+        setIsProcessing(true);
+        setProgressMsg(`Saving "${name}" in ${handle.name}...`);
+        try {
+          const { saveProjectToDirectory } = await import('./utils/exportUtils');
+          await saveProjectToDirectory(state, handle, (msg) => setProgressMsg(msg || ''), name);
+        } catch (e) {
+          showToast('Move failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+          setIsProcessing(false);
+          setProgressMsg('');
+          return;
         }
-      }
+
+        adoptWorkFolder(handle);
+        await handleLoadProject(name, handle);
+        showToast(`"${name}" is saved in ${handle.name} now`, 'success');
+        if (then) {
+          setConfirmAction({
+            title: 'Moved to your work folder',
+            message: <p>"{name}" is saved in "{handle.name}" and open in the studio.</p>,
+            confirmLabel: then.label,
+            onConfirm: () => { setConfirmAction(null); then.run(); },
+          });
+        }
+      },
+    });
+  };
+
+  /**
+   * Browser Cache Mode, said plainly where it matters (decision 4 of the import/export
+   * plan): the work lives in this browser only, and a work folder keeps it.
+   */
+  const showBrowserOnlyNote = (reason: 'save' | 'import' | 'connect') => {
+    const importNext = reason === 'import' ? { label: 'Import project file', run: () => { void handleImportZip(); } } : undefined;
+
+    if (nothingToKeep()) {
+      if (reason === 'save') { showToast('Nothing to save yet.', 'info'); return; }
+      if (reason === 'connect') { void connectWorkFolder(); return; }
+      setConfirmAction({
+        title: 'A work folder first',
+        message: <p>Importing needs a work folder: a folder on your computer, where the imported project is saved.</p>,
+        confirmLabel: 'Choose a work folder',
+        onConfirm: () => { setConfirmAction(null); void connectWorkFolder(importNext); },
+      });
+      return;
+    }
+
+    const why = {
+      save: 'Move it to a work folder, a folder on your computer, to save it as a project. Or download a project file to import later.',
+      import: 'Importing needs a work folder, where the imported project is saved. Move your work there first.',
+      connect: "Move it into the work folder as a project, or connect the folder without it: it's replaced as soon as another project opens.",
+    }[reason];
+
+    setConfirmAction({
+      title: 'Only in this browser',
+      wide: true,
+      message: (
+        <>
+          <p>Your work lives in this browser only. Clearing browser data deletes it.</p>
+          <p>{why}</p>
+        </>
+      ),
+      confirmLabel: 'Move to a work folder',
+      onConfirm: () => { setConfirmAction(null); void handleMoveToWorkFolder(importNext); },
+      ...(reason === 'save' && {
+        discardLabel: 'Download project file',
+        onDiscard: () => { setConfirmAction(null); void handleExportZip(); },
+      }),
+      ...(reason === 'connect' && {
+        discardLabel: 'Connect without it',
+        onDiscard: () => { setConfirmAction(null); void connectWorkFolder(); },
+      }),
     });
   };
 
@@ -3211,18 +3337,24 @@ function App({ onExitToHub }: AppProps) {
       }
     }
 
-    // 2. If no active project handle, but we have a Work Folder -> Prompt to Create (Save As)
+    // 2. A work folder but no project open, as after connecting one: save as a new
+    // project, under a name no project there has.
     if (workHandle) {
-      const name = prompt("Enter Project Name to Save:");
-      if (name) await handleSaveProjectAs(name);
+      const taken = await projectFolderNames(workHandle);
+      setProjectNameModal({
+        isOpen: true,
+        title: 'Save as a project',
+        message: <p>Saved in "{workHandle.name}".</p>,
+        confirmLabel: 'Save',
+        initialValue: freeProjectName('Untitled-project', taken),
+        validate: newProjectNameError(taken),
+        onConfirm: (name) => { void handleSaveProjectAs(name); },
+      });
       return false;
     }
 
-    // 3. Browser Cache Mode: the project file is the only copy outside the browser.
-    // The same download as Export ▸ Project file, so Import can read it back.
-    if (confirm("There's no work folder to save to. Download the project file instead?")) {
-      await handleExportZip();
-    }
+    // 3. Browser Cache Mode: say so, and offer a work folder or a project file.
+    showBrowserOnlyNote('save');
     return false;
   };
 
@@ -5366,10 +5498,7 @@ function App({ onExitToHub }: AppProps) {
                       // The same importer as the Project Manager's button.
                       label: 'Import project file…',
                       icon: <Upload size={14} />,
-                      onClick: () => {
-                        if (!workHandle) { handleSetWorkFolder(); return; }
-                        handleImportZip();
-                      }
+                      onClick: () => { void handleImportZip(); }
                     },
                     {
                       label: 'Export…',
@@ -5845,6 +5974,7 @@ function App({ onExitToHub }: AppProps) {
                 <ExportModal
                   files={state.files}
                   projectCopyOnCard={!!(workHandle && currentProjectName && getDurabilityPrefs().mirrorProjectsToSD)}
+                  onMoveToWorkFolder={!workHandle && !nothingToKeep() ? () => { setShowExport(false); void handleMoveToWorkFolder(); } : undefined}
                   onClose={() => setShowExport(false)}
                   onExportSD={async (opts) => {
                     setShowExport(false); // Close settings modal
