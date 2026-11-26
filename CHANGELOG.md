@@ -4,6 +4,21 @@
 
 ---
 
+## [4.6.1] - 2026-11-27
+
+### Fixed
+
+- **Submit tool: a dropped project file comes in.** Since 4.6.0 the audio step couldn't
+  read the project file from Project ▸ Export. It now brings the layout, the notes and your
+  own audio, the same as Project ▸ Export ▸ Prepare a submission. Library samples stay
+  references to their pack sample, so an edit to one isn't in the preset. It reads older
+  exports too, as Import project file does: the Project Manager's zip, the Full Backup
+  Bundle and an SD card folder holding the project.
+- **Submit tool: your own audio in the Project Manager's zip was listed as missing.** It
+  comes in now, with the layout.
+
+---
+
 ## [4.6.0] - 2026-11-26
 
 One project file and one importer, and plain words for where each export goes. The

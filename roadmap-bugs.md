@@ -21,7 +21,6 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
 **Other**
-- [x] Submit tool reads a dropped project file: click-tested Nov 27 on the audio step, a 4.6.0 project file with and without library audio, an older Project Manager zip and a zip of plain audio. The changelog entry comes with 4.6.1.
 - [ ] News: the cue point modes (Ignore / Snap / Free) with a demo video.
 - [ ] Sample Mangler: the "Later" items and checks on a real phone. → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
 - [ ] Code health: one item per session, from the list below.
