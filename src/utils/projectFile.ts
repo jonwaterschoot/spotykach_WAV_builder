@@ -219,6 +219,15 @@ export const readManifest = async (read: ProjectReader): Promise<ProjectManifest
     return { kind: 'project', data, name: properName(data.metadata?.projectName), modified: projectFile.lastModified };
 };
 
+/** A manifest from its JSON alone, told apart by content: a dropped `project.json` or descriptor. */
+export const manifestFromJson = async (text: string): Promise<ProjectManifest> => {
+    const data: unknown = JSON.parse(text);
+    if (isProject(data)) return { kind: 'project', data, name: properName(data.metadata?.projectName), modified: 0 };
+    const { parseProjectDescriptor } = await import('./projectDescriptorUtils');
+    const descriptor = parseProjectDescriptor(data);
+    return { kind: 'descriptor', data: descriptor, name: properName(descriptor.name), modified: 0 };
+};
+
 /** A converted library sample, as the Sample Browser converts one on the way in. */
 const downloadLibrarySample = async (samplePath: string): Promise<Blob> => {
     const response = await fetch(resolveAssetPath(samplePath), { mode: 'cors' });

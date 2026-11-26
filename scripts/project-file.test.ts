@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- zips, stand-in folders and globals */
 /**
- * The project file out and back in, every older export through the importer, and
- * project folders saved and loaded on disk (a temp folder).
+ * The project file out and back in, every older export through the importer,
+ * project folders saved and loaded on disk (a temp folder), and project files
+ * dropped on the Submit tool.
  *
  * Run through scripts/check-project-file.mjs (it bundles this file). Library
  * downloads are stand-ins: node has no AudioContext to convert them, and the tests
@@ -17,7 +18,10 @@ import { duplicateProject, exportSDStructure, loadProjectFromDirectory, saveProj
 import { externalSampleAssetBaseUrl } from '../src/utils/assetUtils';
 import { getInitialState } from '../src/utils/initialState';
 import { assembleWav } from '../src/lib/audio/wavHeader';
-import { TAPE_COLORS, type AppState, type AudioVersion, type FileRecord } from '../src/types';
+import { intakeProjectFile, type ProjectIntake } from '../src/submission/intake';
+import { handoffFromAppState } from '../src/submission/handoff';
+import type { SubmissionFile } from '../src/submission/draft';
+import { TAPE_COLORS, type AppState, type AudioVersion, type FileRecord, type TapeColor } from '../src/types';
 import { DirH } from './testFolder';
 
 let failures = 0;
@@ -373,6 +377,72 @@ const run = async () => {
 
         check(describeDifference({ slots: ['B2', 'G5', 'P1'], pool: 0, notes: true, config: false }) === '3 slots differ: B2, G5, P1. The notes differ.', 'the summary line');
         check(describeDifference({ slots: ['B2'], pool: 1, notes: false, config: true }) === '1 slot differs: B2. 1 pool file differs. The device settings differ.', '…in the singular');
+    }
+
+    console.log('\nDropped on the Submit tool');
+    {
+        const fileOf = (data: BlobPart, name: string) => new File([data], name, { type: name.endsWith('.zip') ? 'application/zip' : 'application/json' });
+        const slotIndex = (color: TapeColor, slot: number) => TAPE_COLORS.indexOf(color) * 6 + slot - 1;
+        const row = (intake: ProjectIntake, fileName: string) => intake.files.find(f => f.fileName === fileName);
+
+        const zipped = await buildProjectFile(source, 'Serpentinelore', { libraryAudio: false });
+        const intake = await intakeProjectFile(fileOf(zipped, 'Serpentinelore_2026-11-26.zip'));
+        const own = row(intake, 'Vinyl Crackle 19');
+        const lib = row(intake, 'Magic Box');
+        const libEdit = row(intake, 'Multitrack Frippertronic 2');
+        check(intake.files.length === 4 && !intake.rejected.length, 'a project file gives a row per file, the parked one too', `${intake.files.length} rows, ${intake.rejected.length} rejected`);
+        check(!!own && !own.sourceSamplePath && await sameAudio(own.blob, source.files.own.versions[2].blob), 'own audio: the current version, to send');
+        check(lib?.sourceSamplePath === LIB_URL && lib.blob.size === 0, 'an unedited library sample left out of the file: a pack row without audio');
+        check(libEdit?.sourceSamplePath === LIB_EDIT_URL && await sameAudio(libEdit.blob, source.files.libEdit.versions[1].blob), 'an edited one: a pack row, with its edited audio to play');
+        check(intake.preset.slots[slotIndex('Blue', 1)] === own?.id && intake.preset.slots[slotIndex('Green', 1)] === lib?.id
+            && intake.preset.slots[slotIndex('Green', 2)] === libEdit?.id && intake.filledSlots === 3, 'the layout', `${intake.filledSlots} slots`);
+        check(intake.preset.name === 'Serpentinelore' && intake.preset.projectNotes === 'Project notes' && intake.preset.tapeNotes[TAPE_COLORS.indexOf('Blue')] === 'Blue notes', 'the name and the notes');
+        check(own?.duration === 0.05, 'durations from the project', String(own?.duration));
+
+        const studio = await handoffFromAppState(project(), 'Serpentinelore');
+        const described = (rows: SubmissionFile[]) => JSON.stringify(rows.map(({ fileName, title, sourceSamplePath, origin, duration }) => ({ fileName, title, sourceSamplePath, origin, duration })));
+        check(described(intake.files) === described(studio.files), 'the rows Prepare a submission makes from the same project in Studio');
+
+        const withLibrary = await intakeProjectFile(fileOf(await buildProjectFile(source, 'Serpentinelore', { libraryAudio: true }), 'Serpentinelore.zip'));
+        const libPlays = row(withLibrary, 'Magic Box');
+        check(libPlays?.sourceSamplePath === LIB_URL && await sameAudio(libPlays.blob, source.files.lib.versions[0].blob), 'with library audio, still a pack row, and it plays');
+
+        const broken = await zipOf(zipped);
+        broken.remove('Serpentinelore/Assets/own-v3.wav');
+        const brokenIntake = await intakeProjectFile(fileOf(await broken.generateAsync({ type: 'arraybuffer' }), 'Serpentinelore.zip'));
+        check(brokenIntake.rejected.map(r => r.fileName).join() === 'Vinyl Crackle 19' && !row(brokenIntake, 'Vinyl Crackle 19') && brokenIntake.preset.slots[slotIndex('Blue', 1)] === null,
+            'own audio missing from the zip: named, and its slot left empty');
+
+        // Its audio sits in Serpentinelore/custom_assets/, which the tool used to look for at the root only.
+        const { descriptor, customBlobs } = oldDescriptor(source, 'Serpentinelore');
+        const pm = new JSZip();
+        pm.file('Serpentinelore/project-descriptor.json', JSON.stringify(descriptor));
+        for (const [ref, blob] of Object.entries(customBlobs)) pm.file(`Serpentinelore/${ref}`, await blob.arrayBuffer());
+        const pmIntake = await intakeProjectFile(fileOf(await pm.generateAsync({ type: 'arraybuffer' }), 'Serpentinelore_2026-11-26.zip'));
+        check(pmIntake.files.length === 4 && !pmIntake.rejected.length && await sameAudio(row(pmIntake, 'Vinyl Crackle 19')?.blob, source.files.own.versions[2].blob),
+            'a Project Manager zip, with its own audio', `${pmIntake.rejected.length} rejected`);
+
+        const settingsOnly = {
+            schema: 'spotykach-project/1.0', name: 'Untitled Project',
+            tapes: Object.fromEntries(TAPE_COLORS.map(c => [c, { slots: [1, 2, 3, 4, 5, 6].map(id => ({ id, fileId: c === 'Green' && id === 1 ? 'lib' : c === 'Blue' && id === 1 ? 'own' : null })) }])),
+            files: {
+                lib: { originalName: 'Magic Box', samplePath: '/Hainbach/Magic Box.flac', samplePackId: 'hainbach-tapes' },
+                own: { originalName: 'Vinyl Crackle 19', blobRef: 'custom_assets/own.wav' },
+            },
+        };
+        const bare = await intakeProjectFile(fileOf(JSON.stringify(settingsOnly), 'preset.json'));
+        check(bare.files.length === 1 && row(bare, 'Magic Box')?.sourceSamplePath === '/Hainbach/Magic Box.flac' && bare.rejected[0]?.fileName === 'Vinyl Crackle 19'
+            && bare.preset.name === '' && bare.filledSlots === 1, 'a settings-only .json: the pack sample by path, own audio named as missing');
+
+        const json = await (await zipOf(zipped)).file('Serpentinelore/project.json')!.async('string');
+        const bareProject = await intakeProjectFile(fileOf(json, 'project.json'));
+        check(bareProject.preset.name === 'Serpentinelore' && row(bareProject, 'Magic Box')?.sourceSamplePath === LIB_URL && bareProject.rejected.length === 3,
+            'a bare project.json: told apart by content, the rest named as missing', `${bareProject.rejected.length} rejected`);
+
+        const audioOnly = new JSZip();
+        audioOnly.file('Drums/kick.wav', await wav(0.05, 100).arrayBuffer());
+        const message = await intakeProjectFile(fileOf(await audioOnly.generateAsync({ type: 'arraybuffer' }), 'drums.zip')).then(() => '', (e: Error) => e.message);
+        check(message.startsWith('That ZIP holds no project.'), 'a zip of audio files says to unzip it', message);
     }
 
     fs.rmSync(work.p, { recursive: true, force: true });

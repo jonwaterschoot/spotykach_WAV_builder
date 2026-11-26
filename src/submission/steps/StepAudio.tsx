@@ -6,7 +6,7 @@ import {
 import { Note, StepHeading, StepPanel, TextInput } from '../ui';
 import {
     entriesFromDataTransfer, entriesFromDirectoryHandle, entriesFromInput, intakeAudio,
-    intakeDescriptorFile, intakeSubmissionArchive, type IntakeEntry,
+    intakeProjectFile, intakeSubmissionArchive, type IntakeEntry,
 } from '../intake';
 import {
     duplicateTitleSet, HARDWARE_MAX_SECONDS, issuesForFile, PACK_MAXIMUM_SAMPLES,
@@ -44,7 +44,7 @@ const formatBytes = (bytes: number): string => {
     return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 };
 
-const isDescriptorFile = (file: File) =>
+const isProjectFile = (file: File) =>
     /\.(json|zip)$/i.test(file.name) && !/\.(wav|flac|mp3)$/i.test(file.name);
 
 const canPickDirectory = () => 'showDirectoryPicker' in window;
@@ -176,10 +176,10 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
         }
     }, [draft, applyRestore, showToast]);
 
-    const addDescriptor = useCallback(async (file: File) => {
+    const addProject = useCallback(async (file: File) => {
         setBusy('Reading the exported project…');
         try {
-            const imported = await intakeDescriptorFile(file);
+            const imported = await intakeProjectFile(file);
             update({
                 files: [...draft.files, ...imported.files],
                 rejected: [...draft.rejected, ...imported.rejected],
@@ -198,7 +198,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                 'success',
             );
         } catch (e) {
-            console.error('[Submit] Descriptor import failed', e);
+            console.error('[Submit] Project import failed', e);
             showToast(e instanceof Error ? e.message : 'That file could not be read.', 'error');
         } finally {
             setBusy(null);
@@ -211,9 +211,9 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
         if (busy) return;
 
         const dropped = Array.from(e.dataTransfer?.files || []);
-        const descriptor = dropped.find(isDescriptorFile);
-        if (descriptor && dropped.length === 1) {
-            await takeSingleFile(descriptor);
+        const project = dropped.find(isProjectFile);
+        if (project && dropped.length === 1) {
+            await takeSingleFile(project);
             return;
         }
 
@@ -224,10 +224,10 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
     /**
      * One dropped `.zip`/`.json` — three things it could be.
      *
-     * A submission archive this tool built (has `submission.json`), a settings-only
-     * project export (has `project-descriptor.json`), or neither. Sniffed rather than
-     * asked about, because an artist holding a ZIP should not have to know which
-     * button it belongs under.
+     * A submission archive this tool built (has `submission.json`), a project export
+     * (the project file, or a settings-only export from before 4.6.0), or neither.
+     * Sniffed rather than asked about, because an artist holding a ZIP should not
+     * have to know which button it belongs under.
      */
     const takeSingleFile = async (file: File) => {
         if (/\.zip$/i.test(file.name)) {
@@ -242,7 +242,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                 // Not readable as a ZIP at all — let the descriptor path report it.
             }
         }
-        await addDescriptor(file);
+        await addProject(file);
     };
 
     const pickDirectory = async (): Promise<FileSystemDirectoryHandle | null> => {
@@ -310,7 +310,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
             <StepHeading title={draft.wants.pack ? 'The audio' : 'The samples your preset uses'}>
                 {draft.wants.pack
                     ? 'Add a whole folder, or browse one and pick. Subfolders become categories, and the titles below are what people see. Play, edit or rename anything.'
-                    : 'A preset uses samples already in the app. To start from a project, open it in Studio and choose Project ▸ Export ▸ Prepare a submission. Or add audio of your own.'}
+                    : 'A preset uses samples already in the app. Drop in a project file to read its layout, or add audio of your own.'}
             </StepHeading>
 
             <div
@@ -384,8 +384,8 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
                     onChange={async e => {
                         const list = e.target.files;
                         if (!list?.length) return;
-                        const descriptor = Array.from(list).find(isDescriptorFile);
-                        if (descriptor && list.length === 1) await takeSingleFile(descriptor);
+                        const project = Array.from(list).find(isProjectFile);
+                        if (project && list.length === 1) await takeSingleFile(project);
                         else await addEntries(Array.from(list).map(file => ({ file, relativePath: file.name })));
                         e.target.value = '';
                     }}

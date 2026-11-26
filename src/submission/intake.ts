@@ -1,11 +1,15 @@
-import { TAPE_COLORS } from '../types';
-import { parseProjectDescriptor, type ProjectDescriptor } from '../utils/projectDescriptorUtils';
+import type { AppState, FileRecord } from '../types';
+import type { ProjectDescriptor } from '../utils/projectDescriptorUtils';
 import type { BrowsePoolEntry } from '../utils/persistence';
+import {
+    findProjectInZip, manifestFromJson, readVersionAudio, type ProjectManifest, type ProjectReader,
+} from '../utils/projectFile';
 import {
     ARCHIVE_SCHEMA, fromArchivedDraft, newId, titleFromFileName, type ArchivedDraft,
     type RejectedFile, type SubmissionCover, type SubmissionDraft, type SubmissionFile,
     type SubmissionPreset,
 } from './draft';
+import { handoffFromAppState, submittedVersion, type SubmittedProject } from './handoff';
 
 /**
  * Getting audio into the draft.
@@ -260,122 +264,109 @@ export const filesFromPool = (entries: BrowsePoolEntry[]): SubmissionFile[] =>
         sourceSamplePath: entry.sourceSamplePath,
     }));
 
-export interface DescriptorIntake {
+export interface ProjectIntake {
     files: SubmissionFile[];
     preset: Pick<SubmissionPreset, 'name' | 'description' | 'slots' | 'tapeNotes' | 'projectNotes'>;
-    /** How many slots the descriptor actually filled — worth reporting. */
+    /** How many slots the project filled, which the toast reports. */
     filledSlots: number;
-    /** Pack ids the descriptor referenced — what `requiredPacks` will say. */
-    requiredPacks: string[];
     rejected: RejectedFile[];
 }
 
-/**
- * A settings-only export, read back into a draft.
- *
- * Two shapes arrive here: the bare `.json` descriptor, and the `.zip` the app
- * made around one until 4.6.0. The project file since has no descriptor, so a
- * project comes in through Prepare a submission.
- *
- * Entries that reference a pack come back as rows with no blob to send — they are
- * already published audio, and re-submitting it would be asking the maintainer to
- * deploy it twice. Entries that carry their own audio come back with the blob from
- * `custom_assets/`, because those genuinely do need to travel.
- */
-export const intakeDescriptorFile = async (file: File): Promise<DescriptorIntake> => {
-    let descriptor: ProjectDescriptor;
-    const customBlobs: Record<string, Blob> = {};
+const NOT_A_PROJECT =
+    'That ZIP holds no project. Drop in a project file from Project ▸ Export, or unzip a ZIP of audio ' +
+    'files and add them.';
 
-    if (/\.zip$/i.test(file.name) || file.type === 'application/zip') {
-        const JSZip = (await import('jszip')).default;
-        const zip = await JSZip.loadAsync(file);
-        const descriptorEntry =
-            zip.file('project-descriptor.json') ||
-            zip.file(/project-descriptor\.json$/)[0];
-        if (!descriptorEntry) {
-            throw new Error(
-                'That ZIP can’t be read here. To submit a project, open it in Studio and choose ' +
-                'Project ▸ Export ▸ Prepare a submission. For audio files, unzip it and add them.',
-            );
-        }
-        descriptor = parseProjectDescriptor(JSON.parse(await descriptorEntry.async('string')));
+/** Named rather than dropped, so the artist can add the file by hand. */
+const missingAudio = (fileName: string): RejectedFile => ({
+    fileName,
+    reason: 'This slot carries its own audio, and the file wasn’t in the export. Add it from your folder.',
+});
 
-        const assets = zip.folder('custom_assets');
-        if (assets) {
-            const reads: Promise<void>[] = [];
-            assets.forEach((relativePath, entry) => {
-                if (entry.dir) return;
-                reads.push(
-                    entry.async('blob').then(blob => {
-                        customBlobs[`custom_assets/${relativePath}`] = blob;
-                    }),
-                );
-            });
-            await Promise.all(reads);
-        }
-    } else {
-        descriptor = parseProjectDescriptor(JSON.parse(await file.text()));
+/** Reads in the audio of the version each file submits. */
+const withCurrentAudio = async (state: AppState, read: ProjectReader, rejected: RejectedFile[]): Promise<AppState> => {
+    for (const record of Object.values(state.files)) {
+        const version = submittedVersion(record);
+        if (!version) continue;
+        // With `samplePath`, an unedited library sample the file left out: published,
+        // so there is no audio to send.
+        version.blob = (await readVersionAudio(version, read)) ?? (version.samplePath ? new Blob() : null);
+        if (!version.blob) rejected.push(missingAudio(record.originalName || record.name));
     }
+    return state;
+};
 
-    const rejected: RejectedFile[] = [];
-    const requiredPacks = new Set<string>();
-    /** Descriptor file id → the row we made for it, so the slots can point at rows. */
-    const idMap = new Map<string, string>();
-    const files: SubmissionFile[] = [];
-
-    for (const [descriptorId, entry] of Object.entries(descriptor.files)) {
-        const blob = entry.blobRef ? customBlobs[entry.blobRef] : undefined;
-
-        if (entry.blobRef && !blob) {
-            rejected.push({
-                fileName: entry.originalName,
-                reason: 'This slot carries its own audio, and the file wasn’t in the export. Add it from your folder.',
-            });
+/** A settings-only export as a project: one version per file, pack samples by path. */
+const descriptorAsProject = async (
+    descriptor: ProjectDescriptor,
+    read: ProjectReader,
+    rejected: RejectedFile[],
+): Promise<SubmittedProject> => {
+    const files: Record<string, FileRecord> = {};
+    for (const [id, entry] of Object.entries(descriptor.files)) {
+        // Own audio is in `custom_assets/`; a pack sample has none to send.
+        const blob = entry.blobRef ? await read(entry.blobRef) : new Blob();
+        if (!blob) {
+            rejected.push(missingAudio(entry.originalName));
             continue;
         }
-
-        if (entry.samplePackId) requiredPacks.add(entry.samplePackId);
-
-        const rowId = newId();
-        idMap.set(descriptorId, rowId);
-        files.push({
-            id: rowId,
-            fileName: entry.originalName,
-            title: titleFromFileName(entry.originalName),
-            category: 'General',
+        files[id] = {
+            id,
+            name: entry.originalName,
+            originalName: entry.originalName,
             // The descriptor keeps no durations; the 42 s check runs on what it can
             // measure, and a pack sample has already passed it once on the way in.
-            duration: 0,
-            size: blob?.size || 0,
-            blob: blob || new Blob(),
+            versions: [{ id, timestamp: 0, description: '', blob, duration: 0 }],
+            currentVersionId: id,
+            isParked: false,
             origin: entry.origin || entry.samplePackId,
             license: entry.license,
             sourceSamplePath: entry.samplePath,
-        });
+        };
+    }
+    return { files, tapes: descriptor.tapes, projectNotes: descriptor.projectNotes };
+};
+
+/**
+ * A project export, read back into a draft: the project file, a settings-only export
+ * from before 4.6.0 (zipped, or its bare `.json`), or any older zip Import project
+ * file reads. The rows are the ones Prepare a submission makes from the same project
+ * open in Studio, through the same `handoffFromAppState`.
+ *
+ * Pack samples come back as rows with no blob to send: they are already published
+ * audio, and re-submitting it would be asking the maintainer to deploy it twice. A
+ * project file made without sample-library audio leaves an unedited one out, as a
+ * settings-only export always did. The artist's own audio comes with its blob,
+ * because it does need to travel.
+ */
+export const intakeProjectFile = async (file: File): Promise<ProjectIntake> => {
+    let manifest: ProjectManifest;
+    // A bare `.json` carries no audio.
+    let read: ProjectReader = async () => null;
+    if (/\.zip$/i.test(file.name) || file.type === 'application/zip') {
+        const JSZip = (await import('jszip')).default;
+        const found = await findProjectInZip(await JSZip.loadAsync(await file.arrayBuffer()), file.name);
+        if (!found) throw new Error(NOT_A_PROJECT);
+        ({ manifest, read } = found);
+    } else {
+        manifest = await manifestFromJson(await file.text());
     }
 
-    const slots: (string | null)[] = [];
-    const tapeNotes: (string | undefined)[] = [];
-    TAPE_COLORS.forEach(color => {
-        const tape = descriptor.tapes[color];
-        tapeNotes.push(tape?.notes);
-        for (let slot = 1; slot <= 6; slot++) {
-            const fileId = tape?.slots?.find(s => s.id === slot)?.fileId;
-            slots.push((fileId && idMap.get(fileId)) || null);
-        }
-    });
-
+    const rejected: RejectedFile[] = [];
+    const project = manifest.kind === 'project'
+        ? await withCurrentAudio(manifest.data, read, rejected)
+        : await descriptorAsProject(manifest.data, read, rejected);
+    const name = manifest.name ?? '';
+    const { files, slots = [], tapeNotes = [], projectNotes } = await handoffFromAppState(project, name);
     return {
         files,
         filledSlots: slots.filter(Boolean).length,
         preset: {
-            name: descriptor.name === 'Untitled Project' ? '' : descriptor.name,
-            description: descriptor.description || '',
+            name,
+            description: manifest.kind === 'descriptor' ? manifest.data.description || '' : '',
             slots,
             tapeNotes,
-            projectNotes: descriptor.projectNotes || '',
+            projectNotes: projectNotes || '',
         },
-        requiredPacks: [...requiredPacks],
         rejected,
     };
 };
@@ -403,7 +394,7 @@ export const intakeSubmissionArchive = async (
     if (!entry) {
         throw new Error(
             'That ZIP has no submission.json, so it was not built by this tool. Drop a folder of audio ' +
-            'in instead, or an exported project.',
+            'in instead, or a project file.',
         );
     }
 

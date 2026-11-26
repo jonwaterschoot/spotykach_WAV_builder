@@ -1,4 +1,4 @@
-import { TAPE_COLORS, type AppState } from '../types';
+import { TAPE_COLORS, type AppState, type AudioVersion, type FileRecord, type TapeColor } from '../types';
 import { saveSubmissionHandoffToDB } from '../utils/persistence';
 import { GRID_CAPACITY } from '../utils/detachedState';
 import {
@@ -92,15 +92,29 @@ export const applyHandoff = (draft: SubmissionDraft, handoff: SubmissionHandoff)
 };
 
 /**
- * Studio's side: a live project, flattened into rows the tool understands.
- *
+ * What a submission reads from a project. A Studio project, a project file and a
+ * settings-only export from before 4.6.0 all have this shape.
+ */
+export type SubmittedProject = Pick<AppState, 'files' | 'projectNotes'> & {
+    tapes: Partial<Record<TapeColor, { slots?: Array<{ id: number; fileId: string | null }>; notes?: string }>>;
+};
+
+/**
  * The current version of each file, not the original — a project's files have been
  * trimmed, EQ'd and pitched on purpose, and the pre-edit version is not what anyone
- * means by "submit this". Parked files come too: they are part of the pack even
- * when they didn't make the grid.
+ * means by "submit this".
+ */
+export const submittedVersion = (record: FileRecord): AudioVersion | undefined =>
+    record.versions.find(v => v.id === record.currentVersionId) ?? record.versions[0];
+
+/**
+ * Studio's side: a live project, flattened into rows the tool understands. A project
+ * file dropped on the tool goes through here too (`intakeProjectFile`), so both give
+ * the same rows. Parked files come too: they are part of the pack even when they
+ * didn't make the grid.
  */
 export const handoffFromAppState = async (
-    state: AppState,
+    state: SubmittedProject,
     projectName: string,
 ): Promise<SubmissionHandoff> => {
     const files: SubmissionFile[] = [];
@@ -108,8 +122,7 @@ export const handoffFromAppState = async (
     const idMap = new Map<string, string>();
 
     for (const [fileId, record] of Object.entries(state.files)) {
-        const version =
-            record.versions.find(v => v.id === record.currentVersionId) ?? record.versions[0];
+        const version = submittedVersion(record);
         if (!version?.blob) continue;
 
         const rowId = newId();
