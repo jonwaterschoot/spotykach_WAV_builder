@@ -310,7 +310,7 @@ export const StepAudio: React.FC<StepProps> = ({ draft, update, goToStep, showTo
             <StepHeading title={draft.wants.pack ? 'The audio' : 'The samples your preset uses'}>
                 {draft.wants.pack
                     ? 'Add a whole folder, or browse one and pick. Subfolders become categories, and the titles below are what people see. Play, edit or rename anything.'
-                    : 'A preset uses samples already in the app. Drop in a project export to read its layout, or add audio of your own.'}
+                    : 'A preset uses samples already in the app. To start from a project, open it in Studio and choose Project ▸ Export ▸ Prepare a submission. Or add audio of your own.'}
             </StepHeading>
 
             <div

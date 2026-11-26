@@ -274,11 +274,13 @@ export interface DescriptorIntake {
  * A settings-only export, read back into a draft.
  *
  * Two shapes arrive here: the bare `.json` descriptor, and the `.zip` the app
- * currently produces around one. Entries that reference a pack come back as rows
- * with no blob to send — they are already published audio, and re-submitting it
- * would be asking the maintainer to deploy it twice. Entries that carry their own
- * audio come back with the blob from `custom_assets/`, because those genuinely do
- * need to travel.
+ * made around one until 4.6.0. The project file since has no descriptor, so a
+ * project comes in through Prepare a submission.
+ *
+ * Entries that reference a pack come back as rows with no blob to send — they are
+ * already published audio, and re-submitting it would be asking the maintainer to
+ * deploy it twice. Entries that carry their own audio come back with the blob from
+ * `custom_assets/`, because those genuinely do need to travel.
  */
 export const intakeDescriptorFile = async (file: File): Promise<DescriptorIntake> => {
     let descriptor: ProjectDescriptor;
@@ -292,8 +294,8 @@ export const intakeDescriptorFile = async (file: File): Promise<DescriptorIntake
             zip.file(/project-descriptor\.json$/)[0];
         if (!descriptorEntry) {
             throw new Error(
-                'That ZIP holds no project-descriptor.json. A full project backup can’t be read here — ' +
-                'export it again as a settings-only preset.',
+                'That ZIP can’t be read here. To submit a project, open it in Studio and choose ' +
+                'Project ▸ Export ▸ Prepare a submission. For audio files, unzip it and add them.',
             );
         }
         descriptor = parseProjectDescriptor(JSON.parse(await descriptorEntry.async('string')));
