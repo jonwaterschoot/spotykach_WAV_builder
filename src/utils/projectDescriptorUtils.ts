@@ -243,9 +243,9 @@ export const hydrateDescriptor = async (
  *     (samplePackId + samplePath, no blob packed).
  *   - Files without a source path (custom uploads) → blob packed into custom_assets/.
  *
- * In full mode:
- *   - All files packed as usual (caller uses exportSaveState for full ZIP).
- *   - This function is mainly used for the settings-only path.
+ * In full mode every file's current version is packed into custom_assets/. That is
+ * the project file (`handleExportZip` in App) and the only mode in use: settings-only
+ * references a library file's original even when its current version is an edit.
  *
  * @returns `descriptor` and `customBlobs` (map of blobRef → Blob to pack in ZIP).
  */

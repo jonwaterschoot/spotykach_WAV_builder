@@ -95,7 +95,6 @@ export const StepReview: React.FC<StepProps> = ({ draft, update, goToStep, showT
                 {
                     skMode: 'overwrite',
                     directWrite: false,
-                    includeProject: false,
                     // A submitting artist has no device settings to express here, and a
                     // defaults config.txt on the card would quietly replace theirs.
                     includeConfig: false,

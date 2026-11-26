@@ -97,7 +97,6 @@ export const writeToSD = async (
         directWrite: !options.asZip,
         destinationHandle: options.destinationHandle,
         projectName: options.projectName,
-        includeProject: false,
         onConvert: toHardwareWav,
     }, onProgress);
 };
@@ -162,7 +161,6 @@ export const writePresetOverUsb = async (
         card,
         skMode: 'overwrite',
         directWrite: true,
-        includeProject: false,
         includeConfig: false,
         onConvert: toHardwareWav,
         onSlot: options.onSlot,

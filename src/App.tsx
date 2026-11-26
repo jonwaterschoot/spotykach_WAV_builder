@@ -4911,7 +4911,6 @@ function App({ onExitToHub }: AppProps) {
           const { exportSDStructure } = await import('./utils/exportUtils');
           const cardSnapshot = await exportSDStructure(newState, { // Use newState which includes pooled files
             card,
-            includeProject: true,
             directWrite: true,
             smartSync: options.skMode === 'overwrite',
             skMode: options.skMode,

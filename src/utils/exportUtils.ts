@@ -1,4 +1,3 @@
-import type JSZip from 'jszip';
 import { TAPE_COLORS } from '../types';
 import type { AppState, AudioVersion, CardSnapshot, FileRecord, ProjectConfig, WavMetadata } from '../types';
 import { completeProjectConfig, generateConfigText } from './configText';
@@ -35,7 +34,6 @@ export interface ExportSDOptions {
     mirrorProjectToSD?: boolean;
     workHandle?: FileSystemDirectoryHandle | null;
     projectName?: string;
-    includeProject?: boolean;
     directWrite?: boolean;
     smartSync?: boolean;
     destinationHandle?: FileSystemDirectoryHandle;
@@ -561,112 +559,6 @@ LEGAL / LICENSES
 
 
 // ==========================================
-// 1. PROJECT BACKUP (Full State)
-// ==========================================
-
-export const exportSaveState = async (
-    state: AppState, 
-    returnZip = false, 
-    onProgress?: (msg: string | undefined, progress?: number) => void,
-    settingsOnly = false
-): Promise<JSZip | void> => {
-    onProgress?.("Starting project backup...", 0);
-    const JSZip = (await import('jszip')).default;
-    const zip = new JSZip();
-
-    if (settingsOnly) {
-        onProgress?.("Generating project descriptor...", 10);
-        const { buildDescriptorFromState } = await import('./projectDescriptorUtils');
-        const { descriptor, customBlobs } = buildDescriptorFromState(state, { settingsOnly: true });
-
-        zip.file("project-descriptor.json", JSON.stringify(descriptor, null, 2));
-
-        const customAssetsFolder = zip.folder("custom_assets");
-        if (customAssetsFolder) {
-            for (const [blobRef, blob] of Object.entries(customBlobs)) {
-                const filename = blobRef.split('/').pop();
-                if (filename) {
-                    customAssetsFolder.file(filename, blob);
-                }
-            }
-        }
-        onProgress?.("Saving metadata...", 20);
-    } else {
-        const serializedFiles: any = {};
-        const blobsFolder = zip.folder("blobs");
-
-        onProgress?.("Serializing file records...", 10);
-        for (const [id, file] of Object.entries(state.files)) {
-            serializedFiles[id] = {
-                ...file,
-                versions: file.versions.map(v => {
-                    const blobName = `${v.id}.wav`;
-                    if (blobsFolder && v.blob) {
-                        try {
-                            blobsFolder.file(blobName, v.blob);
-                        } catch (e) {
-                            console.warn(`[Export] Skipping unreadable blob for ${blobName}`);
-                        }
-                    }
-
-                    return {
-                        ...v,
-                        blob: null,
-                        blobRef: blobName
-                    };
-                })
-            };
-        }
-
-        onProgress?.("Saving metadata...", 20);
-        const serializedState = {
-            files: serializedFiles,
-            tapes: state.tapes,
-            projectNotes: state.projectNotes,
-            projectConfig: state.projectConfig, // Include project config
-            cardSnapshot: state.cardSnapshot,
-            metadata: {
-                appName: "Spotykach WAV Builder",
-                version: __APP_VERSION__,
-                exportDate: new Date().toISOString()
-            }
-        };
-
-        zip.file("project.json", JSON.stringify(serializedState, null, 2));
-    }
-
-    // Create notes.md if notes exist
-    let notesContent = "";
-    if (state.projectNotes) {
-        notesContent += `# Project Notes\n\n${state.projectNotes}\n\n`;
-    }
-    TAPE_COLORS.forEach(color => {
-        const tapeNotes = state.tapes[color]?.notes;
-        if (tapeNotes) {
-            notesContent += `## Tape ${color} Notes\n\n${tapeNotes}\n\n`;
-        }
-    });
-
-    if (notesContent.trim() !== "") {
-        zip.file("notes.md", notesContent);
-    }
-
-    if (returnZip) {
-        onProgress?.("Project backup zip prepared for bundling.", 30);
-        return zip;
-    }
-
-    onProgress?.("Generating final ZIP file...", 40);
-    const content = await zip.generateAsync({ type: "blob" }, (metadata) => {
-        onProgress?.(undefined, 40 + (metadata.percent * 0.6));
-    });
-    const dateStr = new Date().toISOString().split('T')[0];
-    downloadBlob(content, `Spotykach_Project_${dateStr}.zip`);
-    onProgress?.("Download started.", 100);
-};
-
-
-// ==========================================
 // 2. SD CARD STRUCTURE (Strict)
 // ==========================================
 
@@ -1071,13 +963,6 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
         }
     }
 
-    if (options.includeProject) {
-        onProgress?.("Bundling Project Backup...", 90);
-        const pZip = await exportSaveState(state, true) as JSZip;
-        const backupBlob = await pZip.generateAsync({ type: "blob" });
-        skFolder.folder("PROJECT_BACKUP")?.file("project_backup.zip", backupBlob);
-    }
-
     const content = await zip.generateAsync({ type: "blob" }, (meta) => {
         onProgress?.("Compressing Final ZIP...", 95 + (meta.percent * 0.05));
     });
@@ -1111,7 +996,7 @@ export const exportFilesOnly = async (state: AppState, options: ExportFilesOptio
 
     // Add README
     onProgress?.("Adding Information...", 5);
-    zip.file("README.md", options.readme ?? generateReadme(state)); // Don't mention project bundle in this context
+    zip.file("README.md", options.readme ?? generateReadme(state));
 
     // Helper to find location
     const findFileLocation = (fileId: string): string | null => {
@@ -1390,8 +1275,7 @@ export const saveProjectToDirectory = async (state: AppState, rootHandle: FileSy
         onProgress?.("Writing project.json...", 10);
         const projectHandle = await targetHandle.getFileHandle('project.json', { create: true });
 
-        // Prepare State for Save (serialize blobs?)
-        // Mirroring exportSaveState: blobs go to "Assets" folder, JSON references them.
+        // Blobs go to the Assets folder, and project.json references them.
 
         const serializedFiles: any = {};
         const assetsPending: { id: string, blob: Blob }[] = [];

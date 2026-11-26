@@ -867,7 +867,6 @@ export const BrowseMode: React.FC<BrowseModeProps> = ({ onExitToHub, onEnterStud
     await exportSDStructure(state, {
       skMode: 'overwrite',
       directWrite: false,
-      includeProject: false,
       // A browse visitor has no device settings to express, and a defaults
       // config.txt on the card would quietly overwrite theirs. Config is Phase 5.
       includeConfig: false,
