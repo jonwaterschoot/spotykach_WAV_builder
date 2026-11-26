@@ -50,7 +50,7 @@ interface ProjectManagerProps {
     isScanning?: boolean;
     onCleanupProject?: (options?: { removeUnusedFiles: boolean }) => void;
     onImportZip?: () => void;
-    /** Downloads the project file, the same as Export ▸ Project file. */
+    /** Downloads the project file, as Export ▸ Project file makes it by default (library samples by reference). */
     onExportZip?: (projectName: string) => void;
     onOpenHelp?: () => void;
 }

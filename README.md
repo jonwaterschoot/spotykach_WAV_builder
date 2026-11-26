@@ -102,6 +102,7 @@ This project is built using:
     npm run check:wav      # WAV headers against ports of both firmwares' parsers
     npm run check:slots    # slot files from the transfer package
     npm run check:card     # export and sync end to end, card reader and USB
+    npm run check:project-file   # project file out and back, older exports through the importer
     npm run check:mangler
     npm run check:online
     ```

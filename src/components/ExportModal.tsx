@@ -9,8 +9,11 @@ interface ExportModalProps {
     onClose: () => void;
     onExportSD: (options: { directWrite: boolean; skMode: 'clean' | 'overwrite'; includeConfig?: boolean }) => void;
     onExportFiles: (options: { keepStructure: boolean; fileIds: string[] }) => void;
-    /** The open project as a project file: the zip Project ▸ Import project file reads back. */
-    onExportProject: () => void;
+    /**
+     * The open project as a project file: the zip Project ▸ Import project file reads
+     * back. Without `libraryAudio`, unedited sample-library files download on import.
+     */
+    onExportProject: (options: { libraryAudio: boolean }) => void;
     /**
      * Hand this project to the submission tool instead of downloading it.
      *
@@ -47,6 +50,7 @@ const primaryButton = 'w-full py-3 bg-synthux-yellow hover:bg-yellow-400 text-bl
 
 export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExportProject, onPrepareSubmission }: ExportModalProps) => {
     const [activeTab, setActiveTab] = useState<ExportTab>('project');
+    const [libraryAudio, setLibraryAudio] = useState(false);
 
     // Mounted only while shown, so always enabled.
     useEscapeKey(onClose);
@@ -119,14 +123,30 @@ export const ExportModal = ({ files, onClose, onExportSD, onExportFiles, onExpor
                             <Intro title="Project file">
                                 <p>
                                     For opening this project on another computer, or a copy to keep. It holds the
-                                    tapes, the pool, the notes, the device settings and the current version of every
-                                    file, sample-library files too.
+                                    tapes, the pool, the notes, the device settings, and each file's original and
+                                    current version.
                                 </p>
                                 <p className="text-gray-400">Open it again with Project ▸ Import project file.</p>
                             </Intro>
 
+                            <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-800 hover:bg-white/5 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={libraryAudio}
+                                    onChange={(e) => setLibraryAudio(e.target.checked)}
+                                    className="mt-1 rounded border-gray-600 text-synthux-yellow focus:ring-synthux-yellow bg-gray-700"
+                                />
+                                <span className="text-sm">
+                                    <span className="block font-bold text-gray-200">Include sample-library audio</span>
+                                    <span className="block text-gray-400">
+                                        Without it, library samples you haven't edited download again on import, which
+                                        needs internet. Edits are always in the file.
+                                    </span>
+                                </span>
+                            </label>
+
                             <div className="mt-auto pt-4 border-t border-gray-800">
-                                <button onClick={onExportProject} className={primaryButton}>
+                                <button onClick={() => onExportProject({ libraryAudio })} className={primaryButton}>
                                     <Download size={20} />
                                     Download project file
                                 </button>

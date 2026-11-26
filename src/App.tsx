@@ -478,7 +478,7 @@ function App({ onExitToHub }: AppProps) {
               </p>
               <p className="text-gray-400 text-sm">
                 To share a <em>project</em> with someone instead, use Project ▸ Export ▸ Project file. That
-                zip carries the audio, and Project ▸ Import project file opens it.
+                zip holds the project, and Project ▸ Import project file opens it.
               </p>
             </>
           ),
@@ -491,24 +491,15 @@ function App({ onExitToHub }: AppProps) {
         return;
       }
 
-      // Determine project name from zip (top-level folder or filename)
-      const entries = Object.keys(zip.files);
-      const looksLikeProject = entries.some(path =>
-        path.endsWith('project.json') || path.endsWith('project-descriptor.json'),
-      );
-      if (!looksLikeProject) {
-        showToast(
-          'That ZIP holds no project.json or project-descriptor.json, so there is nothing here to import.',
-          'error',
-        );
+      // Any export this app has made: the project file, an older Project Manager zip
+      // or Full Backup Bundle, an SD card folder holding the project.
+      const { findProjectInZip, loadProject } = await import('./utils/projectFile');
+      const found = await findProjectInZip(zip, file.name);
+      if (!found) {
+        showToast('That zip holds no WAV Builder project, so there is nothing here to import.', 'error');
         return;
       }
-
-      const topFolders = [...new Set(entries.map(e => e.split('/')[0]).filter(Boolean))];
-      
-      // If ZIP was created with spaces in title but filename has -, use filename as fallback?
-      // Actually, let's trust the top folder if it exists.
-      const zipName = topFolders.length === 1 ? topFolders[0] : file.name.replace(/\.zip$/i, '');
+      const zipName = sanitizeFilename(found.name) || 'Imported-project';
 
       // Lowercased, as Windows and macOS see "Song" and "song" as one folder.
       const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
@@ -518,34 +509,18 @@ function App({ onExitToHub }: AppProps) {
       }
       const isTaken = (name: string) => takenNames.has(name.toLowerCase());
 
-      const writeAndLoad = async (projectName: string) => {
+      // Read into memory and saved like any project, so the folder is in the normal
+      // layout whatever the zip held. Library samples left out of it download here.
+      const saveAndOpen = async (projectName: string) => {
         setIsProcessing(true);
-        setProgressMsg(`Importing "${projectName}" from zip...`);
+        setProgressMsg(`Importing "${projectName}"...`);
         try {
-          const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
-
-          for (const [path, entry] of Object.entries(zip.files)) {
-            if (entry.dir) continue;
-            // Strip leading top-folder prefix if present
-            const relPath = topFolders.length === 1 && path.startsWith(topFolders[0] + '/')
-              ? path.slice(topFolders[0].length + 1)
-              : path;
-            if (!relPath) continue;
-
-            const parts = relPath.split('/');
-            let dir: FileSystemDirectoryHandle = projectDir;
-            for (const part of parts.slice(0, -1)) {
-              dir = await dir.getDirectoryHandle(part, { create: true });
-            }
-            const buf = await entry.async('arraybuffer');
-            const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
-            const w = await fh.createWritable();
-            await w.write(buf);
-            await w.close();
-          }
+          const imported = await loadProject(found.manifest, found.read, { onProgress: (msg) => setProgressMsg(msg) });
+          const { saveProjectToDirectory } = await import('./utils/exportUtils');
+          await saveProjectToDirectory(imported, workHandle, (msg) => setProgressMsg(msg || ''), projectName);
 
           await scanProjects(workHandle, sdHandle);
-          showToast(`"${projectName}" imported from zip`, 'success');
+          showToast(`"${projectName}" imported`, 'success');
 
           // Opening it replaces the open project, which is why the import asked first.
           await handleLoadProject(projectName);
@@ -557,7 +532,7 @@ function App({ onExitToHub }: AppProps) {
         }
       };
 
-      const importAs = (projectName: string) => checkUnsavedChanges(() => writeAndLoad(projectName), {
+      const importAs = (projectName: string) => checkUnsavedChanges(() => saveAndOpen(projectName), {
         offerSave: true,
         consequence: `The imported "${projectName}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
         proceedLabel: 'Import without saving',
@@ -568,23 +543,21 @@ function App({ onExitToHub }: AppProps) {
         return;
       }
 
-      // Writing into an existing project folder keeps its old files next to the
-      // ZIP's, and the loader reads project-descriptor.json before project.json, so
-      // a leftover manifest could decide what opens. A new folder avoids both.
-      const base = sanitizeFilename(zipName) || 'Imported-project';
+      // Saving into the existing folder would mix the two projects' files. Comparing
+      // them and replacing one is step 3 of the import/export plan.
       let n = 1;
-      while (isTaken(`${base}_${n}`)) n++;
+      while (isTaken(`${zipName}_${n}`)) n++;
       setProjectNameModal({
         isOpen: true,
         title: 'Import as a new project',
         message: (
           <p>
             "{zipName}" is already in your work folder{zipName.toLowerCase() === currentProjectName?.toLowerCase() ? ' and open in the studio' : ''}.
-            The ZIP goes into a new project, so the two don't mix.
+            The import goes into a new project, so the two don't mix.
           </p>
         ),
         confirmLabel: 'Import',
-        initialValue: `${base}_${n}`,
+        initialValue: `${zipName}_${n}`,
         validate: (name) => {
           const clean = sanitizeFilename(name);
           if (!clean) return 'Use letters, digits, hyphens or underscores.';
@@ -598,12 +571,12 @@ function App({ onExitToHub }: AppProps) {
   };
 
   /**
-   * The project file: `<name>/project-descriptor.json` and every file's current
-   * version, library samples included. Without a name it is the open project, from
+   * The project file (projectFile.ts): the project folder zipped, each file's
+   * original and current version. Without a name it is the open project, from
    * memory, so Browser Cache Mode can export too. Another project is read from its
-   * folder.
+   * folder. Unedited sample-library files go as references unless `libraryAudio`.
    */
-  const handleExportZip = async (projectName?: string) => {
+  const handleExportZip = async (projectName?: string, options: { libraryAudio?: boolean } = {}) => {
     const isOpenProject = !projectName || projectName === currentProjectName;
     const name = projectName || currentProjectName || 'Untitled-project';
     if (!isOpenProject && !workHandle) {
@@ -613,9 +586,6 @@ function App({ onExitToHub }: AppProps) {
     setIsProcessing(true);
     setProgressMsg(`Zipping "${name}"...`);
     try {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-
       let projectState: AppState;
 
       if (isOpenProject) {
@@ -626,21 +596,9 @@ function App({ onExitToHub }: AppProps) {
         projectState = await loadProjectFromDirectory(name, workHandle!);
       }
 
-      // Not settings-only: that left library samples as references to their
-      // originals, and an edited one lost its edit.
-      const { buildDescriptorFromState } = await import('./utils/projectDescriptorUtils');
-      const { descriptor, customBlobs } = buildDescriptorFromState(projectState, {
-        settingsOnly: false,
-        name,
-      });
-
-      zip.file(`${name}/project-descriptor.json`, JSON.stringify(descriptor, null, 2));
-
-      for (const [blobRef, blob] of Object.entries(customBlobs)) {
-        zip.file(`${name}/${blobRef}`, await blob.arrayBuffer());
-      }
-
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const { buildProjectFile } = await import('./utils/projectFile');
+      const blob = await buildProjectFile(projectState, name, { libraryAudio: options.libraryAudio ?? false }, (msg, percent) =>
+        setProgressMsg(percent === undefined ? msg : `${msg} ${Math.round(percent)}%`));
       const { downloadBlob, downloadFileName } = await import('./utils/exportUtils');
       downloadBlob(blob, downloadFileName(name));
       showToast(`"${name}" exported as a project file`, 'success');
@@ -5772,9 +5730,9 @@ function App({ onExitToHub }: AppProps) {
                       await exportFilesOnly(state, { ...opts, projectName: currentProjectName || 'Untitled-project', onConvert: convertAudioToWav }, log);
                     });
                   }}
-                  onExportProject={async () => {
+                  onExportProject={async (opts) => {
                     setShowExport(false);
-                    await handleExportZip();
+                    await handleExportZip(undefined, opts);
                   }}
                   onPrepareSubmission={async () => {
                     setShowExport(false);

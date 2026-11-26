@@ -20,6 +20,13 @@ export interface AudioVersion {
     processing?: ('normalized' | 'trimmed' | 'looped' | 'eq' | 'limited' | 'cut' | 'sliced')[];
     blobRef?: string; // Optional path reference used during load/save
     hash?: string; // SHA-256 content hash for duplicate detection
+    /**
+     * In place of an asset: an unedited sample-library file, by its pack path
+     * (`/Hainbach/MASSIVE.flac`). A project file made without library audio stores
+     * these; loading downloads them, and the next save keeps them as assets. Stays on
+     * a version whose download failed, so the next load tries again.
+     */
+    samplePath?: string;
 }
 
 export interface FileRecord {
