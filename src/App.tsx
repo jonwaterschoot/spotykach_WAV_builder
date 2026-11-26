@@ -438,14 +438,9 @@ function App({ onExitToHub }: AppProps) {
       return;
     }
 
-    // 1. Check for unsaved changes in current project
-    if (hasUnsavedChanges && currentProjectName) {
-      const confirmLoad = window.confirm(`"${currentProjectName}" has unsaved changes. Save before importing a new project?`);
-      if (confirmLoad) {
-        await handleSaveProject();
-      }
-    }
-
+    // The unsaved-changes question comes after the ZIP is picked and checked, not
+    // before: the file picker needs the click that opened it, and an awaited save
+    // in between can use that up. Nothing is written until the answer is in.
     try {
       // @ts-ignore – showOpenFilePicker is not in all TS libs yet
       const [handle] = await window.showOpenFilePicker({
@@ -514,43 +509,55 @@ function App({ onExitToHub }: AppProps) {
       // Actually, let's trust the top folder if it exists.
       const projectName = topFolders.length === 1 ? topFolders[0] : file.name.replace(/\.zip$/i, '');
 
-      setIsProcessing(true);
-      setProgressMsg(`Importing "${projectName}" from zip...`);
+      const writeAndLoad = async () => {
+        setIsProcessing(true);
+        setProgressMsg(`Importing "${projectName}" from zip...`);
+        try {
+          const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+          const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
 
-      const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
-      const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
+          for (const [path, entry] of Object.entries(zip.files)) {
+            if (entry.dir) continue;
+            // Strip leading top-folder prefix if present
+            const relPath = topFolders.length === 1 && path.startsWith(topFolders[0] + '/')
+              ? path.slice(topFolders[0].length + 1)
+              : path;
+            if (!relPath) continue;
 
-      for (const [path, entry] of Object.entries(zip.files)) {
-        if (entry.dir) continue;
-        // Strip leading top-folder prefix if present
-        const relPath = topFolders.length === 1 && path.startsWith(topFolders[0] + '/')
-          ? path.slice(topFolders[0].length + 1)
-          : path;
-        if (!relPath) continue;
+            const parts = relPath.split('/');
+            let dir: FileSystemDirectoryHandle = projectDir;
+            for (const part of parts.slice(0, -1)) {
+              dir = await dir.getDirectoryHandle(part, { create: true });
+            }
+            const buf = await entry.async('arraybuffer');
+            const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
+            const w = await fh.createWritable();
+            await w.write(buf);
+            await w.close();
+          }
 
-        const parts = relPath.split('/');
-        let dir: FileSystemDirectoryHandle = projectDir;
-        for (const part of parts.slice(0, -1)) {
-          dir = await dir.getDirectoryHandle(part, { create: true });
+          await scanProjects(workHandle, sdHandle);
+          showToast(`"${projectName}" imported from zip`, 'success');
+
+          // The import opens straight away — which is why it asked first.
+          await handleLoadProject(projectName);
+        } catch (e) {
+          showToast('Import failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+        } finally {
+          setIsProcessing(false);
+          setProgressMsg('');
         }
-        const buf = await entry.async('arraybuffer');
-        const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
-        const w = await fh.createWritable();
-        await w.write(buf);
-        await w.close();
-      }
+      };
 
-      await scanProjects(workHandle, sdHandle);
-      showToast(`"${projectName}" imported from zip`, 'success');
-      
-      // 2. Automatically load the imported project
-      await handleLoadProject(projectName);
-
+      checkUnsavedChanges(writeAndLoad, {
+        offerSave: true,
+        consequence: projectName === currentProjectName
+          ? `The ZIP is written into the folder of "${projectName}", the project open now, and then reopened from it.`
+          : `The imported "${projectName}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+        proceedLabel: 'Import without saving',
+      });
     } catch (e: any) {
       if (e.name !== 'AbortError') showToast('Import failed: ' + e.message, 'error');
-    } finally {
-      setIsProcessing(false);
-      setProgressMsg('');
     }
   };
 
@@ -5061,7 +5068,11 @@ function App({ onExitToHub }: AppProps) {
                   <button
                     // Leaving Studio unmounts it, so this is a real exit — it has to
                     // ask the same question every other project-losing action asks.
-                    onClick={() => checkUnsavedChanges(onExitToHub)}
+                    onClick={() => checkUnsavedChanges(onExitToHub, {
+                      offerSave: true,
+                      consequence: `Going back to the hub closes "${currentProjectName || 'the open project'}".`,
+                      proceedLabel: 'Leave without saving',
+                    })}
                     title="Back to the hub"
                     className="flex items-center px-1.5 py-1.5 rounded-md text-gray-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"
                   >
@@ -5821,7 +5832,13 @@ function App({ onExitToHub }: AppProps) {
                 onClose={() => setShowProjectManager(false)}
                 projects={foundProjects}
                 onLoadProject={(name) => {
-                  checkUnsavedChanges(() => handleLoadProject(name));
+                  checkUnsavedChanges(() => handleLoadProject(name), {
+                    offerSave: true,
+                    consequence: name === currentProjectName
+                      ? `Opening "${name}" again reloads it from the project folder.`
+                      : `"${name}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+                    proceedLabel: 'Open without saving',
+                  });
                 }}
                 onSaveProject={handleSaveProjectAs}
                 onCreateEmptyProject={(name) => {
