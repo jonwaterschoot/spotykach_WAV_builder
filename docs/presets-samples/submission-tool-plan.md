@@ -90,8 +90,10 @@ Three ways in, all local:
 - **pick a folder** via `showDirectoryPicker`, read-only, so subfolder names survive as categories;
 - **from the pool / from a project**, when arriving from entry point 2 or 3;
 - **drop an exported project** — a settings-only `.json` descriptor or the `.zip` around one, read
-  through the same descriptor parser the app already uses. *(Decided 2026-08-23.)* Someone who
-  exported a preset last month, or who works on two machines, rebuilds nothing;
+  through the same descriptor parser the app already uses. *(Decided 2026-08-23. Since Nov 27 also
+  the project file, and every older export Import project file reads, with the rows Prepare a
+  submission builds.)* Someone who exported a preset last month, or who works on two machines,
+  rebuilds nothing;
 - **browse a folder and pick**, in the same `LocalFolderBrowser` tree the Sample Browser uses for
   local folders. *(Added 2026-08-23, on walking the built step.)* Taking a whole folder suits the
   artist whose folder *is* the pack; an artist with a drive full of recordings needs to listen before
