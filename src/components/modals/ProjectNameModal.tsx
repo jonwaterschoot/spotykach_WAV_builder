@@ -9,6 +9,10 @@ interface ProjectNameModalProps {
     initialValue?: string;
     placeholder?: string;
     confirmLabel?: string;
+    /** Why the name is being asked for, shown above the field. */
+    message?: React.ReactNode;
+    /** Returns the reason a name can't be used, or null. Checked on every keystroke. */
+    validate?: (name: string) => string | null;
 }
 
 export const ProjectNameModal = ({
@@ -18,7 +22,9 @@ export const ProjectNameModal = ({
     title,
     initialValue = '',
     placeholder = 'Enter project name...',
-    confirmLabel = 'Create Project'
+    confirmLabel = 'Create Project',
+    message,
+    validate,
 }: ProjectNameModalProps) => {
     const [name, setName] = useState(initialValue);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -39,9 +45,11 @@ export const ProjectNameModal = ({
 
     if (!isOpen) return null;
 
+    const error = name.trim() && validate ? validate(name.trim()) : null;
+
     const handleSubmit = (e?: React.FormEvent) => {
         e?.preventDefault();
-        if (name.trim()) {
+        if (name.trim() && !error) {
             onConfirm(name.trim());
             onClose();
         }
@@ -67,6 +75,7 @@ export const ProjectNameModal = ({
 
                 {/* Content */}
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {message && <div className="font-body text-sm text-gray-300 leading-relaxed">{message}</div>}
                     <div className="space-y-2">
                         <label className="text-xs font-bold uppercase tracking-widest text-gray-500 ml-1">
                             Project Name
@@ -83,6 +92,7 @@ export const ProjectNameModal = ({
                             }}
                         />
                     </div>
+                    {error && <p role="alert" className="text-xs text-red-400 ml-1">{error}</p>}
                     <p className="text-[10px] text-gray-500 italic ml-1">
                         Use alphanumeric characters, underscores, or hyphens for best compatibility.
                     </p>
@@ -98,7 +108,7 @@ export const ProjectNameModal = ({
                     </button>
                     <button
                         onClick={() => handleSubmit()}
-                        disabled={!name.trim()}
+                        disabled={!name.trim() || !!error}
                         className={`px-6 py-2 rounded-lg text-white font-bold text-sm transition-all shadow-lg hover:scale-105 active:scale-95 bg-synthux-blue hover:bg-blue-600 shadow-blue-900/20 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed`}
                     >
                         {confirmLabel}

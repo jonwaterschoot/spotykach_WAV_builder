@@ -344,6 +344,8 @@ function App({ onExitToHub }: AppProps) {
     confirmLabel: string;
     initialValue: string;
     onConfirm: (name: string) => void;
+    message?: React.ReactNode;
+    validate?: (name: string) => string | null;
   } | null>(null);
 
   // ── SK Backup helpers ─────────────────────────────────────────────────────
@@ -507,13 +509,20 @@ function App({ onExitToHub }: AppProps) {
       
       // If ZIP was created with spaces in title but filename has -, use filename as fallback?
       // Actually, let's trust the top folder if it exists.
-      const projectName = topFolders.length === 1 ? topFolders[0] : file.name.replace(/\.zip$/i, '');
+      const zipName = topFolders.length === 1 ? topFolders[0] : file.name.replace(/\.zip$/i, '');
 
-      const writeAndLoad = async () => {
+      // Lowercased, as Windows and macOS see "Song" and "song" as one folder.
+      const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
+      const takenNames = new Set<string>();
+      for await (const [name, entry] of projectsDir.entries()) {
+        if (entry.kind === 'directory') takenNames.add(name.toLowerCase());
+      }
+      const isTaken = (name: string) => takenNames.has(name.toLowerCase());
+
+      const writeAndLoad = async (projectName: string) => {
         setIsProcessing(true);
         setProgressMsg(`Importing "${projectName}" from zip...`);
         try {
-          const projectsDir = await workHandle.getDirectoryHandle('Projects', { create: true });
           const projectDir = await projectsDir.getDirectoryHandle(projectName, { create: true });
 
           for (const [path, entry] of Object.entries(zip.files)) {
@@ -539,7 +548,7 @@ function App({ onExitToHub }: AppProps) {
           await scanProjects(workHandle, sdHandle);
           showToast(`"${projectName}" imported from zip`, 'success');
 
-          // The import opens straight away — which is why it asked first.
+          // Opening it replaces the open project, which is why the import asked first.
           await handleLoadProject(projectName);
         } catch (e) {
           showToast('Import failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
@@ -549,12 +558,40 @@ function App({ onExitToHub }: AppProps) {
         }
       };
 
-      checkUnsavedChanges(writeAndLoad, {
+      const importAs = (projectName: string) => checkUnsavedChanges(() => writeAndLoad(projectName), {
         offerSave: true,
-        consequence: projectName === currentProjectName
-          ? `The ZIP is written into the folder of "${projectName}", the project open now, and then reopened from it.`
-          : `The imported "${projectName}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
+        consequence: `The imported "${projectName}" replaces "${currentProjectName || 'the open project'}" in the studio.`,
         proceedLabel: 'Import without saving',
+      });
+
+      if (!isTaken(zipName)) {
+        importAs(zipName);
+        return;
+      }
+
+      // Writing into an existing project folder keeps its old files next to the
+      // ZIP's, and the loader reads project-descriptor.json before project.json, so
+      // a leftover manifest could decide what opens. A new folder avoids both.
+      const base = sanitizeFilename(zipName) || 'Imported-project';
+      let n = 1;
+      while (isTaken(`${base}_${n}`)) n++;
+      setProjectNameModal({
+        isOpen: true,
+        title: 'Import as a new project',
+        message: (
+          <p>
+            "{zipName}" is already in your work folder{zipName.toLowerCase() === currentProjectName?.toLowerCase() ? ' and open in the studio' : ''}.
+            The ZIP goes into a new project, so the two don't mix.
+          </p>
+        ),
+        confirmLabel: 'Import',
+        initialValue: `${base}_${n}`,
+        validate: (name) => {
+          const clean = sanitizeFilename(name);
+          if (!clean) return 'Use letters, digits, hyphens or underscores.';
+          return isTaken(clean) ? `"${clean}" is taken too. Pick another name.` : null;
+        },
+        onConfirm: (name) => importAs(sanitizeFilename(name)),
       });
     } catch (e: any) {
       if (e.name !== 'AbortError') showToast('Import failed: ' + e.message, 'error');
@@ -6461,6 +6498,8 @@ function App({ onExitToHub }: AppProps) {
           title={projectNameModal.title}
           confirmLabel={projectNameModal.confirmLabel}
           initialValue={projectNameModal.initialValue}
+          message={projectNameModal.message}
+          validate={projectNameModal.validate}
         />
       )}
     </ErrorBoundary>
