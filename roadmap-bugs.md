@@ -21,6 +21,7 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
 **Other**
+- [ ] Submit tool reads a dropped project file: done on `fix/submit-project-file`, not click-tested. Click-test on the audio step: a 4.6.0 project file with and without library audio (layout, notes and own audio come in, library samples as pack rows), an older Project Manager zip (its own audio comes in now), a zip of plain audio (says to unzip it).
 - [ ] News: the cue point modes (Ignore / Snap / Free) with a demo video.
 - [ ] Sample Mangler: the "Later" items and checks on a real phone. → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
 - [ ] Code health: one item per session, from the list below.
@@ -49,7 +50,6 @@ Details and line references: [docs/optimization-plan.md](docs/optimization-plan.
 - **SD card:** import only new files. More than one project per card: ask Vlad first, and `'SK'` is hardcoded in 8 files. Project title in `config.txt`: waiting on whether the firmware accepts unknown keys. Prepare (erase) a card.
 - **Backup and projects:** a restore path, a backup reminder, cleanup as presets, remove the library → SD sync button, rename the old mirror states, recent projects and a File menu.
 - **Library:** an intro on the Upload tab.
-- **Submit tool:** read a dropped project file. It reads only the settings-only exports from before 4.6.0, so a project goes through Prepare a submission.
 - **Onboarding:** a welcome screen before the wizard, and a walkthrough of Studio based on [ManglerTour.tsx](src/mangler/ui/ManglerTour.tsx).
 - **Maybe:** `presets[]` from `generate-manifest.mjs`, project images, trash and undo, non-destructive editing (a different data model), right-click menus on cards, offline sample packs.
 - **Long term:** desktop app, cloud sync, Studio on phones.
