@@ -43,9 +43,9 @@ export interface FileRecord {
     sourceFileId?: string; // Source project file ID
     sourceVersionId?: string; // Source project version ID
     /**
-     * Relative path within the R2 bucket, e.g. "/Hainbach/Roaring-Drone.flac".
-     * Set by hydrateDescriptor when loading a preset or settings-only ZIP.
-     * Used by buildDescriptorFromState to omit the blob on settings-only re-export.
+     * Where the file was downloaded from: a sample-library URL, or the relative pack
+     * path a preset stores ("/Hainbach/Roaring-Drone.flac"). The project file leaves
+     * an unedited library file's audio out by it (`librarySamplePath`).
      */
     sourceSamplePath?: string;
     /**

@@ -9,8 +9,10 @@ import { resolveAssetPath } from './assetUtils';
 // assignments and metadata without embedding audio blobs.
 //
 // Used by:
-//   - Built-in preset projects (public/presets/*.json)
-//   - Settings-only shareable ZIPs (import/export without packing sample-pack audio)
+//   - Built-in preset projects (public/presets/*.json), and the submission
+//     tool's preset (submission/outputs.ts)
+//   - Project Manager zips from before the project file, which still import
+//     (projectFile.ts); nothing writes them any more
 //
 // Schema identifier: "spotykach-project/1.0"
 // ==========================================
@@ -200,7 +202,7 @@ export const hydrateDescriptor = async (
             license: entry.license,
             tags: entry.tags,
             metadata,
-            // Store source path so settings-only re-export can omit the blob
+            // The project file leaves unedited library audio out by this path.
             sourceSamplePath: entry.samplePath,
         };
 
@@ -229,86 +231,6 @@ export const hydrateDescriptor = async (
         projectConfig: descriptor.projectConfig,
         loadIssues: missingAssets.length > 0 ? { missingAssets } : undefined,
     };
-};
-
-// ==========================================
-// BUILD DESCRIPTOR FROM STATE
-// ==========================================
-
-/**
- * Build a ProjectDescriptor from a live AppState.
- *
- * In settings-only mode:
- *   - Files with a `sourceSamplePath` stored on the record → descriptor reference only
- *     (samplePackId + samplePath, no blob packed).
- *   - Files without a source path (custom uploads) → blob packed into custom_assets/.
- *
- * In full mode every file's current version is packed into custom_assets/. That is
- * the project file (`handleExportZip` in App) and the only mode in use: settings-only
- * references a library file's original even when its current version is an edit.
- *
- * @returns `descriptor` and `customBlobs` (map of blobRef → Blob to pack in ZIP).
- */
-export const buildDescriptorFromState = (
-    state: AppState,
-    options: {
-        settingsOnly: boolean;
-        name?: string;
-        description?: string;
-    }
-): { descriptor: ProjectDescriptor; customBlobs: Record<string, Blob> } => {
-    const customBlobs: Record<string, Blob> = {};
-    const files: Record<string, DescriptorFileEntry> = {};
-
-    for (const [fileId, rec] of Object.entries(state.files)) {
-        const currentVersion =
-            rec.versions.find(v => v.id === rec.currentVersionId) ?? rec.versions[0];
-
-        const sourceSamplePath = rec.sourceSamplePath;
-
-        const entry: DescriptorFileEntry = {
-            originalName: rec.originalName || rec.name,
-            origin: rec.origin,
-            tags: rec.tags,
-            license: rec.license,
-            slicePoints: rec.metadata?.slicePoints,
-        };
-
-        if (options.settingsOnly && rec.origin && sourceSamplePath) {
-            // Sample-pack file with known source path → descriptor reference, no blob
-            entry.samplePackId = rec.origin;
-            entry.samplePath = sourceSamplePath;
-        } else if (currentVersion?.blob) {
-            // Custom file, or sample-pack file where path is unknown → pack the blob
-            const blobRef = `custom_assets/${currentVersion.id}.wav`;
-            entry.blobRef = blobRef;
-            customBlobs[blobRef] = currentVersion.blob;
-        }
-
-        files[fileId] = entry;
-    }
-
-    // Build tape entries
-    const tapes = {} as ProjectDescriptor['tapes'];
-    for (const color of TAPE_COLORS) {
-        const tape = state.tapes[color];
-        tapes[color] = {
-            slots: tape.slots.map(s => ({ id: s.id, fileId: s.fileId })),
-            notes: tape.notes,
-        };
-    }
-
-    const descriptor: ProjectDescriptor = {
-        schema: 'spotykach-project/1.0',
-        name: options.name || 'Untitled Project',
-        description: options.description,
-        tapes,
-        files,
-        projectNotes: state.projectNotes,
-        projectConfig: state.projectConfig,
-    };
-
-    return { descriptor, customBlobs };
 };
 
 // ==========================================

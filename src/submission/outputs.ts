@@ -148,12 +148,9 @@ export const presetIdsFor = (draft: SubmissionDraft): Map<string, string> => {
 };
 
 /**
- * The descriptor, built from the draft rather than from a live `AppState`.
- *
- * `buildDescriptorFromState` exists and is the right function for Studio, but the
- * draft is not an `AppState` — its rows may reference packs that aren't loaded, and
- * its slots are an array rather than six tapes. Round-tripping through a synthetic
- * `AppState` to reach the same JSON would be more code, not less.
+ * The descriptor, built from the draft rather than from a live `AppState`: its rows
+ * may reference packs that aren't loaded, and its slots are an array rather than six
+ * tapes. The only descriptor writer since Studio's project file replaced its own.
  */
 export const buildPresetDescriptor = (
     draft: SubmissionDraft,
