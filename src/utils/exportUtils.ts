@@ -99,6 +99,18 @@ export const downloadBlob = (blob: Blob, name: string) => {
     URL.revokeObjectURL(url);
 };
 
+/**
+ * A download's filename: the project's name, what the zip holds, and the local date,
+ * as in `Serpentinelore-SK_2026-11-26.zip`. Characters Windows refuses in a filename
+ * become hyphens. Callers without a project pass their own name, such as Spotykach.
+ */
+export const downloadFileName = (name: string, kind?: string, ext = 'zip'): string => {
+    const base = name.trim().replace(/[\\/:*?"<>|]+/g, '-') || 'Spotykach';
+    const d = new Date();
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return `${base}${kind ? `-${kind}` : ''}_${date}.${ext}`;
+};
+
 // Suffix for the scratch file an atomic write goes through. Stays in the same
 // directory as the target, because a swap can only happen within one directory.
 const TEMP_WRITE_SUFFIX = '.wbtmp';
@@ -966,8 +978,7 @@ export const exportSDStructure = async (state: AppState, options: ExportSDOption
     const content = await zip.generateAsync({ type: "blob" }, (meta) => {
         onProgress?.("Compressing Final ZIP...", 95 + (meta.percent * 0.05));
     });
-    const dStr = new Date().toISOString().split('T')[0];
-    downloadBlob(content, `Spotykach_SD_${dStr}.zip`);
+    downloadBlob(content, downloadFileName(options.projectName || 'Spotykach', 'SK'));
     onProgress?.("Done.", 100);
     // No snapshot: nothing says the ZIP ever reaches the card.
     return undefined;
@@ -987,6 +998,8 @@ export interface ExportFilesOptions {
      * listing of a 6×6 grid the user never assembled.
      */
     readme?: string;
+    /** Starts the zip's name. Spotykach without one, as in Browse. */
+    projectName?: string;
 }
 
 export const exportFilesOnly = async (state: AppState, options: ExportFilesOptions, onProgress?: (msg: string | undefined, progress?: number) => void) => {
@@ -1059,10 +1072,8 @@ export const exportFilesOnly = async (state: AppState, options: ExportFilesOptio
         // 65% to 95%
         onProgress?.(undefined, 65 + (metadata.percent * 0.3));
     });
-    const dateStr = new Date().toISOString().split('T')[0];
-
     onProgress?.("Triggering Download...", 95);
-    downloadBlob(content, `Spotykach_Selection_${dateStr}.zip`);
+    downloadBlob(content, downloadFileName(options.projectName || 'Spotykach', 'audio'));
     onProgress?.("Done.", 100);
 };
 
@@ -1071,7 +1082,7 @@ export const exportFilesOnly = async (state: AppState, options: ExportFilesOptio
 // LEGACY / UTILS
 // ==========================================
 
-export const exportSingleTape = async (color: string, tape: any, files: Record<string, any>) => {
+export const exportSingleTape = async (color: string, tape: any, files: Record<string, any>, projectName?: string) => {
     // ... (Keep existing if needed for Single Tape view, updating to strict if required by user? 
     // For now, let's strictly name them too as it matches the "Tape" concept)
     const JSZip = (await import('jszip')).default;
@@ -1097,7 +1108,7 @@ export const exportSingleTape = async (color: string, tape: any, files: Record<s
 
     const content = await zip.generateAsync({ type: "blob" });
 
-    downloadBlob(content, `${color}_Tape.zip`);
+    downloadBlob(content, downloadFileName(projectName || 'Spotykach', `${color}-tape`));
 };
 
 export const exportSingleFile = async (file: { versions: any[], currentVersionId: string, name?: string, originalName?: string }) => {

@@ -642,14 +642,8 @@ function App({ onExitToHub }: AppProps) {
       }
 
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${name}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const { downloadBlob, downloadFileName } = await import('./utils/exportUtils');
+      downloadBlob(blob, downloadFileName(name));
       showToast(`"${name}" exported as a project file`, 'success');
     } catch (e: any) {
       showToast('Export failed: ' + e.message, 'error');
@@ -5417,7 +5411,7 @@ function App({ onExitToHub }: AppProps) {
                             <button
                               onClick={async () => {
                                 const { exportSingleTape } = await import('./utils/exportUtils');
-                                exportSingleTape(currentTapeColor, currentTape, state.files);
+                                exportSingleTape(currentTapeColor, currentTape, state.files, currentProjectName || 'Untitled-project');
                               }}
                               className="p-1.5 rounded-full bg-gray-800 hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-500"
                               title={`Download ${currentTapeColor} Tape (Zip)`}
@@ -5757,7 +5751,7 @@ function App({ onExitToHub }: AppProps) {
                     setShowExport(false); // Close settings modal
                     await handleExportProgress('SD Card Export', async (log) => {
                       const { exportSDStructure } = await import('./utils/exportUtils');
-                      const cardSnapshot = await exportSDStructure(state, { ...opts, onConvert: convertAudioToWav }, log);
+                      const cardSnapshot = await exportSDStructure(state, { ...opts, projectName: currentProjectName || 'Untitled-project', onConvert: convertAudioToWav }, log);
                       // Project data like any other: left unsaved so the next save keeps it.
                       if (cardSnapshot) setState(prev => ({ ...prev, cardSnapshot }));
                     });
@@ -5766,7 +5760,7 @@ function App({ onExitToHub }: AppProps) {
                     setShowExport(false);
                     await handleExportProgress('File Export', async (log: (msg: string | undefined, progress?: number) => void) => {
                       const { exportFilesOnly } = await import('./utils/exportUtils');
-                      await exportFilesOnly(state, { ...opts, onConvert: convertAudioToWav }, log);
+                      await exportFilesOnly(state, { ...opts, projectName: currentProjectName || 'Untitled-project', onConvert: convertAudioToWav }, log);
                     });
                   }}
                   onExportProject={async () => {
