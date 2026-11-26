@@ -368,7 +368,8 @@ write —
   `project-descriptor.json` is turned away too, instead of being unpacked hopefully.
 - **The Import window** gained a `SUBMISSION_ARCHIVE` analysis type, so a submission dropped there is
   named rather than falling through to the loose-file scanner — which would otherwise have offered to
-  import somebody's whole pack as a heap of untitled samples.
+  import somebody's whole pack as a heap of untitled samples. (Deleted Nov 26: nothing opened the
+  Import window. Project ▸ Import project file is the one route now, with the check above.)
 
 Both messages say the same two things: *to carry on with the submission, drop this in the Submit
 tool*, and *to share a project, use Export → Project Preset*. One wrong turn, two named exits.

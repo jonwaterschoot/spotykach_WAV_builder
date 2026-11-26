@@ -20,15 +20,10 @@ What's in progress, what's broken, and what's next. Finished work goes to [CHANG
   - [x] Not proposed: a 4-byte alignment check in `spotykach-transfer`'s `checkUploadable`. Firmware 1.4.0 and later play misaligned audio (`Card::_read_from`), and USB uploads need 1.4.0. Ours in `usbBackend.validate` is removed (Nov 25).
 - [ ] The damaged SD card from the device tests: not reproduced. → [device-test-plan.md](docs/usbuploader/device-test-plan.md)
 
-**Import and export** → [import-export-plan.md](docs/import-export-plan.md), decisions taken Nov 26
-- [ ] 1. Names and words: downloads named after the project, the Export window's three choices (project file, SD card folder, audio files), Import and Export in the Project menu. Done on `feature/export-names-and-words` (stacked on `fix/unsaved-assign-escape`). Tested Nov 26: the project file's and SD card folder's names, and a project file imported back with an edited library sample (the edit came back; names and history didn't, which step 2 fixes). Still to test: the audio and tape downloads, Save in Browser Cache Mode.
-- [ ] 2. One project file and one importer: every old format reads back, the name comes from inside, the import saves like any project. Done on `feature/project-file` (stacked on step 1's branch); `npm run check:project-file` passes. Click-test: export and import back, with and without library audio, and offline without it; your Nov 26 zips (old format); an SD card folder with Keep project copies on SD on; a project imported before this that you saved afterwards (it should now open the save).
-- [ ] 3. Compare on a name clash: identical, or a summary with Import as a new project and Replace. Done on `feature/import-compare` (stacked on step 2's branch). Click-test: export a project and import it back (identical, Open); change a slot and the notes, import the older file (the summary names them); Replace, with and without the project open and with unsaved changes; Import as a new project from the same dialog. Tested Nov 26: works as intended. The dialogs were too narrow for a long project name, fixed in `9a97570`.
-- [ ] 4. Browser Cache Mode: say the work lives in this browser only, offer to move it to a work folder. Done on `feature/browser-mode` (stacked on step 3's branch). Click-test: Skip in the wizard (its new screen, both buttons); in the browser with work: Save, Export, Import project file, and Project Manager (each shows the note); Move to a work folder with unsaved work, then reload the page; Save after Connect without it.
-- [ ] 5. Delete the unreachable ImportModal path.
+**Import and export** → [import-export-plan.md](docs/import-export-plan.md)
+- [x] Steps 1 to 5 and `fix/unsaved-assign-escape`, merged into `main` Nov 26 after the click-tests. Not released: the changelog entry comes with the release.
 
 **Other**
-- [ ] Click-test branch `fix/unsaved-assign-escape`, then merge: Save first on the hub arrow, opening a project and zip import; a zip of an existing project; Assign's "Apply or discard first" for each tool and a Mangler take; Escape on every modal; the unsaved-changes text.
 - [ ] News: the cue point modes (Ignore / Snap / Free) with a demo video.
 - [ ] Sample Mangler: the "Later" items and checks on a real phone. → [mangler-v2-plan.md](docs/sample_mangler/mangler-v2-plan.md)
 - [ ] Code health: one item per session, from the list below.

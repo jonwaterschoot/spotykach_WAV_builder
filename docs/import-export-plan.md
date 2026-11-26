@@ -6,6 +6,9 @@ one project file and one importer. Written 2026-11-26, with Jon's decisions from
 Code references are to branch `fix/unsaved-assign-escape`; line numbers drift, function names
 don't.
 
+Done: all five steps are in `main` since Nov 26. Steps 1 to 4 were click-tested before the
+merge.
+
 ---
 
 ## What exists
@@ -45,7 +48,7 @@ Code: [`ExportModal.tsx`](../src/components/ExportModal.tsx),
   [`analyzeImport`](../src/utils/importUtils.ts#L128),
   [`loadProjectFromZip`](../src/utils/importUtils.ts#L48)): restore a backup, read an SD
   folder, add files to the pool. Unreachable: nothing has clicked its file input since
-  release 2.0.1.
+  release 2.0.1. Deleted in step 5.
 
 ---
 
@@ -202,7 +205,7 @@ Each lands as its own commit and is click-tested on its own.
    Click-test: every download's name, the Export window, the Project menu.
 
    **Done on `feature/export-names-and-words`** (`ddc76fe`, `ee8fea0`, `c4e5bfc`, `70b924a`),
-   not click-tested yet. Where it went past or short of the step:
+   click-tested Nov 26. Where it went past or short of the step:
    - The project file is the Project Manager's zip (descriptor and `custom_assets/`), now always
      with all audio and the current version of each file. The library option and the
      original-plus-current history come with step 2's format.
@@ -222,7 +225,7 @@ Each lands as its own commit and is click-tested on its own.
    backup; a project with an edited library sample.
 
    **Done on `feature/project-file`** (`07773b6`, `f143b2e`, `d55b55f`, `229e73d`), stacked on
-   step 1's branch, not click-tested yet. `npm run check:project-file` runs the round trips and
+   step 1's branch, click-tested Nov 26. `npm run check:project-file` runs the round trips and
    the old formats in node. Where it went past or short of the step:
    - Folders and zips load through one reader,
      [`projectFile.ts`](../src/utils/projectFile.ts), and `saveProjectToDirectory` writes
@@ -252,8 +255,8 @@ Each lands as its own commit and is click-tested on its own.
    Replace.
    Click-test: the same project re-imported, one with a changed slot, Replace.
 
-   **Done on `feature/import-compare`** (`edac51a`), stacked on step 2's branch, not
-   click-tested yet. In [`projectCompare.ts`](../src/utils/projectCompare.ts), with cases in
+   **Done on `feature/import-compare`** (`edac51a`), stacked on step 2's branch,
+   click-tested Nov 26. In [`projectCompare.ts`](../src/utils/projectCompare.ts), with cases in
    `npm run check:project-file`. Where it went past or short of the step:
    - Cheapest test first, per slot: between two project files the same version id is the same
      audio (an edit makes a new version), so an unchanged project compares without reading
@@ -270,12 +273,14 @@ Each lands as its own commit and is click-tested on its own.
      still don't mix.
    - After Replace the folder takes the import's spelling of the name: `song` replacing `Song`
      is saved as `song`.
+   - The click-test found the dialogs too narrow for a long project name. They wrap it now, and
+     the import ones are wider (`9a97570`).
 4. **Browser Cache Mode.** The wizard's screen, the note on Save, Export and Import, and Move to
    a work folder.
    Click-test: Skip in the wizard, then Move to a work folder with unsaved work.
 
-   **Done on `feature/browser-mode`** (`77ac812`, `4203bfe`), stacked on step 3's branch, not
-   click-tested yet. Where it went past or short of the step:
+   **Done on `feature/browser-mode`** (`77ac812`, `4203bfe`), stacked on step 3's branch,
+   click-tested Nov 26. Where it went past or short of the step:
    - The note also comes up wherever a work folder gets connected without one (Project
      Manager, New Fresh Project, Clone, Settings, a card import into a new project), with
      Connect without it beside Move.
@@ -291,6 +296,16 @@ Each lands as its own commit and is click-tested on its own.
    - No lasting "browser only" mark in the header: the note shows where it matters.
 5. **Delete the unreachable path.** ImportModal, `handleImportFiles`, `analyzeImport` and what
    only they use, `loadProjectFromZip` too: step 2's importer reads its formats without it.
+
+   **Done on `refactor/remove-import-modal`** (`c6bc9c0`), stacked on step 4's branch. Nothing
+   to click-test: no button led there.
+   - Deleted: `ImportModal.tsx`; `handleImportFiles`, `handleRestoreAndSync` and the hidden
+     folder input in `App.tsx`; `analyzeImport`, `loadProjectFromZip`, `processAudioFiles` and
+     `processSDStructure` in `importUtils.ts`.
+   - Also `restoreProjectAndSync`, which nothing called. It was the other user of
+     `loadProjectFromZip`.
+   - `exportSaveState` and `buildDescriptorFromState` went earlier, in steps 1 and 2.
+   - The Import window's submission check went with it. Import project file has its own.
 
 ---
 
