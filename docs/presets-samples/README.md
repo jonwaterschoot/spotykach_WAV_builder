@@ -63,9 +63,8 @@ browser, or change one title later.
 ## Sharing with one person instead
 
 If you just want to send a project to a friend, you don't need any of this. Open it in Studio, use
-**Export** — the settings-only `.json` if you both have the same packs, the full backup `.zip` if it
-uses sounds you recorded — and they open it with **Import**. No submission, no review, no licence to
-choose.
+**Project ▸ Export ▸ Project file**, and they open it with **Project ▸ Import project file**. No
+submission, no review, no licence to choose.
 
 ## What happens after you send it
 
