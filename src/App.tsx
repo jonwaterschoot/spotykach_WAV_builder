@@ -224,6 +224,7 @@ function App({ onExitToHub }: AppProps) {
     isDestructive?: boolean;
     confirmLabel?: string;
     showCancel?: boolean;
+    wide?: boolean;
   } | null>(null);
 
   const [importAnalysis, setImportAnalysis] = useState<ImportAnalysis | null>(null);
@@ -619,6 +620,7 @@ function App({ onExitToHub }: AppProps) {
           ),
           confirmLabel: isOpen ? 'OK' : `Open "${existingName}"`,
           showCancel: !isOpen,
+          wide: true,
           onConfirm: () => {
             setConfirmAction(null);
             if (isOpen) return;
@@ -646,6 +648,7 @@ function App({ onExitToHub }: AppProps) {
         setConfirmAction({
           title: `Replace "${existingName}"?`,
           isDestructive: true,
+          wide: true,
           message: (
             <>
               <p>
@@ -687,11 +690,13 @@ function App({ onExitToHub }: AppProps) {
         ),
         // Keeping both is the safe answer, so it's the main button. Replace sits apart, in red.
         confirmLabel: 'Import as a new project',
+        wide: true,
         onConfirm: () => {
           setConfirmAction(null);
           askNewName(<p>The import goes into a new project, beside "{existingName}".</p>);
         },
-        discardLabel: `Replace "${existingName}"…`,
+        // The title names the project already.
+        discardLabel: 'Replace…',
         onDiscard: () => { void confirmReplace(); },
       });
     } catch (e: any) {
@@ -6439,6 +6444,7 @@ function App({ onExitToHub }: AppProps) {
             isDestructive={confirmAction.isDestructive}
             confirmLabel={confirmAction.confirmLabel}
             showCancel={confirmAction.showCancel}
+            wide={confirmAction.wide}
           />
         )
       }
